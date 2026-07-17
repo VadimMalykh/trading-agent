@@ -1,0 +1,64 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    environment:
+      DATABASE_URL: postgresql://fluxtrader:secret@postgres:5432/fluxtrader
+      BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
+      TRADING_MODE: ${TRADING_MODE:-simulation}
+      PHX_HOST: localhost
+      PHX_PORT: 4000
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-only-secret-key-base-that-is-at-least-64-bytes-long-for-phoenix-to-start}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    volumes:
+      - .:/app
+      - app_build:/app/_build
+      - app_deps:/app/deps
+    command: sh -c "mix deps.get && mix ecto.create && mix ecto.migrate && mix phx.server"
+
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: fluxtrader
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: fluxtrader
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fluxtrader"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ml_trainer:
+    build:
+      context: ./ml/train
+      dockerfile: Dockerfile.train
+    environment:
+      DATABASE_URL: postgresql://fluxtrader:secret@postgres:5432/fluxtrader
+      MODEL_DIR: /models
+      OUTPUT_DIR: /workspace/train/output
+      WHITELIST_PAIRS: ${WHITELIST_PAIRS:-BTCUSDT,ETHUSDT,SOLUSDT}
+      HORIZON_MINUTES: ${HORIZON_MINUTES:-15}
+    volumes:
+      - ./ml/train:/workspace/train
+      - model_weights:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - ml
+
+volumes:
+  app_build:
+  app_deps:
+  postgres_data:
+  model_weights:

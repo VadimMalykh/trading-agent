@@ -1,0 +1,33 @@
+# Dependencies
+_build/
+deps/
+npm-debug.log
+node_modules/
+
+# Generated on crash
+erl_crash.dump
+
+# Static artifacts
+apps/fluxtrader_web/priv/static/assets/
+
+# Environment
+.env
+
+# Docker volumes
+postgres_data/
+model_weights/
+app_build/
+app_deps/
+
+# ML
+ml/train/output/
+ml/train/checkpoints/
+ml/train/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
