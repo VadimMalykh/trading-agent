@@ -28,6 +28,8 @@ defmodule FluxTrader.MarketData.Collector do
       last_trade_ids: %{}
     }
 
+    Phoenix.PubSub.subscribe(FluxTrader.PubSub, "settings:whitelist")
+
     # Backfill history once so M1 training has enough samples without waiting hours
     Process.send_after(self(), :backfill_history, 500)
     Process.send_after(self(), :poll_book, 1_000)
@@ -39,17 +41,30 @@ defmodule FluxTrader.MarketData.Collector do
     {:ok, state}
   end
 
+  def handle_info({:whitelist, pairs}, state) do
+    Logger.info("Collector whitelist updated: #{inspect(pairs)}")
+    # Backfill new pairs shortly
+    Process.send_after(self(), :backfill_history, 1_000)
+    {:noreply, %{state | pairs: pairs}}
+  end
+
   def handle_info(:backfill_history, state) do
+    state = sync_pairs(state)
     Logger.info("Backfilling historical klines for M1...")
 
     Enum.each(state.pairs, fn pair ->
-      backfill_candles(pair, "1m", 500)
-      backfill_candles(pair, "5m", 500)
-      backfill_candles(pair, "15m", 500)
-      backfill_candles(pair, "1h", 500)
-      collect_book(pair)
-      collect_funding(pair)
-      collect_open_interest(pair)
+      try do
+        backfill_candles(pair, "1m", 500)
+        backfill_candles(pair, "5m", 500)
+        backfill_candles(pair, "15m", 500)
+        backfill_candles(pair, "1h", 500)
+        collect_book(pair)
+        collect_funding(pair)
+        collect_open_interest(pair)
+      rescue
+        e ->
+          Logger.error("Backfill crashed for #{pair}: #{Exception.message(e)}")
+      end
     end)
 
     Logger.info("Historical backfill complete")
@@ -58,12 +73,15 @@ defmodule FluxTrader.MarketData.Collector do
 
   @impl true
   def handle_info(:poll_book, state) do
+    state = sync_pairs(state)
     Enum.each(state.pairs, &collect_book/1)
     Process.send_after(self(), :poll_book, @book_interval_ms)
     {:noreply, state}
   end
 
   def handle_info(:poll_trades, state) do
+    state = sync_pairs(state)
+
     state =
       Enum.reduce(state.pairs, state, fn pair, acc ->
         case collect_trades(pair, Map.get(acc.last_trade_ids, pair)) do
@@ -83,6 +101,8 @@ defmodule FluxTrader.MarketData.Collector do
   end
 
   def handle_info(:poll_slow, state) do
+    state = sync_pairs(state)
+
     Enum.each(state.pairs, fn pair ->
       collect_funding(pair)
       collect_open_interest(pair)
@@ -94,6 +114,8 @@ defmodule FluxTrader.MarketData.Collector do
   end
 
   def handle_info(:poll_candles, state) do
+    state = sync_pairs(state)
+
     Enum.each(state.pairs, fn pair ->
       collect_candles(pair, "1m")
       collect_candles(pair, "5m")
@@ -107,9 +129,22 @@ defmodule FluxTrader.MarketData.Collector do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
+  defp sync_pairs(state) do
+    %{state | pairs: pairs()}
+  end
+
   defp pairs do
-    Application.get_env(:fluxtrader, :trading, [])
-    |> Keyword.get(:whitelist_pairs, ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+    try do
+      FluxTrader.Pairs.Selector.active_pairs()
+    rescue
+      _ ->
+        Application.get_env(:fluxtrader, :trading, [])
+        |> Keyword.get(:whitelist_pairs, ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+    catch
+      :exit, _ ->
+        Application.get_env(:fluxtrader, :trading, [])
+        |> Keyword.get(:whitelist_pairs, ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+    end
   end
 
   defp collect_book(symbol) do
@@ -342,7 +377,15 @@ defmodule FluxTrader.MarketData.Collector do
   defp ms_to_dt(_), do: nil
 
   defp to_f(nil), do: 0.0
-  defp to_f(v) when is_binary(v), do: String.to_float(v)
   defp to_f(v) when is_float(v), do: v
   defp to_f(v) when is_integer(v), do: v * 1.0
+
+  defp to_f(v) when is_binary(v) do
+    case Float.parse(v) do
+      {f, _} -> f
+      :error -> 0.0
+    end
+  end
+
+  defp to_f(_), do: 0.0
 end

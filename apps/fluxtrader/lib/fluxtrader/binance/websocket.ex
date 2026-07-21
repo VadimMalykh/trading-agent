@@ -86,14 +86,27 @@ defmodule FluxTrader.Binance.WebSocket do
       symbol: symbol,
       interval: interval,
       open_time: DateTime.from_unix!(Enum.at(kline, 0), :millisecond),
-      open: String.to_float(Enum.at(kline, 1)),
-      high: String.to_float(Enum.at(kline, 2)),
-      low: String.to_float(Enum.at(kline, 3)),
-      close: String.to_float(Enum.at(kline, 4)),
-      volume: String.to_float(Enum.at(kline, 5)),
+      open: to_f(Enum.at(kline, 1)),
+      high: to_f(Enum.at(kline, 2)),
+      low: to_f(Enum.at(kline, 3)),
+      close: to_f(Enum.at(kline, 4)),
+      volume: to_f(Enum.at(kline, 5)),
       close_time: DateTime.from_unix!(Enum.at(kline, 6), :millisecond)
     }
   end
+
+  defp to_f(nil), do: 0.0
+  defp to_f(v) when is_float(v), do: v
+  defp to_f(v) when is_integer(v), do: v * 1.0
+
+  defp to_f(v) when is_binary(v) do
+    case Float.parse(v) do
+      {f, _} -> f
+      :error -> 0.0
+    end
+  end
+
+  defp to_f(_), do: 0.0
 
   defp schedule_poll do
     Process.send_after(self(), :poll, @poll_interval_ms)

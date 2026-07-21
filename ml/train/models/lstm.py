@@ -1,5 +1,7 @@
-import torch
 import torch.nn as nn
+
+# Re-export multi-horizon as primary; keep M1 single-head for back-compat
+from models.multi_horizon import SharedEncoderMultiHead  # noqa: F401
 
 
 class PriceDirectionLSTM(nn.Module):
@@ -22,7 +24,5 @@ class PriceDirectionLSTM(nn.Module):
         )
 
     def forward(self, x):
-        # x: [B, T, F]
         _, (hidden, _) = self.lstm(x)
-        logits = self.head(hidden[-1])
-        return logits
+        return self.head(hidden[-1])

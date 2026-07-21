@@ -14,6 +14,10 @@ config :fluxtrader, :trading,
   leverage: 5,
   whitelist_pairs: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 
+config :fluxtrader, :ml,
+  inference_url: "http://ml_inference:8001",
+  gate_threshold: 0.40
+
 config :fluxtrader_web, FluxTraderWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,

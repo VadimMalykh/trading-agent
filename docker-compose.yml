@@ -8,12 +8,16 @@ services:
       BINANCE_API_KEY: ${BINANCE_API_KEY:-}
       BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
       TRADING_MODE: ${TRADING_MODE:-simulation}
+      ML_INFERENCE_URL: http://ml_inference:8001
+      ML_GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.40}
       PHX_HOST: localhost
       PHX_PORT: 4000
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-only-secret-key-base-that-is-at-least-64-bytes-long-for-phoenix-to-start}
     depends_on:
       postgres:
         condition: service_healthy
+      ml_inference:
+        condition: service_started
     ports:
       - "4000:4000"
     volumes:
@@ -37,6 +41,27 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  ml_inference:
+    build:
+      context: ./ml/train
+      dockerfile: Dockerfile.train
+    command: python serve.py
+    environment:
+      DATABASE_URL: postgresql://fluxtrader:secret@postgres:5432/fluxtrader
+      MODEL_PATH: /models/m2_multi.pt
+      MODEL_DIR: /models
+      GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.40}
+      PRIMARY_HORIZON: ${PRIMARY_HORIZON:-15}
+      WHITELIST_PAIRS: ${WHITELIST_PAIRS:-BTCUSDT,ETHUSDT,SOLUSDT}
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ml/train:/workspace/train
+      - model_weights:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   ml_trainer:
     build:

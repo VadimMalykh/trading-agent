@@ -1,56 +1,99 @@
 defmodule FluxTrader.ML.Predict do
   @moduledoc """
-  ML prediction interface. Sends features to the inference service
-  and receives trade signals.
+  Client for M2 inference service (ml_inference container).
   """
   require Logger
 
-  @confidence_threshold 0.65
+  @default_url "http://ml_inference:8001"
 
-  def predict(features) do
-    case call_inference_service(features) do
-      {:ok, prediction} ->
-        signal = build_signal(prediction, features)
+  def inference_url do
+    System.get_env("ML_INFERENCE_URL") ||
+      Application.get_env(:fluxtrader, :ml, [])
+      |> Keyword.get(:inference_url, @default_url)
+  end
 
-        if signal.confidence >= @confidence_threshold do
-          Logger.info("Prediction: #{signal.side} confidence=#{Float.round(signal.confidence, 3)}")
-          {:ok, signal}
-        else
-          Logger.info("Prediction below threshold: #{signal.confidence} < #{@confidence_threshold}")
-          {:ok, :below_threshold}
-        end
+  def gate_threshold do
+    case System.get_env("ML_GATE_THRESHOLD") do
+      nil ->
+        Application.get_env(:fluxtrader, :ml, [])
+        |> Keyword.get(:gate_threshold, 0.40)
 
-      {:error, reason} ->
-        Logger.error("Inference failed: #{inspect(reason)}")
-        {:error, reason}
+      val ->
+        String.to_float(val)
     end
   end
 
-  defp call_inference_service(features) do
-    # TODO: Connect to ml_inference Docker service
-    # For now, return a mock prediction
-    direction = if features[:rsi_14] < 30, do: "BUY", else: "SELL"
-
-    confidence =
-      cond do
-        features[:rsi_14] < 25 -> 0.85
-        features[:rsi_14] < 35 -> 0.72
-        features[:rsi_14] > 75 -> 0.80
-        features[:rsi_14] > 65 -> 0.70
-        true -> 0.55
-      end
-
-    {:ok, %{direction: direction, confidence: confidence, magnitude: 0.02}}
+  def health do
+    case get("/health") do
+      {:ok, body} -> {:ok, body}
+      error -> error
+    end
   end
 
-  defp build_signal(prediction, features) do
+  def predict_symbol(symbol) when is_binary(symbol) do
+    case get("/predict?symbol=#{URI.encode(symbol)}") do
+      {:ok, %{"ok" => true} = body} ->
+        {:ok, normalize(body)}
+
+      {:ok, %{"ok" => false, "error" => err}} ->
+        {:error, err}
+
+      {:ok, body} ->
+        {:error, body}
+
+      error ->
+        error
+    end
+  end
+
+  def predict_all do
+    case get("/predict_all") do
+      {:ok, %{"ok" => true, "signals" => signals}} when is_list(signals) ->
+        {:ok, Enum.map(signals, &normalize/1)}
+
+      {:ok, body} ->
+        {:error, body}
+
+      error ->
+        error
+    end
+  end
+
+  defp normalize(%{"ok" => false} = body), do: body
+
+  defp normalize(body) when is_map(body) do
     %{
-      symbol: features[:symbol],
-      side: if(prediction.direction == "BUY", do: "BUY", else: "SELL"),
-      confidence: prediction.confidence,
-      price: features[:current_price],
-      magnitude: prediction.magnitude,
+      symbol: body["symbol"],
+      price: body["price"],
+      side: body["side"] || "FLAT",
+      trade: body["trade"] == true,
+      confidence: body["confidence"] || 0.0,
+      primary_horizon_m: body["primary_horizon_m"] || 15,
+      gate_threshold: body["gate_threshold"] || gate_threshold(),
+      horizons: body["horizons"] || %{},
+      model: body["model"],
+      error: body["error"],
+      ok: body["ok"] != false,
       timestamp: DateTime.utc_now()
     }
+  end
+
+  defp get(path) do
+    url = inference_url() <> path
+
+    case Finch.build(:get, url)
+         |> Finch.request(FluxTrader.Finch, receive_timeout: 60_000) do
+      {:ok, %{status: 200, body: body}} ->
+        case Jason.decode(body) do
+          {:ok, json} -> {:ok, json}
+          {:error, e} -> {:error, e}
+        end
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, {status, body}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 end

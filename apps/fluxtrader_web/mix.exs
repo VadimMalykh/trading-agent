@@ -27,6 +27,7 @@ defmodule FluxTraderWeb.MixProject do
 
   defp deps do
     [
+      {:fluxtrader, in_umbrella: true},
       {:phoenix, "~> 1.7.14"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_view, "~> 0.20.14"},

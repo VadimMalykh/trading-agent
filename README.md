@@ -4,24 +4,18 @@ Real-time cryptocurrency futures trading agent with ML-driven decision making.
 
 ## Status
 
-**M1 — Market data + supervised 15m baseline** (in progress)
+**Phase I light — M2 signals wired into the app** (current)
 
-See **[docs/M1_PLAN.md](./docs/M1_PLAN.md)** for the full implementation checklist (session-resilient).
+See **[docs/SIMULATION.md](./docs/SIMULATION.md)** for how to run paper signal simulation.
 
 What's working:
-- Elixir umbrella project running in Docker (no host installs)
-- PostgreSQL/TimescaleDB migrations (candles, positions, trades, book, market trades, funding, OI, liquidations)
-- Binance Futures **public** REST (no API keys for market data)
-- `MarketData.Collector`: book top-20 @ 5s, trades, funding, OI, liquidations, candle backfill + poll
-- LiveView dashboard + settings + positions API
-- Trading executor (simulation) + risk manager
-- ML train/eval in `ml_trainer` (PyTorch LSTM, CPU, Docker)
+- Elixir + Docker (no host installs); public Binance data (no keys)
+- M1/M2 train/eval in `ml_trainer`
+- **`ml_inference`** serves `m2_multi.pt` (`serve.py`)
+- **SignalEngine** polls scores → dashboard + `/api/signals` + `[SIM_SIGNAL]` logs
+- Simulation mode only (no real orders)
 
-Docs:
-- **[docs/PLAN.md](./docs/PLAN.md)** — full project roadmap (all phases)
-- [MODEL.md](./MODEL.md) — ML architecture
-- [docs/M1_PLAN.md](./docs/M1_PLAN.md) — M1 checklist
-- [SPEC.md](./SPEC.md) — original system spec
+Docs: [TRAINING.md](./docs/TRAINING.md) · [SIMULATION.md](./docs/SIMULATION.md) · [PLAN.md](./docs/PLAN.md) · [MODEL.md](./MODEL.md) · [M1](./docs/M1_PLAN.md) · [M2](./docs/M2_PLAN.md) · [SPEC.md](./SPEC.md)
 
 ## Quick Start
 
@@ -46,19 +40,30 @@ API: http://localhost:4000/api/positions
 ### Commands
 
 ```bash
-docker compose up -d postgres app    # App + DB + collectors
-docker compose logs -f app           # Watch app / collector logs
-docker compose exec postgres psql -U fluxtrader -d fluxtrader -c "\dt"
+# Full stack: DB + inference + app (needs m2_multi.pt — train first if missing)
+docker compose up -d postgres ml_inference app
+# Dashboard http://localhost:4000  ·  Signals http://localhost:4000/api/signals
+# Inference http://localhost:8001/health
 
-# M1 train (CPU, no GPU, no API keys)
-docker compose --profile ml run --rm ml_trainer \
-  python train.py --device cpu --epochs 5 --horizon 15
+docker compose logs -f app | grep -E 'SIM_SIGNAL|SignalEngine'
 
+# Historic data (months of klines — no waiting weeks)
 docker compose --profile ml run --rm ml_trainer \
-  python eval.py --checkpoint /models/m1_15m.pt
+  python backfill_history.py --symbols BTCUSDT,ETHUSDT,SOLUSDT \
+  --intervals 1m,15m,1h --days 180
+
+# Train / eval M2 (CPU)
+docker compose --profile ml run --rm ml_trainer \
+  python train_m2.py --device cpu --epochs 30
+docker compose --profile ml run --rm ml_trainer \
+  python eval_m2.py --checkpoint /models/m2_multi.pt --gate 0.35,0.4,0.5,0.6
+docker compose restart ml_inference   # reload weights after retrain
 
 docker compose down
 ```
+
+- **Train / backfill / eval / overfit:** [docs/TRAINING.md](./docs/TRAINING.md)  
+- **Live paper signals:** [docs/SIMULATION.md](./docs/SIMULATION.md)
 
 ## Project Structure
 
@@ -131,18 +136,16 @@ See **[MODEL.md](./MODEL.md)** for the frozen ML architecture:
 
 ## What's Next
 
-### Near term (M1 — data + supervised baseline)
+### Done
 
-- [ ] Trades + top-20 book (5s) + funding/OI/liquidations ingestion
-- [ ] Feature windows + TimescaleDB storage for new streams
-- [ ] Supervised 15m baseline (Python/PyTorch) + offline walk-forward eval
-- [ ] Replace indicator-centric `FeatureEngineering` as production path
+- [x] M1 data + 15m baseline
+- [x] M2 multi-horizon (1m/15m/1h) + confidence gating
 
-### Then (M2–M3)
+### Next (M3+)
 
-- [ ] Multi-horizon heads (1m, 15m, 1h) + confidence gating
-- [ ] Discrete policy (hold/exit/size) with DD-aware reward
+- [ ] Discrete policy (flat/long/short/hold/exit) with DD-aware reward
 - [ ] Simulation A/B: signal-only vs signal+policy
+- [ ] Wire checkpoint into Elixir `ML.Predict` (Phase I light)
 
 ### Later
 

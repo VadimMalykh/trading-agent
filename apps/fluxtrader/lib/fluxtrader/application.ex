@@ -12,11 +12,12 @@ defmodule FluxTrader.Application do
       FluxTrader.Repo,
       {Task.Supervisor, name: FluxTrader.TaskSupervisor},
       FluxTrader.Binance.WebSocket,
-      FluxTrader.MarketData.Collector,
       FluxTrader.Data.CandleStore,
       FluxTrader.Pairs.Selector,
+      FluxTrader.MarketData.Collector,
       FluxTrader.Trading.Executor,
-      FluxTrader.Trading.RiskManager
+      FluxTrader.Trading.RiskManager,
+      FluxTrader.ML.SignalEngine
     ]
 
     opts = [strategy: :one_for_one, name: FluxTrader.Supervisor]

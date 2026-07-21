@@ -73,7 +73,16 @@ defmodule FluxTrader.MarketData.BookFeatures do
     |> Enum.reject(&is_nil/1)
   end
 
-  defp to_f(v) when is_binary(v), do: String.to_float(v)
+  defp to_f(nil), do: 0.0
   defp to_f(v) when is_float(v), do: v
   defp to_f(v) when is_integer(v), do: v * 1.0
+
+  defp to_f(v) when is_binary(v) do
+    case Float.parse(v) do
+      {f, _} -> f
+      :error -> 0.0
+    end
+  end
+
+  defp to_f(_), do: 0.0
 end

@@ -93,13 +93,13 @@ Phase 0  Scaffold          ✅ done (Elixir umbrella, Docker, LiveView, sim exec
     │
 Phase M1 Data + 15m supervised baseline     ✅ pipeline done (improve quality ongoing)
     │
-Phase M2 Multi-horizon + confidence gating  ⬜ next ML focus
+Phase M2 Multi-horizon + confidence gating  ✅ train_m2 / eval_m2 (quality improves with data)
     │
-Phase M3 Discrete policy + sim A/B          ⬜
+Phase M3 Discrete policy + sim A/B          ⬜ next
     │
 Phase M4 Positional + alts                  ⬜
     │
-Phase I  Inference serving + live signals   ⬜ (can overlap late M2/M3)
+Phase I  Inference serving + live signals   ✅ light (serve.py + SignalEngine + dashboard)
     │
 Phase S  Simulation hardening + paper       ⬜
     │
@@ -150,19 +150,21 @@ Legacy SPEC “Phase 1–4” maps roughly as:
 
 ---
 
-### Phase M2 — Multi-horizon + confidence gating ⬜
+### Phase M2 — Multi-horizon + confidence gating ✅
 
 **Goal:** Multiple horizons and “trade rarely when sure.”
 
-| Work item | Description |
-|-----------|-------------|
-| Heads | 1m, 15m, 1h (shared encoder optional) |
-| Labels | Per-horizon direction + magnitude optional |
-| Confidence | Calibrated probabilities; min confidence gate |
-| Eval | Per-horizon accuracy, calibration, trade frequency under gate |
-| Data | Prefer richer book/trade history from continuous collection |
+| Work item | Status |
+|-----------|--------|
+| Shared LSTM encoder + heads 1m / 15m / 1h | ✅ `models/multi_horizon.py` |
+| Per-horizon labels | ✅ `build_multi_horizon_arrays` |
+| Train | ✅ `train_m2.py` → `/models/m2_multi.pt` |
+| Confidence gate + sweep | ✅ `gate.py`, `eval_m2.py` |
+| RL policy | ❌ deferred to M3 |
 
-**Exit criteria:** Gated signals produce fewer, higher-confidence calls with documented metrics; still simulation-only.
+**Exit criteria:** Gated signals produce fewer calls at higher thresholds; per-horizon metrics reported. Still no live trading.
+
+**Commands:** see [M2_PLAN.md](./M2_PLAN.md).
 
 ---
 
@@ -307,13 +309,14 @@ Details: [MODEL.md](../MODEL.md).
 
 ## 10. Suggested order of work (from today)
 
-1. **You test M1** — collect data, retrain, inspect metrics (ongoing)  
-2. **M1 hardening** (optional parallel) — more history, better eval, less REST load  
-3. **M2** — multi-horizon + confidence gate  
-4. **Phase I light** — load checkpoint for offline/live scores in app  
-5. **M3** — discrete policy + sim A/B  
-6. **S** — backtest + paper period  
-7. **M4 / P** — positional, alts, then production modes  
+1. **More data + better M2 train** — see [TRAINING.md](./TRAINING.md) (`backfill_history.py`, epochs, `eval_m2`)  
+2. **Judge signal quality** — train/val curves + gate table (before M3)  
+3. **Live paper signals** — [SIMULATION.md](./SIMULATION.md) (optional peek)  
+4. **M3** — discrete policy + sim A/B  
+5. **S** — full paper P&L / backtest  
+6. **M4 / P** — positional, alts, production  
+
+Training runbook: **[TRAINING.md](./TRAINING.md)**.
 
 ---
 
@@ -351,6 +354,7 @@ Details: [MODEL.md](../MODEL.md).
 | Date | Note |
 |------|------|
 | 2026-07-18 | Initial full plan; M0+M1 pipeline documented; M2–P sketched from model discussion |
+| 2026-07-19 | M2 implemented (shared encoder, 1m/15m/1h, confidence gate) |
 
 ---
 

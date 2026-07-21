@@ -11,8 +11,10 @@ defmodule FluxTraderWeb.Layouts do
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="csrf-token" content={get_csrf_token()} />
         <title>FluxTrader</title>
-        <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}></script>
         <link rel="stylesheet" href={~p"/assets/app.css"} />
+        <script defer src="https://cdn.jsdelivr.net/npm/phoenix@1.7.21/priv/static/phoenix.min.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.20.17/priv/static/phoenix_live_view.min.js"></script>
+        <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}></script>
       </head>
       <body>
         <%= @inner_content %>

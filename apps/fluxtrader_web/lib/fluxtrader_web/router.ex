@@ -25,5 +25,6 @@ defmodule FluxTraderWeb.Router do
     pipe_through :api
 
     get "/positions", PositionController, :index
+    get "/signals", SignalController, :index
   end
 end
