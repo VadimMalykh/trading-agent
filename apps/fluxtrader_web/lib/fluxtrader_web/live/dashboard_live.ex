@@ -10,9 +10,12 @@ defmodule FluxTraderWeb.DashboardLive do
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
+      Logger.info("DashboardLive mounted (connected) — subscribing to PubSub")
       Phoenix.PubSub.subscribe(FluxTrader.PubSub, "candles:live")
       Phoenix.PubSub.subscribe(FluxTrader.PubSub, "signals:live")
       Process.send_after(self(), :refresh_candles, @refresh_ms)
+    else
+      Logger.info("DashboardLive mounted (static render)")
     end
 
     candles = safe_candles()
@@ -42,6 +45,7 @@ defmodule FluxTraderWeb.DashboardLive do
   @impl true
   def handle_info({:new_candle, candle}, socket) do
     if candle_interval(candle) in [nil, "1m"] do
+      Logger.debug("DashboardLive got candle #{candle_symbol(candle)} close=#{inspect(Map.get(candle, :close))}")
       candles = Map.put(socket.assigns.candles, candle_symbol(candle), [normalize_candle(candle)])
       {:noreply, assign(socket, candles: candles, status: :connected, last_updated: DateTime.utc_now())}
     else
