@@ -40,7 +40,8 @@ Run from your **Mac**, in the repo root, **in order**.
 ./scripts/gcp_1_dump.sh
 ```
 
-Saves `~/fluxtrader-train-export/fluxtrader.dump` on your Mac.
+Saves `~/fluxtrader-train-export/fluxtrader_train.sql.gz` on your Mac  
+(plain SQL of app tables only — avoids Timescale restore crashes).
 
 ### Step 2 — Create temporary train VM
 
@@ -162,6 +163,7 @@ Change via `scripts/gcp_env`.
 | Step 1: `cd ... No such file` | Always-on repo must be `~/trading_agent`. Update scripts if path differs (`REMOTE_REPO_NAME`). |
 | Step 2: Docker not ready | Wait and re-run step 2; first boot installs packages. |
 | Step 3: OOM / train dies | Use `TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT` and/or `e2-standard-2`; check `gcp_4_status.sh` log tail. |
+| `pg_restore` / empty candles / no orderbook | Old bug with `--clean`. Re-run **step 3** with latest scripts (fresh volume restore + verify counts before train). |
 | Step 4 never DONE | `gcp_4_status.sh` → read log; or `tmux attach -t fluxtrain` on train VM. |
 | Step 5: missing checkpoint | Training did not finish; do not delete VM until DONE. |
 | Live UI still old model | On always-on: `docker compose restart ml_inference` |
