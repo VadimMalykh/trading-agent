@@ -8,17 +8,20 @@ defmodule FluxTraderWeb.Endpoint do
     same_site: "Lax"
   ]
 
+  # Serve from source priv/static (bind-mounted), not _build volume copy.
+  # Named volume app_build can lag or miss priv files after host edits.
+  @static_root Path.expand("../../priv/static", __DIR__)
+
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [
       connect_info: [session: @session_options],
-      # Drop idle/dead sockets after missed heartbeats (client heartbeats every 15s)
       timeout: 60_000
     ],
     longpoll: [connect_info: [session: @session_options]]
 
   plug Plug.Static,
     at: "/",
-    from: :fluxtrader_web,
+    from: @static_root,
     gzip: false,
     only: ~w(assets fonts images favicon.ico robots.txt)
 

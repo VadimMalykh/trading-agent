@@ -11,10 +11,32 @@ defmodule FluxTraderWeb.Layouts do
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="csrf-token" content={get_csrf_token()} />
         <title>FluxTrader</title>
-        <link rel="stylesheet" href={~p"/assets/app.css?v=2"} />
-        <script defer src="https://cdn.jsdelivr.net/npm/phoenix@1.7.21/priv/static/phoenix.min.js"></script>
-        <script defer src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.20.17/priv/static/phoenix_live_view.min.js"></script>
-        <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js?v=2"}></script>
+        <style>
+          :root {
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #16213e;
+            --accent: #e94560;
+            --accent-alt: #533483;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --green: #2ecc71;
+            --red: #e74c3c;
+            --blue: #0f3460;
+          }
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          }
+          a { color: var(--accent); text-decoration: none; }
+          a:hover { text-decoration: underline; }
+          .phx-disconnected #lv-disconnect-banner { display: block !important; }
+          .phx-connected #lv-disconnect-banner { display: none !important; }
+        </style>
+        <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.21/priv/static/phoenix.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/phoenix_live_view@0.20.17/priv/static/phoenix_live_view.min.js"></script>
       </head>
       <body>
         <div
@@ -23,11 +45,65 @@ defmodule FluxTraderWeb.Layouts do
         >
           Connection lost — reconnecting…
         </div>
-        <style>
-          .phx-disconnected #lv-disconnect-banner { display: block !important; }
-          .phx-connected #lv-disconnect-banner { display: none !important; }
-        </style>
         <%= @inner_content %>
+        <script>
+          (function () {
+            var Phoenix = window.Phoenix;
+            var LiveView = window.LiveView || window.phoenix_live_view;
+            if (!Phoenix || !LiveView) {
+              console.error("Phoenix/LiveView JS not loaded from CDN");
+              return;
+            }
+
+            var LiveSocket = LiveView.LiveSocket || LiveView;
+            var Socket = Phoenix.Socket;
+            var csrf = document.querySelector("meta[name='csrf-token']");
+            var token = csrf ? csrf.getAttribute("content") : "";
+
+            var liveSocket = new LiveSocket("/live", Socket, {
+              params: { _csrf_token: token },
+              heartbeatIntervalMs: 15000
+            });
+
+            liveSocket.connect();
+            window.liveSocket = liveSocket;
+
+            function reconnect() {
+              if (!liveSocket) return;
+              try { liveSocket.disconnect(); } catch (_) {}
+              setTimeout(function () { liveSocket.connect(); }, 100);
+            }
+
+            document.addEventListener("visibilitychange", function () {
+              if (document.visibilityState === "visible" && liveSocket && !liveSocket.isConnected()) {
+                reconnect();
+              }
+            });
+
+            window.addEventListener("online", function () {
+              if (liveSocket && !liveSocket.isConnected()) reconnect();
+            });
+
+            var disconnectedSince = null;
+            setInterval(function () {
+              if (!liveSocket) return;
+              if (liveSocket.isConnected()) {
+                disconnectedSince = null;
+                return;
+              }
+              if (disconnectedSince === null) {
+                disconnectedSince = Date.now();
+                return;
+              }
+              if (Date.now() - disconnectedSince >= 60000) {
+                console.warn("LiveView disconnected too long; reloading");
+                window.location.reload();
+              } else {
+                reconnect();
+              }
+            }, 5000);
+          })();
+        </script>
       </body>
     </html>
     """
