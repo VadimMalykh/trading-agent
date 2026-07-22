@@ -117,10 +117,16 @@ defmodule FluxTrader.MarketData.Collector do
     state = sync_pairs(state)
 
     Enum.each(state.pairs, fn pair ->
-      collect_candles(pair, "1m")
-      collect_candles(pair, "5m")
-      collect_candles(pair, "15m")
-      collect_candles(pair, "1h")
+      try do
+        collect_candles(pair, "1m")
+        collect_candles(pair, "5m")
+        collect_candles(pair, "15m")
+        collect_candles(pair, "1h")
+      rescue
+        e -> Logger.warning("poll_candles crashed for #{pair}: #{Exception.message(e)}")
+      catch
+        :exit, reason -> Logger.warning("poll_candles exit for #{pair}: #{inspect(reason)}")
+      end
     end)
 
     Process.send_after(self(), :poll_candles, @slow_interval_ms)
@@ -341,9 +347,15 @@ defmodule FluxTrader.MarketData.Collector do
   defp insert_candle(symbol, interval, kline, opts) do
     candle = parse_kline(symbol, interval, kline)
 
-    %Candle{}
-    |> Candle.changeset(candle)
-    |> Repo.insert(on_conflict: :nothing, conflict_target: [:symbol, :interval, :open_time])
+    try do
+      %Candle{}
+      |> Candle.changeset(candle)
+      |> Repo.insert(on_conflict: :nothing, conflict_target: [:symbol, :interval, :open_time])
+    rescue
+      e -> Logger.warning("candle insert failed #{symbol}/#{interval}: #{Exception.message(e)}")
+    catch
+      :exit, reason -> Logger.warning("candle insert exit #{symbol}/#{interval}: #{inspect(reason)}")
+    end
 
     if Keyword.get(opts, :broadcast, false) do
       Phoenix.PubSub.broadcast(FluxTrader.PubSub, "candles:live", {:new_candle, candle})

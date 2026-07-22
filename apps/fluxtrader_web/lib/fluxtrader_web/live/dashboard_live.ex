@@ -30,6 +30,7 @@ defmodule FluxTraderWeb.DashboardLive do
        candles: candles,
        status: status,
        mode: Application.get_env(:fluxtrader, :trading, []) |> Keyword.get(:mode, "simulation"),
+       last_updated: DateTime.utc_now(),
        stats: %{
          open_positions: length(positions),
          daily_pnl: 0.0,
@@ -42,7 +43,7 @@ defmodule FluxTraderWeb.DashboardLive do
   def handle_info({:new_candle, candle}, socket) do
     if candle_interval(candle) in [nil, "1m"] do
       candles = Map.put(socket.assigns.candles, candle_symbol(candle), [normalize_candle(candle)])
-      {:noreply, assign(socket, candles: candles, status: :connected)}
+      {:noreply, assign(socket, candles: candles, status: :connected, last_updated: DateTime.utc_now())}
     else
       {:noreply, socket}
     end
@@ -62,6 +63,7 @@ defmodule FluxTraderWeb.DashboardLive do
        inference_ok: true,
        inference_error: nil,
        positions: positions,
+       last_updated: DateTime.utc_now(),
        stats: %{socket.assigns.stats | open_positions: length(positions)}
      )}
   end
@@ -99,6 +101,7 @@ defmodule FluxTraderWeb.DashboardLive do
        inference_ok: inference_ok,
        inference_error: inference_error,
        positions: positions,
+       last_updated: DateTime.utc_now(),
        stats: %{socket.assigns.stats | open_positions: length(positions)}
      )}
   end
