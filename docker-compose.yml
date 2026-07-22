@@ -16,8 +16,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ml_inference:
-        condition: service_started
     ports:
       - "4000:4000"
     volumes:

@@ -1,0 +1,22 @@
+# Copy to scripts/gcp_env (do not commit secrets) and: source scripts/gcp_env
+#   cp scripts/gcp_env.example scripts/gcp_env
+
+export GCP_PROJECT=fluxtrader
+export GCP_ZONE=me-central1-b
+
+# 24/7 collector + UI + optional inference
+export GCP_ALWAYS_ON=fluxtrader-1
+
+# Ephemeral training VM (created/deleted as needed)
+export GCP_TRAIN_INSTANCE=fluxtrader-train
+export GCP_TRAIN_MACHINE=e2-standard-2   # 8GB RAM; or e2-medium for lighter runs
+
+# Paths on VMs
+export REMOTE_REPO=~/trading_agent
+export REMOTE_EXPORT=~/fluxtrader-train-export
+
+# Training defaults
+export TRAIN_EPOCHS=40
+export TRAIN_SEQ_LEN=64
+export TRAIN_DEVICE=cpu
+# export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT   # optional override

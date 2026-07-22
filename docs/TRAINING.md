@@ -6,6 +6,7 @@ Related docs:
 
 | Doc | Role |
 |-----|------|
+| [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md) | **GCP: small always-on + temp train VM + scripts** |
 | [SIMULATION.md](./SIMULATION.md) | Live paper **signals** (UI / API, no real orders) |
 | [M2_PLAN.md](./M2_PLAN.md) | M2 multi-horizon design |
 | [PLAN.md](./PLAN.md) | Full roadmap |
