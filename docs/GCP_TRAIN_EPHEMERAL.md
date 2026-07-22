@@ -1,186 +1,179 @@
-# GCP: always-on collector + ephemeral CPU training
+# GCP training (reliable multi-step pipeline)
 
-## Architecture
+## Idea
 
-```text
-┌─────────────────────────────┐     dump DB      ┌──────────────────────────────┐
-│  Always-on (small)          │ ───────────────► │  Train VM (medium/standard)  │
-│  fluxtrader-1               │                  │  fluxtrader-train (temp)     │
-│  postgres + app             │ ◄─────────────── │  restore → train_m2 → eval   │
-│  (+ ml_inference optional)  │   m2_multi.pt    │  then DELETE                 │
-└─────────────────────────────┘                  └──────────────────────────────┘
-```
+| Machine | Purpose | When it runs |
+|---------|---------|----------------|
+| **fluxtrader-1** (always-on, small) | Collect book/data, UI, optional live inference | 24/7 |
+| **fluxtrader-train** (temporary, more RAM) | Restore DB snapshot → train → eval | Only while training, then delete |
 
-| Role | Instance (default) | Size | 24/7? |
-|------|-------------------|------|-------|
-| Collect + UI + inference | `fluxtrader-1` | e2-small (2 GB) OK | **Yes** |
-| Train only | `fluxtrader-train` | e2-standard-2 (8 GB) or e2-medium | **No** — create → train → delete |
+Training runs **inside tmux on the train VM**. Your Mac can sleep or disconnect after step 3.
 
-Training does **not** need GPU yet. Same pattern later with a Spot GPU VM.
+You do **not** need tmux on the Mac.
 
 ---
 
-## One-time setup on your Mac
+## One-time setup (Mac)
 
 ```bash
-# gcloud installed + logged in
+cd /path/to/trading_agent
+
+# gcloud must work
 gcloud auth login
 gcloud config set project fluxtrader
 
-cd /path/to/trading_agent
 cp scripts/gcp_env.example scripts/gcp_env
-# edit scripts/gcp_env if names/zone differ
-chmod +x scripts/gcp_*.sh scripts/gcp_common.sh
+# edit scripts/gcp_env only if instance/zone names differ
+
+chmod +x scripts/gcp_*.sh
 ```
-
-Defaults in `scripts/gcp_env.example`:
-
-- `GCP_PROJECT=fluxtrader`
-- `GCP_ZONE=me-central1-b`
-- `GCP_ALWAYS_ON=fluxtrader-1`
-- `GCP_TRAIN_INSTANCE=fluxtrader-train`
-- `GCP_TRAIN_MACHINE=e2-standard-2`
 
 ---
 
-## Full pipeline (recommended)
+## The only pipeline (5 steps)
 
-From your **Mac** (not on the small VM):
+Run from your **Mac**, in the repo root, **in order**.
+
+### Step 1 — Dump database from always-on
 
 ```bash
-cd /path/to/trading_agent
-source scripts/gcp_env   # if you created it
+./scripts/gcp_1_dump.sh
+```
 
-# dump always-on → create train VM → train → promote ckpt → delete train VM
-./scripts/gcp_train_pipeline.sh --epochs 40 --seq-len 64
+Saves `~/fluxtrader-train-export/fluxtrader.dump` on your Mac.
 
-# keep train VM for debugging:
-./scripts/gcp_train_pipeline.sh --epochs 40 --seq-len 64 --keep-vm
+### Step 2 — Create temporary train VM
 
+```bash
+./scripts/gcp_2_create_train_vm.sh
+```
+
+Creates/starts `fluxtrader-train` (default **e2-standard-2**, 8 GB RAM) and installs Docker + tmux.
+
+First boot can take a few minutes.
+
+### Step 3 — Start training (returns immediately)
+
+```bash
+./scripts/gcp_3_start_train.sh
+# or:
+./scripts/gcp_3_start_train.sh 40 64
 # majors only (less RAM):
-TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT ./scripts/gcp_train_pipeline.sh --epochs 40
+TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT ./scripts/gcp_3_start_train.sh 40 64
 ```
 
-This will:
+This uploads the dump + code, restores Postgres on the train VM, and starts:
 
-1. `pg_dump` from always-on → `~/fluxtrader-train-export/fluxtrader.dump`
-2. Create/start `fluxtrader-train` with Docker
-3. Restore dump, run `train_m2.py` + `eval_m2.py`
-4. Download `m2_multi.pt` locally
-5. Install it on always-on model volume + restart `ml_inference` if running
-6. Delete train VM (unless `--keep-vm`)
+`train_m2.py` + `eval_m2.py`
 
-**Duration:** dump/transfer minutes; train can be **many hours** on CPU — leave Mac awake or run pipeline inside `tmux` on a machine that stays online (the train itself runs on GCP; Mac only needs to stay connected for the SSH session driving `gcp_run_train.sh`).
+inside remote tmux session **`fluxtrain`**.
 
-Tip: for long trains, either:
+**After this command finishes, you can close the laptop.** Training continues on GCP.
 
-- run `./scripts/gcp_run_train.sh` from Mac in `tmux`, or  
-- SSH to train VM and run train in `tmux` there after setup.
+### Step 4 — Check status (repeat anytime)
+
+```bash
+./scripts/gcp_4_status.sh
+```
+
+- `STILL RUNNING` → wait (hours is normal on CPU)  
+- `DONE` → go to step 5  
+
+Optional live view (SSH):
+
+```bash
+gcloud compute ssh fluxtrader-train --zone=me-central1-b --project=fluxtrader \
+  -- tmux attach -t fluxtrain
+# detach without stopping: Ctrl-b then d
+```
+
+### Step 5 — Install model on always-on and delete train VM
+
+```bash
+./scripts/gcp_5_finish.sh
+# keep train VM for debugging:
+./scripts/gcp_5_finish.sh --keep-vm
+```
+
+This:
+
+1. Downloads `m2_multi.pt` to your Mac (`~/fluxtrader-train-export/`)  
+2. Installs it on always-on Docker volume  
+3. Restarts `ml_inference` if it is running  
+4. Deletes `fluxtrader-train` (unless `--keep-vm`)
 
 ---
 
-## Step-by-step (manual / debug)
+## Checklist
 
-```bash
-source scripts/gcp_env
-
-./scripts/gcp_dump_always_on.sh
-./scripts/gcp_create_train_vm.sh
-./scripts/gcp_run_train.sh 40 64
-./scripts/gcp_promote_checkpoint.sh
-./scripts/gcp_delete_train_vm.sh
-```
-
-### On always-on after promote
-
-```bash
-gcloud compute ssh fluxtrader-1 --zone=me-central1-b --project=fluxtrader
-cd ~/trading_agent
-curl -s http://127.0.0.1:8001/health
-curl -s http://127.0.0.1:4000/api/signals | head -c 500
+```text
+[ ] Always-on fluxtrader-1 is up (postgres + app collecting)
+[ ] 1  ./scripts/gcp_1_dump.sh
+[ ] 2  ./scripts/gcp_2_create_train_vm.sh
+[ ] 3  ./scripts/gcp_3_start_train.sh
+[ ]    Mac may disconnect
+[ ] 4  ./scripts/gcp_4_status.sh   → until DONE
+[ ] 5  ./scripts/gcp_5_finish.sh
+[ ]    Optional: curl health/signals on always-on
 ```
 
 ---
 
-## Scripts reference
+## Scripts (only these)
 
-| Script | What it does |
-|--------|----------------|
-| `gcp_env.example` | Config template → copy to `gcp_env` |
-| `gcp_common.sh` | Shared vars / SSH helpers |
-| `gcp_dump_always_on.sh` | Dump Postgres from always-on to Mac |
-| `gcp_create_train_vm.sh` | Create/start train VM + Docker |
-| `gcp_run_train.sh` | Upload dump, restore, train, eval, fetch ckpt |
-| `gcp_promote_checkpoint.sh` | Install `m2_multi.pt` on always-on |
-| `gcp_delete_train_vm.sh` | Delete train VM |
-| `gcp_train_pipeline.sh` | All of the above |
+| Script | Step |
+|--------|------|
+| `scripts/gcp_env.example` | Config template → `gcp_env` |
+| `scripts/gcp_common.sh` | Shared helpers |
+| `scripts/gcp_1_dump.sh` | Dump always-on DB |
+| `scripts/gcp_2_create_train_vm.sh` | Create train VM |
+| `scripts/gcp_3_start_train.sh` | Start train in remote tmux |
+| `scripts/gcp_4_status.sh` | Check progress |
+| `scripts/gcp_5_finish.sh` | Promote checkpoint + delete train VM |
 
-Also still useful:
+Related (not part of this train loop):
 
-- `export_local.sh` / `upload_to_gcp.sh` / `import_on_server.sh` — Mac↔always-on bulk migrate  
-- `docs/TRAINING.md` — epochs, backfill, eval interpretation  
-- `docs/GCP_MIGRATE.md` — first-time data move  
-
----
-
-## What stays on the small always-on box
-
-```bash
-docker compose up -d postgres app
-# optional live signals:
-docker compose up -d ml_inference
-```
-
-Do **not** run heavy `train_m2` with 180d history on 2 GB RAM.
-
-Optional historic klines (lighter than full train) can still run on always-on:
-
-```bash
-docker compose --profile ml run --rm ml_trainer \
-  python backfill_history.py --days 180 --symbols BTCUSDT,ETHUSDT,SOLUSDT \
-  --intervals 1m,15m,1h
-```
-
-If backfill OOMs, run it on the train VM once (after restore) before `train_m2`, or backfill in chunks (`--days 30` repeatedly).
+- `docs/TRAINING.md` — what epochs/backfill/eval mean  
+- `docs/SIMULATION.md` — live signals UI  
+- `docs/GCP_MIGRATE.md` — first-time Mac → always-on data move  
 
 ---
 
-## Cost notes
+## Defaults
 
-| Resource | When you pay |
-|----------|----------------|
-| Always-on e2-small | Every hour it exists |
-| Train e2-standard-2 | Only while VM exists — **delete after train** |
-| Disk snapshots / dumps on Mac | Negligible at current size |
+| Setting | Default |
+|---------|---------|
+| Always-on | `fluxtrader-1` |
+| Train VM | `fluxtrader-train` |
+| Train machine | `e2-standard-2` (8 GB) |
+| Epochs | 40 |
+| seq-len | 64 |
+| Device | cpu |
+| Local export dir | `~/fluxtrader-train-export` |
 
-Leaving `fluxtrader-train` running overnight after training wastes money — use `gcp_delete_train_vm.sh`.
+Change via `scripts/gcp_env`.
 
 ---
 
 ## Troubleshooting
 
-| Issue | Fix |
-|-------|-----|
-| Train OOM | `e2-standard-2` or `TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT` / `--seq-len 32` |
-| Docker not ready on new VM | Wait 2–3 min; re-run `gcp_create_train_vm.sh` |
-| Dump huge / slow | Normal after 180d backfill; be patient |
-| Promote but UI old model | `docker compose restart ml_inference` on always-on |
-| Volume name warning | Harmless if data is correct; scripts grep `model_weights` |
-| SSH from Mac drops mid-train | Use `tmux` on Mac around `gcp_run_train.sh`, or train in tmux on train VM |
+| Problem | What to do |
+|---------|------------|
+| Step 1: `cd ... No such file` | Always-on repo must be `~/trading_agent`. Update scripts if path differs (`REMOTE_REPO_NAME`). |
+| Step 2: Docker not ready | Wait and re-run step 2; first boot installs packages. |
+| Step 3: OOM / train dies | Use `TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT` and/or `e2-standard-2`; check `gcp_4_status.sh` log tail. |
+| Step 4 never DONE | `gcp_4_status.sh` → read log; or `tmux attach -t fluxtrain` on train VM. |
+| Step 5: missing checkpoint | Training did not finish; do not delete VM until DONE. |
+| Live UI still old model | On always-on: `docker compose restart ml_inference` |
+| Forgot to delete train VM | `./scripts/gcp_5_finish.sh` or delete instance in GCP Console (stops billing). |
 
 ---
 
-## Recommended first serious train
+## Cost reminder
 
-1. Always-on collecting (book growing).  
-2. Optional: backfill 90–180d klines on always-on or train VM.  
-3. From Mac:
-   ```bash
-   ./scripts/gcp_train_pipeline.sh --epochs 40 --seq-len 64
-   ```
-4. Read eval output (15m gate table).  
-5. Confirm live signals pick up new weights after promote.
+- **Always-on** small VM: pays while it exists (collection).  
+- **Train VM**: pays only until step 5 deletes it — do not leave it running for days unused.
 
 ---
 
-*Last updated: 2026-07-21*
+*Last updated: 2026-07-22*

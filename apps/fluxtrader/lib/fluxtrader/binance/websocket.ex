@@ -61,17 +61,20 @@ defmodule FluxTrader.Binance.WebSocket do
   end
 
   defp poll_klines(pairs) do
-    intervals = ["1m", "5m", "1h"]
+    # Only 1m on candles:live — dashboard overwrites per-symbol and would show
+    # stale 5m/1h closes if higher TFs were broadcast on the same topic.
+    interval = "1m"
 
-    for pair <- pairs,
-        interval <- intervals do
+    for pair <- pairs do
       case FluxTrader.Binance.Client.klines(pair, interval, limit: 1) do
         {:ok, [kline | _]} ->
           candle = parse_kline(pair, interval, kline)
           Phoenix.PubSub.broadcast(FluxTrader.PubSub, "candles:live", {:new_candle, candle})
 
         {:ok, other} ->
-          Logger.warning("Unexpected kline response for #{pair}/#{interval}: #{inspect(other) |> String.slice(0, 200)}")
+          Logger.warning(
+            "Unexpected kline response for #{pair}/#{interval}: #{inspect(other) |> String.slice(0, 200)}"
+          )
 
         {:error, reason} ->
           Logger.warning("Failed to fetch klines for #{pair}/#{interval}: #{inspect(reason)}")

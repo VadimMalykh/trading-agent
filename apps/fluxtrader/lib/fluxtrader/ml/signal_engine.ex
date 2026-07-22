@@ -2,6 +2,8 @@ defmodule FluxTrader.ML.SignalEngine do
   @moduledoc """
   Periodically scores whitelist pairs via M2 inference and broadcasts signals.
   In simulation mode, logs gated signals as paper intents (no real orders).
+
+  Scoring runs in a Task so `latest/0` stays responsive while HTTP inference is in flight.
   """
   use GenServer
   require Logger
@@ -13,7 +15,7 @@ defmodule FluxTrader.ML.SignalEngine do
   end
 
   def latest do
-    GenServer.call(__MODULE__, :latest)
+    GenServer.call(__MODULE__, :latest, 5_000)
   end
 
   def refresh do
@@ -26,7 +28,9 @@ defmodule FluxTrader.ML.SignalEngine do
       signals: %{},
       inference_ok: false,
       last_error: nil,
-      last_run_at: nil
+      last_run_at: nil,
+      busy: false,
+      task_ref: nil
     }
 
     Process.send_after(self(), :tick, 5_000)
@@ -46,17 +50,65 @@ defmodule FluxTrader.ML.SignalEngine do
 
   @impl true
   def handle_cast(:refresh, state) do
-    {:noreply, run_cycle(state)}
+    {:noreply, maybe_start_cycle(state)}
   end
 
   @impl true
   def handle_info(:tick, state) do
-    state = run_cycle(state)
+    state = maybe_start_cycle(state)
     Process.send_after(self(), :tick, @poll_ms)
     {:noreply, state}
   end
 
+  def handle_info({ref, result}, %{task_ref: ref} = state) when is_reference(ref) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, apply_cycle_result(state, result)}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{task_ref: ref} = state) do
+    Logger.warning("SignalEngine cycle task died: #{inspect(reason)}")
+
+    {:noreply,
+     %{
+       state
+       | busy: false,
+         task_ref: nil,
+         inference_ok: false,
+         last_error: "cycle failed: #{inspect(reason)}"
+     }}
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp maybe_start_cycle(%{busy: true} = state), do: state
+
+  defp maybe_start_cycle(state) do
+    # Snapshot fields the worker needs; result is merged back on completion.
+    snapshot = Map.take(state, [:signals, :inference_ok, :last_error, :last_run_at])
+
+    task =
+      Task.Supervisor.async_nolink(FluxTrader.TaskSupervisor, fn ->
+        run_cycle(snapshot)
+      end)
+
+    %{state | busy: true, task_ref: task.ref}
+  end
+
+  defp apply_cycle_result(state, result) when is_map(result) do
+    %{
+      state
+      | signals: Map.get(result, :signals, state.signals),
+        inference_ok: Map.get(result, :inference_ok, state.inference_ok),
+        last_error: Map.get(result, :last_error),
+        last_run_at: Map.get(result, :last_run_at, state.last_run_at),
+        busy: false,
+        task_ref: nil
+    }
+  end
+
+  defp apply_cycle_result(state, _) do
+    %{state | busy: false, task_ref: nil}
+  end
 
   defp run_cycle(state) do
     case FluxTrader.ML.Predict.health() do

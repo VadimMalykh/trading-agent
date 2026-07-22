@@ -3,6 +3,7 @@ defmodule FluxTraderWeb.DashboardLive do
   Dashboard: candles, M2 signals, positions.
   """
   use FluxTraderWeb, :live_view
+  require Logger
 
   @refresh_ms 15_000
 
@@ -14,21 +15,23 @@ defmodule FluxTraderWeb.DashboardLive do
       Process.send_after(self(), :refresh_candles, @refresh_ms)
     end
 
-    candles = FluxTrader.Data.Candles.latest_by_symbol("1m")
+    candles = safe_candles()
     engine = safe_engine()
     status = if map_size(candles) > 0, do: :connected, else: :connecting
+    positions = safe_positions()
+    signals = if is_map(engine.signals), do: Map.values(engine.signals), else: []
 
     {:ok,
      assign(socket,
-       positions: safe_positions(),
-       signals: Map.values(engine.signals || %{}),
+       positions: positions,
+       signals: signals,
        inference_ok: engine.inference_ok,
        inference_error: engine.last_error,
        candles: candles,
        status: status,
        mode: Application.get_env(:fluxtrader, :trading, []) |> Keyword.get(:mode, "simulation"),
        stats: %{
-         open_positions: length(safe_positions()),
+         open_positions: length(positions),
          daily_pnl: 0.0,
          leverage: Application.get_env(:fluxtrader, :trading, []) |> Keyword.get(:leverage, 5)
        }
@@ -37,8 +40,12 @@ defmodule FluxTraderWeb.DashboardLive do
 
   @impl true
   def handle_info({:new_candle, candle}, socket) do
-    candles = Map.put(socket.assigns.candles, candle.symbol, [normalize_candle(candle)])
-    {:noreply, assign(socket, candles: candles, status: :connected)}
+    if candle_interval(candle) in [nil, "1m"] do
+      candles = Map.put(socket.assigns.candles, candle_symbol(candle), [normalize_candle(candle)])
+      {:noreply, assign(socket, candles: candles, status: :connected)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({:signal, signal}, socket) do
@@ -47,33 +54,62 @@ defmodule FluxTraderWeb.DashboardLive do
       |> Enum.reject(&(&1.symbol == signal.symbol))
       |> Kernel.++([signal])
 
+    positions = safe_positions()
+
     {:noreply,
      assign(socket,
        signals: signals,
        inference_ok: true,
-       positions: safe_positions(),
-       stats: %{socket.assigns.stats | open_positions: length(safe_positions())}
+       inference_error: nil,
+       positions: positions,
+       stats: %{socket.assigns.stats | open_positions: length(positions)}
      )}
   end
 
   def handle_info(:refresh_candles, socket) do
-    candles = FluxTrader.Data.Candles.latest_by_symbol("1m")
-    engine = safe_engine()
-    status = if map_size(candles) > 0, do: :connected, else: socket.assigns.status
+    # Reschedule first so a crash/timeout later cannot kill the poll loop forever
     Process.send_after(self(), :refresh_candles, @refresh_ms)
+
+    candles =
+      case safe_candles() do
+        map when map_size(map) > 0 -> map
+        _ -> socket.assigns.candles
+      end
+
+    status = if map_size(candles) > 0, do: :connected, else: socket.assigns.status
+    engine = safe_engine()
+    positions = safe_positions()
+
+    # Never wipe good signals on a transient engine timeout
+    {signals, inference_ok, inference_error} =
+      cond do
+        engine.ok? and is_map(engine.signals) ->
+          {Map.values(engine.signals), engine.inference_ok, engine.last_error}
+
+        true ->
+          {socket.assigns.signals, socket.assigns.inference_ok,
+           engine.last_error || socket.assigns.inference_error}
+      end
 
     {:noreply,
      assign(socket,
        candles: candles,
        status: status,
-       signals: Map.values(engine.signals || %{}),
-       inference_ok: engine.inference_ok,
-       inference_error: engine.last_error,
-       positions: safe_positions()
+       signals: signals,
+       inference_ok: inference_ok,
+       inference_error: inference_error,
+       positions: positions,
+       stats: %{socket.assigns.stats | open_positions: length(positions)}
      )}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  @impl true
+  def terminate(reason, _socket) do
+    Logger.info("DashboardLive terminate: #{inspect(reason)}")
+    :ok
+  end
 
   @impl true
   def render(assigns) do
@@ -184,13 +220,32 @@ defmodule FluxTraderWeb.DashboardLive do
     """
   end
 
+  defp safe_candles do
+    try do
+      FluxTrader.Data.Candles.latest_by_symbol("1m")
+    rescue
+      e ->
+        Logger.warning("candles refresh failed: #{Exception.message(e)}")
+        %{}
+    catch
+      :exit, reason ->
+        Logger.warning("candles refresh exit: #{inspect(reason)}")
+        %{}
+    end
+  end
+
   defp safe_engine do
     try do
-      FluxTrader.ML.SignalEngine.latest()
+      result = FluxTrader.ML.SignalEngine.latest()
+      Map.put(result, :ok?, true)
     rescue
-      _ -> %{signals: %{}, inference_ok: false, last_error: nil, last_run_at: nil}
+      e ->
+        Logger.warning("engine latest failed: #{Exception.message(e)}")
+        %{signals: nil, inference_ok: false, last_error: "engine error", last_run_at: nil, ok?: false}
     catch
-      :exit, _ -> %{signals: %{}, inference_ok: false, last_error: "engine down", last_run_at: nil}
+      :exit, reason ->
+        Logger.warning("engine latest exit: #{inspect(reason)}")
+        %{signals: nil, inference_ok: false, last_error: "engine busy/down", last_run_at: nil, ok?: false}
     end
   end
 
@@ -203,6 +258,12 @@ defmodule FluxTraderWeb.DashboardLive do
       :exit, _ -> []
     end
   end
+
+  defp candle_interval(c) when is_map(c), do: Map.get(c, :interval) || Map.get(c, "interval")
+  defp candle_interval(_), do: nil
+
+  defp candle_symbol(c) when is_map(c), do: Map.get(c, :symbol) || Map.get(c, "symbol")
+  defp candle_symbol(_), do: nil
 
   defp normalize_candle(c) when is_map(c) do
     %{

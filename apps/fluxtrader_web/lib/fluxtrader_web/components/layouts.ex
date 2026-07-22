@@ -17,6 +17,16 @@ defmodule FluxTraderWeb.Layouts do
         <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}></script>
       </head>
       <body>
+        <div
+          id="lv-disconnect-banner"
+          style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#e74c3c;color:#fff;text-align:center;padding:8px 12px;font-size:13px;font-weight:600;"
+        >
+          Connection lost — reconnecting…
+        </div>
+        <style>
+          .phx-disconnected #lv-disconnect-banner { display: block !important; }
+          .phx-connected #lv-disconnect-banner { display: none !important; }
+        </style>
         <%= @inner_content %>
       </body>
     </html>

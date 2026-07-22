@@ -15,7 +15,7 @@ What's working:
 - **SignalEngine** polls scores → dashboard + `/api/signals` + `[SIM_SIGNAL]` logs
 - Simulation mode only (no real orders)
 
-Docs: [TRAINING.md](./docs/TRAINING.md) · [GCP_TRAIN_EPHEMERAL.md](./docs/GCP_TRAIN_EPHEMERAL.md) · [SIMULATION.md](./docs/SIMULATION.md) · [PLAN.md](./docs/PLAN.md) · [MODEL.md](./MODEL.md) · [M1](./docs/M1_PLAN.md) · [M2](./docs/M2_PLAN.md) · [SPEC.md](./SPEC.md)
+Docs: [TRAINING.md](./docs/TRAINING.md) · **[GCP train steps](./docs/GCP_TRAIN_EPHEMERAL.md)** · [SIMULATION.md](./docs/SIMULATION.md) · [PLAN.md](./docs/PLAN.md) · [MODEL.md](./MODEL.md) · [SPEC.md](./SPEC.md)
 
 ## Quick Start
 

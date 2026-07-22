@@ -309,14 +309,12 @@ Details: [MODEL.md](../MODEL.md).
 
 ## 10. Suggested order of work (from today)
 
-1. **More data + better M2 train** — [TRAINING.md](./TRAINING.md); on GCP use [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md)  
-2. **Judge signal quality** — train/val curves + gate table (before M3)  
-3. **Live paper signals** — [SIMULATION.md](./SIMULATION.md) (optional peek)  
+1. **More data + better M2 train** — [TRAINING.md](./TRAINING.md); GCP steps: [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md)  
+2. **Judge signal quality** — `eval_m2` gate table (before M3)  
+3. **Live paper signals** — [SIMULATION.md](./SIMULATION.md)  
 4. **M3** — discrete policy + sim A/B  
 5. **S** — full paper P&L / backtest  
-6. **M4 / P** — positional, alts, production  
-
-Training runbook: **[TRAINING.md](./TRAINING.md)** · GCP burst train: **[GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md)**.
+6. **M4 / P** — positional, alts, production
 
 ---
 

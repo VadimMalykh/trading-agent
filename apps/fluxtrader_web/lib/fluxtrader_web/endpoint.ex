@@ -9,7 +9,11 @@ defmodule FluxTraderWeb.Endpoint do
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
+    websocket: [
+      connect_info: [session: @session_options],
+      # Drop idle/dead sockets after missed heartbeats (client heartbeats every 15s)
+      timeout: 60_000
+    ],
     longpoll: [connect_info: [session: @session_options]]
 
   plug Plug.Static,
