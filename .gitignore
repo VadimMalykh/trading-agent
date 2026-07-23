@@ -24,6 +24,11 @@ app_deps/
 ml/train/output/
 ml/train/checkpoints/
 ml/train/logs/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
 
 # IDE
 .vscode/
