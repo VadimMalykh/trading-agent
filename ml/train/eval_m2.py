@@ -27,10 +27,12 @@ from config import (
     VAL_FRACTION,
 )
 from data.dataset import (
-    MultiHorizonDataset,
-    apply_feature_norm,
-    build_multi_horizon_arrays,
-    time_split_global,
+    LazyMultiHorizonDataset,
+    apply_norm_to_bundle,
+    build_m2_index_bundle,
+    fit_norm_from_bundle,
+    pair_ids_for_indices,
+    time_split_indices,
 )
 from data.db import load_whitelist_pairs
 from gate import gate_sweep
@@ -58,7 +60,6 @@ def run_horizon_report(logits, y_true, thresholds, pair_ids=None):
 
     sweep = gate_sweep(logits, y_true, thresholds, mode="directional")
 
-    # Highlight serve-default gate if present
     serve_row = next((r for r in sweep if abs(r["threshold"] - GATE_THRESHOLD) < 1e-9), None)
     edge = None
     if serve_row and serve_row.get("n_gated", 0) > 0:
@@ -141,39 +142,34 @@ def main():
     print(f"Eval pairs: {pairs}")
     print(f"Checkpoint primary={primary}m seq_len={seq_len} norm={meta.get('norm', 'legacy')}")
 
-    X, y_dict, times, pair_ids, build_meta = build_multi_horizon_arrays(
-        pairs=pairs, seq_len=seq_len, horizons_minutes=horizons
-    )
-    X_tr, y_tr, t_tr, p_tr, X_val, y_val, t_va, p_va = time_split_global(
-        X, y_dict, times, pair_ids, VAL_FRACTION
-    )
+    bundle = build_m2_index_bundle(pairs=pairs, seq_len=seq_len, horizons_minutes=horizons)
+    tr_idx, va_idx = time_split_indices(bundle.times, VAL_FRACTION)
 
     if norm_stats:
-        # Use train-fit stats from checkpoint (do not refit on eval)
-        X_val = apply_feature_norm(X_val, p_va, norm_stats)
+        apply_norm_to_bundle(bundle, norm_stats)
     else:
-        # Legacy checkpoints: fit on train split of this rebuild
-        from data.dataset import fit_feature_norm
-
-        legacy = fit_feature_norm(X_tr, p_tr, pairs)
-        X_val = apply_feature_norm(X_val, p_va, legacy)
+        legacy = fit_norm_from_bundle(bundle, tr_idx)
+        apply_norm_to_bundle(bundle, legacy)
         print("Warning: checkpoint has no norm_stats; fitted from current train split")
 
-    if X_val.shape[0] == 0:
+    if va_idx.shape[0] == 0:
         print("No validation samples")
         sys.exit(2)
 
+    t_va = bundle.times[va_idx]
+    p_va = pair_ids_for_indices(bundle, va_idx)
     print(
-        f"Val samples={X_val.shape[0]} | "
+        f"Val samples={va_idx.shape[0]} | "
         f"[{_ns_to_iso(int(t_va.min()))} → {_ns_to_iso(int(t_va.max()))}]"
     )
     print(f"Val per pair: {{{', '.join(f'{p}: {int((p_va == p).sum())}' for p in pairs)}}}")
 
     loader = DataLoader(
-        MultiHorizonDataset(X_val, y_val, horizon_keys, p_va),
+        LazyMultiHorizonDataset(bundle, va_idx, horizon_keys),
         batch_size=64,
         shuffle=False,
         collate_fn=collate_mh,
+        num_workers=0,
     )
 
     all_logits = {h: [] for h in horizon_keys}
@@ -188,19 +184,18 @@ def main():
                 all_y[h].append(yb[h].cpu())
 
     thresholds = [float(t) for t in args.gate.split(",") if t.strip()]
-    # Ensure serve default is in the sweep
     if GATE_THRESHOLD not in thresholds:
         thresholds = sorted(set(thresholds + [GATE_THRESHOLD]))
 
     report = {
-        "n_val": int(X_val.shape[0]),
+        "n_val": int(va_idx.shape[0]),
         "horizons": {},
         "meta": {k: v for k, v in meta.items() if k != "norm_stats"},
         "val_time_start": _ns_to_iso(int(t_va.min())),
         "val_time_end": _ns_to_iso(int(t_va.max())),
     }
 
-    print(f"M2 Eval | val samples={X_val.shape[0]} | horizons={horizons}")
+    print(f"M2 Eval | val samples={va_idx.shape[0]} | horizons={horizons}")
     print("=" * 60)
 
     for h in horizon_keys:

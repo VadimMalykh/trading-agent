@@ -36,12 +36,14 @@ from config import (
     WEIGHT_DECAY,
 )
 from data.dataset import (
-    MultiHorizonDataset,
-    apply_feature_norm,
-    build_multi_horizon_arrays,
+    LazyMultiHorizonDataset,
+    apply_norm_to_bundle,
+    build_m2_index_bundle,
     class_balance,
-    fit_feature_norm,
-    time_split_global,
+    fit_norm_from_bundle,
+    labels_for_indices,
+    pair_ids_for_indices,
+    time_split_indices,
 )
 from data.db import load_whitelist_pairs, table_counts
 from gate import gate_metrics
@@ -80,6 +82,12 @@ def parse_args():
         type=float,
         default=CKPT_GATE_THRESHOLD,
         help="Directional gate threshold for checkpoint score",
+    )
+    p.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help="DataLoader workers (0 = main process only, lowest RAM)",
     )
     return p.parse_args()
 
@@ -125,10 +133,6 @@ def collect_primary_logits(model, loader, primary_key, device):
 
 
 def checkpoint_score(logits: torch.Tensor, y: torch.Tensor, gate: float, min_gated: int) -> tuple[float, dict]:
-    """
-    Rank checkpoints by gated directional accuracy at `gate`.
-    Penalize if too few gated samples so the model cannot win by never trading.
-    """
     m = gate_metrics(logits, y, gate, mode="directional")
     dir_acc = float(m.get("gated_dir_acc") or 0.0)
     n_g = int(m.get("n_gated") or 0)
@@ -150,7 +154,7 @@ def main():
     if primary_key not in horizon_keys:
         primary_key = horizon_keys[min(1, len(horizon_keys) - 1)]
 
-    print("FluxTrader M2 Training (shared encoder + multi-head)")
+    print("FluxTrader M2 Training (shared encoder + multi-head, lazy windows)")
     print("=" * 50)
     print(f"PyTorch {torch.__version__} | device={device}")
     print(f"Horizons (min): {horizons} | primary={primary_key}m | seq_len={args.seq_len}")
@@ -168,64 +172,63 @@ def main():
         pairs = [p.strip().upper() for p in args.pairs.split(",") if p.strip()]
     else:
         pairs = load_whitelist_pairs(fallback=PAIRS)
-        # Prefer majors if whitelist is empty/odd
         if not pairs:
             pairs = list(PAIRS)
     print(f"Training pairs: {pairs}")
 
-    X, y_dict, times, pair_ids, meta = build_multi_horizon_arrays(
+    bundle = build_m2_index_bundle(
         pairs=pairs,
         seq_len=args.seq_len,
         horizons_minutes=horizons,
     )
+    meta = bundle.meta
     print(f"\nSamples: {meta.get('n_samples', 0)} | per pair: {meta.get('n_per_pair')}")
     print(f"Flat thresholds: {meta.get('flat_thresholds')}")
+    feat_mb = sum(s.feats.nbytes for s in bundle.series) / (1024 * 1024)
+    print(f"Feature matrices in RAM: {feat_mb:.1f} MiB (lazy windows — not full N×seq×F)")
 
-    n = X.shape[0]
+    n = bundle.n_samples
     if n < 50:
         print("Not enough samples (need ~50+). Collect more data, then re-run.")
         if n < 10:
             sys.exit(2)
 
-    X_tr, y_tr, t_tr, p_tr, X_va, y_va, t_va, p_va = time_split_global(
-        X, y_dict, times, pair_ids, VAL_FRACTION
-    )
+    tr_idx, va_idx = time_split_indices(bundle.times, VAL_FRACTION)
+    t_tr = bundle.times[tr_idx]
+    t_va = bundle.times[va_idx]
     print(
-        f"Split global time | train={X_tr.shape[0]} val={X_va.shape[0]} | "
+        f"Split global time | train={tr_idx.shape[0]} val={va_idx.shape[0]} | "
         f"train [{_ns_to_iso(int(t_tr.min()))} → {_ns_to_iso(int(t_tr.max()))}] | "
         f"val [{_ns_to_iso(int(t_va.min()))} → {_ns_to_iso(int(t_va.max()))}]"
     )
     for h in horizon_keys:
-        bal = class_balance(y_tr[h])
+        y_tr_h = labels_for_indices(bundle, tr_idx, h)
+        bal = class_balance(y_tr_h)
         print(
             f"  train class bal {h}m: down={bal['down']:.2f} flat={bal['flat']:.2f} "
             f"up={bal['up']:.2f} (n={bal['n']})"
         )
 
-    norm_stats = fit_feature_norm(X_tr, p_tr, pairs)
-    X_tr = apply_feature_norm(X_tr, p_tr, norm_stats)
-    X_va = apply_feature_norm(X_va, p_va, norm_stats)
+    norm_stats = fit_norm_from_bundle(bundle, tr_idx)
+    apply_norm_to_bundle(bundle, norm_stats)
     meta["norm_stats"] = norm_stats
     meta["norm"] = "train_only_per_pair"
     meta["val_fraction"] = VAL_FRACTION
     meta["split"] = "global_time"
 
-    # per-pair val counts
+    p_va = pair_ids_for_indices(bundle, va_idx)
     val_pair_counts = {p: int(np.sum(p_va == p)) for p in pairs}
     print(f"Val samples per pair: {val_pair_counts}")
 
-    train_loader = DataLoader(
-        MultiHorizonDataset(X_tr, y_tr, horizon_keys, p_tr),
+    loader_kw = dict(
         batch_size=args.batch_size,
         shuffle=False,
         collate_fn=collate_mh,
+        num_workers=args.num_workers,
+        pin_memory=device.type == "cuda",
     )
-    val_loader = DataLoader(
-        MultiHorizonDataset(X_va, y_va, horizon_keys, p_va),
-        batch_size=args.batch_size,
-        shuffle=False,
-        collate_fn=collate_mh,
-    )
+    train_loader = DataLoader(LazyMultiHorizonDataset(bundle, tr_idx, horizon_keys), **loader_kw)
+    val_loader = DataLoader(LazyMultiHorizonDataset(bundle, va_idx, horizon_keys), **loader_kw)
 
     model = SharedEncoderMultiHead(
         input_size=FEATURE_DIM,
@@ -236,7 +239,8 @@ def main():
 
     crits = {}
     for h in horizon_keys:
-        counts = np.bincount(y_tr[h], minlength=3).astype(np.float64)
+        y_tr_h = labels_for_indices(bundle, tr_idx, h)
+        counts = np.bincount(y_tr_h, minlength=3).astype(np.float64)
         counts = np.maximum(counts, 1.0)
         w = counts.sum() / (3.0 * counts)
         w = w / w.mean()
@@ -274,6 +278,8 @@ def main():
         model.eval()
         va_loss, va_n = 0.0, 0
         va_acc_sum = {h: 0.0 for h in horizon_keys}
+        # Collect primary logits during val pass (avoid second full epoch)
+        plogits_chunks, py_chunks = [], []
         with torch.no_grad():
             for xb, yb in val_loader:
                 xb = xb.to(device)
@@ -286,14 +292,18 @@ def main():
                 for h in horizon_keys:
                     va_acc_sum[h] += accs[h] * bs
                 va_n += bs
+                plogits_chunks.append(logits[primary_key].cpu())
+                py_chunks.append(yb[primary_key].cpu())
 
         va_loss /= max(va_n, 1)
         va_acc = {h: va_acc_sum[h] / max(va_n, 1) for h in horizon_keys}
 
-        plogits, py = collect_primary_logits(model, val_loader, primary_key, device)
-        score, gate_m = checkpoint_score(
-            plogits, py, args.ckpt_gate, MIN_GATED_FOR_CKPT
-        ) if plogits is not None else (-1.0, {})
+        if plogits_chunks:
+            plogits = torch.cat(plogits_chunks, dim=0)
+            py = torch.cat(py_chunks, dim=0)
+            score, gate_m = checkpoint_score(plogits, py, args.ckpt_gate, MIN_GATED_FOR_CKPT)
+        else:
+            score, gate_m = -1.0, {}
 
         history.append(
             {
@@ -317,8 +327,7 @@ def main():
             f"gate@{args.ckpt_gate:.2f} cov={g_cov:.3f} n={g_n} dir_acc={g_dir:.3f} score={score:.4f}"
         )
 
-        improved = score > best_score + 1e-6
-        if improved:
+        if score > best_score + 1e-6:
             best_score = score
             Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
             Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)

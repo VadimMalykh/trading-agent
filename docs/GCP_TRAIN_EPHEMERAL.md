@@ -184,13 +184,13 @@ Related (not part of this train loop):
 |---------|---------|
 | Always-on | `fluxtrader-1` |
 | Train VM | `fluxtrader-train` |
-| Train machine | `e2-standard-2` (8 GB) |
+| Train machine | `e2-standard-2` (**8 GB**) — enough after lazy-window train path |
 | Epochs | 40 |
 | seq-len | 64 |
 | horizons | `5,30,60` |
 | primary | 30 |
 | pairs | `BTCUSDT,ETHUSDT,SOLUSDT` |
-| Device | cpu |
+| Device | cpu (GPU optional — see below) |
 | Local export dir | `~/fluxtrader-train-export` |
 
 Change via `scripts/gcp_env`.
@@ -203,7 +203,8 @@ Change via `scripts/gcp_env`.
 |---------|------------|
 | Step 1: `cd ... No such file` | Always-on repo must be `~/trading_agent`. Update scripts if path differs (`REMOTE_REPO_NAME`). |
 | Step 2: Docker not ready | Wait and re-run step 2; first boot installs packages. |
-| Step 3: OOM / train dies | Use majors-only `TRAIN_PAIRS` and/or larger machine; check `gcp_4_status.sh` log tail. |
+| Step 3: OOM / train dies | Need latest lazy-window `ml/` (step 3 uploads it). If still OOM on 8GB, set `GCP_TRAIN_MACHINE=e2-standard-4` and recreate VM. |
+| Status STILL RUNNING but tmux exited | Fixed in latest `gcp_4_status.sh` — pull scripts; should say **FAILED**. |
 | `pg_restore` / empty candles / no orderbook | Old bug with `--clean`. Re-run **step 3** with latest scripts (fresh volume restore + verify counts before train). |
 | Step 4 never DONE | `gcp_4_status.sh` → read log; or `tmux attach -t fluxtrain` on train VM. |
 | Step 5: missing checkpoint | Training did not finish; do not delete VM until DONE. |
@@ -218,6 +219,18 @@ Change via `scripts/gcp_env`.
 
 - **Always-on** small VM: pays while it exists (collection).  
 - **Train VM**: pays only until step 5 deletes it — do not leave it running for days unused.
+
+### CPU vs GPU for train VM
+
+| | CPU (`e2-standard-2` 8GB) | GPU (e.g. T4) |
+|--|--------------------------|----------------|
+| Setup | Works today (Docker CPU image) | Needs NVIDIA driver + toolkit + compose GPU |
+| Speed | Slow epochs (hours) | Often **5–20×** faster for LSTM train loop |
+| $/hour | Lower | Higher |
+| Total $ | OK for occasional runs | Often cheaper if wall-clock drops a lot |
+| When worth it | Default path | Frequent multi-hour retrains |
+
+**Recommendation:** train on **8GB CPU** (lazy windows). Bump to 16GB only if OOM returns. GPU later if wall-clock hurts — it does not fix label quality.
 
 ---
 

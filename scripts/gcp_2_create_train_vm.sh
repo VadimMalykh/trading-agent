@@ -13,7 +13,16 @@ if gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
   --project="$GCP_PROJECT" --zone="$GCP_ZONE" >/dev/null 2>&1; then
   STATUS=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
     --project="$GCP_PROJECT" --zone="$GCP_ZONE" --format='get(status)')
-  echo "    exists (status=$STATUS)"
+  CUR_MT=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
+    --project="$GCP_PROJECT" --zone="$GCP_ZONE" --format='get(machineType.basename())')
+  echo "    exists (status=$STATUS machineType=$CUR_MT want=$GCP_TRAIN_MACHINE)"
+  if [[ "$CUR_MT" != "$GCP_TRAIN_MACHINE" ]]; then
+    echo "ERROR: train VM machine type is $CUR_MT but gcp_env wants $GCP_TRAIN_MACHINE."
+    echo "  Resize requires recreate (disk data on train VM is disposable):"
+    echo "  gcloud compute instances delete $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT --quiet"
+    echo "  then re-run ./scripts/gcp_2_create_train_vm.sh"
+    exit 1
+  fi
   if [[ "$STATUS" != "RUNNING" ]]; then
     gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
       --project="$GCP_PROJECT" --zone="$GCP_ZONE"
