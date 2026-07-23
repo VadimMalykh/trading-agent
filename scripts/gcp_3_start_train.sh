@@ -13,6 +13,8 @@ echo_cfg
 EPOCHS="${1:-$TRAIN_EPOCHS}"
 SEQ_LEN="${2:-$TRAIN_SEQ_LEN}"
 PAIRS_ARG="${TRAIN_PAIRS:-}"
+HORIZONS="${TRAIN_HORIZONS:-5,30,60}"
+PRIMARY="${TRAIN_PRIMARY:-30}"
 
 DUMP_GZ="$EXPORT_DIR/fluxtrader_train.sql.gz"
 if [[ ! -f "$DUMP_GZ" ]]; then
@@ -28,7 +30,8 @@ if ! gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
 fi
 
 echo ""
-echo "==> STEP 3: upload + start train in remote tmux (epochs=$EPOCHS seq=$SEQ_LEN)"
+echo "==> STEP 3: upload + start train in remote tmux"
+echo "    epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist}"
 
 gcloud compute scp --project="$GCP_PROJECT" --zone="$GCP_ZONE" --recurse \
   "$ROOT/docker-compose.yml" "$ROOT/ml" "$ROOT/scripts" \
@@ -50,6 +53,7 @@ if [[ -n "$PAIRS_ARG" ]]; then
 fi
 
 # Remote train script — plain SQL restore into fresh volume (reliable)
+# Local vars expanded here; remote heredoc body is fixed after expansion.
 gssh "$GCP_TRAIN_INSTANCE" "cat > \$HOME/run_flux_train.sh << 'ENDSCRIPT'
 #!/bin/bash
 set -euo pipefail
@@ -94,12 +98,21 @@ fi
 
 docker volume create trading_agent_model_weights 2>/dev/null || true
 
-echo \"=== train_m2 epochs=${EPOCHS} seq=${SEQ_LEN} ===\"
-docker compose --profile ml run --rm ml_trainer \\
-  python train_m2.py --device ${TRAIN_DEVICE} --epochs ${EPOCHS} --seq-len ${SEQ_LEN} ${PAIRS_FLAG}
+echo \"=== train_m2 epochs=${EPOCHS} seq=${SEQ_LEN} horizons=${HORIZONS} primary=${PRIMARY} ===\"
+docker compose --profile ml run --rm \\
+  -e HORIZONS_MINUTES=${HORIZONS} \\
+  -e PRIMARY_HORIZON=${PRIMARY} \\
+  -e SEQ_LEN=${SEQ_LEN} \\
+  ml_trainer \\
+  python train_m2.py --device ${TRAIN_DEVICE} --epochs ${EPOCHS} --seq-len ${SEQ_LEN} \\
+    --horizons ${HORIZONS} --primary ${PRIMARY} ${PAIRS_FLAG}
 
 echo \"=== eval_m2 ===\"
-docker compose --profile ml run --rm ml_trainer \\
+docker compose --profile ml run --rm \\
+  -e HORIZONS_MINUTES=${HORIZONS} \\
+  -e PRIMARY_HORIZON=${PRIMARY} \\
+  -e SEQ_LEN=${SEQ_LEN} \\
+  ml_trainer \\
   python eval_m2.py --checkpoint /models/m2_multi.pt --device ${TRAIN_DEVICE} \\
   --gate 0.35,0.4,0.45,0.5,0.55,0.6 || true
 

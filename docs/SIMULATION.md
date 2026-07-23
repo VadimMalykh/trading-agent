@@ -83,8 +83,8 @@ curl -s 'http://localhost:8001/predict?symbol=BTCUSDT' | jq .
 Fields:
 - `trade` — passed directional confidence gate  
 - `side` — `BUY` / `SELL` / `FLAT`  
-- `confidence` — `max(p_up, p_down)` on primary horizon (15m)  
-- `horizons` — per 1m / 15m / 60m detail  
+- `confidence` — `max(p_up, p_down)` on primary horizon (default **30m**)  
+- `horizons` — per-head detail (default 5m / 30m / 60m)  
 
 ### 3. App-facing signals
 ```bash
@@ -103,7 +103,7 @@ docker compose logs -f app | grep SIM_SIGNAL
 ```
 Example:
 ```text
-[SIM_SIGNAL] BUY BTCUSDT conf=0.412 price=65000.0 h=15m gate=0.4
+[SIM_SIGNAL] BUY BTCUSDT conf=0.412 price=65000.0 h=30m gate=0.4
 ```
 
 ---
@@ -173,7 +173,7 @@ No need to rebuild app image if only the model file changed.
 | Env | Default | Effect |
 |-----|---------|--------|
 | `ML_GATE_THRESHOLD` | `0.40` | Higher → fewer TRADE signals |
-| `PRIMARY_HORIZON` | `15` | Horizon used for trade decision |
+| `PRIMARY_HORIZON` | `30` | Horizon used for trade decision (checkpoint meta overrides if present) |
 | `TRADING_MODE` | `simulation` | Keep simulation for paper |
 
 ---

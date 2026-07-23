@@ -21,6 +21,10 @@ fi
 : "${TRAIN_EPOCHS:=40}"
 : "${TRAIN_SEQ_LEN:=64}"
 : "${TRAIN_DEVICE:=cpu}"
+# M2 defaults (Phase 1+2): 5/30/60 heads, primary 30m, majors preferred
+: "${TRAIN_HORIZONS:=5,30,60}"
+: "${TRAIN_PRIMARY:=30}"
+: "${TRAIN_PAIRS:=BTCUSDT,ETHUSDT,SOLUSDT}"
 
 # Local folder for dumps/checkpoints (on your Mac)
 : "${EXPORT_DIR:=$HOME/fluxtrader-train-export}"
@@ -49,4 +53,6 @@ echo_cfg() {
   echo "project=$GCP_PROJECT  zone=$GCP_ZONE"
   echo "always-on=$GCP_ALWAYS_ON  train-vm=$GCP_TRAIN_INSTANCE ($GCP_TRAIN_MACHINE)"
   echo "export-dir=$EXPORT_DIR"
+  echo "train: epochs=$TRAIN_EPOCHS seq=$TRAIN_SEQ_LEN device=$TRAIN_DEVICE"
+  echo "       horizons=$TRAIN_HORIZONS primary=${TRAIN_PRIMARY}m pairs=$TRAIN_PAIRS"
 }

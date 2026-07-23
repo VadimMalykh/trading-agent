@@ -93,39 +93,45 @@ docker compose build --no-cache ml_trainer ml_inference
 docker compose up -d postgres
 
 docker compose --profile ml run --rm ml_trainer \
-  python train_m2.py --device cpu --epochs 30
+  python train_m2.py --device cpu --epochs 40 \
+  --pairs BTCUSDT,ETHUSDT,SOLUSDT
 ```
 
-Writes best checkpoint (by **15m** val acc) to:
+Writes best checkpoint (by **primary gated dir_acc** @ gate 0.40, with early stop on val loss) to:
 
 - `/models/m2_multi.pt` (Docker volume `model_weights`)  
 - `/workspace/train/output/m2_multi.pt` + `history_m2.json`
+
+**Defaults (Phase 1+2):** horizons `5,30,60`, primary **30m**, `seq_len=64`, train-only per-pair z-score (stored in checkpoint; serve uses the same), global time val split.
 
 ### Useful knobs
 
 | Flag / env | Default | Suggestions |
 |------------|---------|-------------|
-| `--epochs` | 10 | **20–50**; stop when val stops improving |
-| `--seq-len` | 32 | 32 or **64** with more data |
-| `--horizons` | `1,15,60` | keep unless experimenting |
-| `--primary` | 15 | keep 15m as product horizon |
+| `--epochs` | 40 | early-stops on val loss (`--patience`, default 5) |
+| `--seq-len` | 64 | 64 default; try 96 for slower horizons |
+| `--horizons` | `5,30,60` | drop 1m; optional `15,60,240` experiment |
+| `--primary` | 30 | product / checkpoint horizon |
+| `--ckpt-gate` | 0.40 | gate used when ranking checkpoints |
 | `--batch-size` | 32 | 32–64 |
-| `--pairs` | **DB UI whitelist** (auto) | omit flag to use Settings pairs; or pass e.g. `BTCUSDT,DOGEUSDT` |
-| `--device` | `cpu` | `cuda` only if GPU available in container |
-| `LR` env | `1e-3` | try `5e-4` if unstable |
+| `--pairs` | **DB UI whitelist** (auto) | prefer majors: `BTCUSDT,ETHUSDT,SOLUSDT` |
+| `--device` | `cpu` | `cuda` if GPU available in container |
+| `LR` / `--lr` | `5e-4` | |
+| `WEIGHT_DECAY` | `1e-4` | |
 | `BATCH_SIZE` env | 32 | same as flag |
 
 Examples:
 
 ```bash
-# Longer context
+# GPU
 docker compose --profile ml run --rm ml_trainer \
-  python train_m2.py --device cpu --epochs 40 --seq-len 64
+  python train_m2.py --device cuda --epochs 40 \
+  --pairs BTCUSDT,ETHUSDT,SOLUSDT
 
 # Custom pairs / horizons (override DB whitelist)
 docker compose --profile ml run --rm ml_trainer \
-  python train_m2.py --device cpu --epochs 30 \
-  --pairs BTCUSDT,ETHUSDT,DOGEUSDT --horizons 1,15,60 --primary 15
+  python train_m2.py --device cpu --epochs 40 \
+  --pairs BTCUSDT,ETHUSDT,SOLUSDT --horizons 5,30,60 --primary 30
 ```
 
 **Pairs source:** By default `train_m2` / `eval_m2` load the **Settings UI whitelist** from Postgres (`app_settings`).  
@@ -169,7 +175,7 @@ Output also in `ml/train/output/eval_m2.json`.
 | **dir_acc** | Hit rate among gated trades where truth was up/down. |
 | **mean_conf** | Avg conf on gated samples. |
 
-Focus on **15m** for product decisions. Compare **before vs after** more data/epochs using the same `--gate` list.
+Focus on **primary 30m** (and its gate table) for product decisions. Compare **before vs after** more data/epochs using the same `--gate` list. Look at **edge = dir_acc − 0.5** at the serve gate (`*`).
 
 ---
 
@@ -177,15 +183,16 @@ Focus on **15m** for product decisions. Compare **before vs after** more data/ep
 
 ### During training
 
-Each epoch logs train/val loss and per-horizon val acc. Checkpoint saves when **primary 15m** val acc improves (not necessarily last epoch).
+Each epoch logs train/val loss, per-horizon val acc, and **gate@0.40** coverage / dir_acc / score.  
+Checkpoint saves when **primary gated score** improves. Training **early-stops** when val loss stops improving (`patience`, default 5).
 
 | Pattern | Meaning | Action |
 |---------|---------|--------|
 | train loss ↓ and val loss ↓ | Healthy learning | Continue / more data |
-| train ↓ , val ↑ or flat | **Overfitting** | Fewer epochs, more data, lower LR; trust **best** ckpt |
+| train ↓ , val ↑ or flat | **Overfitting** | Trust **best** ckpt (early stop should help) |
 | Both stuck high | Underfit / hard task | More data, more capacity/epochs, check labels |
-| Best 15m val early, then worse | Classic overfit | Use saved best `m2_multi.pt` |
-| 1m acc high but all-flat confusion | Flat-dominated score | Prefer gate **dir_acc** over raw acc |
+| Best gate score early, then worse | Classic overfit | Use saved best `m2_multi.pt` |
+| High 3-class acc, tiny gate cov | Flat-dominated / unconfident | Prefer gate **dir_acc** + coverage over raw acc |
 
 ### After training
 
@@ -197,15 +204,16 @@ Each epoch logs train/val loss and per-horizon val acc. Checkpoint saves when **
 
 | Field | Example |
 |-------|---------|
-| Date | 2026-07-20 |
-| Backfill | 180d 1m/15m/1h |
+| Date | 2026-07-23 |
+| Backfill | 180d 1m (+ funding optional) |
 | Samples (train log) | ~50000 |
-| Epochs | 30 |
+| Horizons / primary | 5,30,60 / 30 |
+| Epochs (stopped) | 12 (early stop) |
 | seq_len | 64 |
-| Best 15m val acc | 0.55 |
-| eval 15m @ gate 0.4 coverage | 0.05 |
-| eval 15m @ gate 0.4 dir_acc | 0.52 |
-| Notes | less flat collapse |
+| Best primary gate score | 0.56 |
+| eval 30m @ gate 0.4 coverage | 0.15 |
+| eval 30m @ gate 0.4 dir_acc | 0.56 |
+| Notes | global split + train-only norm |
 
 ---
 
@@ -221,7 +229,7 @@ curl -s http://localhost:4000/api/signals
 ```
 
 - **FLAT / SKIP** most of the time can be normal (gate + weak model).  
-- Live conf uses a slightly different online z-score than train — don’t expect identical stats to `eval_m2`.  
+- Live serve uses **checkpoint train-only norm_stats** (same as eval) when present; health shows `norm=ckpt`.  
 - This is **not** full P&L paper trading.
 
 ---
@@ -229,14 +237,16 @@ curl -s http://localhost:4000/api/signals
 ## 7. Recommended loop (no weeks of waiting)
 
 ```text
-1. backfill_history.py --days 90 or 180
-2. train_m2.py --epochs 30 (or 40–50)
-3. Watch train vs val each epoch
-4. eval_m2.py — save gate table (focus 15m)
-5. Optional: restart ml_inference, glance UI
-6. If overfit → more data / fewer epochs / lower LR
+1. backfill_history.py --days 90 or 180 (optional if DB already full)
+2. train_m2.py --epochs 40 (early-stops; defaults 5/30/60 primary 30)
+3. Watch train vs val + gate score each epoch
+4. eval_m2.py — save gate table (focus 30m PRIMARY)
+5. restart ml_inference (or GCP step 5), glance UI
+6. If overfit / weak edge → more data / label tuning; not more blind epochs
 7. Repeat; only then consider M3 or full paper P&L
 ```
+
+**GCP:** use [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md) steps 1→5 (code + model promote).
 
 ---
 
@@ -271,7 +281,8 @@ docker compose --profile ml run --rm ml_trainer \
 
 # Train
 docker compose --profile ml run --rm ml_trainer \
-  python train_m2.py --device cpu --epochs 30
+  python train_m2.py --device cpu --epochs 40 \
+  --pairs BTCUSDT,ETHUSDT,SOLUSDT
 
 # Eval signals (offline)
 docker compose --profile ml run --rm ml_trainer \
@@ -280,9 +291,9 @@ docker compose --profile ml run --rm ml_trainer \
 
 # Live paper signals
 docker compose up -d postgres ml_inference app
-docker compose restart ml_inference   # after retrain
+docker compose up -d --force-recreate ml_inference   # after retrain
 ```
 
 ---
 
-*Last updated: 2026-07-20*
+*Last updated: 2026-07-23*

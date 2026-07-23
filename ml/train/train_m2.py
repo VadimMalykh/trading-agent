@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M2 training: shared encoder + multi-horizon heads + checkpoint for gating eval."""
+"""M2 training: shared encoder + multi-horizon heads + gated checkpoint."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -18,20 +19,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import (
     BATCH_SIZE,
+    CKPT_GATE_THRESHOLD,
+    EARLY_STOP_PATIENCE,
     EPOCHS,
     FEATURE_DIM,
     HIDDEN_SIZE,
     HORIZONS_MINUTES,
     LR,
+    MIN_GATED_FOR_CKPT,
     MODEL_DIR,
     OUTPUT_DIR,
     PAIRS,
     PRIMARY_HORIZON,
     SEQ_LEN,
     VAL_FRACTION,
+    WEIGHT_DECAY,
 )
-from data.dataset import MultiHorizonDataset, build_multi_horizon_arrays, time_split
+from data.dataset import (
+    MultiHorizonDataset,
+    apply_feature_norm,
+    build_multi_horizon_arrays,
+    class_balance,
+    fit_feature_norm,
+    time_split_global,
+)
 from data.db import load_whitelist_pairs, table_counts
+from gate import gate_metrics
 from models.multi_horizon import SharedEncoderMultiHead
 
 
@@ -45,15 +58,29 @@ def parse_args():
         "--pairs",
         type=str,
         default="",
-        help="Comma-separated pairs. Default: UI whitelist from DB (app_settings), else candles symbols.",
+        help="Comma-separated pairs. Default: UI whitelist from DB, else config majors.",
     )
     p.add_argument(
         "--horizons",
         type=str,
         default=",".join(str(h) for h in HORIZONS_MINUTES),
-        help="Comma-separated horizon minutes, e.g. 1,15,60",
+        help="Comma-separated horizon minutes, e.g. 5,30,60",
     )
-    p.add_argument("--primary", type=int, default=PRIMARY_HORIZON, help="Horizon used for best-ckpt selection")
+    p.add_argument(
+        "--primary",
+        type=int,
+        default=PRIMARY_HORIZON,
+        help="Horizon used for best-ckpt selection",
+    )
+    p.add_argument("--lr", type=float, default=LR)
+    p.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY)
+    p.add_argument("--patience", type=int, default=EARLY_STOP_PATIENCE)
+    p.add_argument(
+        "--ckpt-gate",
+        type=float,
+        default=CKPT_GATE_THRESHOLD,
+        help="Directional gate threshold for checkpoint score",
+    )
     return p.parse_args()
 
 
@@ -79,6 +106,39 @@ def collate_mh(batch):
     return xs, ys
 
 
+def _ns_to_iso(ns: int) -> str:
+    return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def collect_primary_logits(model, loader, primary_key, device):
+    logits_all, y_all = [], []
+    model.eval()
+    with torch.no_grad():
+        for xb, yb in loader:
+            xb = xb.to(device)
+            out = model(xb)
+            logits_all.append(out[primary_key].cpu())
+            y_all.append(yb[primary_key].cpu())
+    if not logits_all:
+        return None, None
+    return torch.cat(logits_all, dim=0), torch.cat(y_all, dim=0)
+
+
+def checkpoint_score(logits: torch.Tensor, y: torch.Tensor, gate: float, min_gated: int) -> tuple[float, dict]:
+    """
+    Rank checkpoints by gated directional accuracy at `gate`.
+    Penalize if too few gated samples so the model cannot win by never trading.
+    """
+    m = gate_metrics(logits, y, gate, mode="directional")
+    dir_acc = float(m.get("gated_dir_acc") or 0.0)
+    n_g = int(m.get("n_gated") or 0)
+    if n_g >= min_gated:
+        score = dir_acc
+    else:
+        score = dir_acc * (n_g / max(min_gated, 1))
+    return score, m
+
+
 def main():
     args = parse_args()
     device = torch.device(
@@ -94,7 +154,7 @@ def main():
     print("=" * 50)
     print(f"PyTorch {torch.__version__} | device={device}")
     print(f"Horizons (min): {horizons} | primary={primary_key}m | seq_len={args.seq_len}")
-    print(f"Pairs: {args.pairs}")
+    print(f"lr={args.lr} wd={args.weight_decay} patience={args.patience} ckpt_gate={args.ckpt_gate}")
 
     print("\nDB table counts:")
     try:
@@ -107,15 +167,19 @@ def main():
     if args.pairs.strip():
         pairs = [p.strip().upper() for p in args.pairs.split(",") if p.strip()]
     else:
-        pairs = load_whitelist_pairs()
+        pairs = load_whitelist_pairs(fallback=PAIRS)
+        # Prefer majors if whitelist is empty/odd
+        if not pairs:
+            pairs = list(PAIRS)
     print(f"Training pairs: {pairs}")
 
-    X, y_dict, meta = build_multi_horizon_arrays(
+    X, y_dict, times, pair_ids, meta = build_multi_horizon_arrays(
         pairs=pairs,
         seq_len=args.seq_len,
         horizons_minutes=horizons,
     )
     print(f"\nSamples: {meta.get('n_samples', 0)} | per pair: {meta.get('n_per_pair')}")
+    print(f"Flat thresholds: {meta.get('flat_thresholds')}")
 
     n = X.shape[0]
     if n < 50:
@@ -123,15 +187,41 @@ def main():
         if n < 10:
             sys.exit(2)
 
-    X_tr, y_tr, X_va, y_va = time_split(X, y_dict, VAL_FRACTION)
+    X_tr, y_tr, t_tr, p_tr, X_va, y_va, t_va, p_va = time_split_global(
+        X, y_dict, times, pair_ids, VAL_FRACTION
+    )
+    print(
+        f"Split global time | train={X_tr.shape[0]} val={X_va.shape[0]} | "
+        f"train [{_ns_to_iso(int(t_tr.min()))} → {_ns_to_iso(int(t_tr.max()))}] | "
+        f"val [{_ns_to_iso(int(t_va.min()))} → {_ns_to_iso(int(t_va.max()))}]"
+    )
+    for h in horizon_keys:
+        bal = class_balance(y_tr[h])
+        print(
+            f"  train class bal {h}m: down={bal['down']:.2f} flat={bal['flat']:.2f} "
+            f"up={bal['up']:.2f} (n={bal['n']})"
+        )
+
+    norm_stats = fit_feature_norm(X_tr, p_tr, pairs)
+    X_tr = apply_feature_norm(X_tr, p_tr, norm_stats)
+    X_va = apply_feature_norm(X_va, p_va, norm_stats)
+    meta["norm_stats"] = norm_stats
+    meta["norm"] = "train_only_per_pair"
+    meta["val_fraction"] = VAL_FRACTION
+    meta["split"] = "global_time"
+
+    # per-pair val counts
+    val_pair_counts = {p: int(np.sum(p_va == p)) for p in pairs}
+    print(f"Val samples per pair: {val_pair_counts}")
+
     train_loader = DataLoader(
-        MultiHorizonDataset(X_tr, y_tr, horizon_keys),
+        MultiHorizonDataset(X_tr, y_tr, horizon_keys, p_tr),
         batch_size=args.batch_size,
         shuffle=False,
         collate_fn=collate_mh,
     )
     val_loader = DataLoader(
-        MultiHorizonDataset(X_va, y_va, horizon_keys),
+        MultiHorizonDataset(X_va, y_va, horizon_keys, p_va),
         batch_size=args.batch_size,
         shuffle=False,
         collate_fn=collate_mh,
@@ -142,9 +232,8 @@ def main():
         hidden_size=HIDDEN_SIZE,
         horizons_minutes=horizons,
     ).to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=LR)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-    # Inverse-frequency class weights (reduce collapse to "flat")
     crits = {}
     for h in horizon_keys:
         counts = np.bincount(y_tr[h], minlength=3).astype(np.float64)
@@ -154,7 +243,9 @@ def main():
         crits[h] = nn.CrossEntropyLoss(weight=torch.tensor(w, dtype=torch.float32, device=device))
         print(f"  class weights {h}m: down={w[0]:.2f} flat={w[1]:.2f} up={w[2]:.2f}")
 
-    best_primary = -1.0
+    best_score = -1.0
+    best_val_loss = float("inf")
+    bad_epochs = 0
     history = []
 
     for epoch in range(1, args.epochs + 1):
@@ -199,6 +290,11 @@ def main():
         va_loss /= max(va_n, 1)
         va_acc = {h: va_acc_sum[h] / max(va_n, 1) for h in horizon_keys}
 
+        plogits, py = collect_primary_logits(model, val_loader, primary_key, device)
+        score, gate_m = checkpoint_score(
+            plogits, py, args.ckpt_gate, MIN_GATED_FOR_CKPT
+        ) if plogits is not None else (-1.0, {})
+
         history.append(
             {
                 "epoch": epoch,
@@ -206,15 +302,24 @@ def main():
                 "val_loss": va_loss,
                 "train_acc": tr_acc,
                 "val_acc": va_acc,
+                "ckpt_score": score,
+                "gate": gate_m,
             }
         )
 
         acc_str = " ".join(f"{h}m={va_acc[h]:.3f}" for h in horizon_keys)
-        print(f"epoch {epoch:02d}  loss_tr={tr_loss:.4f} loss_va={va_loss:.4f}  val_acc [{acc_str}]")
+        g_cov = float(gate_m.get("coverage") or 0.0)
+        g_dir = float(gate_m.get("gated_dir_acc") or 0.0)
+        g_n = int(gate_m.get("n_gated") or 0)
+        print(
+            f"epoch {epoch:02d}  loss_tr={tr_loss:.4f} loss_va={va_loss:.4f}  "
+            f"val_acc [{acc_str}]  "
+            f"gate@{args.ckpt_gate:.2f} cov={g_cov:.3f} n={g_n} dir_acc={g_dir:.3f} score={score:.4f}"
+        )
 
-        primary_acc = va_acc.get(primary_key, 0.0)
-        if primary_acc >= best_primary:
-            best_primary = primary_acc
+        improved = score > best_score + 1e-6
+        if improved:
+            best_score = score
             Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
             Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
             ckpt = {
@@ -227,23 +332,44 @@ def main():
                     "seq_len": args.seq_len,
                     "feature_dim": FEATURE_DIM,
                     "hidden_size": HIDDEN_SIZE,
-                    "best_val_acc_primary": best_primary,
+                    "best_ckpt_score": best_score,
+                    "best_gate_metrics": gate_m,
+                    "ckpt_gate_threshold": args.ckpt_gate,
                     "val_acc": va_acc,
+                    "val_loss": va_loss,
+                    "lr": args.lr,
+                    "weight_decay": args.weight_decay,
                     "version": "m2",
+                    "norm_stats": norm_stats,
                 },
             }
             path = os.path.join(MODEL_DIR, "m2_multi.pt")
             torch.save(ckpt, path)
             torch.save(ckpt, os.path.join(OUTPUT_DIR, "m2_multi.pt"))
-            print(f"  saved → {path} (primary {primary_key}m acc={best_primary:.3f})")
+            print(
+                f"  saved → {path} (primary {primary_key}m gate_score={best_score:.4f} "
+                f"dir_acc={g_dir:.3f} cov={g_cov:.3f})"
+            )
+
+        if va_loss < best_val_loss - 1e-5:
+            best_val_loss = va_loss
+            bad_epochs = 0
+        else:
+            bad_epochs += 1
+            if bad_epochs >= args.patience:
+                print(
+                    f"Early stop at epoch {epoch} "
+                    f"(no val_loss improve for {args.patience} epochs)"
+                )
+                break
 
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(OUTPUT_DIR, "history_m2.json"), "w") as f:
         json.dump(history, f, indent=2)
 
-    print(f"\nDone. Best primary ({primary_key}m) val acc={best_primary:.3f}")
+    print(f"\nDone. Best primary ({primary_key}m) gate score={best_score:.4f}")
     print(f"Checkpoint: {MODEL_DIR}/m2_multi.pt")
-    print("Next: python eval_m2.py --checkpoint /models/m2_multi.pt --gate 0.5,0.6,0.7")
+    print("Next: python eval_m2.py --checkpoint /models/m2_multi.pt")
 
 
 if __name__ == "__main__":

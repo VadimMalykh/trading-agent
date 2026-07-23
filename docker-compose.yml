@@ -50,7 +50,8 @@ services:
       MODEL_PATH: /models/m2_multi.pt
       MODEL_DIR: /models
       GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.40}
-      PRIMARY_HORIZON: ${PRIMARY_HORIZON:-15}
+      PRIMARY_HORIZON: ${PRIMARY_HORIZON:-30}
+      HORIZONS_MINUTES: ${HORIZONS_MINUTES:-5,30,60}
       WHITELIST_PAIRS: ${WHITELIST_PAIRS:-BTCUSDT,ETHUSDT,SOLUSDT}
     ports:
       - "8001:8001"
@@ -70,7 +71,14 @@ services:
       MODEL_DIR: /models
       OUTPUT_DIR: /workspace/train/output
       WHITELIST_PAIRS: ${WHITELIST_PAIRS:-BTCUSDT,ETHUSDT,SOLUSDT}
-      HORIZON_MINUTES: ${HORIZON_MINUTES:-15}
+      HORIZON_MINUTES: ${HORIZON_MINUTES:-30}
+      HORIZONS_MINUTES: ${HORIZONS_MINUTES:-5,30,60}
+      PRIMARY_HORIZON: ${PRIMARY_HORIZON:-30}
+      SEQ_LEN: ${SEQ_LEN:-64}
+      LR: ${LR:-5e-4}
+      WEIGHT_DECAY: ${WEIGHT_DECAY:-1e-4}
+      EARLY_STOP_PATIENCE: ${EARLY_STOP_PATIENCE:-5}
+      CKPT_GATE_THRESHOLD: ${CKPT_GATE_THRESHOLD:-0.40}
     volumes:
       - ./ml/train:/workspace/train
       - model_weights:/models

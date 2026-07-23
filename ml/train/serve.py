@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import (
     CANDLE_INTERVAL,
     FEATURE_DIM,
+    GATE_THRESHOLD as CFG_GATE,
     HORIZONS_MINUTES,
     MODEL_DIR,
     PAIRS,
@@ -33,12 +34,13 @@ from config import (
     SEQ_LEN,
 )
 from data.db import load_whitelist_pairs
+from data.dataset import apply_feature_norm
 from data.features import build_feature_frame
 from gate import directional_signal
 from models.multi_horizon import SharedEncoderMultiHead
 
 MODEL_PATH = os.environ.get("MODEL_PATH", f"{MODEL_DIR}/m2_multi.pt")
-GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.40"))
+GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", str(CFG_GATE)))
 HOST = os.environ.get("INFER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("INFER_PORT", "8001"))
 PRIMARY = str(int(os.environ.get("PRIMARY_HORIZON", str(PRIMARY_HORIZON))))
@@ -60,6 +62,7 @@ def load_model():
     feature_dim = meta.get("feature_dim", FEATURE_DIM)
     hidden = meta.get("hidden_size", 64)
     seq_len = meta.get("seq_len", SEQ_LEN)
+    primary = str(meta.get("primary_horizon", PRIMARY))
 
     model = SharedEncoderMultiHead(
         input_size=feature_dim,
@@ -75,11 +78,16 @@ def load_model():
             "meta": meta,
             "horizons": horizons,
             "seq_len": seq_len,
+            "primary": primary,
+            "norm_stats": meta.get("norm_stats") or {},
             "error": None,
             "device": device,
         }
     )
-    print(f"Loaded {path} horizons={horizons} seq_len={seq_len}")
+    print(
+        f"Loaded {path} horizons={horizons} seq_len={seq_len} "
+        f"primary={primary} norm={'ckpt' if _state['norm_stats'] else 'rolling-fallback'}"
+    )
     return True
 
 
@@ -90,14 +98,23 @@ def build_tensor(symbol: str):
         return None, f"not enough feature rows for {symbol} (have {len(frame)}, need {seq_len})"
 
     feats = frame.drop(columns=["close"]).values.astype(np.float32)
-    # online z-score on recent window (Phase I light)
-    window = feats[-max(seq_len * 3, 64) :]
-    mean = window.mean(axis=0, keepdims=True)
-    std = window.std(axis=0, keepdims=True) + 1e-6
-    feats = (feats - mean) / std
-    x = feats[-seq_len:]
+    norm_stats = _state.get("norm_stats") or {}
+    if norm_stats:
+        # Match training: per-pair (or global) z-score from checkpoint
+        X = feats[-seq_len:][None, ...]  # [1, T, F]
+        pair_ids = np.array([symbol.upper()], dtype=object)
+        X = apply_feature_norm(X, pair_ids, norm_stats)
+        x = X[0]
+    else:
+        # Legacy checkpoints without norm_stats
+        window = feats[-max(seq_len * 3, 64) :]
+        mean = window.mean(axis=0, keepdims=True)
+        std = window.std(axis=0, keepdims=True) + 1e-6
+        feats = (feats - mean) / std
+        x = feats[-seq_len:]
+
     close = float(frame["close"].iloc[-1])
-    t = torch.from_numpy(x).unsqueeze(0)  # [1,T,F]
+    t = torch.from_numpy(x.astype(np.float32)).unsqueeze(0)  # [1,T,F]
     return (t, close), None
 
 
@@ -113,7 +130,9 @@ def predict_symbol(symbol: str) -> dict:
     x, price = packed
     logits_map = _state["model"](x)
     horizons_out = {}
-    primary = PRIMARY if PRIMARY in [str(h) for h in _state["horizons"]] else str(_state["horizons"][0])
+    primary = _state.get("primary") or PRIMARY
+    if primary not in [str(h) for h in _state["horizons"]]:
+        primary = str(_state["horizons"][0])
 
     for h, logits in logits_map.items():
         probs = torch.softmax(logits, dim=-1)[0].tolist()
@@ -136,7 +155,6 @@ def predict_symbol(symbol: str) -> dict:
 
     primary_h = horizons_out.get(primary, next(iter(horizons_out.values())))
     trade = primary_h["gated"]
-    side = primary_h["direction"].upper() if trade and primary_h["direction"] != "flat" else "FLAT"
     if trade and primary_h["direction"] == "up":
         side = "BUY"
     elif trade and primary_h["direction"] == "down":
@@ -186,6 +204,8 @@ class Handler(BaseHTTPRequestHandler):
                         "error": _state.get("error"),
                         "gate_threshold": GATE_THRESHOLD,
                         "horizons": _state.get("horizons"),
+                        "primary": _state.get("primary"),
+                        "norm": "ckpt" if _state.get("norm_stats") else "rolling-fallback",
                     },
                 )
 
