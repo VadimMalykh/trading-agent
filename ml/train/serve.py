@@ -63,14 +63,17 @@ def load_model():
     hidden = meta.get("hidden_size", 64)
     seq_len = meta.get("seq_len", SEQ_LEN)
     primary = str(meta.get("primary_horizon", PRIMARY))
+    has_dir_head = bool(meta.get("directional_head", False))
 
     model = SharedEncoderMultiHead(
         input_size=feature_dim,
         hidden_size=hidden,
         horizons_minutes=horizons,
+        directional_head=has_dir_head,
     )
     model.load_state_dict(ckpt["model_state"])
     model.eval()
+    _state["has_dir_head"] = has_dir_head
 
     _state.update(
         {
@@ -128,7 +131,9 @@ def predict_symbol(symbol: str) -> dict:
         return {"ok": False, "symbol": symbol, "error": err}
 
     x, price = packed
-    logits_map = _state["model"](x)
+    model = _state["model"]
+    has_dir = _state.get("has_dir_head", False)
+    logits_map, dir_map = model.forward_both(x)
     horizons_out = {}
     primary = _state.get("primary") or PRIMARY
     if primary not in [str(h) for h in _state["horizons"]]:
@@ -136,11 +141,19 @@ def predict_symbol(symbol: str) -> dict:
 
     for h, logits in logits_map.items():
         probs = torch.softmax(logits, dim=-1)[0].tolist()
-        side, conf = directional_signal(logits)
-        side_i = int(side[0].item())
-        conf_f = float(conf[0].item())
         argmax = int(logits.argmax(dim=-1)[0].item())
         label = {0: "down", 1: "flat", 2: "up"}
+        if has_dir and dir_map is not None:
+            # Clean up/down signal from the auxiliary directional head.
+            dprob = torch.softmax(dir_map[h], dim=-1)[0]
+            p_up = float(dprob[1].item())
+            p_down = float(dprob[0].item())
+            side_i = 2 if p_up >= p_down else 0
+            conf_f = max(p_up, p_down)
+        else:
+            side, conf = directional_signal(logits)
+            side_i = int(side[0].item())
+            conf_f = float(conf[0].item())
         horizons_out[h] = {
             "direction": label[side_i],
             "argmax_class": label[argmax],

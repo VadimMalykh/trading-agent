@@ -35,8 +35,11 @@ from data.dataset import (
     time_split_indices,
 )
 from data.db import load_whitelist_pairs
-from gate import gate_sweep
+from gate import dir_logits_to_three_class, fixed_coverage_metrics, gate_sweep
 from models.multi_horizon import SharedEncoderMultiHead
+
+# Coverages at which to report a stable, cross-model-comparable directional edge.
+FIXED_COVERAGES = [0.01, 0.02, 0.05, 0.10, 0.20]
 
 
 def collate_mh(batch):
@@ -50,7 +53,7 @@ def _ns_to_iso(ns: int) -> str:
     return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
-def run_horizon_report(logits, y_true, thresholds, pair_ids=None):
+def run_horizon_report(logits, y_true, thresholds, pair_ids=None, dir_logits=None):
     pred = logits.argmax(dim=1)
     ungated = float((pred == y_true).float().mean().item())
 
@@ -58,7 +61,12 @@ def run_horizon_report(logits, y_true, thresholds, pair_ids=None):
     for t, p_ in zip(y_true.view(-1), pred.view(-1)):
         conf_matrix[t.long(), p_.long()] += 1
 
-    sweep = gate_sweep(logits, y_true, thresholds, mode="directional")
+    # Gate/fixed-coverage use the clean directional-head signal when present.
+    gate_logits = (
+        dir_logits_to_three_class(dir_logits) if dir_logits is not None else logits
+    )
+    sweep = gate_sweep(gate_logits, y_true, thresholds, mode="directional")
+    fixed_cov = [fixed_coverage_metrics(gate_logits, y_true, c) for c in FIXED_COVERAGES]
 
     serve_row = next((r for r in sweep if abs(r["threshold"] - GATE_THRESHOLD) < 1e-9), None)
     edge = None
@@ -76,7 +84,8 @@ def run_horizon_report(logits, y_true, thresholds, pair_ids=None):
             sub_y = y_true[idx]
             sub_pred = sub_logits.argmax(dim=1)
             sub_ungated = float((sub_pred == sub_y).float().mean().item())
-            sub_sweep = gate_sweep(sub_logits, sub_y, thresholds, mode="directional")
+            sub_gate = gate_logits[idx]
+            sub_sweep = gate_sweep(sub_gate, sub_y, thresholds, mode="directional")
             per_pair[str(pair)] = {
                 "n": int(mask.sum()),
                 "ungated_acc": sub_ungated,
@@ -87,6 +96,7 @@ def run_horizon_report(logits, y_true, thresholds, pair_ids=None):
         "ungated_acc": ungated,
         "confusion": conf_matrix.tolist(),
         "gate_sweep": sweep,
+        "fixed_coverage": fixed_cov,
         "serve_gate": GATE_THRESHOLD,
         "serve_gate_dir_edge_vs_half": edge,
         "per_pair": per_pair,
@@ -126,14 +136,17 @@ def main():
     hidden = meta.get("hidden_size", HIDDEN_SIZE)
     norm_stats = meta.get("norm_stats") or {}
     primary = str(meta.get("primary_horizon", horizons[min(1, len(horizons) - 1)]))
+    has_dir_head = bool(meta.get("directional_head", False))
 
     model = SharedEncoderMultiHead(
         input_size=feature_dim,
         hidden_size=hidden,
         horizons_minutes=horizons,
+        directional_head=has_dir_head,
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
+    print(f"Directional head: {'ON — gating uses aux up/down signal' if has_dir_head else 'off'}")
 
     if args.pairs.strip():
         pairs = [x.strip().upper() for x in args.pairs.split(",") if x.strip()]
@@ -173,15 +186,18 @@ def main():
     )
 
     all_logits = {h: [] for h in horizon_keys}
+    all_dir = {h: [] for h in horizon_keys}
     all_y = {h: [] for h in horizon_keys}
 
     with torch.no_grad():
         for xb, yb in loader:
             xb = xb.to(device)
-            out = model(xb)
+            out, dir_out = model.forward_both(xb)
             for h in horizon_keys:
                 all_logits[h].append(out[h].cpu())
                 all_y[h].append(yb[h].cpu())
+                if dir_out is not None:
+                    all_dir[h].append(dir_out[h].cpu())
 
     thresholds = [float(t) for t in args.gate.split(",") if t.strip()]
     if GATE_THRESHOLD not in thresholds:
@@ -201,7 +217,10 @@ def main():
     for h in horizon_keys:
         logits = torch.cat(all_logits[h], dim=0)
         y_true = torch.cat(all_y[h], dim=0)
-        result = run_horizon_report(logits, y_true, thresholds, pair_ids=p_va)
+        dir_logits = torch.cat(all_dir[h], dim=0) if all_dir[h] else None
+        result = run_horizon_report(
+            logits, y_true, thresholds, pair_ids=p_va, dir_logits=dir_logits
+        )
 
         print(f"\n--- Horizon {h}m {'(PRIMARY)' if h == primary else ''} ---")
         print(f"Ungated accuracy (3-class argmax): {result['ungated_acc']:.4f}")
@@ -224,6 +243,21 @@ def main():
                 f"{edge:6.3f}  {row.get('mean_conf_gated', 0):9.3f}{marker}"
             )
 
+        print(
+            "Fixed-coverage directional edge "
+            "(top-x% by confidence; stable across models):"
+        )
+        print(
+            f"{'cov':>6}  {'n_gated':>8}  {'conf_thr':>8}  {'dir_acc':>8}  "
+            f"{'edge':>6}  {'wilson_lb':>9}  {'n_dir':>7}"
+        )
+        for fc in result["fixed_coverage"]:
+            print(
+                f"{fc['coverage']:6.3f}  {fc['n_gated']:8d}  {fc['conf_threshold']:8.3f}  "
+                f"{fc['dir_acc']:8.3f}  {fc['edge']:6.3f}  {fc['dir_acc_wilson_lb']:9.3f}  "
+                f"{fc['n_true_directional_gated']:7d}"
+            )
+
         if result["per_pair"]:
             print("Per-pair @ serve gate:")
             for pair, pr in result["per_pair"].items():
@@ -241,6 +275,7 @@ def main():
             "ungated_acc": result["ungated_acc"],
             "confusion": result["confusion"],
             "gate_sweep": result["gate_sweep"],
+            "fixed_coverage": result["fixed_coverage"],
             "serve_gate_dir_edge_vs_half": result["serve_gate_dir_edge_vs_half"],
             "per_pair": {
                 k: {
@@ -264,6 +299,8 @@ def main():
     print("  coverage        → fraction of bars that would trade")
     print(f"  * marker        → serve GATE_THRESHOLD={GATE_THRESHOLD}")
     print("  gated_acc       → also counts true-flat as miss (stricter than dir_acc)")
+    print("  fixed-coverage  → edge at top-x% confidence; comparable across models")
+    print("  wilson_lb       → conservative lower bound on dir_acc (small n → low)")
 
 
 if __name__ == "__main__":

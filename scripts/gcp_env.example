@@ -3,11 +3,12 @@
 
 export GCP_PROJECT=fluxtrader
 export GCP_ZONE=me-central1-b
+# GCP_REGION is derived from the zone automatically (me-central1-b -> me-central1)
 
 # Always-on VM (collect + UI + inference) — leave running 24/7
 export GCP_ALWAYS_ON=fluxtrader-1
 
-# Temporary train VM — created in step 2, deleted in step 5
+# Temporary train VM — created + self-deleted by ./scripts/gcp_train.sh
 export GCP_TRAIN_INSTANCE=fluxtrader-train
 # Lazy windows keep feature RAM ~tens of MB; 8GB is enough (16GB only if OOM returns)
 export GCP_TRAIN_MACHINE=e2-standard-2   # 8GB; use e2-standard-4 if dmesg shows OOM
@@ -15,9 +16,20 @@ export GCP_TRAIN_MACHINE=e2-standard-2   # 8GB; use e2-standard-4 if dmesg shows
 # Folder names under the VM user's $HOME (do not use ~/ or Mac paths)
 export REMOTE_REPO_NAME=trading_agent
 
-# Training defaults (override on the command line of step 3 if you want)
-export TRAIN_EPOCHS=40
-export TRAIN_SEQ_LEN=64
+# --- V2 pipeline: artifacts via GCS bucket, code via git ---------------------
+# Single-region bucket, SAME region as the VMs (create once, see gcp_train.sh -h).
+export GCS_BUCKET=gs://fluxtrader-train-artifacts
+# Reproducible code source. HTTPS so the VM can clone without your SSH key.
+# PRIVATE repo: use  https://<PAT>@github.com/VadimMalykh/trading-agent.git
+export GIT_REMOTE=https://github.com/VadimMalykh/trading-agent.git
+export GIT_REF=main                       # branch or commit SHA to train + serve
+
+# Debug only: 1 = keep train VM alive after the job (never auto delete/stop)
+export KEEP_VM=0
+
+# Training defaults (override on the command line of gcp_train.sh if you want)
+export TRAIN_EPOCHS=60
+export TRAIN_SEQ_LEN=128
 export TRAIN_DEVICE=cpu
 # M2 Phase 1+2 defaults
 export TRAIN_HORIZONS=5,30,60

@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import (
     BATCH_SIZE,
     CKPT_GATE_THRESHOLD,
+    DIR_LOSS_WEIGHT,
+    DIRECTIONAL_HEAD,
     EARLY_STOP_PATIENCE,
     EPOCHS,
     FEATURE_DIM,
@@ -31,6 +33,7 @@ from config import (
     OUTPUT_DIR,
     PAIRS,
     PRIMARY_HORIZON,
+    SEL_COVERAGE,
     SEQ_LEN,
     VAL_FRACTION,
     WEIGHT_DECAY,
@@ -46,7 +49,7 @@ from data.dataset import (
     time_split_indices,
 )
 from data.db import load_whitelist_pairs, table_counts
-from gate import gate_metrics
+from gate import dir_logits_to_three_class, fixed_coverage_metrics, gate_metrics
 from models.multi_horizon import SharedEncoderMultiHead
 
 
@@ -99,6 +102,29 @@ def multi_loss(logits_dict, y_dict, crits, horizon_keys):
     return loss / len(horizon_keys)
 
 
+def directional_loss(dir_logits_dict, y_dict, dir_crits, horizon_keys):
+    """
+    Binary up/down CE per horizon, computed ONLY on bars that actually moved
+    (true label != flat). Bars where nothing moved contribute no gradient, so
+    this head learns a clean up-vs-down boundary undiluted by the flat mass.
+    Returns (loss, n_directional_bars) averaged over horizons.
+    """
+    total = 0.0
+    n_h = 0
+    for h in horizon_keys:
+        y = y_dict[h]
+        move = y != 1  # directional bars only
+        if move.sum() == 0:
+            continue
+        # map 3-class {0=down,2=up} -> 2-class {0=down,1=up}
+        y_dir = (y[move] == 2).long()
+        total = total + dir_crits[h](dir_logits_dict[h][move], y_dir)
+        n_h += 1
+    if n_h == 0:
+        return None
+    return total / n_h
+
+
 def multi_acc(logits_dict, y_dict, horizon_keys):
     accs = {}
     for h in horizon_keys:
@@ -132,14 +158,33 @@ def collect_primary_logits(model, loader, primary_key, device):
     return torch.cat(logits_all, dim=0), torch.cat(y_all, dim=0)
 
 
-def checkpoint_score(logits: torch.Tensor, y: torch.Tensor, gate: float, min_gated: int) -> tuple[float, dict]:
+def checkpoint_score(
+    logits: torch.Tensor,
+    y: torch.Tensor,
+    gate: float,
+    min_gated: int,
+    sel_coverage: float = SEL_COVERAGE,
+) -> tuple[float, dict]:
+    """
+    Rank checkpoints by directional edge at a FIXED coverage (top-`sel_coverage`
+    fraction of bars by confidence), using the Wilson lower bound of dir_acc so a
+    lucky tiny sample cannot win. This replaces the old raw-dir_acc-at-threshold
+    score, which selected on ~200 noisy samples.
+
+    The threshold-based gate_metrics are still computed and returned for logging /
+    checkpoint meta, but no longer drive selection.
+    """
+    fc = fixed_coverage_metrics(logits, y, sel_coverage)
     m = gate_metrics(logits, y, gate, mode="directional")
-    dir_acc = float(m.get("gated_dir_acc") or 0.0)
-    n_g = int(m.get("n_gated") or 0)
-    if n_g >= min_gated:
-        score = dir_acc
+    m["fixed_coverage"] = fc
+
+    n_dir = int(fc.get("n_true_directional_gated") or 0)
+    lb = float(fc.get("dir_acc_wilson_lb") or 0.0)
+    if n_dir < min_gated:
+        # Not enough directional trades at target coverage to trust the edge.
+        score = lb * (n_dir / max(min_gated, 1))
     else:
-        score = dir_acc * (n_g / max(min_gated, 1))
+        score = lb
     return score, m
 
 
@@ -234,10 +279,16 @@ def main():
         input_size=FEATURE_DIM,
         hidden_size=HIDDEN_SIZE,
         horizons_minutes=horizons,
+        directional_head=DIRECTIONAL_HEAD,
     ).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    print(
+        f"Directional head: {'ON' if DIRECTIONAL_HEAD else 'off'} "
+        f"(aux up/down loss weight={DIR_LOSS_WEIGHT})"
+    )
 
     crits = {}
+    dir_crits = {}
     for h in horizon_keys:
         y_tr_h = labels_for_indices(bundle, tr_idx, h)
         counts = np.bincount(y_tr_h, minlength=3).astype(np.float64)
@@ -246,9 +297,16 @@ def main():
         w = w / w.mean()
         crits[h] = nn.CrossEntropyLoss(weight=torch.tensor(w, dtype=torch.float32, device=device))
         print(f"  class weights {h}m: down={w[0]:.2f} flat={w[1]:.2f} up={w[2]:.2f}")
+        # Directional-head class balance (down vs up only)
+        n_down, n_up = float(counts[0]), float(counts[2])
+        dw = np.array([(n_down + n_up) / (2 * n_down), (n_down + n_up) / (2 * n_up)])
+        dw = dw / dw.mean()
+        dir_crits[h] = nn.CrossEntropyLoss(
+            weight=torch.tensor(dw, dtype=torch.float32, device=device)
+        )
 
     best_score = -1.0
-    best_val_loss = float("inf")
+    best_early_score = -1.0
     bad_epochs = 0
     history = []
 
@@ -261,8 +319,12 @@ def main():
             xb = xb.to(device)
             yb = {k: v.to(device) for k, v in yb.items()}
             opt.zero_grad()
-            logits = model(xb)
+            logits, dir_logits = model.forward_both(xb)
             loss = multi_loss(logits, yb, crits, horizon_keys)
+            if dir_logits is not None:
+                dloss = directional_loss(dir_logits, yb, dir_crits, horizon_keys)
+                if dloss is not None:
+                    loss = loss + DIR_LOSS_WEIGHT * dloss
             loss.backward()
             opt.step()
             bs = xb.size(0)
@@ -280,11 +342,12 @@ def main():
         va_acc_sum = {h: 0.0 for h in horizon_keys}
         # Collect primary logits during val pass (avoid second full epoch)
         plogits_chunks, py_chunks = [], []
+        pdir_chunks = []
         with torch.no_grad():
             for xb, yb in val_loader:
                 xb = xb.to(device)
                 yb = {k: v.to(device) for k, v in yb.items()}
-                logits = model(xb)
+                logits, dir_logits = model.forward_both(xb)
                 loss = multi_loss(logits, yb, crits, horizon_keys)
                 bs = xb.size(0)
                 va_loss += loss.item() * bs
@@ -294,14 +357,20 @@ def main():
                 va_n += bs
                 plogits_chunks.append(logits[primary_key].cpu())
                 py_chunks.append(yb[primary_key].cpu())
+                if dir_logits is not None:
+                    pdir_chunks.append(dir_logits[primary_key].cpu())
 
         va_loss /= max(va_n, 1)
         va_acc = {h: va_acc_sum[h] / max(va_n, 1) for h in horizon_keys}
 
         if plogits_chunks:
-            plogits = torch.cat(plogits_chunks, dim=0)
             py = torch.cat(py_chunks, dim=0)
-            score, gate_m = checkpoint_score(plogits, py, args.ckpt_gate, MIN_GATED_FOR_CKPT)
+            if pdir_chunks:
+                # Score on the clean directional-head signal when available.
+                score_logits = dir_logits_to_three_class(torch.cat(pdir_chunks, dim=0))
+            else:
+                score_logits = torch.cat(plogits_chunks, dim=0)
+            score, gate_m = checkpoint_score(score_logits, py, args.ckpt_gate, MIN_GATED_FOR_CKPT)
         else:
             score, gate_m = -1.0, {}
 
@@ -318,13 +387,15 @@ def main():
         )
 
         acc_str = " ".join(f"{h}m={va_acc[h]:.3f}" for h in horizon_keys)
-        g_cov = float(gate_m.get("coverage") or 0.0)
-        g_dir = float(gate_m.get("gated_dir_acc") or 0.0)
-        g_n = int(gate_m.get("n_gated") or 0)
+        fc = gate_m.get("fixed_coverage") or {}
+        fc_dir = float(fc.get("dir_acc") or 0.0)
+        fc_lb = float(fc.get("dir_acc_wilson_lb") or 0.0)
+        fc_n = int(fc.get("n_true_directional_gated") or 0)
         print(
             f"epoch {epoch:02d}  loss_tr={tr_loss:.4f} loss_va={va_loss:.4f}  "
             f"val_acc [{acc_str}]  "
-            f"gate@{args.ckpt_gate:.2f} cov={g_cov:.3f} n={g_n} dir_acc={g_dir:.3f} score={score:.4f}"
+            f"sel@cov{SEL_COVERAGE:.2f} dir_acc={fc_dir:.3f} lb={fc_lb:.3f} "
+            f"n_dir={fc_n} score={score:.4f}"
         )
 
         if score > best_score + 1e-6:
@@ -341,6 +412,9 @@ def main():
                     "seq_len": args.seq_len,
                     "feature_dim": FEATURE_DIM,
                     "hidden_size": HIDDEN_SIZE,
+                    "directional_head": DIRECTIONAL_HEAD,
+                    "sel_coverage": SEL_COVERAGE,
+                    "git_sha": os.environ.get("FLUX_GIT_SHA", ""),
                     "best_ckpt_score": best_score,
                     "best_gate_metrics": gate_m,
                     "ckpt_gate_threshold": args.ckpt_gate,
@@ -356,19 +430,23 @@ def main():
             torch.save(ckpt, path)
             torch.save(ckpt, os.path.join(OUTPUT_DIR, "m2_multi.pt"))
             print(
-                f"  saved → {path} (primary {primary_key}m gate_score={best_score:.4f} "
-                f"dir_acc={g_dir:.3f} cov={g_cov:.3f})"
+                f"  saved → {path} (primary {primary_key}m sel_score={best_score:.4f} "
+                f"dir_acc={fc_dir:.3f} lb={fc_lb:.3f} n_dir={fc_n})"
             )
 
-        if va_loss < best_val_loss - 1e-5:
-            best_val_loss = va_loss
+        # Early stop on the SELECTION score (edge), not val_loss. Val loss barely
+        # moves on this near-random task, so it stopped runs before the model
+        # developed confident directional mass. We give up only when the edge has
+        # not improved for `patience` epochs.
+        if score > best_early_score + 1e-5:
+            best_early_score = score
             bad_epochs = 0
         else:
             bad_epochs += 1
             if bad_epochs >= args.patience:
                 print(
                     f"Early stop at epoch {epoch} "
-                    f"(no val_loss improve for {args.patience} epochs)"
+                    f"(no sel-score improve for {args.patience} epochs)"
                 )
                 break
 

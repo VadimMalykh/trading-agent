@@ -6,7 +6,7 @@ Related docs:
 
 | Doc | Role |
 |-----|------|
-| [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md) | **GCP train: 5 clear steps (dump → VM → train → status → finish)** |
+| [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md) | **GCP train: 3 steps (train → status → promote), self-cleaning VM** |
 | [SIMULATION.md](./SIMULATION.md) | Live paper **signals** (UI / API, no real orders) |
 | [M2_PLAN.md](./M2_PLAN.md) | M2 multi-horizon design |
 | [PLAN.md](./PLAN.md) | Full roadmap |
@@ -247,7 +247,8 @@ curl -s http://localhost:4000/api/signals
 7. Repeat; only then consider M3 or full paper P&L
 ```
 
-**GCP:** use [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md) steps 1→5 (code + model promote).
+**GCP:** use [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md) — 3 steps
+(`gcp_train.sh` → `gcp_status.sh` → `gcp_promote.sh`); the train VM self-cleans.
 
 ---
 
@@ -268,6 +269,7 @@ curl -s http://localhost:4000/api/signals
 | `model not found` on inference | Run `train_m2.py` first; check volume `model_weights` |
 | eval `n_gated=0` all gates | Model never directionally confident; more data/train or lower gates for plumbing only |
 | Binance rate limits on backfill | Script retries/sleeps; reduce `--symbols` parallelism / increase sleep |
+| GCP train fails / OOM | See [GCP_TRAIN_EPHEMERAL.md § Run FAILED — inspect](./GCP_TRAIN_EPHEMERAL.md#run-failed--inspect) — VM self-stops; log in bucket + `~/train_m2.log` |
 
 ---
 

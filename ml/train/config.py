@@ -14,7 +14,12 @@ HORIZONS_MINUTES = [
 ]
 PRIMARY_HORIZON = int(os.environ.get("PRIMARY_HORIZON", "30"))
 
-SEQ_LEN = int(os.environ.get("SEQ_LEN", "64"))
+SEQ_LEN = int(os.environ.get("SEQ_LEN", "128"))
+# Auxiliary 2-class directional head (down/up), trained only on bars that moved.
+# Gives a clean up-vs-down signal not diluted by the ~52% flat mass.
+DIRECTIONAL_HEAD = os.environ.get("DIRECTIONAL_HEAD", "1") not in ("0", "false", "False")
+# Weight of the auxiliary directional loss relative to the 3-class loss.
+DIR_LOSS_WEIGHT = float(os.environ.get("DIR_LOSS_WEIGHT", "1.0"))
 FLAT_THRESHOLD = float(os.environ.get("FLAT_THRESHOLD", "0.002"))  # 0.2% default
 # Flat band scales roughly with horizon (bps of move to count as directional)
 FLAT_THRESHOLD_PER_HORIZON = {
@@ -37,15 +42,23 @@ MODEL_DIR = os.environ.get("MODEL_DIR", "/models")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/workspace/train/output")
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "32"))
-EPOCHS = int(os.environ.get("EPOCHS", "40"))
+EPOCHS = int(os.environ.get("EPOCHS", "60"))
 LR = float(os.environ.get("LR", "5e-4"))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", "1e-4"))
 HIDDEN_SIZE = int(os.environ.get("HIDDEN_SIZE", "64"))
 VAL_FRACTION = float(os.environ.get("VAL_FRACTION", "0.2"))
-EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "5"))
+# Patience raised: directional coverage kept climbing when the old run stopped.
+EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "10"))
 # Gate used when ranking checkpoints (matches serve default)
 CKPT_GATE_THRESHOLD = float(os.environ.get("CKPT_GATE_THRESHOLD", "0.40"))
-MIN_GATED_FOR_CKPT = int(os.environ.get("MIN_GATED_FOR_CKPT", "50"))
+# Checkpoints are ranked by directional edge at this FIXED coverage (top fraction
+# of bars by confidence), not by a fixed confidence threshold. This keeps the
+# selection metric comparable across epochs even as the softmax scale drifts.
+SEL_COVERAGE = float(os.environ.get("SEL_COVERAGE", "0.05"))
+# Minimum number of *true-directional* gated trades (at SEL_COVERAGE) required
+# before a checkpoint's edge is trusted at full weight. Raised from 50 so a
+# lucky ~200-sample fluke can no longer win selection.
+MIN_GATED_FOR_CKPT = int(os.environ.get("MIN_GATED_FOR_CKPT", "500"))
 
 # Confidence gate default (product / serve)
 CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.40"))
