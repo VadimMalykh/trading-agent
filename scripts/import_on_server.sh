@@ -61,17 +61,11 @@ if [[ -f "$EXPORT_DIR/counts_local.txt" ]]; then
   cat /tmp/counts_remote.txt
 fi
 
+VOL=trading_agent_model_weights
+docker volume create "$VOL" >/dev/null 2>&1 || true
+
 if [[ -f "$MODELS_TGZ" ]]; then
-  echo "==> Restoring model_weights volume..."
-  # ensure compose project volumes exist
-  docker compose up -d --no-deps --no-start ml_inference 2>/dev/null || true
-  VOL=$(docker volume ls -q | grep -E 'model_weights$' | head -1 || true)
-  if [[ -z "$VOL" ]]; then
-    docker compose up -d postgres
-    docker volume create trading_agent_model_weights >/dev/null
-    VOL=trading_agent_model_weights
-  fi
-  echo "    volume=$VOL"
+  echo "==> Restoring model_weights volume ($VOL)..."
   docker run --rm \
     -v "${VOL}:/models" \
     -v "$EXPORT_DIR:/in:ro" \
@@ -83,7 +77,7 @@ fi
 echo "==> Starting app stack..."
 docker compose up -d postgres app
 # optional inference if model present
-if docker run --rm -v "$(docker volume ls -q | grep -E 'model_weights$' | head -1):/models:ro" alpine test -f /models/m2_multi.pt 2>/dev/null; then
+if docker run --rm -v "${VOL}:/models:ro" alpine test -f /models/m2_multi.pt 2>/dev/null; then
   docker compose up -d ml_inference || true
 fi
 

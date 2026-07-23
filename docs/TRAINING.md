@@ -90,6 +90,7 @@ docker compose build --no-cache ml_trainer ml_inference
 ### Basic retrain (CPU)
 
 ```bash
+docker volume create trading_agent_model_weights 2>/dev/null || true
 docker compose up -d postgres
 
 docker compose --profile ml run --rm ml_trainer \

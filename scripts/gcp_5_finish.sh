@@ -43,11 +43,9 @@ gssh "$GCP_ALWAYS_ON" "set -e
   rm -rf $R/ml
   cp -a \$HOME/trading_agent_upload/ml $R/ml
 
-  VOL=\$(docker volume ls -q | grep -E 'model_weights\$' | head -1)
-  if [[ -z \"\$VOL\" ]]; then
-    docker volume create trading_agent_model_weights
-    VOL=trading_agent_model_weights
-  fi
+  # Must match docker-compose.yml volumes.model_weights.name (external)
+  VOL=trading_agent_model_weights
+  docker volume create \"\$VOL\" >/dev/null 2>&1 || true
   docker run --rm -v \"\$VOL:/models\" -v /tmp:/in:ro alpine \
     sh -c 'cp /in/m2_multi.pt /models/m2_multi.pt && ls -la /models/m2_multi.pt'
 

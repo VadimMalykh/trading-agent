@@ -92,4 +92,10 @@ volumes:
   app_build:
   app_deps:
   postgres_data:
+  # Fixed name so GCP train/finish scripts and compose share one volume.
+  # external: true avoids WARN when the volume was created via `docker volume create`
+  # (scripts/import/gcp). Create once if missing:
+  #   docker volume create trading_agent_model_weights
   model_weights:
+    name: trading_agent_model_weights
+    external: true

@@ -49,6 +49,9 @@ gscp_from() {
   gcloud compute scp --project="$GCP_PROJECT" --zone="$GCP_ZONE" --recurse "$1:$2" "$3"
 }
 
+# Compose declares model_weights as external with this exact name
+MODEL_VOLUME_NAME="${MODEL_VOLUME_NAME:-trading_agent_model_weights}"
+
 echo_cfg() {
   echo "project=$GCP_PROJECT  zone=$GCP_ZONE"
   echo "always-on=$GCP_ALWAYS_ON  train-vm=$GCP_TRAIN_INSTANCE ($GCP_TRAIN_MACHINE)"

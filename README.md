@@ -23,6 +23,8 @@ Requires only Docker. No local installs needed.
 
 ```bash
 cp .env.example .env
+# once per machine (model volume is external — silences compose WARN)
+docker volume create trading_agent_model_weights
 docker compose up
 ```
 
@@ -40,6 +42,8 @@ API: http://localhost:4000/api/positions
 ### Commands
 
 ```bash
+docker volume create trading_agent_model_weights 2>/dev/null || true
+
 # Full stack: DB + inference + app (needs m2_multi.pt — train first if missing)
 docker compose up -d postgres ml_inference app
 # Dashboard http://localhost:4000  ·  Signals http://localhost:4000/api/signals

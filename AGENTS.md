@@ -13,6 +13,7 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 
 | Task | Command |
 |------|---------|
+| Ensure model volume | `docker volume create trading_agent_model_weights` (once; external in compose) |
 | Start stack | `docker compose up -d postgres ml_inference app` |
 | App shell / Mix | `docker compose exec app mix …` |
 | App logs | `docker compose logs -f app` |

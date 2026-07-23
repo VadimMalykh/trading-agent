@@ -209,6 +209,7 @@ Change via `scripts/gcp_env`.
 | Step 5: missing checkpoint | Training did not finish; do not delete VM until DONE. |
 | Live UI still old model / wrong horizons | Re-run step 5 (syncs `ml/` + restarts inference). Check `/health` for `primary` / `norm`. |
 | health `norm=rolling-fallback` | Old serve code or old checkpoint without `norm_stats` — retrain + finish with latest scripts. |
+| `volume ... external but could not be found` | `docker volume create trading_agent_model_weights` then retry. |
 | Forgot to delete train VM | `./scripts/gcp_5_finish.sh` or delete instance in GCP Console (stops billing). |
 
 ---

@@ -96,7 +96,8 @@ if ! [[ \"\$BOOK\" =~ ^[0-9]+\$ ]] || [[ \"\$BOOK\" -lt 100 ]]; then
   exit 1
 fi
 
-docker volume create trading_agent_model_weights 2>/dev/null || true
+# compose model_weights is external — must exist before run
+docker volume create trading_agent_model_weights >/dev/null 2>&1 || true
 
 echo \"=== train_m2 epochs=${EPOCHS} seq=${SEQ_LEN} horizons=${HORIZONS} primary=${PRIMARY} ===\"
 docker compose --profile ml run --rm \\
