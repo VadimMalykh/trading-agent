@@ -5,27 +5,49 @@ session and the exact steps/commands to execute.
 
 ## TL;DR
 
-- The current training run is **compute-bound, never memory-bound** (feature RAM
-  ~48 MiB via lazy windowing in `ml/train/data/dataset.py:501`). So the answer to
-  "should we downsize RAM or use it for speed?" is: **neither** — spend on vCPU.
-- Let the **current run finish** and capture it as the **baseline**.
-- Prepare infra + data changes **on a branch now**; launch the new run only after
-  the current one finishes (pipeline reuses one VM name + `latest.*` bucket keys,
-  so parallel runs collide).
-- Model-head experiment (quantile head) comes **later, as its own run**.
+- Training is **compute-bound, never memory-bound** (feature RAM ~48 MiB via lazy
+  windowing in `ml/train/data/dataset.py:501`). So the answer to "downsize RAM or
+  use it for speed?" is: **neither** — spend on vCPU.
+- Baseline run (3 pairs, 180d) is **DONE** — see "Baseline reference". It has a
+  modest but real edge at high confidence; serve gate was mis-tuned (raised to 0.58).
+- Next run: **6 pairs + e2-standard-4 + gate 0.58**, prepared on branch
+  `train-upgrade-e2std4-5pairs`. Merge to `main` then launch (pipeline trains from
+  `GIT_REF=main`; reuses one VM name + `latest.*` bucket keys, so no parallel runs).
+- Model-head experiment (quantile head) + presence-mask features come **later, as
+  their own runs**.
 
-## Baseline reference (current run, still training)
+## Baseline reference (FINISHED — run 20260723T222840Z, git 2b208de)
 
-- Pairs: BTCUSDT, ETHUSDT, SOLUSDT (3), 180 days, seq_len 128.
-- Samples: 788,705 (train 630,964 / val 157,741).
-- Best so far @ epoch 13: `sel_score=0.5546 dir_acc=0.569 Wilson_lb=0.552 n_dir=4822`.
-- Selection score still climbing (new best at 1→6→11→13), val loss monotonic down
-  (1.0400 → 1.0258), no overfit signal. **Let it run to completion.**
-- Interpretation: a ~0.55 lower-bound directional edge at 5% coverage is a *modest
-  but real* signal. It is the apples-to-apples baseline for all future runs.
+- Pairs: BTCUSDT, ETHUSDT, SOLUSDT (3), 180 days, seq_len 128, primary 30m.
+- Samples: 788,705 (train 630,964 / val 157,741). Val 2026-06-17 → 2026-07-23.
+- **Best = epoch 13** (`sel_score=0.5546 dir_acc=0.569 lb=0.555 n_dir=4822`).
+  Early-stopped at epoch 18 (no improve for 5 epochs). Clean run, no overfit.
+- Final eval per horizon, fixed-coverage top-5% (comparable metric):
+
+  | Horizon | ungated 3-class | top-5% dir_acc | top-5% wilson_lb |
+  |---------|----------------:|---------------:|-----------------:|
+  | 5m      | 0.527 | 0.568 | 0.554 |
+  | 30m (primary) | 0.556 | 0.569 | 0.555 |
+  | **60m** | 0.571 | **0.585** | **0.571** |
+
+- **60m is the strongest horizon** on every confidence bucket (top-2% dir_acc
+  0.588 / lb 0.566). Primary is 30m → we serve the middle performer. Open item:
+  consider switching primary to 60m (decide after next run's per-pair eval).
+- **Flat-bias:** the 3-class heads predict "flat" for the large majority of bars
+  (see confusion matrices in the log); directional edge is recovered by the aux
+  dir heads, which is why dir_acc > ungated tells the real story.
+- **⚠️ Serve-gate finding (actionable):** the gate sweep shows gate ≤0.50 →
+  coverage 1.000 → dir_acc ~0.521 (≈coin flip). Edge only appears at gate ≥0.55
+  (30m gate 0.60 → dir_acc 0.560; 60m gate 0.60 → 0.579). The old serve gate 0.40
+  traded ~everything at no edge. **→ raised `ML_GATE_THRESHOLD` 0.40 → 0.58.**
+  Caveat: confidence scale drifts between models; re-check the gate sweep each run
+  and re-tune. (Only `ML_GATE_THRESHOLD` changed; `CKPT_GATE_THRESHOLD` and
+  `CONFIDENCE_THRESHOLD` left alone — checkpoint selection uses fixed-coverage
+  `SEL_COVERAGE=0.05`, not the gate.)
 - **Caveat:** trained on 180d candles but only ~7d of real microstructure, so the
-  edge is essentially candle-driven (see "Data audit findings"). The orderbook edge
-  is not yet exercised.
+  edge is essentially candle-driven (see "Data audit findings"). The real ceiling is
+  likely microstructure data scarcity, not architecture → the microstructure-rich
+  run remains the highest-leverage future step.
 
 ---
 
@@ -98,19 +120,19 @@ Prepare changes on a branch; launch only after the current run finishes.
 
 ---
 
-## Part 2 — Capture baseline when current run finishes
+## Part 2 — Baseline captured (DONE)
 
-On success the job self-deletes the VM and uploads log/status/checkpoint
-(`scripts/gcp_train.sh:174-176`).
+Baseline run finished and is recorded above ("Baseline reference"). Artifacts:
+- log:        `gs://fluxtrader-train-artifacts/logs/20260723T222840Z.log`
+- checkpoint: `gs://fluxtrader-train-artifacts/checkpoints/latest.pt`
+  (= `checkpoints/m2_multi_20260723T222840Z_2b208de3.pt`)
+- status:     `{"status":"DONE","git_sha":"2b208de...","run":"20260723T222840Z"}`
 
+For future runs, re-capture the same way:
 ```sh
-./scripts/gcp_status.sh                 # confirm DONE, VM gone
-gcloud storage cp gs://fluxtrader-train-artifacts/checkpoints/latest.pt ./baseline_m2_multi.pt
-gcloud storage cat gs://fluxtrader-train-artifacts/status/latest.json    # record git_sha + run id
+./scripts/gcp_status.sh
+gcloud storage cat gs://fluxtrader-train-artifacts/logs/<RUN_ID>.log
 ```
-
-Save final `sel_score/dir_acc/lb/n_dir` and the `eval_m2.py` gate sweep from the
-log. This is the comparison point for every future run.
 
 ---
 

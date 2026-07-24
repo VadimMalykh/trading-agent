@@ -9,7 +9,9 @@ services:
       BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
       TRADING_MODE: ${TRADING_MODE:-simulation}
       ML_INFERENCE_URL: http://ml_inference:8001
-      ML_GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.40}
+      # Serve/product gate. Eval (run 20260723) showed gate<=0.50 trades ~100% of
+      # bars at ~coin-flip; edge only appears at gate>=0.55. 0.58 harvests it.
+      ML_GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.58}
       PHX_HOST: localhost
       PHX_PORT: 4000
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-only-secret-key-base-that-is-at-least-64-bytes-long-for-phoenix-to-start}
@@ -49,7 +51,7 @@ services:
       DATABASE_URL: postgresql://fluxtrader:secret@postgres:5432/fluxtrader
       MODEL_PATH: /models/m2_multi.pt
       MODEL_DIR: /models
-      GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.40}
+      GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.58}
       PRIMARY_HORIZON: ${PRIMARY_HORIZON:-30}
       HORIZONS_MINUTES: ${HORIZONS_MINUTES:-5,30,60}
       WHITELIST_PAIRS: ${WHITELIST_PAIRS:-BTCUSDT,ETHUSDT,SOLUSDT}
