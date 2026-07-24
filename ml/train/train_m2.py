@@ -12,8 +12,19 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.multiprocessing as torch_mp
 import torch.nn as nn
 from torch.utils.data import DataLoader
+
+# DataLoader workers share sampled tensors with the main process. PyTorch's
+# default 'file_descriptor' strategy consumes one FD per shared tensor; with a
+# large val set (100k+ windows) and persistent_workers, this exhausts the
+# process FD limit ("RuntimeError: Too many open files"). 'file_system' uses
+# named shm files instead of per-tensor FDs, so it does not scale with N.
+try:
+    torch_mp.set_sharing_strategy("file_system")
+except (RuntimeError, ValueError):  # e.g. platform without file_system strategy
+    pass
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
