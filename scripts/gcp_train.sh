@@ -191,7 +191,11 @@ gcloud storage cp /tmp/status.json \"\$GCS_BUCKET/status/latest.json\" || true
 echo \"=== train start \$(date -u) run=\$RUN_ID ===\"
 
 echo \"=== checkout \$GIT_REMOTE @ \$GIT_REF ===\"
-rm -rf \$HOME/\$REMOTE_REPO_NAME
+# Docker containers run as root and leave root-owned files (e.g. __pycache__
+# *.pyc) in the bind-mounted repo. A plain 'rm -rf' as the non-root user then
+# fails with 'Permission denied', which aborts the whole job under 'set -e'.
+# Use sudo so the stale checkout is always removable.
+sudo rm -rf \$HOME/\$REMOTE_REPO_NAME
 git clone --branch \"\$GIT_REF\" \"\$GIT_REMOTE\" \$HOME/\$REMOTE_REPO_NAME \
   || git clone \"\$GIT_REMOTE\" \$HOME/\$REMOTE_REPO_NAME
 cd \$HOME/\$REMOTE_REPO_NAME
