@@ -36,5 +36,5 @@ export TRAIN_DEVICE=cpu
 # M2 Phase 1+2 defaults
 export TRAIN_HORIZONS=5,30,60
 export TRAIN_PRIMARY=30
-# 3 majors + DOGE/WLD. HYPE held out pending 180d data-quality audit.
-export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT
+# 6 pairs: 3 majors + DOGE/WLD/HYPE (all have full ~180d candles per 2026-07-24 audit).
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT

@@ -25,9 +25,11 @@ fi
 # M2 defaults (Phase 1+2): 5/30/60 heads, primary 30m, majors preferred
 : "${TRAIN_HORIZONS:=5,30,60}"
 : "${TRAIN_PRIMARY:=30}"
-# 5-pair set: 3 majors + DOGE/WLD (higher-vol regime). HYPE held out pending a
-# data-quality audit of its 180d microstructure history.
-: "${TRAIN_PAIRS:=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT}"
+# 6-pair set: 3 majors + DOGE/WLD/HYPE. Data audit (2026-07-24) confirmed all six
+# have full ~180d 1m candles. Microstructure (book/trades/OI) spans only ~days for
+# every pair (collector started recently) → zero-filled for most of history; the
+# model tolerates missing microstructure. See docs/NEXT_TRAINING_PLAN.md.
+: "${TRAIN_PAIRS:=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT}"
 
 # --- V2 pipeline: artifacts via GCS bucket, code via git ---------------------
 # Single-region bucket in the SAME region as the VMs (else you pay egress).

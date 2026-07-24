@@ -23,6 +23,9 @@ session and the exact steps/commands to execute.
   (1.0400 → 1.0258), no overfit signal. **Let it run to completion.**
 - Interpretation: a ~0.55 lower-bound directional edge at 5% coverage is a *modest
   but real* signal. It is the apples-to-apples baseline for all future runs.
+- **Caveat:** trained on 180d candles but only ~7d of real microstructure, so the
+  edge is essentially candle-driven (see "Data audit findings"). The orderbook edge
+  is not yet exercised.
 
 ---
 
@@ -53,6 +56,36 @@ Cautions:
   `ml_inference` on the always-on VM (`scripts/gcp_promote.sh:71`), i.e. puts the
   model in the serving path. Load the copied file in a **separate/dev inference**.
 - Checkpoint is self-contained (stores `norm_stats` + head config).
+
+### Serving this checkpoint in the always-on UI (dev-only, not production)
+
+Serve path: `ml_inference` (`ml/train/serve.py`, port 8001) reads
+`/models/m2_multi.pt` from the `trading_agent_model_weights` volume → Elixir
+`Predict` (Finch, `apps/fluxtrader/lib/fluxtrader/ml/predict.ex`) → `SignalEngine`
+→ `DashboardLive`. `serve.py` rebuilds the model from the checkpoint's own `meta`
+(horizons/seq_len/feature_dim/hidden/dir_head) and only loads at startup.
+
+```sh
+# 1. Upload the pulled checkpoint to the always-on VM
+gcloud compute scp --project=fluxtrader --zone=me-central1-b \
+  ./m2_multi_epoch_snapshot.pt fluxtrader-1:/tmp/m2_multi.pt
+
+# 2. Install into the model volume + restart inference (mirrors gcp_promote.sh:66-71)
+gcloud compute ssh fluxtrader-1 --project=fluxtrader --zone=me-central1-b -- '
+  cd ~/trading_agent &&
+  docker volume create trading_agent_model_weights >/dev/null 2>&1 || true &&
+  docker run --rm -v trading_agent_model_weights:/models -v /tmp:/in:ro alpine \
+    sh -c "cp /in/m2_multi.pt /models/m2_multi.pt && ls -la /models/m2_multi.pt" &&
+  docker compose up -d --force-recreate ml_inference &&
+  sleep 4 && curl -sS http://127.0.0.1:8001/health
+'
+```
+
+Healthy = `{"ok": true, "model_path": "/models/m2_multi.pt", "norm": "ckpt", ...}`.
+Notes: overwrites whatever `m2_multi.pt` is currently served; predictions need live
+features from the always-on DB, so keep the whitelist on pairs with recent data.
+Later, run a second `serve.py` on another port/`MODEL_PATH` to separate dev-eval
+from UI signals (no code change needed).
 
 ---
 
@@ -104,22 +137,62 @@ Larger batch may need a small LR nudge (`ml/train/config.py:46`).
 
 ## Part 4 — Data changes (branch now, run after baseline)
 
-- **Next run pairs: BTC, ETH, SOL, DOGE, WLD (5).** Hold HYPE until its 180d data
-  quality is verified. Set via `TRAIN_PAIRS` (`scripts/gcp_common.sh:28`) /
-  `WHITELIST_PAIRS` (`ml/train/config.py:36`). Ensure new pairs are in the
-  always-on DB and in the dump (`DUMP_TABLES` covers all tables,
-  `scripts/gcp_common.sh:44`).
-- **Keep 180d for now.** Do NOT extend to 360d until auditing older-data feature
-  completeness — if orderbook/trade/funding collectors weren't running >180d ago,
-  `ml/train/data/features.py:54-56,69-72` zero-fills half the 16-dim vector,
-  degrading quality.
-- **Add per-pair evaluation.** Check whether `eval_m2.py` breaks metrics out by
-  symbol; if not, add it. Essential to detect whether pooling DOGE/WLD (higher-vol,
-  thinner-book) degrades the majors' edge through the shared encoder. If it does →
-  consider separate majors/alts models or weighting.
-- Sequencing: Run 1 = 5 pairs / 180d / per-pair eval / e2-standard-4. Run 2 (if
-  audit passes) = extend majors to 360d. Never change data AND architecture in the
-  same run (can't attribute the change).
+- **Next run pairs: BTC, ETH, SOL, DOGE, WLD, HYPE (6).** Audit passed for all six
+  (see "Data audit findings" below). Set via `TRAIN_PAIRS` (`scripts/gcp_common.sh`).
+  All six are enrolled in the always-on whitelist and in the dump (`DUMP_TABLES`
+  covers all tables, `scripts/gcp_common.sh:44`).
+- **Keep 180d for now.** 360d not useful yet — candles go back ~180d only, and
+  microstructure is far shorter (below). Extending needs more candle history first.
+- **Per-pair evaluation** is implemented (`ml/train/eval_m2.py`), enhanced to report
+  fixed-coverage 0.05 `dir_acc / wilson_lb / n_dir` per pair. Use it to detect
+  whether pooling higher-vol alts (DOGE/WLD/HYPE) degrades the majors' edge through
+  the shared encoder. If it does → consider separate majors/alts models or weighting.
+- Sequencing: Run 1 = 6 pairs / 180d / per-pair eval / e2-standard-4. Never change
+  data AND architecture in the same run (can't attribute the change).
+
+## Data audit findings (2026-07-24)
+
+Queried the always-on VM Postgres (`fluxtrader-1`). Per-symbol row counts + spans:
+
+| Pair | 1m candles | candle span | book/trades/OI/funding span |
+|------|-----------:|-------------|-----------------------------|
+| BTC  | 263,705 | Jan 22 → Jul 24 (~180d) | Jul 17 → Jul 24 (~7d) |
+| ETH  | 263,694 | Jan 22 → Jul 24 | Jul 17 → Jul 24 (~7d) |
+| SOL  | 263,683 | Jan 22 → Jul 24 | Jul 17 → Jul 24 (~7d) |
+| DOGE | 259,784 | Jan 24 → Jul 24 | Jul 21 → Jul 24 (~3d) |
+| WLD  | 259,746 | Jan 24 → Jul 24 | Jul 21 → Jul 24 (~3d) |
+| HYPE | 259,765 | Jan 24 → Jul 24 | Jul 21 → Jul 24 (~3d) |
+
+Key facts and their consequences:
+
+- **All 6 pairs have full ~180d of 1m candles** (~260K rows). HYPE is valid — no
+  reason to hold it out. → next run uses 6 pairs.
+- **Microstructure is tiny for EVERY pair** (~3–7 days). The live collector
+  (`apps/fluxtrader/lib/fluxtrader/market_data/collector.ex`) only began populating
+  `orderbook_snapshots`, `market_trades`, `open_interest`, `funding_rates` recently.
+  There is **no historical backfill** for book/trades/OI (only candles+funding can be
+  backfilled via `ml/train/backfill_history.py`).
+- **⚠️ Affects the CURRENT baseline model too.** For ~173 of 180 days, ~11 of 16
+  features (`spread_bps, imbalance, micro_mid, bid_ask_vol_ratio, depth_near_imb,
+  trade_count, buy_sell_imb, trade_vol, funding, oi, oi_chg`) are **zero-filled**
+  (`ml/train/data/features.py:54-56,69-72,80-81,89-91`). The ~0.55 directional edge
+  is therefore driven mainly by the 4 OHLCV-derived features; the orderbook edge is
+  NOT meaningfully exercised yet.
+- **Design decision:** the model tolerates missing microstructure via zero-fill.
+  New pairs will always start with empty microstructure, so this must always work.
+- **Normalization risk:** near-constant (mostly-zero) features → tiny std in per-pair
+  z-score (`fit_norm_from_bundle`), which can amplify the few real values into
+  spikes. Watch per-pair eval for instability.
+
+### Follow-up work created by this finding
+1. **Presence-mask features (Part 5 experiment):** add `has_book / has_trades /
+   has_funding_oi` binary columns so the model distinguishes "genuinely zero" from
+   "missing". Bumps `FEATURE_DIM` 16→~19 — coordinated change across
+   `ml/train/data/features.py`, `ml/train/config.py` (`FEATURE_DIM`), and the model
+   `input_size` (`ml/train/models/multi_horizon.py`). Requires retrain.
+2. **Microstructure-rich run (weeks out):** once the collector has accumulated enough
+   book/trades/OI history, do a run that actually tests the orderbook edge, and
+   compare against the current candle-driven baseline.
 
 ---
 
@@ -147,8 +220,9 @@ stops/takes/size belong to M3.
 1. **Now:** Part 0 (pull epoch checkpoint for UI); Part 3+4 code/config on a new
    git branch (no run launched).
 2. **When current run finishes:** Part 2 (capture baseline).
-3. **Then:** launch Run 1 (infra + 5 pairs + per-pair eval), compare to baseline.
-4. **Later:** Run 2 (360d if audit passes), then Part 5 (quantile head).
+3. **Then:** launch Run 1 (infra + 6 pairs + per-pair eval), compare to baseline.
+4. **Later:** microstructure-rich run once book history accumulates, presence-mask
+   features, and Part 5 (quantile head).
 
 ## How to stop the current run early (if ever needed)
 
