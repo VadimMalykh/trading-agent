@@ -24,7 +24,9 @@ STATUS_JSON="$(gcloud storage cat "$STATUS_OBJ" 2>/dev/null || true)"
 if [[ -z "$STATUS_JSON" ]]; then
   echo "RESULT: no status marker yet → training likely STILL RUNNING (or never started)."
 else
-  echo "status: $STATUS_JSON"
+  # Labeled 'last marker' because it can lag the true state (only rewritten by the
+  # job at start=RUNNING and finish=DONE/FAILED). Reconciled against the VM below.
+  echo "last marker: $STATUS_JSON"
 fi
 
 # derive run id + state for log tail / next-step hint
@@ -54,6 +56,20 @@ else
   echo "train VM $GCP_TRAIN_INSTANCE: gone (self-deleted or never created)"
 fi
 
+# --- reconcile marker vs VM (the VM is the source of truth for "is it running") --
+# The status marker is only rewritten by the job (RUNNING at start, DONE/FAILED at
+# finish). If the VM is up, a run is in progress no matter what the marker says —
+# don't let a stale DONE from a previous run mislead.
+EFFECTIVE="$STATE"
+if [[ "$VM_STATE" == "RUNNING" ]]; then
+  EFFECTIVE="RUNNING"
+  if [[ "$STATE" == "DONE" || "$STATE" == "FAILED" ]]; then
+    echo ""
+    echo "NOTE: marker says '$STATE' but the VM is RUNNING → that marker is from a"
+    echo "      PREVIOUS run; a new run is in progress. Trust the VM state."
+  fi
+fi
+
 # --- log tail from bucket -------------------------------------------------------
 if [[ -n "$RUN_ID" ]]; then
   echo ""
@@ -63,8 +79,9 @@ if [[ -n "$RUN_ID" ]]; then
 fi
 
 echo ""
-case "$STATE" in
-  DONE)   echo "→ DONE. Promote:  ./scripts/gcp_promote.sh" ;;
-  FAILED) echo "→ FAILED. VM stopped for debug (see above). Fix + re-run ./scripts/gcp_train.sh" ;;
-  *)      echo "→ still running (or no marker). Re-run this to poll; the VM self-cleans when finished." ;;
+case "$EFFECTIVE" in
+  RUNNING) echo "→ RUNNING. Do NOT launch another run (one VM + shared bucket keys). Poll with this script; watch live via the log tail / tmux above." ;;
+  DONE)    echo "→ DONE. Promote:  ./scripts/gcp_promote.sh" ;;
+  FAILED)  echo "→ FAILED. VM stopped for debug (see above). Fix + re-run ./scripts/gcp_train.sh" ;;
+  *)       echo "→ no marker yet. If the VM is RUNNING a run just started; otherwise nothing is running." ;;
 esac

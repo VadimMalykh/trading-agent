@@ -181,6 +181,13 @@ finish() {
 }
 trap 'code=\$?; finish \"\$([[ \$code -eq 0 ]] && echo DONE || echo FAILED)\"' EXIT
 
+# Publish a RUNNING marker immediately so gcp_status.sh reflects THIS run while it
+# trains, instead of showing the previous run's stale DONE until the finish trap.
+printf '{\"status\":\"RUNNING\",\"git_sha\":\"%s\",\"run\":\"%s\",\"started\":\"%s\"}\n' \
+  \"\${GIT_SHA:-}\" \"\$RUN_ID\" \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > /tmp/status.json
+gcloud storage cp /tmp/status.json \"\$GCS_BUCKET/status/\$RUN_ID.json\" || true
+gcloud storage cp /tmp/status.json \"\$GCS_BUCKET/status/latest.json\" || true
+
 echo \"=== train start \$(date -u) run=\$RUN_ID ===\"
 
 echo \"=== checkout \$GIT_REMOTE @ \$GIT_REF ===\"
