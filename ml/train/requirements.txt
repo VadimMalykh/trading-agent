@@ -1,4 +1,8 @@
-torch>=2.2.0
+# CPU-only torch. The default PyPI wheel pulls the full CUDA/NVIDIA stack (~5-7GB)
+# which is useless on our CPU-only VMs. The +cpu local tag exists ONLY on the
+# PyTorch CPU index (see --extra-index-url in Dockerfile.train), so pip cannot fall
+# back to the CUDA build.
+torch==2.5.1+cpu
 numpy>=1.26.0
 pandas>=2.1.0
 psycopg2-binary>=2.9.9

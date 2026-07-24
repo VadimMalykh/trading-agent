@@ -7,7 +7,9 @@ RUN apt-get update -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Use the CPU-only PyTorch wheels (no CUDA/NVIDIA deps ~5-7GB). --extra-index-url
+# keeps normal PyPI available for the other packages; the CPU index provides torch.
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
 COPY . .
 
