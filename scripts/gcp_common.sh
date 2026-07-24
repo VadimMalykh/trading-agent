@@ -17,7 +17,7 @@ fi
 : "${GCP_REGION:=${GCP_ZONE%-*}}"          # me-central1-b -> me-central1
 : "${GCP_ALWAYS_ON:=fluxtrader-1}"
 : "${GCP_TRAIN_INSTANCE:=fluxtrader-train}"
-: "${GCP_TRAIN_MACHINE:=e2-standard-2}"
+: "${GCP_TRAIN_MACHINE:=e2-standard-4}"
 : "${REMOTE_REPO_NAME:=trading_agent}"
 : "${TRAIN_EPOCHS:=60}"
 : "${TRAIN_SEQ_LEN:=128}"
@@ -25,7 +25,9 @@ fi
 # M2 defaults (Phase 1+2): 5/30/60 heads, primary 30m, majors preferred
 : "${TRAIN_HORIZONS:=5,30,60}"
 : "${TRAIN_PRIMARY:=30}"
-: "${TRAIN_PAIRS:=BTCUSDT,ETHUSDT,SOLUSDT}"
+# 5-pair set: 3 majors + DOGE/WLD (higher-vol regime). HYPE held out pending a
+# data-quality audit of its 180d microstructure history.
+: "${TRAIN_PAIRS:=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT}"
 
 # --- V2 pipeline: artifacts via GCS bucket, code via git ---------------------
 # Single-region bucket in the SAME region as the VMs (else you pay egress).

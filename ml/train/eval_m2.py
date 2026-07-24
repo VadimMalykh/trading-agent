@@ -86,10 +86,14 @@ def run_horizon_report(logits, y_true, thresholds, pair_ids=None, dir_logits=Non
             sub_ungated = float((sub_pred == sub_y).float().mean().item())
             sub_gate = gate_logits[idx]
             sub_sweep = gate_sweep(sub_gate, sub_y, thresholds, mode="directional")
+            # Fixed-coverage edge per pair: the cross-model-comparable metric used
+            # to judge whether adding alts degrades the majors' edge.
+            sub_fixed = [fixed_coverage_metrics(sub_gate, sub_y, c) for c in FIXED_COVERAGES]
             per_pair[str(pair)] = {
                 "n": int(mask.sum()),
                 "ungated_acc": sub_ungated,
                 "gate_sweep": sub_sweep,
+                "fixed_coverage": sub_fixed,
             }
 
     return {
@@ -259,17 +263,31 @@ def main():
             )
 
         if result["per_pair"]:
-            print("Per-pair @ serve gate:")
+            print("Per-pair @ serve gate  |  fixed-cov 0.05 (dir_acc / wilson_lb / n_dir):")
             for pair, pr in result["per_pair"].items():
                 row = next(
                     (r for r in pr["gate_sweep"] if abs(r["threshold"] - GATE_THRESHOLD) < 1e-9),
                     None,
                 )
-                if row:
-                    print(
-                        f"  {pair}: n={pr['n']} ungated={pr['ungated_acc']:.3f} "
-                        f"cov={row['coverage']:.3f} dir_acc={row.get('gated_dir_acc', 0):.3f}"
-                    )
+                fc05 = next(
+                    (f for f in pr.get("fixed_coverage", []) if abs(f["coverage"] - 0.05) < 1e-9),
+                    None,
+                )
+                serve_part = (
+                    f"cov={row['coverage']:.3f} dir_acc={row.get('gated_dir_acc', 0):.3f}"
+                    if row
+                    else "cov=n/a"
+                )
+                fc_part = (
+                    f"cov0.05 dir_acc={fc05['dir_acc']:.3f} lb={fc05['dir_acc_wilson_lb']:.3f} "
+                    f"n_dir={fc05['n_true_directional_gated']}"
+                    if fc05
+                    else ""
+                )
+                print(
+                    f"  {pair}: n={pr['n']} ungated={pr['ungated_acc']:.3f} "
+                    f"{serve_part}  |  {fc_part}"
+                )
 
         report["horizons"][h] = {
             "ungated_acc": result["ungated_acc"],
@@ -282,6 +300,7 @@ def main():
                     "n": v["n"],
                     "ungated_acc": v["ungated_acc"],
                     "gate_sweep": v["gate_sweep"],
+                    "fixed_coverage": v.get("fixed_coverage", []),
                 }
                 for k, v in result["per_pair"].items()
             },

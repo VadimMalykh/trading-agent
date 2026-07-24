@@ -10,8 +10,10 @@ export GCP_ALWAYS_ON=fluxtrader-1
 
 # Temporary train VM — created + self-deleted by ./scripts/gcp_train.sh
 export GCP_TRAIN_INSTANCE=fluxtrader-train
-# Lazy windows keep feature RAM ~tens of MB; 8GB is enough (16GB only if OOM returns)
-export GCP_TRAIN_MACHINE=e2-standard-2   # 8GB; use e2-standard-4 if dmesg shows OOM
+# Training is CPU-bound, not memory-bound (lazy windows keep feature RAM ~tens of MB).
+# 4 vCPU speeds up the LSTM far more than extra RAM. e2-standard-4 is 4 vCPU / 16GB.
+# For 4 vCPU with less RAM (cost), use e2-custom-4-4096 (4 vCPU / 4GB).
+export GCP_TRAIN_MACHINE=e2-standard-4   # 4 vCPU / 16GB
 
 # Folder names under the VM user's $HOME (do not use ~/ or Mac paths)
 export REMOTE_REPO_NAME=trading_agent
@@ -34,4 +36,5 @@ export TRAIN_DEVICE=cpu
 # M2 Phase 1+2 defaults
 export TRAIN_HORIZONS=5,30,60
 export TRAIN_PRIMARY=30
-export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT
+# 3 majors + DOGE/WLD. HYPE held out pending 180d data-quality audit.
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT

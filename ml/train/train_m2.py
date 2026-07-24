@@ -89,8 +89,8 @@ def parse_args():
     p.add_argument(
         "--num-workers",
         type=int,
-        default=0,
-        help="DataLoader workers (0 = main process only, lowest RAM)",
+        default=2,
+        help="DataLoader workers (0 = main process only, lowest RAM; 2 parallelizes window slicing)",
     )
     return p.parse_args()
 
@@ -193,6 +193,12 @@ def main():
     device = torch.device(
         args.device if args.device != "cuda" or torch.cuda.is_available() else "cpu"
     )
+    # On CPU, pin BLAS/intra-op threads to all vCPUs (env OMP_NUM_THREADS if set).
+    if device.type == "cpu":
+        n_threads = int(os.environ.get("OMP_NUM_THREADS", "0") or 0)
+        if n_threads > 0:
+            torch.set_num_threads(n_threads)
+        print(f"torch CPU threads: {torch.get_num_threads()}")
     horizons = [int(x) for x in args.horizons.split(",") if x.strip()]
     horizon_keys = [str(h) for h in horizons]
     primary_key = str(args.primary)
@@ -272,6 +278,9 @@ def main():
         num_workers=args.num_workers,
         pin_memory=device.type == "cuda",
     )
+    if args.num_workers > 0:
+        # keep workers alive between epochs so per-pair matrices aren't re-forked each epoch
+        loader_kw["persistent_workers"] = True
     train_loader = DataLoader(LazyMultiHorizonDataset(bundle, tr_idx, horizon_keys), **loader_kw)
     val_loader = DataLoader(LazyMultiHorizonDataset(bundle, va_idx, horizon_keys), **loader_kw)
 

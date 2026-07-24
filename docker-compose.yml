@@ -74,11 +74,15 @@ services:
       HORIZON_MINUTES: ${HORIZON_MINUTES:-30}
       HORIZONS_MINUTES: ${HORIZONS_MINUTES:-5,30,60}
       PRIMARY_HORIZON: ${PRIMARY_HORIZON:-30}
-      SEQ_LEN: ${SEQ_LEN:-64}
+      # Match the GCP training default (scripts/gcp_common.sh TRAIN_SEQ_LEN=128)
+      SEQ_LEN: ${SEQ_LEN:-128}
       LR: ${LR:-5e-4}
       WEIGHT_DECAY: ${WEIGHT_DECAY:-1e-4}
       EARLY_STOP_PATIENCE: ${EARLY_STOP_PATIENCE:-5}
       CKPT_GATE_THRESHOLD: ${CKPT_GATE_THRESHOLD:-0.40}
+      # Throughput: larger batch = better BLAS utilization; threads = use all vCPUs.
+      BATCH_SIZE: ${BATCH_SIZE:-128}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
     volumes:
       - ./ml/train:/workspace/train
       - model_weights:/models
