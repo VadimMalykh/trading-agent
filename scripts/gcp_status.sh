@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # V2 STEP 2/3 — status of the current/last training run.
 #
-# Reads the run status + tail of the log from the bucket (works even after the
-# train VM has self-deleted). If the VM is still alive, prints the tmux attach
-# command for a live view.
+# Reads the run status + tail (last 40 lines) of the log from the bucket (works
+# even after the train VM has self-deleted). If the VM is still alive, prints the
+# tmux attach command for a live view.
+#
+# For the FULL log of any run, use ./scripts/gcp_logs.sh (see that script).
 #
 #   ./scripts/gcp_status.sh            # latest run
 #   ./scripts/gcp_status.sh 20260724T101500Z   # a specific run id
@@ -76,6 +78,8 @@ if [[ -n "$RUN_ID" ]]; then
   echo "==> last 40 log lines ($GCS_BUCKET/logs/$RUN_ID.log):"
   gcloud storage cat "$GCS_BUCKET/logs/$RUN_ID.log" 2>/dev/null | tail -n 40 \
     || echo "(no log in bucket yet — still running; use the live view above)"
+  echo ""
+  echo "full log:   ./scripts/gcp_logs.sh $RUN_ID     (all runs: ./scripts/gcp_logs.sh --list)"
 fi
 
 echo ""
