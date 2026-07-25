@@ -25,7 +25,7 @@ class SharedEncoderMultiHead(nn.Module):
 
     def __init__(
         self,
-        input_size: int = 16,
+        input_size: int = 19,
         hidden_size: int = 64,
         num_classes: int = 3,
         horizons_minutes: List[int] | None = None,

@@ -34,7 +34,8 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
     feat["log_vol"] = np.log1p(candles["volume"].astype(float))
     feat["close"] = candles["close"].astype(float)
 
-    # Order book (asof join)
+    # Order book (asof join). Presence mask lets the model tell real zeros from
+    # "no book data" (per-row: forward-filled book known at that bar, else 0).
     book = db.load_orderbook(symbol)
     if not book.empty:
         book = book.set_index("ts").sort_index()
@@ -51,9 +52,12 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
             book_aligned["bid_depth_near"] - book_aligned["ask_depth_near"],
             book_aligned["bid_depth_near"] + book_aligned["ask_depth_near"] + 1e-9,
         )
+        # 1.0 where a book snapshot is known at/before this bar, else 0.0
+        feat["has_book"] = book_aligned["mid"].notna().astype(np.float32).values
     else:
         for c in ["spread_bps", "imbalance", "micro_mid", "bid_ask_vol_ratio", "depth_near_imb"]:
             feat[c] = 0.0
+        feat["has_book"] = 0.0
 
     # Trade flow
     trades = db.load_market_trades(symbol)
@@ -66,17 +70,26 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
             t_aligned["buy_volume"] + t_aligned["sell_volume"] + 1e-9,
         )
         feat["trade_vol"] = np.log1p(t_aligned["volume"].fillna(0.0).astype(float))
+        # 1.0 where trade-flow is known at/before this bar, else 0.0
+        feat["has_trades"] = t_aligned["trade_count"].notna().astype(np.float32).values
     else:
         feat["trade_count"] = 0.0
         feat["buy_sell_imb"] = 0.0
         feat["trade_vol"] = 0.0
+        feat["has_trades"] = 0.0
 
-    # Funding / OI
+    # Funding / OI. One shared presence flag: 1.0 where EITHER funding or OI is
+    # known at/before this bar (both are low-frequency, ffilled series).
+    has_funding_oi = np.zeros(len(feat), dtype=np.float32)
+
     funding = db.load_funding(symbol)
     if not funding.empty:
         funding = funding.set_index("ts").sort_index()
         f_aligned = funding.reindex(feat.index, method="ffill")
         feat["funding"] = f_aligned["last_funding_rate"].fillna(0.0)
+        has_funding_oi = np.maximum(
+            has_funding_oi, f_aligned["last_funding_rate"].notna().astype(np.float32).values
+        )
     else:
         feat["funding"] = 0.0
 
@@ -86,9 +99,14 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
         o_aligned = oi.reindex(feat.index, method="ffill")
         feat["oi"] = np.log1p(o_aligned["open_interest"].fillna(0.0).astype(float))
         feat["oi_chg"] = o_aligned["open_interest"].pct_change().fillna(0.0)
+        has_funding_oi = np.maximum(
+            has_funding_oi, o_aligned["open_interest"].notna().astype(np.float32).values
+        )
     else:
         feat["oi"] = 0.0
         feat["oi_chg"] = 0.0
+
+    feat["has_funding_oi"] = has_funding_oi
 
     # Rolling vol (simple, not a classic indicator package)
     feat["ret_std_15"] = feat["ret_1"].rolling(15, min_periods=1).std().fillna(0.0)
@@ -110,6 +128,10 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
         "oi",
         "oi_chg",
         "ret_std_15",
+        # presence masks (kept last so the 16 signal-feature indices are stable)
+        "has_book",
+        "has_trades",
+        "has_funding_oi",
     ]
     assert len(feature_cols) == FEATURE_DIM
 

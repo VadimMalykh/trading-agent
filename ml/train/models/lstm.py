@@ -7,7 +7,7 @@ from models.multi_horizon import SharedEncoderMultiHead  # noqa: F401
 class PriceDirectionLSTM(nn.Module):
     """M1 supervised baseline: sequence → direction (down/flat/up)."""
 
-    def __init__(self, input_size: int = 16, hidden_size: int = 64, num_classes: int = 3):
+    def __init__(self, input_size: int = 19, hidden_size: int = 64, num_classes: int = 3):
         super().__init__()
         self.lstm = nn.LSTM(
             input_size,

@@ -65,7 +65,11 @@ CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.40"))
 GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.40"))
 
 # Feature vector size per timestep (must match features.py)
-FEATURE_DIM = 16
+# 16 signal features + 3 presence-mask flags (has_book/has_trades/has_funding_oi)
+# so the model distinguishes "genuinely zero" from "missing" microstructure. The
+# masks also protect per-pair z-score norm from near-constant (mostly-zero)
+# features when a source has little/no history.
+FEATURE_DIM = 19
 
 # Class names for logging
 CLASS_NAMES = ["down", "flat", "up"]
