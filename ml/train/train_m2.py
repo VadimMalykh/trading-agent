@@ -31,6 +31,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import (
     BATCH_SIZE,
     CKPT_GATE_THRESHOLD,
+    CLS_LABEL_SMOOTHING,
+    CLS_WEIGHT_CLIP,
+    CLS_WEIGHT_MODE,
     DIR_LOSS_WEIGHT,
     DIRECTIONAL_HEAD,
     EARLY_STOP_PATIENCE,
@@ -337,15 +340,31 @@ def main():
         f"(levels={QUANTILE_LEVELS} loss weight={QUANTILE_LOSS_WEIGHT})"
     )
 
+    print(
+        f"3-class weighting: mode={CLS_WEIGHT_MODE} clip={CLS_WEIGHT_CLIP} "
+        f"label_smoothing={CLS_LABEL_SMOOTHING} (directional head unaffected)"
+    )
     crits = {}
     dir_crits = {}
     for h in horizon_keys:
         y_tr_h = labels_for_indices(bundle, tr_idx, h)
         counts = np.bincount(y_tr_h, minlength=3).astype(np.float64)
         counts = np.maximum(counts, 1.0)
-        w = counts.sum() / (3.0 * counts)
+        # 3-class weights: gentler than raw inverse-frequency so the flat mass does
+        # not over-inflate down/up weights and collapse the argmax. Clamp so no
+        # single class dominates the CE.
+        if CLS_WEIGHT_MODE == "inv_freq":
+            w = counts.sum() / (3.0 * counts)
+        else:  # sqrt_inv_freq (default)
+            w = 1.0 / np.sqrt(counts)
         w = w / w.mean()
-        crits[h] = nn.CrossEntropyLoss(weight=torch.tensor(w, dtype=torch.float32, device=device))
+        if CLS_WEIGHT_CLIP and CLS_WEIGHT_CLIP > 1.0:
+            w = np.clip(w, 1.0 / CLS_WEIGHT_CLIP, CLS_WEIGHT_CLIP)
+            w = w / w.mean()
+        crits[h] = nn.CrossEntropyLoss(
+            weight=torch.tensor(w, dtype=torch.float32, device=device),
+            label_smoothing=CLS_LABEL_SMOOTHING,
+        )
         print(f"  class weights {h}m: down={w[0]:.2f} flat={w[1]:.2f} up={w[2]:.2f}")
         # Directional-head class balance (down vs up only)
         n_down, n_up = float(counts[0]), float(counts[2])
@@ -482,6 +501,9 @@ def main():
                     "feature_dim": FEATURE_DIM,
                     "hidden_size": HIDDEN_SIZE,
                     "directional_head": DIRECTIONAL_HEAD,
+                    "cls_weight_mode": CLS_WEIGHT_MODE,
+                    "cls_weight_clip": CLS_WEIGHT_CLIP,
+                    "cls_label_smoothing": CLS_LABEL_SMOOTHING,
                     "quantile_head": QUANTILE_HEAD,
                     "quantile_levels": QUANTILE_LEVELS,
                     "quantile_cov_primary": q_cov,

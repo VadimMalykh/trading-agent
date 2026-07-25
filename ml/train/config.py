@@ -68,6 +68,22 @@ SEL_COVERAGE = float(os.environ.get("SEL_COVERAGE", "0.05"))
 # lucky ~200-sample fluke can no longer win selection.
 MIN_GATED_FOR_CKPT = int(os.environ.get("MIN_GATED_FOR_CKPT", "500"))
 
+# --- 3-class head class weighting (down/flat/up) ---------------------------------
+# The plain inverse-frequency weighting (w = N / (3*count), mean-normalized) let
+# the large flat mass inflate the down/up weights, which — on a near-signal-less
+# task — pushed the 3-class argmax to collapse onto flat + the recent drift
+# direction (it stopped predicting "down" almost entirely). These knobs gentle
+# that pressure. They touch ONLY the 3-class head; the directional head keeps its
+# own separate (down-vs-up) weighting, so directional edge is unaffected.
+#   sqrt_inv_freq: w = 1/sqrt(count)   (gentler than 1/count)
+#   inv_freq:      w = 1/count         (legacy behavior)
+CLS_WEIGHT_MODE = os.environ.get("CLS_WEIGHT_MODE", "sqrt_inv_freq")
+# Clamp normalized weights to [1/clip, clip] so no class dominates the CE.
+CLS_WEIGHT_CLIP = float(os.environ.get("CLS_WEIGHT_CLIP", "2.0"))
+# Label smoothing on the 3-class CE keeps some mass on every class, discouraging
+# a hard collapse to a single class. Directional CE is left unsmoothed.
+CLS_LABEL_SMOOTHING = float(os.environ.get("CLS_LABEL_SMOOTHING", "0.05"))
+
 # Confidence gate default (product / serve)
 CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.40"))
 GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.40"))
