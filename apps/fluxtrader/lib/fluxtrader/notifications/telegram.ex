@@ -35,19 +35,48 @@ defmodule FluxTrader.Notifications.Telegram do
   defp format_signal(signal) do
     side = signal[:side]
     symbol = signal[:symbol]
-    price = if is_float(signal[:price]), do: Float.round(signal[:price], 2), else: signal[:price]
-    conf = if is_float(signal[:confidence]), do: Float.round(signal[:confidence] * 100, 1), else: signal[:confidence]
-    horizon = signal[:primary_horizon_m]
+    price =
+      if is_float(signal[:price]), do: Float.round(signal[:price], 2), else: signal[:price]
+    conf =
+      if is_float(signal[:confidence]),
+        do: Float.round(signal[:confidence] * 100, 1),
+        else: signal[:confidence]
+    primary = signal[:primary_horizon_m]
+    gate = signal[:gate_threshold]
+    horizons = signal[:horizons] || %{}
 
     icon = if side == "BUY", do: "🟢", else: "🔴"
 
+    horizon_lines =
+      horizons
+      |> Enum.sort()
+      |> Enum.map(fn {h, hv} ->
+        dir = horizon_dir(hv)
+        hc = horizon_conf(hv)
+        hg = horizon_gated(hv)
+        hcp = if is_float(hc), do: Float.round(hc * 100, 1), else: hc
+        check = if hg, do: " ✓", else: ""
+        "  #{h}m: #{dir} (#{hcp}%)#{check}"
+      end)
+      |> Enum.join("\n")
+
     "#{icon} *TRADE SIGNAL* #{icon}\n" <>
-      "Pair: #{symbol}\n" <>
-      "Side: #{side}\n" <>
-      "Price: $#{price}\n" <>
-      "Confidence: #{conf}%\n" <>
-      "Horizon: #{horizon}m"
+      "`#{symbol}` #{side} at $#{price}\n" <>
+      "Conf: #{conf}% · Prim: #{primary}m · Gate: #{gate}\n" <>
+      "#{horizon_lines}"
   end
+
+  defp horizon_dir(%{"direction" => d}), do: d
+  defp horizon_dir(%{direction: d}), do: d
+  defp horizon_dir(_), do: "?"
+
+  defp horizon_conf(%{"confidence" => c}) when is_number(c), do: c
+  defp horizon_conf(%{confidence: c}) when is_number(c), do: c
+  defp horizon_conf(_), do: 0.0
+
+  defp horizon_gated(%{"gated" => g}), do: g
+  defp horizon_gated(%{gated: g}), do: g
+  defp horizon_gated(_), do: false
 
   defp send_message(text) do
     token = bot_token()
