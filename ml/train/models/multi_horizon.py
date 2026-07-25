@@ -30,12 +30,16 @@ class SharedEncoderMultiHead(nn.Module):
         num_classes: int = 3,
         horizons_minutes: List[int] | None = None,
         directional_head: bool = True,
+        quantile_head: bool = False,
+        quantile_levels: List[float] | None = None,
     ):
         super().__init__()
         horizons_minutes = horizons_minutes or [1, 15, 60]
         self.horizons = [str(h) for h in horizons_minutes]
         self.num_classes = num_classes
         self.has_directional_head = directional_head
+        self.has_quantile_head = quantile_head
+        self.quantile_levels = list(quantile_levels or [0.1, 0.5, 0.9])
 
         self.encoder = nn.LSTM(
             input_size,
@@ -67,6 +71,21 @@ class SharedEncoderMultiHead(nn.Module):
                     for h in self.horizons
                 }
             )
+        if quantile_head:
+            # Per-horizon regression of forward-return quantiles (e.g. p10/p50/p90).
+            # Gives the downstream RL policy risk/vol context to size + gate trades.
+            n_q = len(self.quantile_levels)
+            self.quantile_heads = nn.ModuleDict(
+                {
+                    h: nn.Sequential(
+                        nn.Linear(hidden_size, 32),
+                        nn.ReLU(),
+                        nn.Dropout(0.2),
+                        nn.Linear(32, n_q),
+                    )
+                    for h in self.horizons
+                }
+            )
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, T, F] -> [B, H]
@@ -90,6 +109,36 @@ class SharedEncoderMultiHead(nn.Module):
     def forward_dir(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         state = self.encode(x)
         return {h: self.dir_heads[h](state) for h in self.horizons}
+
+    def forward_quantiles(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Per-horizon quantile predictions [B, n_quantiles] (monotone-sorted)."""
+        state = self.encode(x)
+        return {h: self._sorted_quantiles(self.quantile_heads[h](state)) for h in self.horizons}
+
+    @staticmethod
+    def _sorted_quantiles(q: torch.Tensor) -> torch.Tensor:
+        """Enforce non-crossing quantiles (p10<=p50<=p90) by sorting along dim=-1.
+
+        Pinball loss does not by itself guarantee ordering; sorting is a cheap,
+        standard fix that keeps the outputs interpretable as a distribution.
+        """
+        return torch.sort(q, dim=-1).values
+
+    def forward_all(self, x: torch.Tensor):
+        """Return (three_class, dir_or_None, quantiles_or_None) sharing one encode."""
+        state = self.encode(x)
+        three = {h: self.heads[h](state) for h in self.horizons}
+        two = (
+            {h: self.dir_heads[h](state) for h in self.horizons}
+            if self.has_directional_head
+            else None
+        )
+        quant = (
+            {h: self._sorted_quantiles(self.quantile_heads[h](state)) for h in self.horizons}
+            if self.has_quantile_head
+            else None
+        )
+        return three, two, quant
 
     def predict_proba(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         logits = self.forward(x)

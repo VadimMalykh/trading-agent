@@ -139,11 +139,33 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
     return out
 
 
-def make_labels(close: pd.Series, horizon_bars: int, flat_threshold: float) -> pd.Series:
-    """Direction: 0=down, 1=flat, 2=up based on forward return over horizon_bars."""
-    fwd = close.shift(-horizon_bars) / close - 1.0
-    labels = pd.Series(1, index=close.index, dtype=int)  # flat default
+def forward_return(close: pd.Series, horizon_bars: int) -> pd.Series:
+    """Raw forward return over horizon_bars (NaN at the tail where unknown)."""
+    return close.shift(-horizon_bars) / close - 1.0
+
+
+def labels_from_return(fwd: pd.Series, flat_threshold: float) -> pd.Series:
+    """Discretize a forward-return series into 0=down / 1=flat / 2=up / -1=invalid."""
+    labels = pd.Series(1, index=fwd.index, dtype=int)  # flat default
     labels[fwd > flat_threshold] = 2
     labels[fwd < -flat_threshold] = 0
     labels[fwd.isna()] = -1  # invalid
     return labels
+
+
+def make_labels(close: pd.Series, horizon_bars: int, flat_threshold: float) -> pd.Series:
+    """Direction: 0=down, 1=flat, 2=up based on forward return over horizon_bars."""
+    return labels_from_return(forward_return(close, horizon_bars), flat_threshold)
+
+
+def make_labels_and_returns(
+    close: pd.Series, horizon_bars: int, flat_threshold: float
+) -> tuple[pd.Series, pd.Series]:
+    """Return (3-class labels, raw forward return) sharing one fwd computation.
+
+    The raw forward return is the regression target for the quantile head; the
+    labels drive the 3-class + directional heads. Invalid tail bars are -1 in the
+    labels and NaN in the returns (masked out downstream).
+    """
+    fwd = forward_return(close, horizon_bars)
+    return labels_from_return(fwd, flat_threshold), fwd

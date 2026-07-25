@@ -64,16 +64,22 @@ def load_model():
     seq_len = meta.get("seq_len", SEQ_LEN)
     primary = str(meta.get("primary_horizon", PRIMARY))
     has_dir_head = bool(meta.get("directional_head", False))
+    has_quantile_head = bool(meta.get("quantile_head", False))
+    quantile_levels = meta.get("quantile_levels") or [0.1, 0.5, 0.9]
 
     model = SharedEncoderMultiHead(
         input_size=feature_dim,
         hidden_size=hidden,
         horizons_minutes=horizons,
         directional_head=has_dir_head,
+        quantile_head=has_quantile_head,
+        quantile_levels=quantile_levels,
     )
     model.load_state_dict(ckpt["model_state"])
     model.eval()
     _state["has_dir_head"] = has_dir_head
+    _state["has_quantile_head"] = has_quantile_head
+    _state["quantile_levels"] = quantile_levels
 
     _state.update(
         {
@@ -133,7 +139,8 @@ def predict_symbol(symbol: str) -> dict:
     x, price = packed
     model = _state["model"]
     has_dir = _state.get("has_dir_head", False)
-    logits_map, dir_map = model.forward_both(x)
+    logits_map, dir_map, quant_map = model.forward_all(x)
+    q_levels = _state.get("quantile_levels") or [0.1, 0.5, 0.9]
     horizons_out = {}
     primary = _state.get("primary") or PRIMARY
     if primary not in [str(h) for h in _state["horizons"]]:
@@ -165,6 +172,14 @@ def predict_symbol(symbol: str) -> dict:
             },
             "gated": conf_f >= GATE_THRESHOLD,
         }
+        if quant_map is not None:
+            # Forward-return quantiles (risk/vol context for the policy). Keyed by
+            # level, e.g. {"p10": -0.004, "p50": 0.0, "p90": 0.005}.
+            qvals = quant_map[h][0].tolist()
+            horizons_out[h]["quantiles"] = {
+                f"p{int(round(lv * 100))}": round(qv, 6)
+                for lv, qv in zip(q_levels, qvals)
+            }
 
     primary_h = horizons_out.get(primary, next(iter(horizons_out.values())))
     trade = primary_h["gated"]

@@ -20,7 +20,7 @@ from config import (
     PAIRS,
     SEQ_LEN,
 )
-from data.features import build_feature_frame, make_labels
+from data.features import build_feature_frame, make_labels, make_labels_and_returns
 
 
 def horizon_bars(candle_interval: str, horizon_minutes: int) -> int:
@@ -131,6 +131,7 @@ class PairSeries:
     feats: np.ndarray  # [T, F] float32
     labels: Dict[str, np.ndarray]  # key -> [T] int64
     times: np.ndarray  # [T] int64 ns
+    returns: Dict[str, np.ndarray]  # key -> [T] float32 raw forward return (quantile target)
 
 
 @dataclass
@@ -201,16 +202,27 @@ def build_m2_index_bundle(
             count=len(frame),
         )
         label_cols: Dict[str, np.ndarray] = {}
+        return_cols: Dict[str, np.ndarray] = {}
         for h in horizons_minutes:
             th = FLAT_THRESHOLD_PER_HORIZON.get(h, FLAT_THRESHOLD)
-            lab = make_labels(frame["close"], h_bars_map[h], th).to_numpy(dtype=np.int64)
-            label_cols[str(h)] = lab
+            lab, fwd = make_labels_and_returns(frame["close"], h_bars_map[h], th)
+            label_cols[str(h)] = lab.to_numpy(dtype=np.int64)
+            # NaN tail (unknown forward) -> 0.0; those bars are excluded by the
+            # validity mask below anyway (label == -1), so the value is unused.
+            return_cols[str(h)] = fwd.to_numpy(dtype=np.float32)
+            np.nan_to_num(return_cols[str(h)], copy=False)
 
         del frame
 
         pi = len(series_list)
         series_list.append(
-            PairSeries(pair=pair, feats=feats, labels=label_cols, times=times_bar)
+            PairSeries(
+                pair=pair,
+                feats=feats,
+                labels=label_cols,
+                times=times_bar,
+                returns=return_cols,
+            )
         )
 
         # Vectorized validity: all horizons >= 0
@@ -529,4 +541,9 @@ class LazyMultiHorizonDataset(Dataset):
             k: torch.tensor(int(ser.labels[k][t]), dtype=torch.long)
             for k in self.horizon_keys
         }
+        # Raw forward-return target for the quantile head, under reserved "ret_<h>"
+        # keys. Loss/acc code iterates the bare horizon keys and ignores these; the
+        # quantile loss reads them explicitly. collate stacks them generically.
+        for k in self.horizon_keys:
+            y[f"ret_{k}"] = torch.tensor(float(ser.returns[k][t]), dtype=torch.float32)
         return torch.from_numpy(x), y

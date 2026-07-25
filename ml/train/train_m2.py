@@ -44,6 +44,9 @@ from config import (
     OUTPUT_DIR,
     PAIRS,
     PRIMARY_HORIZON,
+    QUANTILE_HEAD,
+    QUANTILE_LEVELS,
+    QUANTILE_LOSS_WEIGHT,
     SEL_COVERAGE,
     SEQ_LEN,
     VAL_FRACTION,
@@ -134,6 +137,27 @@ def directional_loss(dir_logits_dict, y_dict, dir_crits, horizon_keys):
     if n_h == 0:
         return None
     return total / n_h
+
+
+def quantile_loss(quant_dict, y_dict, horizon_keys, levels):
+    """
+    Pinball (quantile) loss on the raw forward return per horizon.
+
+    quant_dict[h]: [B, n_q] predicted quantiles (sorted).
+    y_dict["ret_<h>"]: [B] realized forward return.
+    Averaged over horizons and quantile levels. All bars contribute (unlike the
+    directional head) since a forward return exists for every valid sample.
+    """
+    lv = torch.tensor(levels, dtype=torch.float32, device=quant_dict[horizon_keys[0]].device)
+    total = 0.0
+    for h in horizon_keys:
+        target = y_dict[f"ret_{h}"].unsqueeze(1)  # [B, 1]
+        pred = quant_dict[h]  # [B, n_q]
+        err = target - pred  # [B, n_q]
+        # pinball: max(q*err, (q-1)*err)
+        loss_h = torch.maximum(lv * err, (lv - 1.0) * err)
+        total = total + loss_h.mean()
+    return total / len(horizon_keys)
 
 
 def multi_acc(logits_dict, y_dict, horizon_keys):
@@ -300,11 +324,17 @@ def main():
         hidden_size=HIDDEN_SIZE,
         horizons_minutes=horizons,
         directional_head=DIRECTIONAL_HEAD,
+        quantile_head=QUANTILE_HEAD,
+        quantile_levels=QUANTILE_LEVELS,
     ).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     print(
         f"Directional head: {'ON' if DIRECTIONAL_HEAD else 'off'} "
         f"(aux up/down loss weight={DIR_LOSS_WEIGHT})"
+    )
+    print(
+        f"Quantile head: {'ON' if QUANTILE_HEAD else 'off'} "
+        f"(levels={QUANTILE_LEVELS} loss weight={QUANTILE_LOSS_WEIGHT})"
     )
 
     crits = {}
@@ -339,12 +369,16 @@ def main():
             xb = xb.to(device)
             yb = {k: v.to(device) for k, v in yb.items()}
             opt.zero_grad()
-            logits, dir_logits = model.forward_both(xb)
+            logits, dir_logits, quant = model.forward_all(xb)
             loss = multi_loss(logits, yb, crits, horizon_keys)
             if dir_logits is not None:
                 dloss = directional_loss(dir_logits, yb, dir_crits, horizon_keys)
                 if dloss is not None:
                     loss = loss + DIR_LOSS_WEIGHT * dloss
+            if quant is not None:
+                loss = loss + QUANTILE_LOSS_WEIGHT * quantile_loss(
+                    quant, yb, horizon_keys, QUANTILE_LEVELS
+                )
             loss.backward()
             opt.step()
             bs = xb.size(0)
@@ -363,11 +397,12 @@ def main():
         # Collect primary logits during val pass (avoid second full epoch)
         plogits_chunks, py_chunks = [], []
         pdir_chunks = []
+        pquant_chunks, pret_chunks = [], []  # primary-horizon quantiles + realized ret
         with torch.no_grad():
             for xb, yb in val_loader:
                 xb = xb.to(device)
                 yb = {k: v.to(device) for k, v in yb.items()}
-                logits, dir_logits = model.forward_both(xb)
+                logits, dir_logits, quant = model.forward_all(xb)
                 loss = multi_loss(logits, yb, crits, horizon_keys)
                 bs = xb.size(0)
                 va_loss += loss.item() * bs
@@ -379,9 +414,22 @@ def main():
                 py_chunks.append(yb[primary_key].cpu())
                 if dir_logits is not None:
                     pdir_chunks.append(dir_logits[primary_key].cpu())
+                if quant is not None:
+                    pquant_chunks.append(quant[primary_key].cpu())
+                    pret_chunks.append(yb[f"ret_{primary_key}"].cpu())
 
         va_loss /= max(va_n, 1)
         va_acc = {h: va_acc_sum[h] / max(va_n, 1) for h in horizon_keys}
+
+        # Quantile calibration on the primary horizon: what fraction of realized
+        # returns fall within the predicted [p_low, p_high] band. Well-calibrated
+        # p10/p90 → coverage ≈ 0.80. Diagnostic only; does not drive selection.
+        q_cov = None
+        if pquant_chunks:
+            q_all = torch.cat(pquant_chunks, dim=0)  # [N, n_q]
+            r_all = torch.cat(pret_chunks, dim=0)  # [N]
+            lo, hi = q_all[:, 0], q_all[:, -1]
+            q_cov = float(((r_all >= lo) & (r_all <= hi)).float().mean().item())
 
         if plogits_chunks:
             py = torch.cat(py_chunks, dim=0)
@@ -411,11 +459,12 @@ def main():
         fc_dir = float(fc.get("dir_acc") or 0.0)
         fc_lb = float(fc.get("dir_acc_wilson_lb") or 0.0)
         fc_n = int(fc.get("n_true_directional_gated") or 0)
+        q_str = f" q[p{int(QUANTILE_LEVELS[0]*100)}-p{int(QUANTILE_LEVELS[-1]*100)}]cov={q_cov:.3f}" if q_cov is not None else ""
         print(
             f"epoch {epoch:02d}  loss_tr={tr_loss:.4f} loss_va={va_loss:.4f}  "
             f"val_acc [{acc_str}]  "
             f"sel@cov{SEL_COVERAGE:.2f} dir_acc={fc_dir:.3f} lb={fc_lb:.3f} "
-            f"n_dir={fc_n} score={score:.4f}"
+            f"n_dir={fc_n} score={score:.4f}{q_str}"
         )
 
         if score > best_score + 1e-6:
@@ -433,6 +482,9 @@ def main():
                     "feature_dim": FEATURE_DIM,
                     "hidden_size": HIDDEN_SIZE,
                     "directional_head": DIRECTIONAL_HEAD,
+                    "quantile_head": QUANTILE_HEAD,
+                    "quantile_levels": QUANTILE_LEVELS,
+                    "quantile_cov_primary": q_cov,
                     "sel_coverage": SEL_COVERAGE,
                     "git_sha": os.environ.get("FLUX_GIT_SHA", ""),
                     "best_ckpt_score": best_score,

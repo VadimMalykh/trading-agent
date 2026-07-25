@@ -53,6 +53,33 @@ def _ns_to_iso(ns: int) -> str:
     return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def quantile_calibration(quant: torch.Tensor, ret: torch.Tensor, levels):
+    """
+    Calibration of a quantile head: for each level q, the fraction of realized
+    returns that fall at/below the predicted q-quantile should be ≈ q. Also
+    reports central-band [p_low, p_high] coverage (should ≈ p_high - p_low) and
+    the median absolute error of p50 vs realized.
+    """
+    n = ret.shape[0]
+    per_level = []
+    for i, lv in enumerate(levels):
+        emp = float((ret <= quant[:, i]).float().mean().item())
+        per_level.append({"level": float(lv), "empirical_below": emp})
+    lo, hi = quant[:, 0], quant[:, -1]
+    band_cov = float(((ret >= lo) & (ret <= hi)).float().mean().item())
+    band_target = float(levels[-1] - levels[0])
+    # median absolute error using the middle quantile as point estimate
+    mid_i = len(levels) // 2
+    p50_mae = float((ret - quant[:, mid_i]).abs().median().item())
+    return {
+        "n": int(n),
+        "per_level": per_level,
+        "band_coverage": band_cov,
+        "band_target": band_target,
+        "p50_mae": p50_mae,
+    }
+
+
 def run_horizon_report(logits, y_true, thresholds, pair_ids=None, dir_logits=None):
     pred = logits.argmax(dim=1)
     ungated = float((pred == y_true).float().mean().item())
@@ -141,12 +168,16 @@ def main():
     norm_stats = meta.get("norm_stats") or {}
     primary = str(meta.get("primary_horizon", horizons[min(1, len(horizons) - 1)]))
     has_dir_head = bool(meta.get("directional_head", False))
+    has_quant_head = bool(meta.get("quantile_head", False))
+    quant_levels = meta.get("quantile_levels") or [0.1, 0.5, 0.9]
 
     model = SharedEncoderMultiHead(
         input_size=feature_dim,
         hidden_size=hidden,
         horizons_minutes=horizons,
         directional_head=has_dir_head,
+        quantile_head=has_quant_head,
+        quantile_levels=quant_levels,
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
@@ -192,16 +223,21 @@ def main():
     all_logits = {h: [] for h in horizon_keys}
     all_dir = {h: [] for h in horizon_keys}
     all_y = {h: [] for h in horizon_keys}
+    all_quant = {h: [] for h in horizon_keys}
+    all_ret = {h: [] for h in horizon_keys}
 
     with torch.no_grad():
         for xb, yb in loader:
             xb = xb.to(device)
-            out, dir_out = model.forward_both(xb)
+            out, dir_out, quant_out = model.forward_all(xb)
             for h in horizon_keys:
                 all_logits[h].append(out[h].cpu())
                 all_y[h].append(yb[h].cpu())
                 if dir_out is not None:
                     all_dir[h].append(dir_out[h].cpu())
+                if quant_out is not None:
+                    all_quant[h].append(quant_out[h].cpu())
+                    all_ret[h].append(yb[f"ret_{h}"].cpu())
 
     thresholds = [float(t) for t in args.gate.split(",") if t.strip()]
     if GATE_THRESHOLD not in thresholds:
@@ -289,11 +325,28 @@ def main():
                     f"{serve_part}  |  {fc_part}"
                 )
 
+        calib = None
+        if all_quant[h]:
+            q_cat = torch.cat(all_quant[h], dim=0)
+            r_cat = torch.cat(all_ret[h], dim=0)
+            calib = quantile_calibration(q_cat, r_cat, quant_levels)
+            lvl_str = " ".join(
+                f"p{int(round(pl['level']*100))}={pl['empirical_below']:.3f}"
+                for pl in calib["per_level"]
+            )
+            print(
+                f"Quantile calibration: band[p{int(round(quant_levels[0]*100))}-"
+                f"p{int(round(quant_levels[-1]*100))}] coverage={calib['band_coverage']:.3f} "
+                f"(target {calib['band_target']:.2f})  emp_below[{lvl_str}]  "
+                f"p50_MAE={calib['p50_mae']:.5f}"
+            )
+
         report["horizons"][h] = {
             "ungated_acc": result["ungated_acc"],
             "confusion": result["confusion"],
             "gate_sweep": result["gate_sweep"],
             "fixed_coverage": result["fixed_coverage"],
+            "quantile_calibration": calib,
             "serve_gate_dir_edge_vs_half": result["serve_gate_dir_edge_vs_half"],
             "per_pair": {
                 k: {

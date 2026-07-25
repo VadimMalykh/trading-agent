@@ -20,6 +20,14 @@ SEQ_LEN = int(os.environ.get("SEQ_LEN", "128"))
 DIRECTIONAL_HEAD = os.environ.get("DIRECTIONAL_HEAD", "1") not in ("0", "false", "False")
 # Weight of the auxiliary directional loss relative to the 3-class loss.
 DIR_LOSS_WEIGHT = float(os.environ.get("DIR_LOSS_WEIGHT", "1.0"))
+# Auxiliary quantile head: per-horizon regression of forward-return quantiles
+# (pinball loss). Policy-agnostic risk/vol context for the future RL policy; does
+# not affect the 3-class or directional heads. Off by default until validated.
+QUANTILE_HEAD = os.environ.get("QUANTILE_HEAD", "0") not in ("0", "false", "False")
+QUANTILE_LEVELS = [
+    float(x) for x in os.environ.get("QUANTILE_LEVELS", "0.1,0.5,0.9").split(",") if x.strip()
+]
+QUANTILE_LOSS_WEIGHT = float(os.environ.get("QUANTILE_LOSS_WEIGHT", "0.5"))
 FLAT_THRESHOLD = float(os.environ.get("FLAT_THRESHOLD", "0.002"))  # 0.2% default
 # Flat band scales roughly with horizon (bps of move to count as directional)
 FLAT_THRESHOLD_PER_HORIZON = {
