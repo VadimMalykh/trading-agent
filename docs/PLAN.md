@@ -309,7 +309,7 @@ Details: [MODEL.md](../MODEL.md).
 
 ## 10. Suggested order of work (from today)
 
-1. **More data + better M2 train** — [TRAINING.md](./TRAINING.md); GCP steps: [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md)  
+1. **More data + better M2 train** — [TRAINING.md](./TRAINING.md) (local + [GCP pipeline](./TRAINING.md#part-2--gcp-pipeline-3-steps-self-cleaning))  
 2. **Judge signal quality** — `eval_m2` gate table (before M3)  
 3. **Live paper signals** — [SIMULATION.md](./SIMULATION.md)  
 4. **M3** — discrete policy + sim A/B  

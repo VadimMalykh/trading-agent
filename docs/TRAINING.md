@@ -1,21 +1,59 @@
 # Training & Evaluation Guide
 
-Session-resilient guide: **more data → better M2 train → evaluate quality / overfitting → optional live peek**.
+The **single** training runbook. Two parts:
+
+- **[Part 1 — Local training](#part-1--local-training)** — collect data, train, eval,
+  read curves (Docker on your machine).
+- **[Part 2 — GCP pipeline](#part-2--gcp-pipeline-3-steps-self-cleaning)** — the
+  3-step self-cleaning cloud flow (`gcp_train.sh` → `gcp_status.sh` →
+  `gcp_promote.sh`), plus logs.
 
 Related docs:
 
 | Doc | Role |
 |-----|------|
-| [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md) | **GCP train: 3 steps (train → status → promote), self-cleaning VM** |
 | [SIMULATION.md](./SIMULATION.md) | Live paper **signals** (UI / API, no real orders) |
 | [M2_PLAN.md](./M2_PLAN.md) | M2 multi-horizon design |
 | [PLAN.md](./PLAN.md) | Full roadmap |
 | [MODEL.md](../MODEL.md) | ML architecture |
 | [README.md](../README.md) | Quick start |
+| [archive/GCP_TRAIN_DESIGN.md](./archive/GCP_TRAIN_DESIGN.md) | *Why* the GCP pipeline is built this way (design notes) |
 
 **Rules:** Docker only. No host Python. Market data needs **no API keys**. GPU optional.
 
 ---
+
+## Contents
+
+- [Part 1 — Local training](#part-1--local-training)
+  - [1. Goals (before M3)](#1-goals-before-m3)
+  - [2. What data you can collect](#2-what-data-you-can-collect)
+  - [3. Training (M2)](#3-training-m2)
+  - [4. Evaluate signal quality (`eval_m2`)](#4-evaluate-signal-quality-eval_m2)
+  - [5. Evaluate the training process (overfitting)](#5-evaluate-the-training-process-overfitting)
+  - [6. Live signals (optional)](#6-live-signals-optional-not-the-main-grade)
+  - [7. Recommended loop](#7-recommended-loop-no-weeks-of-waiting)
+  - [8. GPU note](#8-gpu-note)
+  - [9. Local troubleshooting](#9-local-troubleshooting)
+  - [10. Command cheat sheet](#10-command-cheat-sheet)
+- [Part 2 — GCP pipeline](#part-2--gcp-pipeline-3-steps-self-cleaning)
+  - [Idea](#idea)
+  - [One-time setup (Mac)](#one-time-setup-mac)
+  - [The pipeline (3 steps)](#the-pipeline-3-steps)
+  - [Getting the full logs (any run)](#getting-the-full-logs-any-run)
+  - [Checklist](#checklist)
+  - [Scripts](#scripts)
+  - [Defaults](#gcp-defaults)
+  - [GCP troubleshooting](#gcp-troubleshooting)
+  - [Cost](#cost)
+
+---
+---
+
+# Part 1 — Local training
+
+Session-resilient guide: **more data → better M2 train → evaluate quality /
+overfitting → optional live peek**.
 
 ## 1. Goals (before M3)
 
@@ -242,13 +280,13 @@ curl -s http://localhost:4000/api/signals
 2. train_m2.py --epochs 40 (early-stops; defaults 5/30/60 primary 30)
 3. Watch train vs val + gate score each epoch
 4. eval_m2.py — save gate table (focus 30m PRIMARY)
-5. restart ml_inference (or GCP step 5), glance UI
+5. restart ml_inference (or GCP promote), glance UI
 6. If overfit / weak edge → more data / label tuning; not more blind epochs
 7. Repeat; only then consider M3 or full paper P&L
 ```
 
-**GCP:** use [GCP_TRAIN_EPHEMERAL.md](./GCP_TRAIN_EPHEMERAL.md) — 3 steps
-(`gcp_train.sh` → `gcp_status.sh` → `gcp_promote.sh`); the train VM self-cleans.
+**Prefer the cloud?** Jump to [Part 2 — GCP pipeline](#part-2--gcp-pipeline-3-steps-self-cleaning):
+3 steps (`gcp_train.sh` → `gcp_status.sh` → `gcp_promote.sh`); the train VM self-cleans.
 
 ---
 
@@ -260,7 +298,7 @@ curl -s http://localhost:4000/api/signals
 
 ---
 
-## 9. Troubleshooting
+## 9. Local troubleshooting
 
 | Problem | Fix |
 |---------|-----|
@@ -269,7 +307,7 @@ curl -s http://localhost:4000/api/signals
 | `model not found` on inference | Run `train_m2.py` first; check volume `model_weights` |
 | eval `n_gated=0` all gates | Model never directionally confident; more data/train or lower gates for plumbing only |
 | Binance rate limits on backfill | Script retries/sleeps; reduce `--symbols` parallelism / increase sleep |
-| GCP train fails / OOM | See [GCP_TRAIN_EPHEMERAL.md § Run FAILED — inspect](./GCP_TRAIN_EPHEMERAL.md#run-failed--inspect) — VM self-stops; log in bucket + `~/train_m2.log` |
+| GCP train fails / OOM | See [GCP troubleshooting → Run FAILED](#run-failed--inspect) — VM self-stops; log in bucket + `~/train_m2.log` |
 
 ---
 
@@ -298,5 +336,293 @@ docker compose up -d --force-recreate ml_inference   # after retrain
 ```
 
 ---
+---
 
-*Last updated: 2026-07-23*
+# Part 2 — GCP pipeline (3 steps, self-cleaning)
+
+Run training on GCP with **three commands**: **train → status → promote**. The
+train VM **self-deletes on success** and **self-stops on failure**, so a dropped
+connection or a skipped step can never leave a VM billing. Your Mac only
+orchestrates and can sleep after step 1.
+
+> **Why it's built this way** (Mac-relay removal, git-pinned code, GCS bucket,
+> cost analysis, GPU migration): [archive/GCP_TRAIN_DESIGN.md](./archive/GCP_TRAIN_DESIGN.md).
+
+## Idea
+
+| Machine | Purpose | When it runs |
+|---------|---------|----------------|
+| **fluxtrader-1** (always-on, small) | Collect book/data, UI, live inference | 24/7 |
+| **fluxtrader-train** (temporary) | git checkout → restore DB snapshot → train → eval → push → **delete itself** | Only while training |
+
+Artifacts (DB dump + checkpoint) move through a **GCS bucket**, not your Mac.
+Code is a reproducible **git checkout** on the VMs. The full run **log persists in
+the bucket** (`logs/<run_id>.log`) even after the VM is gone.
+
+---
+
+## One-time setup (Mac)
+
+```bash
+cd /path/to/trading_agent
+gcloud auth login
+gcloud config set project fluxtrader
+
+cp scripts/gcp_env.example scripts/gcp_env   # edit if names/bucket/repo differ
+chmod +x scripts/gcp_*.sh
+```
+
+### Create the artifact bucket (once)
+
+Bucket **must be single-region, in the same region as the VMs** (else you pay
+egress). Zone `me-central1-b` → region `me-central1`.
+
+```bash
+source scripts/gcp_env
+gcloud storage buckets create "$GCS_BUCKET" \
+  --location="${GCP_ZONE%-*}" --uniform-bucket-level-access
+```
+
+### Grant the train VM's service account access (once)
+
+The train VM needs to read/write the bucket **and delete/stop itself**.
+
+```bash
+# service account the train VM runs as (default compute SA is fine)
+SA=$(gcloud iam service-accounts list --format='value(email)' \
+      --filter='displayName:"Compute Engine default"')
+
+gcloud storage buckets add-iam-policy-binding "$GCS_BUCKET" \
+  --member="serviceAccount:$SA" --role=roles/storage.objectAdmin
+gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
+  --member="serviceAccount:$SA" --role=roles/compute.instanceAdmin.v1
+```
+
+The always-on VM also needs bucket read/write (for the dump push + checkpoint
+pull) — same `objectAdmin` binding for its SA (usually the same default SA).
+
+### Code source (`GIT_REMOTE` / `GIT_REF`)
+
+The VMs `git clone` the repo. Default is HTTPS public
+(`https://github.com/VadimMalykh/trading-agent.git`). If the repo is **private**,
+set `GIT_REMOTE=https://<PAT>@github.com/VadimMalykh/trading-agent.git` in
+`scripts/gcp_env`. `GIT_REF` is the branch or commit to train + serve.
+
+> **You must `git push` before training** — the VM trains the pushed commit, not
+> your local working tree. This is the reproducibility guarantee (the trained
+> commit SHA is stored in the checkpoint meta as `git_sha`).
+
+---
+
+## The pipeline (3 steps)
+
+Run from your **Mac**, repo root.
+
+### Step 1 — Train (one command; returns immediately)
+
+```bash
+./scripts/gcp_train.sh
+# override epochs / seq-len:
+./scripts/gcp_train.sh 60 128
+# override pairs / horizons via env:
+TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT TRAIN_HORIZONS=5,30,60 TRAIN_PRIMARY=30 \
+  ./scripts/gcp_train.sh
+# debug: keep the VM alive after the run (no auto delete/stop):
+KEEP_VM=1 ./scripts/gcp_train.sh
+```
+
+This one command:
+1. Ensures the train VM exists (creates it with `--scopes=cloud-platform`).
+2. Triggers a **fresh** dump on always-on → `gs://…/dumps/latest.sql.gz`.
+3. Launches a self-contained job in remote tmux `fluxtrain` that: `git clone @GIT_REF`,
+   pulls the dump, restores Postgres, runs `train_m2.py` + `eval_m2.py`, pushes the
+   checkpoint + full log + status marker to the bucket, then **deletes itself**
+   (success) or **stops itself** (failure).
+
+**After it returns you can close the laptop.** Training continues on GCP.
+
+**Train defaults:** epochs 60, seq-len 128, horizons `5,30,60`, primary 30m,
+pairs `BTCUSDT,ETHUSDT,SOLUSDT`, device cpu. Checkpoint selected by directional
+edge at fixed coverage (Wilson-bounded); see MODEL/eval docs.
+
+### Step 2 — Status (repeat anytime)
+
+```bash
+./scripts/gcp_status.sh
+# a specific run id:
+./scripts/gcp_status.sh 20260724T101500Z
+```
+
+Reads the bucket status marker + tails the **last 40 lines** of the log (**works
+even after the VM is gone**). For the **full** log, see
+[Getting the full logs](#getting-the-full-logs-any-run) below. While the VM is
+alive it prints the live `tmux attach` command:
+
+```bash
+gcloud compute ssh fluxtrader-train --zone=me-central1-b --project=fluxtrader \
+  -- tmux attach -t fluxtrain
+# detach without stopping: Ctrl-b then d
+```
+
+Outcomes:
+- **still running** → no status marker yet; poll again (hours is normal on CPU).
+- **DONE** → go to step 3.
+- **FAILED** → VM was **stopped** (not deleted) for debugging; the log is in the
+  bucket, and you can start the VM to inspect `~/train_m2.log`.
+
+### Getting the full logs (any run)
+
+`gcp_status.sh` only tails the last 40 lines. Every run's **complete** log is kept
+in the bucket at `gs://<bucket>/logs/<RUN_ID>.log` and **stays there after the VM
+self-deletes**. Use `gcp_logs.sh`:
+
+```bash
+./scripts/gcp_logs.sh                 # FULL log of the latest run
+./scripts/gcp_logs.sh --list          # list every run id + latest status
+./scripts/gcp_logs.sh 20260724T144653Z    # FULL log of a specific run
+./scripts/gcp_logs.sh --save          # also save latest log to $EXPORT_DIR
+```
+
+Tip: pipe to a pager or grep — e.g. `./scripts/gcp_logs.sh | less`, or
+`./scripts/gcp_logs.sh | grep -E 'epoch|Eval|dir_acc'` for the training/eval
+summary.
+
+> The log is uploaded **when the job finishes** (DONE or FAILED). While a run is
+> still in progress, use `gcp_status.sh` for the live `tmux attach` view instead.
+
+Under the hood this is just:
+
+```bash
+source scripts/gcp_common.sh
+gcloud storage cat "$GCS_BUCKET/logs/<RUN_ID>.log"   # full log
+gcloud storage ls  "$GCS_BUCKET/logs/"               # list run ids
+```
+
+### Step 3 — Promote (when DONE)
+
+```bash
+./scripts/gcp_promote.sh
+# also save a Mac backup of the checkpoint + log:
+./scripts/gcp_promote.sh --local-copy
+# promote even if status isn't DONE (rare):
+./scripts/gcp_promote.sh --force
+```
+
+Pulls `checkpoints/latest.pt` from the bucket, installs it into the model volume
+on always-on, checks out the **same `GIT_REF`** for serve code, and restarts
+`ml_inference`. **No VM teardown** — the train VM already self-deleted.
+
+Health check should show `primary=30`, `horizons=[5, 30, 60]`, `norm=ckpt`.
+
+---
+
+## Checklist
+
+```text
+[ ] Always-on fluxtrader-1 up (postgres + app collecting)
+[ ] Bucket created (same region) + SA has objectAdmin + instanceAdmin
+[ ] Code committed & pushed to GIT_REF
+[ ] 1  ./scripts/gcp_train.sh        (Mac may disconnect after it returns)
+[ ] 2  ./scripts/gcp_status.sh       → until DONE (VM self-cleans)
+[ ]    ./scripts/gcp_logs.sh         → full log any time (--list to see all runs)
+[ ] 3  ./scripts/gcp_promote.sh
+[ ]    curl health on always-on — norm=ckpt, primary=30
+```
+
+**After code changes (retrain):** `git commit && git push` to `GIT_REF`, then
+`./scripts/gcp_train.sh` → `gcp_status.sh` → `gcp_promote.sh`. No manual data copy
+and no VM cleanup step; a fresh dump is generated each run (no candle redownload
+for horizon changes — labels come from existing 1m closes). Keep always-on
+collecting for book features over time.
+
+---
+
+## Scripts
+
+| Script | Step |
+|--------|------|
+| `scripts/gcp_env.example` | Config template → `gcp_env` |
+| `scripts/gcp_common.sh` | Shared helpers / config |
+| `scripts/gcp_train.sh` | **1** — create VM, dump, train, eval, push, self-clean |
+| `scripts/gcp_status.sh` | **2** — status + last 40 log lines from bucket; tmux attach if alive |
+| `scripts/gcp_logs.sh` | — full log of any run from the bucket (`--list`, `--save`) |
+| `scripts/gcp_promote.sh` | **3** — install checkpoint + serve code on always-on |
+
+Related: [GCP_MIGRATE.md](./GCP_MIGRATE.md) — first-time Mac → always-on data move.
+
+---
+
+## GCP defaults
+
+| Setting | Default |
+|---------|---------|
+| Always-on | `fluxtrader-1` |
+| Train VM | `fluxtrader-train` (self-deletes on success) |
+| Train machine | `e2-standard-4` (bump if OOM; see `GCP_TRAIN_MACHINE`) |
+| Bucket | `gs://fluxtrader-train-artifacts` (single-region) |
+| Git | `main` of the repo (HTTPS) |
+| Epochs | 60 |
+| seq-len | 128 |
+| horizons | `5,30,60` (primary 30) |
+| pairs | `BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT` |
+| Device | cpu (GPU later — see design doc) |
+
+Change via `scripts/gcp_env`.
+
+---
+
+## GCP troubleshooting
+
+### Run FAILED — inspect
+
+`gcp_status.sh` shows `FAILED`. The VM was **stopped** (not deleted), and the full
+log is in the bucket:
+
+```bash
+./scripts/gcp_logs.sh --list          # find the run id
+./scripts/gcp_logs.sh <run_id>        # read the full log
+# equivalently, straight from the bucket:
+gcloud storage cat "$GCS_BUCKET/logs/<run_id>.log" | tail -n 120
+# or start the VM and read locally:
+gcloud compute instances start fluxtrader-train --zone=me-central1-b --project=fluxtrader
+gcloud compute ssh fluxtrader-train --zone=me-central1-b --project=fluxtrader -- 'tail -n 120 ~/train_m2.log; free -h; sudo dmesg -T | grep -iE "oom|killed process" | tail'
+```
+
+**OOM:** set a larger `GCP_TRAIN_MACHINE` in `scripts/gcp_env`, delete the stopped
+train VM, re-run `gcp_train.sh`.
+
+### Other issues
+
+| Problem | Fix |
+|---------|-----|
+| Can't find the logs (VM self-deleted) | Logs persist in the bucket. `./scripts/gcp_logs.sh` (latest) or `--list` then `./scripts/gcp_logs.sh <run_id>`. |
+| `gcp_logs.sh` says "log not found" | Run still in progress (log uploads only at finish) — use `gcp_status.sh` live view; or wrong run id (`--list`). |
+| `bucket … not accessible` | Create it (same region) + grant SA `objectAdmin`. See one-time setup. |
+| VM can't delete itself (log shows permission error, VM stays up) | Grant SA `roles/compute.instanceAdmin.v1`; delete VM manually meanwhile. |
+| `git clone` auth failed | Repo private → set `GIT_REMOTE=https://<PAT>@github.com/…` in `gcp_env`. |
+| Trained old code | You forgot to `git push` to `GIT_REF` before `gcp_train.sh`. |
+| Restore empty / candles=0 | Always-on postgres not up, or dump tables changed. Check `gcp_train.sh` dump step output. |
+| `promote` refuses (`not DONE`) | Wait for DONE, or `--force` if you know the checkpoint is good. |
+| Live UI still old model | Re-run `gcp_promote.sh`; check `/health` for `primary` / `norm`. |
+| health `norm=rolling-fallback` | Old checkpoint without `norm_stats` — retrain with current code. |
+| `volume … external but could not be found` | `docker volume create trading_agent_model_weights` then retry. |
+| Forgot `KEEP_VM=1` VM still up | `gcloud compute instances delete fluxtrader-train --zone=me-central1-b --project=fluxtrader --quiet` |
+
+---
+
+## Cost
+
+- **Always-on** small VM: pays while it exists (collection).
+- **Train VM**: self-deletes on success. On failure it **stops** (disk only, ~cents).
+- **Bucket**: single-region storage of a dump (~0.5–2 GB) + small checkpoints;
+  VM↔bucket transfer in-region is free. Well under $1/month.
+
+**CPU vs GPU:** train on CPU by default (lazy windows keep RAM tiny). GPU (T4) is
+~5–20× faster for the LSTM loop and worth it for frequent multi-hour retrains; the
+self-clean matters more there (idle GPU is expensive). GPU wiring (driver +
+toolkit + compose GPU + `--device cuda`) is a separate task — see the
+[design doc's GPU section](./archive/GCP_TRAIN_DESIGN.md).
+
+---
+
+*Last updated: 2026-07-25*
