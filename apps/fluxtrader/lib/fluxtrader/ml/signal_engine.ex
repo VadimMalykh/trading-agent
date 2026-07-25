@@ -146,6 +146,7 @@ defmodule FluxTrader.ML.SignalEngine do
         case FluxTrader.ML.Predict.predict_symbol(pair) do
           {:ok, signal} ->
             maybe_log_simulation(signal)
+            FluxTrader.Notifications.Telegram.send_trade_signal(signal)
             Phoenix.PubSub.broadcast(FluxTrader.PubSub, "signals:live", {:signal, signal})
             {Map.put(acc, pair, signal), errs}
 

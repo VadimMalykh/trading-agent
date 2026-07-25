@@ -18,6 +18,10 @@ config :fluxtrader, :ml,
   inference_url: "http://ml_inference:8001",
   gate_threshold: 0.40
 
+config :fluxtrader, :telegram,
+  bot_token: System.get_env("TELEGRAM_BOT_TOKEN"),
+  chat_id: System.get_env("TELEGRAM_CHAT_ID")
+
 config :fluxtrader_web, FluxTraderWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,

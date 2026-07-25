@@ -14,6 +14,8 @@ services:
       ML_GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.58}
       PHX_HOST: localhost
       PHX_PORT: 4000
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-only-secret-key-base-that-is-at-least-64-bytes-long-for-phoenix-to-start}
     depends_on:
       postgres:
