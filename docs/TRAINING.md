@@ -427,9 +427,18 @@ Run from your **Mac**, repo root.
 # override pairs / horizons via env:
 TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT TRAIN_HORIZONS=5,30,60 TRAIN_PRIMARY=30 \
   ./scripts/gcp_train.sh
+# enable the auxiliary quantile head (p10/p50/p90 forward return, pinball loss):
+TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh
+#   optional: TRAIN_QUANTILE_LEVELS=0.1,0.5,0.9 TRAIN_QUANTILE_LOSS_WEIGHT=0.5
 # debug: keep the VM alive after the run (no auto delete/stop):
 KEEP_VM=1 ./scripts/gcp_train.sh
 ```
+
+> The quantile head is **off by default**. When on, training logs a per-epoch
+> `q[p10-p90]cov` calibration diagnostic and `eval_m2.py` prints a per-horizon
+> calibration report; serve emits `p10/p50/p90` per horizon. Validate that band
+> coverage trends toward ~0.80 and the directional metric does not regress vs a
+> head-off baseline.
 
 This one command:
 1. Ensures the train VM exists (creates it with `--scopes=cloud-platform`).

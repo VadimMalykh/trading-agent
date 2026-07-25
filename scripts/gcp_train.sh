@@ -37,6 +37,9 @@ SEQ_LEN="${2:-$TRAIN_SEQ_LEN}"
 PAIRS_ARG="${TRAIN_PAIRS:-}"
 HORIZONS="${TRAIN_HORIZONS:-5,30,60}"
 PRIMARY="${TRAIN_PRIMARY:-30}"
+QUANTILE_HEAD="${TRAIN_QUANTILE_HEAD:-0}"
+QUANTILE_LEVELS="${TRAIN_QUANTILE_LEVELS:-0.1,0.5,0.9}"
+QUANTILE_LOSS_WEIGHT="${TRAIN_QUANTILE_LOSS_WEIGHT:-0.5}"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 R="\$HOME/${REMOTE_REPO_NAME}"
 
@@ -44,7 +47,7 @@ PAIRS_FLAG=""
 if [[ -n "$PAIRS_ARG" ]]; then PAIRS_FLAG="--pairs ${PAIRS_ARG}"; fi
 
 echo ""
-echo "==> run_id=$RUN_ID  epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist}"
+echo "==> run_id=$RUN_ID  epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} quantile_head=$QUANTILE_HEAD"
 
 # --- 0. sanity: bucket reachable -------------------------------------------------
 if ! gcloud storage ls "$GCS_BUCKET" >/dev/null 2>&1; then
@@ -143,6 +146,9 @@ export EPOCHS='$EPOCHS'
 export SEQ_LEN='$SEQ_LEN'
 export HORIZONS='$HORIZONS'
 export PRIMARY='$PRIMARY'
+export QUANTILE_HEAD='$QUANTILE_HEAD'
+export QUANTILE_LEVELS='$QUANTILE_LEVELS'
+export QUANTILE_LOSS_WEIGHT='$QUANTILE_LOSS_WEIGHT'
 export TRAIN_DEVICE='$TRAIN_DEVICE'
 export PAIRS_FLAG='$PAIRS_FLAG'
 export KEEP_VM='$KEEP_VM'
@@ -224,9 +230,10 @@ if ! [[ \"\$BOOK\" =~ ^[0-9]+\$ ]] || [[ \"\$BOOK\" -lt 100 ]]; then echo \"ERRO
 
 docker volume create \$MODEL_VOLUME_NAME >/dev/null 2>&1 || true
 
-echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY ===\"
+echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY quantile_head=\$QUANTILE_HEAD ===\"
 docker compose --profile ml run --rm \
   -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
+  -e QUANTILE_HEAD=\$QUANTILE_HEAD -e QUANTILE_LEVELS=\$QUANTILE_LEVELS -e QUANTILE_LOSS_WEIGHT=\$QUANTILE_LOSS_WEIGHT \
   -e FLUX_GIT_SHA=\$GIT_SHA \
   ml_trainer python train_m2.py --device \$TRAIN_DEVICE --epochs \$EPOCHS --seq-len \$SEQ_LEN \
     --horizons \$HORIZONS --primary \$PRIMARY \$PAIRS_FLAG

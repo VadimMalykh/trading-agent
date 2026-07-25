@@ -25,6 +25,11 @@ fi
 # M2 defaults (Phase 1+2): 5/30/60 heads, primary 30m, majors preferred
 : "${TRAIN_HORIZONS:=5,30,60}"
 : "${TRAIN_PRIMARY:=30}"
+# Auxiliary quantile head (p10/p50/p90 forward-return, pinball loss). Off by
+# default; set TRAIN_QUANTILE_HEAD=1 to enable (Run B). Levels/weight optional.
+: "${TRAIN_QUANTILE_HEAD:=0}"
+: "${TRAIN_QUANTILE_LEVELS:=0.1,0.5,0.9}"
+: "${TRAIN_QUANTILE_LOSS_WEIGHT:=0.5}"
 # 6-pair set: 3 majors + DOGE/WLD/HYPE. Data audit (2026-07-24) confirmed all six
 # have full ~180d 1m candles. Microstructure (book/trades/OI) spans only ~days for
 # every pair (collector started recently) → zero-filled for most of history; the
