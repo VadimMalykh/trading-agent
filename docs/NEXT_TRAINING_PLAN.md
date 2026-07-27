@@ -16,6 +16,105 @@ session and the exact steps/commands to execute.
 - Model-head experiment (quantile head) + presence-mask features come **later, as
   their own runs**.
 
+> **Current status (updated 2026-07-27) — read this first.** Presence masks,
+> quantile head, 3-class weighting fix, and calibration-aware selection are all
+> **implemented + committed on `main`**. See "Microstructure readiness roadmap"
+> and "A/B results log" directly below for where things stand and what to do next.
+
+---
+
+## Microstructure readiness roadmap (2026-07-27)
+
+**Why this section exists:** the model's edge is still **candle-driven**. The
+order-book / trade-flow / OI features (11 of ~19) are zero-filled for ~95% of the
+180-day training window because the live collector only started recently. The
+real ceiling on signal quality is this data scarcity, not architecture.
+
+**Current book/trade/OI collection state (from always-on Postgres, 2026-07-27):**
+
+| Pair | book history |
+|------|--------------|
+| BTC / ETH / SOL | ~9 days |
+| DOGE / WLD / HYPE | ~6 days |
+| ZEC | ~2 days |
+| 1000PEPE | ~40 min |
+
+Collection grows ~1 day/day (no historical backfill exists for book/trades/OI —
+only candles + funding can be backfilled).
+
+**Why not train on it yet:** at ~9d vs 180d candles, the "present" region is a
+sliver of each training window → zero-fill dominates, and per-pair z-score norm
+is unstable on near-constant features. A book-driven edge cannot be learned yet.
+
+**Readiness thresholds (rough):**
+- **~30 days** continuous book history → enough to *test* a book edge in training
+  (validate on ~1 week of dense-book bars, train on the rest).
+- **~60–90 days** → comfortable for a real **microstructure-rich run** where the
+  present region dominates windows and norm is stable.
+- At current rate that's **~7–11 weeks out** (from 2026-07-27).
+
+**What to do while waiting (in order):**
+1. **Run the feature-signal audit** (`ml/train/audit_microstructure.py`) — decides
+   *now* whether the book edge even exists, before waiting weeks. Read-only, no
+   training. **Run it on the always-on VM** (that DB has the real ~9-day book data):
+   ```sh
+   # on always-on: fluxtrader-1
+   docker compose --profile ml run --rm ml_trainer python audit_microstructure.py
+   ```
+   Decision rule (printed by the script): strongest book-feature |Spearman| >~0.03
+   with `wilson_lb(sign_acc) > 0.51` on a pair with enough live rows ⇒ collecting
+   more is worth it; all-noise ⇒ keep collecting, don't over-invest. Writes
+   `output/microstructure_audit.json`. **Caveat: 2–9 days is a SMELL TEST only** —
+   a slow-drifting feature (e.g. `oi`) can show spurious correlation on a trending
+   window; treat positives as "worth more collection", never as final.
+   - Local run 2026-07-27 (few-day window) already showed BTC 60m `oi`
+     (rho≈−0.13, lb≈0.57) and `spread_bps` (rho≈+0.11, lb≈0.56) — a *preliminary*
+     book signal. Re-run on always-on for the meaningful read.
+2. **Keep the collector running** toward the 60–90d target.
+3. Presence masks (done) are the enabling plumbing — the model already tolerates
+   missing microstructure and flags present-vs-missing per row.
+
+**Then:** microstructure-rich training run at ≥60d → compare vs the candle-only
+baseline → only then reassess **RL (M3)**.
+
+---
+
+## A/B results log (primary 30m, fixed-cov top-5% dir_acc @ selected epoch)
+
+| Run | Change | dir_acc@5% | wilson_lb | sel_score | notes |
+|-----|--------|-----------:|----------:|----------:|-------|
+| Baseline (16-dim) | 3 majors → 6 pairs, 180d | 0.565 | 0.555 | 0.555 | pre-masks; **served? no** |
+| Masks v1 (19-dim, old 3-class weights) | presence masks | 0.559 | 0.545 | 0.545 | ~wash; 3-class "down" collapse |
+| **Run A** (masks + 3-class fix) | sqrt-inv-freq + clip + label-smooth | 0.554 | 0.544 | 0.544 | **PROMOTED / currently served** |
+| **Run B** (+ quantile head @ w=0.5) | pinball aux head | 0.540 | 0.530 | 0.532 | regressed dir (~−0.014); band-cov unstable (0.63–0.81), saved epoch cov=0.68 → **not promoted** |
+
+**Interpretation:** directional ceiling ~0.55 @ 5% coverage, still candle-driven.
+Masks did not help *yet* (expected — dead until microstructure accumulates) but
+did not break trading. The 3-class fix removed the "never predicts down" argmax
+collapse without touching the directional path. The quantile head at weight 0.5
+stole encoder capacity (dented direction) and selection saved a poorly-calibrated
+epoch → fixed via the two changes below.
+
+**Changes made after Run B (committed on `main`):**
+- `QUANTILE_LOSS_WEIGHT` default **0.5 → 0.2** (lighter aux head).
+- **Calibration-aware checkpoint selection**: when the quantile head is on, the
+  selection score is multiplied by `1 - CAL_PENALTY_WEIGHT·min(1,|band_cov−target|/CAL_TOL)`
+  (defaults 0.5 / band-width=0.80 / 0.10), so the saved & early-stop epoch is
+  directionally good **and** calibrated. No effect when the head is off.
+
+**Next runs, in order:**
+1. **Quantile re-run** with the two fixes: `TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh`
+   (weight now defaults to 0.2). Promote **only if**: 30m top-5% dir_acc within
+   ~0.01 of Run A (0.554) **AND** band[p10-p90] coverage ≈ 0.80 at the *saved*
+   epoch (check the eval "Quantile calibration" line + the `cal_pen`/`sel` epoch
+   log). Otherwise keep Run A served.
+2. **Microstructure-rich run** once book history ≥ ~60d (see roadmap above).
+3. **Reassess RL (M3)** only after the microstructure run.
+
+**Serving state:** Run A is the model currently promoted to the personal UI (not
+production). Do not promote Run B. Promote a future run only against the criteria
+in step 1.
+
 ## Baseline reference (FINISHED — run 20260723T222840Z, git 2b208de)
 
 - Pairs: BTCUSDT, ETHUSDT, SOLUSDT (3), 180 days, seq_len 128, primary 30m.
