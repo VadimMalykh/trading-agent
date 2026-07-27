@@ -70,6 +70,28 @@ is unstable on near-constant features. A book-driven edge cannot be learned yet.
    - Local run 2026-07-27 (few-day window) already showed BTC 60m `oi`
      (rho≈−0.13, lb≈0.57) and `spread_bps` (rho≈+0.11, lb≈0.56) — a *preliminary*
      book signal. Re-run on always-on for the meaningful read.
+   - **Deep dive (added 2026-07-27):** the audit now also runs a sub-window
+     stability test (`--thirds`, default 3) and a volatility control (`--vol-buckets`,
+     default 5; disable with `--no-deep`). Per feature it prints a verdict:
+     - `STABLE/UNSTABLE`: same-sign Spearman across all sub-windows? (UNSTABLE ⇒
+       regime/trend artifact)
+     - `DIRECTIONAL/VOL-PROXY`: does the sign edge persist across `|fwd|` buckets
+       after controlling for volatility? (bucketed test drives the verdict)
+     - **Decision:** `STABLE+DIRECTIONAL` ⇒ genuine directional alpha ⇒ **escalate**
+       to a dense-window ablation training run (book features on vs off) — do NOT
+       wait for 60d to start validating. `STABLE+VOL-PROXY` ⇒ route the feature to
+       the quantile/risk head (band width), not direction. `UNSTABLE` ⇒ keep
+       collecting, re-audit at ~30d.
+   - **Full-audit read (always-on, 2026-07-27):** `spread_bps` was the standout —
+     positive, monotone, and strengthening with horizon across ALL pairs (60m ρ:
+     BTC +0.10, SOL +0.13, DOGE +0.18, HYPE +0.20; LB up to ~0.56). The deep-dive
+     smoke on the local window flagged `spread_bps` as **STABLE+DIRECTIONAL on
+     every pair/horizon tested** (dir_buckets 5/5 on BTC 60m; negative vol_corr, so
+     not merely a volatility proxy). Depth/imbalance book features were weak
+     (|ρ|<0.05). `oi`/`funding` were strong-but-sign-inconsistent across pairs →
+     treat as risk features, not directional, pending confirmation.
+     → **Re-run the deep-dive audit on always-on** (real ~9-day, 13k-row window)
+       to confirm on the larger sample, then act on the STABLE+DIRECTIONAL roll-up.
 2. **Keep the collector running** toward the 60–90d target.
 3. Presence masks (done) are the enabling plumbing — the model already tolerates
    missing microstructure and flags present-vs-missing per row.
@@ -101,6 +123,14 @@ epoch → fixed via the two changes below.
   selection score is multiplied by `1 - CAL_PENALTY_WEIGHT·min(1,|band_cov−target|/CAL_TOL)`
   (defaults 0.5 / band-width=0.80 / 0.10), so the saved & early-stop epoch is
   directionally good **and** calibrated. No effect when the head is off.
+
+**Microstructure follow-up (gated on the deep-dive verdict):**
+- If `spread_bps` (etc.) confirms **STABLE+DIRECTIONAL** on the always-on run:
+  **dense-window ablation training run** — train+validate ONLY on the live-book
+  window (has_book==1, ~13k×N bars) with book features ON vs OFF; if book features
+  add held-out directional edge, the collection wait is justified and we can start
+  using book data sooner than 60d. (This run is not yet built — bring back as its
+  own plan when the verdict is in.)
 
 **Next runs, in order:**
 1. **Quantile re-run** with the two fixes: `TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh`

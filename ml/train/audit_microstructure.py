@@ -128,7 +128,118 @@ def sign_accuracy(feat: np.ndarray, fwd: np.ndarray) -> tuple[float, float, int]
     return acc, wilson_lower_bound(hits, n), n
 
 
-def audit_pair(pair: str, horizons: list[int], interval: str, min_rows: int) -> dict:
+def _sign_acc_lb(feat: np.ndarray, target: np.ndarray) -> tuple[float, float, int]:
+    """sign(feat-median) vs sign(target), inverse-orientation allowed. -> (acc, lb, n)."""
+    acc, lb, n = sign_accuracy(feat, target)
+    return acc, lb, n
+
+
+def subwindow_stability(feat: np.ndarray, fwd: np.ndarray, n_thirds: int = 3) -> dict:
+    """
+    Split into consecutive equal windows; report per-window Spearman + sign-acc.
+    A genuine effect keeps the SAME sign across all windows; a regime/trend
+    artifact flips. Verdict STABLE iff all windows share the sign of the full-window
+    Spearman and each |rho| is non-trivial.
+    """
+    n = feat.size
+    if n < n_thirds * 200:
+        return {"verdict": "n/a (too few rows)", "windows": []}
+    full_rho = spearman(feat, fwd)
+    full_sign = np.sign(full_rho) if full_rho != 0 else 0.0
+    edges = np.linspace(0, n, n_thirds + 1, dtype=int)
+    windows = []
+    signs_ok = True
+    for i in range(n_thirds):
+        a, b = edges[i], edges[i + 1]
+        fx, fy = feat[a:b], fwd[a:b]
+        rho = spearman(fx, fy)
+        acc, lb, m = _sign_acc_lb(fx, fy)
+        windows.append(
+            {"rho": round(rho, 4), "sign_acc": round(acc, 4),
+             "sign_acc_lb": round(lb, 4), "n": m}
+        )
+        # same sign as full window and not negligible
+        if full_sign == 0 or np.sign(rho) != full_sign or abs(rho) < 0.01:
+            signs_ok = False
+    verdict = "STABLE" if signs_ok else "UNSTABLE"
+    return {"verdict": verdict, "full_rho": round(full_rho, 4), "windows": windows}
+
+
+def volatility_control(feat: np.ndarray, fwd: np.ndarray, n_buckets: int = 5) -> dict:
+    """
+    Distinguish directional alpha from a volatility proxy.
+
+    - corr_absfwd:  Spearman(feat, |fwd|)  -> how much the feature is a vol proxy
+    - residual_rho: Spearman(feat, signed_fwd residual after removing |fwd| via OLS)
+                    -> directional content independent of volatility (linear control)
+    - buckets:      within each |fwd| quantile bucket, feature->direction sign-acc/LB
+                    -> non-parametric control; DIRECTIONAL iff the edge persists
+                       across buckets (not only in the high-|fwd| bucket)
+    Verdict (bucket-driven): DIRECTIONAL iff >=ceil(n_buckets/2) buckets have LB>0.50
+    with a consistent orientation; else VOL-PROXY.
+    """
+    absf = np.abs(fwd)
+    corr_absfwd = spearman(feat, absf)
+
+    # OLS residual of signed fwd on |fwd| (+intercept); Spearman(feat, resid)
+    X = np.column_stack([np.ones_like(absf), absf])
+    try:
+        beta, *_ = np.linalg.lstsq(X, fwd, rcond=None)
+        resid = fwd - X @ beta
+        residual_rho = spearman(feat, resid)
+    except np.linalg.LinAlgError:
+        residual_rho = float("nan")
+
+    # Bucketed non-parametric test
+    buckets = []
+    dir_hits = 0
+    med = np.median(feat)
+    try:
+        qcodes = pd.qcut(pd.Series(absf), q=n_buckets, labels=False, duplicates="drop")
+        qcodes = qcodes.to_numpy()
+    except ValueError:
+        qcodes = np.zeros_like(absf, dtype=int)
+    # Fix a single orientation from the full sample so buckets are comparable
+    full_acc, _, _ = sign_accuracy(feat, fwd)
+    orient = 1.0 if (np.median((feat > med).astype(float)) is not None) else 1.0
+    # determine orientation: does feat>med predict fwd>0 (>0.5) or the inverse?
+    move_all = fwd != 0
+    base = ((feat > med) == (fwd > 0))[move_all].mean() if move_all.any() else 0.5
+    invert = base < 0.5
+    for bcode in sorted(set(qcodes.tolist())):
+        m = qcodes == bcode
+        fx, fy = feat[m], fwd[m]
+        mv = fy != 0
+        nb = int(mv.sum())
+        if nb < 30:
+            buckets.append({"bucket": int(bcode), "n": nb, "sign_acc": None, "lb": None})
+            continue
+        pred_up = (fx > med)
+        if invert:
+            pred_up = ~pred_up
+        agree = (pred_up[mv] == (fy[mv] > 0))
+        hits = int(agree.sum())
+        acc = hits / nb
+        lb = wilson_lower_bound(hits, nb)
+        buckets.append({"bucket": int(bcode), "n": nb, "sign_acc": round(acc, 4), "lb": round(lb, 4)})
+        if lb > 0.50:
+            dir_hits += 1
+
+    scored = [b for b in buckets if b["lb"] is not None]
+    need = int(np.ceil(len([b for b in buckets]) / 2.0))
+    verdict = "DIRECTIONAL" if (scored and dir_hits >= need) else "VOL-PROXY"
+    return {
+        "verdict": verdict,
+        "corr_absfwd": round(corr_absfwd, 4),
+        "residual_rho": round(residual_rho, 4) if residual_rho == residual_rho else None,
+        "n_buckets_dir": dir_hits,
+        "n_buckets_scored": len(scored),
+        "buckets": buckets,
+    }
+
+
+def audit_pair(pair: str, horizons: list[int], interval: str, min_rows: int,
+               deep: bool = True, n_thirds: int = 3, n_buckets: int = 5) -> dict:
     frame = build_feature_frame(pair, interval)
     if frame.empty:
         return {"pair": pair, "error": "no feature frame"}
@@ -170,13 +281,18 @@ def audit_pair(pair: str, horizons: list[int], interval: str, min_rows: int) -> 
             rho = spearman(x, fwd_v)
             mono = decile_monotonicity(x, fwd_v)
             acc, lb, n = sign_accuracy(x, fwd_v)
-            feats_report[f] = {
+            rec = {
                 "spearman": round(rho, 4),
                 "decile_monotonicity": round(mono, 3) if mono == mono else None,
                 "sign_dir_acc": round(acc, 4),
                 "sign_dir_acc_wilson_lb": round(lb, 4),
                 "n_move": n,
             }
+            if deep:
+                stab = subwindow_stability(x, fwd_v, n_thirds=n_thirds)
+                vol = volatility_control(x, fwd_v, n_buckets=n_buckets)
+                rec["deep_dive"] = {"stability": stab, "vol_control": vol}
+            feats_report[f] = rec
         out["horizons"][str(h)] = {
             "n_valid": int(valid.sum()),
             "features": feats_report,
@@ -187,12 +303,23 @@ def audit_pair(pair: str, horizons: list[int], interval: str, min_rows: int) -> 
 def _fmt_feat_row(name: str, r: dict) -> str:
     if r.get("constant"):
         return f"    {name:<18} (constant — no book history in window)"
-    return (
+    base = (
         f"    {name:<18} rho={r['spearman']:+.4f}  "
         f"mono={r['decile_monotonicity'] if r['decile_monotonicity'] is not None else 'n/a':<5}  "
         f"sign_acc={r['sign_dir_acc']:.3f} lb={r['sign_dir_acc_wilson_lb']:.3f}  "
         f"n={r['n_move']}"
     )
+    dd = r.get("deep_dive")
+    if dd:
+        stab = dd["stability"]["verdict"]
+        vol = dd["vol_control"]
+        base += (
+            f"\n      └─ {stab:<8} · {vol['verdict']:<11} "
+            f"(vol_corr={vol['corr_absfwd']:+.3f} resid_rho="
+            f"{vol['residual_rho'] if vol['residual_rho'] is not None else 'n/a'} "
+            f"dir_buckets={vol['n_buckets_dir']}/{vol['n_buckets_scored']})"
+        )
+    return base
 
 
 def main():
@@ -200,7 +327,11 @@ def main():
     ap.add_argument("--pairs", default="")
     ap.add_argument("--horizons", default=",".join(str(h) for h in HORIZONS_MINUTES))
     ap.add_argument("--min-rows", type=int, default=500)
+    ap.add_argument("--no-deep", action="store_true", help="skip stability/vol-control deep dive")
+    ap.add_argument("--thirds", type=int, default=3, help="sub-windows for stability test")
+    ap.add_argument("--vol-buckets", type=int, default=5, help="|fwd| quantile buckets for vol control")
     args = ap.parse_args()
+    deep = not args.no_deep
 
     horizons = [int(x) for x in args.horizons.split(",") if x.strip()]
     if args.pairs.strip():
@@ -217,12 +348,26 @@ def main():
         "All-noise (|rho|<~0.01, lb<=0.50) => not showing yet; keep collecting.\n"
         "NOTE: 2-9 days is a SMELL TEST only, not a final verdict."
     )
+    if deep:
+        print(
+            "Deep dive (per feature):\n"
+            "  STABLE/UNSTABLE  = same-sign Spearman across all sub-windows? (thirds)\n"
+            "  DIRECTIONAL/VOL-PROXY = does the sign edge persist across |fwd| buckets\n"
+            "    after controlling for volatility (bucketed test drives the verdict)?\n"
+            "  => STABLE+DIRECTIONAL = genuine directional alpha (escalate).\n"
+            "     STABLE+VOL-PROXY   = risk feature -> quantile head, not direction.\n"
+            "     UNSTABLE           = regime/trend artifact -> keep collecting."
+        )
 
     report = {"pairs": {}, "horizons": horizons, "interval": CANDLE_INTERVAL}
     best_overall = 0.0
+    directional_hits = []  # (pair, horizon, feature, rho) that are STABLE + DIRECTIONAL
     for pair in pairs:
         try:
-            res = audit_pair(pair, horizons, CANDLE_INTERVAL, args.min_rows)
+            res = audit_pair(
+                pair, horizons, CANDLE_INTERVAL, args.min_rows,
+                deep=deep, n_thirds=args.thirds, n_buckets=args.vol_buckets,
+            )
         except Exception as e:  # keep going across pairs
             res = {"pair": pair, "error": repr(e)}
         report["pairs"][pair] = res
@@ -250,6 +395,14 @@ def main():
                 print(_fmt_feat_row(name, r))
                 if not r.get("constant"):
                     best_overall = max(best_overall, abs(r.get("spearman", 0.0) or 0.0))
+                    dd = r.get("deep_dive")
+                    if (
+                        dd
+                        and dd["stability"]["verdict"] == "STABLE"
+                        and dd["vol_control"]["verdict"] == "DIRECTIONAL"
+                        and r["sign_dir_acc_wilson_lb"] > 0.50
+                    ):
+                        directional_hits.append((pair, h, name, r["spearman"]))
 
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     out_path = Path(OUTPUT_DIR) / "microstructure_audit.json"
@@ -258,13 +411,40 @@ def main():
 
     print("\n" + "=" * 64)
     print(f"Strongest |Spearman| across all pairs/features/horizons: {best_overall:.4f}")
-    if best_overall >= 0.03:
-        print("=> A book feature shows a non-trivial monotone relationship. Collecting")
-        print("   more microstructure history is likely worth it. Confirm the same")
-        print("   feature's wilson_lb(sign_acc) > 0.51 above before deciding.")
+
+    if deep:
+        print("\nSTABLE + DIRECTIONAL findings (genuine directional alpha candidates):")
+        if directional_hits:
+            # group by feature for readability
+            by_feat: dict[str, list] = {}
+            for pr, h, name, rho in directional_hits:
+                by_feat.setdefault(name, []).append((pr, h, rho))
+            for name, hits in sorted(by_feat.items(), key=lambda kv: -len(kv[1])):
+                combos = ", ".join(f"{pr}@{h}m(rho={rho:+.3f})" for pr, h, rho in hits)
+                print(f"  {name}: {len(hits)} pair/horizon(s) -> {combos}")
+            feats = sorted({n for _, _, n, _ in directional_hits})
+            print(
+                f"\n=> {len(directional_hits)} STABLE+DIRECTIONAL signal(s) across "
+                f"features {feats}."
+            )
+            print(
+                "   ESCALATE: this is genuine directional content beyond volatility.\n"
+                "   Next: dense-window ablation training run (book features on vs off)\n"
+                "   on the live-book window; don't wait for 60d to start validating."
+            )
+        else:
+            print("  (none) — no feature is both STABLE across sub-windows AND DIRECTIONAL")
+            print("  after volatility control.")
+            print(
+                "\n=> Signals seen are likely volatility proxies or regime/trend artifacts.\n"
+                "   Route strong VOL-PROXY features (e.g. spread_bps) to the quantile/risk\n"
+                "   head, not direction. Keep collecting; re-audit at ~30d."
+            )
+    elif best_overall >= 0.03:
+        print("=> A book feature shows a non-trivial monotone relationship. Re-run without")
+        print("   --no-deep to test whether it is directional or a volatility artifact.")
     else:
-        print("=> No book feature clears ~0.03 yet. Either too little live data or no")
-        print("   edge is present. Keep collecting and re-audit; do not over-invest.")
+        print("=> No book feature clears ~0.03 yet. Keep collecting and re-audit.")
     print(f"Wrote {out_path}")
     print("\nReminder: run this on the ALWAYS-ON VM for the real ~9-day majors book")
     print("data; a fresh local DB may have little/no orderbook history.")
