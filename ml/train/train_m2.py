@@ -69,6 +69,7 @@ from data.dataset import (
     time_split_indices,
 )
 from data.db import load_whitelist_pairs, table_counts
+from data.features import BOOK_FEATURES
 from gate import dir_logits_to_three_class, fixed_coverage_metrics, gate_metrics
 from models.multi_horizon import SharedEncoderMultiHead
 
@@ -111,6 +112,16 @@ def parse_args():
         type=int,
         default=2,
         help="DataLoader workers (0 = main process only, lowest RAM; 2 parallelizes window slicing)",
+    )
+    p.add_argument(
+        "--require-book",
+        action="store_true",
+        help="Dense-window run: only use samples whose full window has book data (has_book==1).",
+    )
+    p.add_argument(
+        "--ablate-book",
+        action="store_true",
+        help="Zero all microstructure (book/trade/OI) features — the book-OFF arm of the ablation.",
     )
     return p.parse_args()
 
@@ -268,10 +279,19 @@ def main():
             pairs = list(PAIRS)
     print(f"Training pairs: {pairs}")
 
+    ablate = list(BOOK_FEATURES) if args.ablate_book else None
+    if args.require_book or args.ablate_book:
+        print(
+            f"Dense-window ablation: require_book={args.require_book} "
+            f"ablate_book={args.ablate_book}"
+            + (f" (zeroing {len(ablate)} book features)" if ablate else "")
+        )
     bundle = build_m2_index_bundle(
         pairs=pairs,
         seq_len=args.seq_len,
         horizons_minutes=horizons,
+        require_book=args.require_book,
+        ablate_features=ablate,
     )
     meta = bundle.meta
     print(f"\nSamples: {meta.get('n_samples', 0)} | per pair: {meta.get('n_per_pair')}")

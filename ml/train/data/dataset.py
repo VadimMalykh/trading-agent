@@ -20,7 +20,13 @@ from config import (
     PAIRS,
     SEQ_LEN,
 )
-from data.features import build_feature_frame, make_labels, make_labels_and_returns
+from data.features import (
+    BOOK_FEATURES,
+    FEATURE_COLS,
+    build_feature_frame,
+    make_labels,
+    make_labels_and_returns,
+)
 
 
 def horizon_bars(candle_interval: str, horizon_minutes: int) -> int:
@@ -156,16 +162,31 @@ def build_m2_index_bundle(
     seq_len: int = SEQ_LEN,
     horizons_minutes: List[int] | None = None,
     candle_interval: str = CANDLE_INTERVAL,
+    require_book: bool = False,
+    ablate_features: List[str] | None = None,
 ) -> M2IndexBundle:
     """
     Load per-pair feature matrices once; record (pair, t) for each valid sample.
     Does NOT materialize [N, seq, F] (that caused multi-GB OOM).
+
+    Dense-window ablation support:
+      require_book=True     -> a sample is valid only if the whole window
+                               (t-seq_len : t) has book data (has_book==1), i.e.
+                               restrict training to the live-book window.
+      ablate_features=[...] -> zero those feature columns in every pair matrix
+                               (book-OFF arm of the ablation). Applied before norm.
     """
     pairs = pairs or PAIRS
     horizons_minutes = horizons_minutes or HORIZONS_MINUTES
     h_bars_map = {h: horizon_bars(candle_interval, h) for h in horizons_minutes}
     max_h = max(h_bars_map.values()) if h_bars_map else 1
     horizon_keys = [str(h) for h in horizons_minutes]
+
+    ablate_idx = []
+    if ablate_features:
+        name_to_i = {n: i for i, n in enumerate(FEATURE_COLS)}
+        ablate_idx = [name_to_i[n] for n in ablate_features if n in name_to_i]
+    has_book_col = FEATURE_COLS.index("has_book")
 
     series_list: List[PairSeries] = []
     pair_i_list: List[int] = []
@@ -182,6 +203,8 @@ def build_m2_index_bundle(
         },
         "candle_interval": candle_interval,
         "layout": "lazy_index",
+        "require_book": bool(require_book),
+        "ablated_features": list(ablate_features or []),
     }
 
     for pair in pairs:
@@ -196,6 +219,11 @@ def build_m2_index_bundle(
         feats = np.ascontiguousarray(
             frame.drop(columns=["close"]).to_numpy(dtype=np.float32)
         )
+        # book presence per bar (before any ablation), for require_book masking
+        has_book_bar = feats[:, has_book_col] > 0
+        # book-OFF arm: zero the ablated feature columns
+        for ci in ablate_idx:
+            feats[:, ci] = 0.0
         times_bar = np.fromiter(
             (_ts_to_i64(ts) for ts in frame.index),
             dtype=np.int64,
@@ -231,6 +259,16 @@ def build_m2_index_bundle(
         valid[len(feats) - max_h :] = False
         for k in horizon_keys:
             valid &= label_cols[k] >= 0
+        if require_book:
+            # Require the ENTIRE window [t-seq_len, t) to have book data, so the
+            # book features are real across the whole sequence the model sees.
+            # rolling-all via cumulative count of "book present".
+            csum = np.concatenate([[0], np.cumsum(has_book_bar.astype(np.int64))])
+            # count of book-present bars in (t-seq_len, t]  == csum[t+1]-csum[t+1-seq_len]
+            t_idx = np.arange(len(feats))
+            lo = np.clip(t_idx + 1 - seq_len, 0, None)
+            window_book = csum[t_idx + 1] - csum[lo]
+            valid &= window_book >= seq_len
 
         idx = np.nonzero(valid)[0]
         n = int(idx.shape[0])

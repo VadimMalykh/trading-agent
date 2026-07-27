@@ -124,13 +124,45 @@ epoch → fixed via the two changes below.
   (defaults 0.5 / band-width=0.80 / 0.10), so the saved & early-stop epoch is
   directionally good **and** calibrated. No effect when the head is off.
 
-**Microstructure follow-up (gated on the deep-dive verdict):**
-- If `spread_bps` (etc.) confirms **STABLE+DIRECTIONAL** on the always-on run:
-  **dense-window ablation training run** — train+validate ONLY on the live-book
-  window (has_book==1, ~13k×N bars) with book features ON vs OFF; if book features
-  add held-out directional edge, the collection wait is justified and we can start
-  using book data sooner than 60d. (This run is not yet built — bring back as its
-  own plan when the verdict is in.)
+**Microstructure follow-up — VERDICT IN (always-on audit, 2026-07-27):**
+- **`spread_bps` is STABLE+DIRECTIONAL on 11 pair/horizon combos** (every pair;
+  30m/60m; ρ +0.09→+0.20 growing with horizon; sign-acc Wilson LB up to ~0.56),
+  with **negative `vol_corr` everywhere (−0.10 to −0.24)** and `resid_rho ≈ raw ρ`
+  → it is NOT a volatility proxy; `dir_buckets` 5/5 on several combos (edge holds
+  across all volatility regimes). This is a genuine, cross-pair, horizon-scaling
+  directional signal — the strongest microstructure finding by far.
+- Other STABLE+DIRECTIONAL hits are singletons (mostly SOL: depth_near_imb,
+  imbalance) — treat as suspect (multiple-testing / one-pair). Depth/imbalance/OI
+  are weak or sign-inconsistent across pairs.
+- Caveats: single ~9-day window (one regime); signal is at 30m/60m, weak at 5m;
+  the model currently sees `spread_bps=0` for ~95% of history so it can't use this
+  yet — which is exactly why the dense-window ablation matters.
+
+**Dense-window ablation run — BUILT (this session). The decisive test:**
+Train+validate ONLY on the live-book window (`has_book==1` across the whole
+window) with book features ON vs OFF; if book-ON adds held-out directional edge,
+the signal survives *inside the model* and we escalate microstructure collection.
+New `train_m2.py` flags (validated locally):
+```sh
+# book-ON arm (dense window, all features):
+docker compose --profile ml run --rm ml_trainer python train_m2.py \
+  --device cpu --epochs 40 --seq-len 128 --require-book
+# book-OFF arm (same window, microstructure zeroed):
+docker compose --profile ml run --rm ml_trainer python train_m2.py \
+  --device cpu --epochs 40 --seq-len 128 --require-book --ablate-book
+```
+- `--require-book`: restrict samples to bars whose full seq_len window has book data.
+- `--ablate-book`: zero the 11 microstructure features (`data.features.BOOK_FEATURES`).
+- meta stamps `require_book` + `ablated_features`.
+- **Decision rule:** book-ON primary-30m/60m top-5% dir_acc materially > book-OFF on
+  the held-out slice ⇒ book edge is real inside the model ⇒ accelerate collection /
+  plan the microstructure-rich full run. If ~equal ⇒ the audit signal doesn't
+  survive modeling; don't over-invest.
+- NOTE: dense window is short (~9d majors / ~6d alts / ~13.6k live bars per major),
+  so val slice is small — read dir_acc with its Wilson LB, not point estimates.
+- These flags are NOT yet wired into `scripts/gcp_train.sh`; run via the ml_trainer
+  container directly (local or on the train VM), or add a passthrough if you want to
+  run them through the GCP pipeline.
 
 **Next runs, in order:**
 1. **Quantile re-run** with the two fixes: `TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh`

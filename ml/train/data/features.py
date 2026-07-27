@@ -8,6 +8,50 @@ import pandas as pd
 from config import FEATURE_DIM
 from data import db
 
+# Canonical feature-column order (must match FEATURE_DIM). Exposed at module level
+# so callers (dataset ablation, audit) can map feature name -> matrix column index
+# without hardcoding. The 16 signal features come first (stable indices), then the
+# 3 presence masks.
+FEATURE_COLS = [
+    "ret_1",
+    "hl_range",
+    "oc_range",
+    "log_vol",
+    "spread_bps",
+    "imbalance",
+    "micro_mid",
+    "bid_ask_vol_ratio",
+    "depth_near_imb",
+    "trade_count",
+    "buy_sell_imb",
+    "trade_vol",
+    "funding",
+    "oi",
+    "oi_chg",
+    "ret_std_15",
+    "has_book",
+    "has_trades",
+    "has_funding_oi",
+]
+assert len(FEATURE_COLS) == FEATURE_DIM
+
+# The microstructure ("book") features — order-book + trade-flow + funding/OI —
+# i.e. everything except the 4 OHLCV-derived cols, rolling vol, and the masks.
+# Used for the dense-window ablation (book-ON vs book-OFF).
+BOOK_FEATURES = [
+    "spread_bps",
+    "imbalance",
+    "micro_mid",
+    "bid_ask_vol_ratio",
+    "depth_near_imb",
+    "trade_count",
+    "buy_sell_imb",
+    "trade_vol",
+    "funding",
+    "oi",
+    "oi_chg",
+]
+
 
 def _safe_div(a, b, default=0.0):
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -111,31 +155,7 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
     # Rolling vol (simple, not a classic indicator package)
     feat["ret_std_15"] = feat["ret_1"].rolling(15, min_periods=1).std().fillna(0.0)
 
-    feature_cols = [
-        "ret_1",
-        "hl_range",
-        "oc_range",
-        "log_vol",
-        "spread_bps",
-        "imbalance",
-        "micro_mid",
-        "bid_ask_vol_ratio",
-        "depth_near_imb",
-        "trade_count",
-        "buy_sell_imb",
-        "trade_vol",
-        "funding",
-        "oi",
-        "oi_chg",
-        "ret_std_15",
-        # presence masks (kept last so the 16 signal-feature indices are stable)
-        "has_book",
-        "has_trades",
-        "has_funding_oi",
-    ]
-    assert len(feature_cols) == FEATURE_DIM
-
-    out = feat[feature_cols + ["close"]].replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    out = feat[FEATURE_COLS + ["close"]].replace([np.inf, -np.inf], 0.0).fillna(0.0)
     return out
 
 
