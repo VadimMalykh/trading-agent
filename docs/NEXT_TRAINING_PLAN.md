@@ -16,6 +16,38 @@ session and the exact steps/commands to execute.
 - Model-head experiment (quantile head) + presence-mask features come **later, as
   their own runs**.
 
+> **SESSION HANDOFF (2026-07-27, end of session) — READ FIRST.**
+> Two things are IN FLIGHT / AWAITING ANALYSIS next session:
+>
+> 1. **Dense-window book ablation (built + launched).** Both arms ran on always-on:
+>    `--require-book` (book-ON) and `--require-book --ablate-book` (book-OFF), 8
+>    pairs, dense live-book window (2026-07-17→07-27, ~70.4k samples, val ~14k /
+>    ~2k per pair). **Only the setup headers were captured — the per-epoch dir_acc
+>    lines and eval sections were NOT saved.** ACTION next session: get both full
+>    logs (epoch `sel@cov0.05 dir_acc/lb` + eval `--- Horizon 30m/60m ---`
+>    fixed-coverage tables) and compare book-ON vs book-OFF. This is the decisive
+>    test of whether the audit's `spread_bps` signal survives inside the model.
+>    - Verdict rule: book-ON 30m/60m top-5% dir_acc materially > book-OFF (read the
+>      **Wilson LB**, val slice is small ~2k/pair) => book edge real inside model
+>      => accelerate microstructure collection + plan the full microstructure-rich
+>      run. If ~equal => audit signal is candle-confounded; don't over-invest yet.
+>    - Note: dense window is flat-heavy (flat 0.59–0.63 vs 0.43 on 180d) — a recent
+>      low-drift regime; factor this into reading the numbers.
+>    - Re-run to regenerate logs if lost:
+>      `docker compose --profile ml run --rm ml_trainer python train_m2.py \
+>         --device cpu --epochs 40 --seq-len 128 --require-book [--ablate-book]`
+>      (run on always-on; save FULL stdout each arm.)
+>
+> 2. **Quantile re-run (calibration-aware selection + weight 0.2) — STILL RUNNING.**
+>    Launched via `TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh`. ACTION next
+>    session: fetch its log (`./scripts/gcp_logs.sh`), then judge against the
+>    promotion criteria: 30m top-5% dir_acc within ~0.01 of Run A (0.554) AND
+>    band[p10-p90] coverage ≈ 0.80 at the SAVED epoch (watch the `cal_pen`/`sel`
+>    epoch lines + eval "Quantile calibration"). Promote to personal UI only if
+>    both hold; else keep Run A served.
+>
+> ---
+>
 > **Current status (updated 2026-07-27) — read this first.** Presence masks,
 > quantile head, 3-class weighting fix, and calibration-aware selection are all
 > **implemented + committed on `main`**. See "Microstructure readiness roadmap"
@@ -163,6 +195,24 @@ docker compose --profile ml run --rm ml_trainer python train_m2.py \
 - These flags are NOT yet wired into `scripts/gcp_train.sh`; run via the ml_trainer
   container directly (local or on the train VM), or add a passthrough if you want to
   run them through the GCP pipeline.
+
+**Ablation run LAUNCHED 2026-07-27 (always-on) — headers captured, RESULTS PENDING:**
+- Both arms configured identically (clean A/B): 8 pairs, dense window
+  2026-07-17 23:21 → 2026-07-27 ~09:3x UTC.
+  - book-ON:  Samples 70,384 | train 56,307 / val 14,077 | ablate_book=False
+  - book-OFF: Samples 70,412 | train 56,329 / val 14,083 | ablate_book=True (11 cols zeroed)
+  - per-pair live bars: BTC/ETH/SOL ~13,570; DOGE/WLD/HYPE ~8,870; ZEC ~2,977;
+    1000PEPE ~88 (too few — effectively noise for that pair).
+  - class balance (dense window): 30m down 0.21 / flat 0.60 / up 0.19 → FLAT-HEAVY
+    vs 0.43 on 180d. Recent low-drift regime; expect low coverage / modest edges.
+  - identical 3-class weights both arms (down~1.14 flat~0.67 up~1.18).
+- ⚠️ The epoch dir_acc lines + eval fixed-coverage tables were NOT captured this
+  session. **Next session: pull full logs for both arms and fill in the table below.**
+
+  | horizon | book-ON top-5% dir_acc (lb) | book-OFF top-5% dir_acc (lb) | Δ | verdict |
+  |---------|----------------------------:|-----------------------------:|---|---------|
+  | 30m | _pending_ | _pending_ | | |
+  | 60m | _pending_ | _pending_ | | |
 
 **Next runs, in order:**
 1. **Quantile re-run** with the two fixes: `TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh`
