@@ -27,7 +27,21 @@ QUANTILE_HEAD = os.environ.get("QUANTILE_HEAD", "0") not in ("0", "false", "Fals
 QUANTILE_LEVELS = [
     float(x) for x in os.environ.get("QUANTILE_LEVELS", "0.1,0.5,0.9").split(",") if x.strip()
 ]
-QUANTILE_LOSS_WEIGHT = float(os.environ.get("QUANTILE_LOSS_WEIGHT", "0.5"))
+# 0.2 (was 0.5): at 0.5 the pinball loss stole shared-encoder capacity and dented
+# the directional edge (~-0.014). 0.2 keeps the risk head as a light auxiliary.
+QUANTILE_LOSS_WEIGHT = float(os.environ.get("QUANTILE_LOSS_WEIGHT", "0.2"))
+# --- Calibration-aware checkpoint selection (quantile runs only) -----------------
+# Checkpoint selection ranks on directional edge (Wilson-LB dir_acc @ top-cov).
+# When the quantile head is on, that alone can save a directionally-good but
+# poorly-calibrated epoch. These knobs multiply the selection score by a penalty
+# that grows as the primary-horizon band coverage drifts from its target, so the
+# saved epoch is both directionally good AND calibrated. No effect when the
+# quantile head is off (q_cov is None → no penalty).
+#   penalty = 1 - CAL_PENALTY_WEIGHT * min(1, |band_cov - target| / CAL_TOL)
+# CAL_TARGET<=0 is a sentinel meaning "use the band width" (levels[-1]-levels[0]).
+CAL_PENALTY_WEIGHT = float(os.environ.get("CAL_PENALTY_WEIGHT", "0.5"))
+CAL_TARGET = float(os.environ.get("CAL_TARGET", "0"))  # 0 => band width (e.g. 0.80)
+CAL_TOL = float(os.environ.get("CAL_TOL", "0.10"))
 FLAT_THRESHOLD = float(os.environ.get("FLAT_THRESHOLD", "0.002"))  # 0.2% default
 # Flat band scales roughly with horizon (bps of move to count as directional)
 FLAT_THRESHOLD_PER_HORIZON = {

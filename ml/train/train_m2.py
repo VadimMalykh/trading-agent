@@ -30,6 +30,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import (
     BATCH_SIZE,
+    CAL_PENALTY_WEIGHT,
+    CAL_TARGET,
+    CAL_TOL,
     CKPT_GATE_THRESHOLD,
     CLS_LABEL_SMOOTHING,
     CLS_WEIGHT_CLIP,
@@ -461,6 +464,20 @@ def main():
         else:
             score, gate_m = -1.0, {}
 
+        # Calibration-aware selection: when the quantile head is on, penalize the
+        # selection score as the primary-horizon band coverage drifts from target,
+        # so the saved/early-stop epoch is directionally good AND calibrated. When
+        # the head is off (q_cov is None) sel_score == score (no behavior change).
+        cal_pen = 1.0
+        if q_cov is not None:
+            target = CAL_TARGET if CAL_TARGET > 0 else float(
+                QUANTILE_LEVELS[-1] - QUANTILE_LEVELS[0]
+            )
+            tol = CAL_TOL if CAL_TOL > 0 else 1.0
+            cal_pen = 1.0 - CAL_PENALTY_WEIGHT * min(1.0, abs(q_cov - target) / tol)
+            cal_pen = max(0.0, cal_pen)
+        sel_score = score * cal_pen
+
         history.append(
             {
                 "epoch": epoch,
@@ -469,6 +486,9 @@ def main():
                 "train_acc": tr_acc,
                 "val_acc": va_acc,
                 "ckpt_score": score,
+                "sel_score": sel_score,
+                "cal_pen": cal_pen,
+                "quantile_cov": q_cov,
                 "gate": gate_m,
             }
         )
@@ -478,7 +498,13 @@ def main():
         fc_dir = float(fc.get("dir_acc") or 0.0)
         fc_lb = float(fc.get("dir_acc_wilson_lb") or 0.0)
         fc_n = int(fc.get("n_true_directional_gated") or 0)
-        q_str = f" q[p{int(QUANTILE_LEVELS[0]*100)}-p{int(QUANTILE_LEVELS[-1]*100)}]cov={q_cov:.3f}" if q_cov is not None else ""
+        if q_cov is not None:
+            q_str = (
+                f" q[p{int(QUANTILE_LEVELS[0]*100)}-p{int(QUANTILE_LEVELS[-1]*100)}]"
+                f"cov={q_cov:.3f} cal_pen={cal_pen:.3f} sel={sel_score:.4f}"
+            )
+        else:
+            q_str = ""
         print(
             f"epoch {epoch:02d}  loss_tr={tr_loss:.4f} loss_va={va_loss:.4f}  "
             f"val_acc [{acc_str}]  "
@@ -486,8 +512,8 @@ def main():
             f"n_dir={fc_n} score={score:.4f}{q_str}"
         )
 
-        if score > best_score + 1e-6:
-            best_score = score
+        if sel_score > best_score + 1e-6:
+            best_score = sel_score
             Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
             Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
             ckpt = {
@@ -506,7 +532,12 @@ def main():
                     "cls_label_smoothing": CLS_LABEL_SMOOTHING,
                     "quantile_head": QUANTILE_HEAD,
                     "quantile_levels": QUANTILE_LEVELS,
+                    "quantile_loss_weight": QUANTILE_LOSS_WEIGHT,
                     "quantile_cov_primary": q_cov,
+                    "cal_penalty_weight": CAL_PENALTY_WEIGHT,
+                    "cal_target": (CAL_TARGET if CAL_TARGET > 0 else float(QUANTILE_LEVELS[-1] - QUANTILE_LEVELS[0])),
+                    "cal_tol": CAL_TOL,
+                    "sel_score": best_score,
                     "sel_coverage": SEL_COVERAGE,
                     "git_sha": os.environ.get("FLUX_GIT_SHA", ""),
                     "best_ckpt_score": best_score,
@@ -532,8 +563,8 @@ def main():
         # moves on this near-random task, so it stopped runs before the model
         # developed confident directional mass. We give up only when the edge has
         # not improved for `patience` epochs.
-        if score > best_early_score + 1e-5:
-            best_early_score = score
+        if sel_score > best_early_score + 1e-5:
+            best_early_score = sel_score
             bad_epochs = 0
         else:
             bad_epochs += 1
