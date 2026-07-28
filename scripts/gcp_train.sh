@@ -45,6 +45,7 @@ for _a in "$@"; do
 done
 set -- "${_ARGS[@]+"${_ARGS[@]}"}"
 
+_GCP_ZONE_ORIGINAL="$GCP_ZONE"
 if [[ "$_GPU_MODE" == "1" ]]; then
   TRAIN_DEVICE=cuda
   GCP_TRAIN_MACHINE="$GCP_TRAIN_MACHINE_GPU"
@@ -52,7 +53,6 @@ if [[ "$_GPU_MODE" == "1" ]]; then
   GCP_REGION="${GCP_ZONE%-*}"
   export GCP_REGION
 fi
-_GCP_ZONE_ORIGINAL="$GCP_ZONE"
 echo_cfg
 
 EPOCHS="${1:-$TRAIN_EPOCHS}"
