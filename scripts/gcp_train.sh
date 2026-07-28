@@ -442,7 +442,7 @@ docker volume create \$MODEL_VOLUME_NAME >/dev/null 2>&1 || true
 # --- GPU vs CPU docker runner ------------------------------------------------
 if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
   echo \"=== building GPU image (Dockerfile.train.gpu) ===\"
-  docker build -t ml_trainer_gpu -f Dockerfile.train.gpu .
+  docker build -t ml_trainer_gpu -f ml/train/Dockerfile.train.gpu ml/train
 
   # docker run --gpus all with explicit mounts (compose run lacks GPU passthrough)
   _DOCKER_GPU_RUN=\"docker run --gpus all --rm --network trading_agent_default\"
