@@ -1,0 +1,10 @@
+# CUDA-enabled PyTorch for GPU training on GCP.
+# Default PyPI torch wheel includes CUDA 12.1 runtime (~2-3GB extra vs CPU-only).
+# Host MUST have NVIDIA driver + nvidia-container-toolkit installed.
+torch==2.5.1
+numpy>=1.26.0
+pandas>=2.1.0
+psycopg2-binary>=2.9.9
+SQLAlchemy>=2.0.0
+scikit-learn>=1.3.0
+requests>=2.31.0

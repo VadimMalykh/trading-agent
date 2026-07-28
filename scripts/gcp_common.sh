@@ -18,6 +18,16 @@ fi
 : "${GCP_ALWAYS_ON:=fluxtrader-1}"
 : "${GCP_TRAIN_INSTANCE:=fluxtrader-train}"
 : "${GCP_TRAIN_MACHINE:=e2-standard-4}"
+# GPU machine type and accelerator (used when gcp_train.sh --gpu is passed).
+# n1-standard-4 + T4 is the best cost/speed ratio for LSTM training:
+#   ~$0.19/hr (n1-standard-4) + ~$0.35/hr (T4) = ~$0.54/hr total
+#   vs e2-standard-4 at ~$0.13/hr (CPU). GPU is ~10-20x faster for the LSTM loop.
+# Alternatives: n1-standard-8+T4 (~$0.73/hr), g2-standard-4+L4 (~$0.70/hr, if available).
+: "${GCP_TRAIN_MACHINE_GPU:=n1-standard-4}"
+: "${GCP_TRAIN_ACCELERATOR:=type=nvidia-tesla-t4,count=1}"
+# GPU zone — me-central1-b has no GPUs. Override to a zone that has T4/L4.
+# Cross-region GCS transfer for the dump (~1-2GB) costs ~$0.08/GB = pennies.
+: "${GCP_TRAIN_ZONE:=${GCP_ZONE}}"
 : "${REMOTE_REPO_NAME:=trading_agent}"
 : "${TRAIN_EPOCHS:=60}"
 : "${TRAIN_SEQ_LEN:=128}"
@@ -82,4 +92,7 @@ echo_cfg() {
   echo "git=$GIT_REMOTE @ $GIT_REF"
   echo "train: epochs=$TRAIN_EPOCHS seq=$TRAIN_SEQ_LEN device=$TRAIN_DEVICE"
   echo "       horizons=$TRAIN_HORIZONS primary=${TRAIN_PRIMARY}m pairs=$TRAIN_PAIRS"
+  if [[ "${_GPU_MODE:-0}" == "1" ]]; then
+    echo "       GPU: accelerator=$GCP_TRAIN_ACCELERATOR machine=$GCP_TRAIN_MACHINE_GPU"
+  fi
 }

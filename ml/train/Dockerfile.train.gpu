@@ -1,0 +1,25 @@
+# CUDA-enabled PyTorch for GPU training on GCP (nvidia-tesla-t4 / L4).
+# Used by gcp_train.sh --gpu. Host must have NVIDIA driver + nvidia-container-toolkit.
+#
+# Differs from Dockerfile.train: installs full CUDA PyTorch (~2-3GB extra) and
+# uses nvidia-smi at runtime instead of CPU-only torch.
+FROM python:3.11-slim-bookworm
+
+WORKDIR /workspace/train
+
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends build-essential libpq-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.gpu.txt .
+# Default PyPI torch includes CUDA 12.1 runtime libs (~2-3GB vs CPU-only).
+RUN pip install --no-cache-dir -r requirements.gpu.txt
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1
+ENV DATABASE_URL=postgresql://fluxtrader:secret@postgres:5432/fluxtrader
+ENV MODEL_DIR=/models
+ENV OUTPUT_DIR=/workspace/train/output
+
+CMD ["python", "train.py", "--device", "cpu", "--epochs", "5"]

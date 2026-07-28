@@ -40,6 +40,7 @@ Related docs:
   - [Idea](#idea)
   - [One-time setup (Mac)](#one-time-setup-mac)
   - [The pipeline (3 steps)](#the-pipeline-3-steps)
+  - [GPU mode](#gpu-mode)
   - [Getting the full logs (any run)](#getting-the-full-logs-any-run)
   - [Checklist](#checklist)
   - [Scripts](#scripts)
@@ -432,6 +433,10 @@ TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh
 #   optional: TRAIN_QUANTILE_LEVELS=0.1,0.5,0.9 TRAIN_QUANTILE_LOSS_WEIGHT=0.5
 # debug: keep the VM alive after the run (no auto delete/stop):
 KEEP_VM=1 ./scripts/gcp_train.sh
+# GPU mode (~10-20x faster, ~$0.54/hr vs ~$0.13/hr CPU):
+./scripts/gcp_train.sh --gpu
+# GPU + custom epochs / seq-len:
+./scripts/gcp_train.sh --gpu 120 256
 ```
 
 > The quantile head is **off by default**. When on, training logs a per-epoch
@@ -453,6 +458,54 @@ This one command:
 **Train defaults:** epochs 60, seq-len 128, horizons `5,30,60`, primary 30m,
 pairs `BTCUSDT,ETHUSDT,SOLUSDT`, device cpu. Checkpoint selected by directional
 edge at fixed coverage (Wilson-bounded); see MODEL/eval docs.
+
+### GPU mode
+
+Pass `--gpu` to train on a GCE GPU instance instead of CPU. The script handles
+everything: creates a GPU VM with NVIDIA driver, builds a CUDA-enabled Docker
+image, and runs training with `--device cuda` + `--gpus all`.
+
+```bash
+# basic GPU training:
+./scripts/gcp_train.sh --gpu
+
+# GPU + custom params:
+./scripts/gcp_train.sh --gpu 120 256
+
+# GPU with env overrides:
+TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT ./scripts/gcp_train.sh --gpu
+```
+
+**Recommended GPU instance: n1-standard-4 + 1x T4** (default)
+
+| Instance | GPU | Cost/hr | Speed vs CPU | Notes |
+|----------|-----|---------|--------------|-------|
+| **n1-standard-4 + T4** | Tesla T4 (16GB) | **~$0.54** | **~10-20x** | **Best cost/speed ratio.** T4 VRAM is massive overkill for this LSTM. |
+| n1-standard-8 + T4 | Tesla T4 (16GB) | ~$0.73 | ~12-25x | Diminishing returns; CPU rarely bottlenecks when GPU is active. |
+| g2-standard-4 + L4 | L4 (24GB) | ~$0.70 | ~15-30x | Newer; may not be available in all zones. |
+| e2-standard-4 (CPU) | — | ~$0.13 | 1x | Baseline. Fine for small jobs; GPU shines for 60+ epoch runs. |
+
+**First GPU boot takes 8-12 min** (NVIDIA driver install + reboot + container
+toolkit). Subsequent boots are normal speed. The script waits automatically.
+
+**If switching between CPU and GPU:** the script auto-detects machine type
+mismatch and recreates the VM. No manual delete needed.
+
+**Zone:** `me-central1-b` has no GPUs. `GCP_TRAIN_ZONE` defaults to the same
+zone as always-on but should be overridden (e.g. `us-central1-a`) for GPU mode.
+The GPU train VM ends up in a different zone; cross-region GCS dump transfer
+costs ~$0.08/GB × ~1-2GB = pennies per run.
+
+**VM self-clean works the same way** — on GPU the self-delete trap is even more
+important since idle GPU costs ~$0.35/hr.
+
+Config in `scripts/gcp_env`:
+
+```bash
+GCP_TRAIN_MACHINE_GPU=n1-standard-4       # machine type for --gpu
+GCP_TRAIN_ACCELERATOR=type=nvidia-tesla-t4,count=1  # GPU accelerator
+GCP_TRAIN_ZONE=us-central1-a              # GPU zone (me-central1-b has no GPUs)
+```
 
 ### Step 2 — Status (repeat anytime)
 
@@ -567,14 +620,16 @@ Related: [GCP_MIGRATE.md](./GCP_MIGRATE.md) — first-time Mac → always-on dat
 |---------|---------|
 | Always-on | `fluxtrader-1` |
 | Train VM | `fluxtrader-train` (self-deletes on success) |
-| Train machine | `e2-standard-4` (bump if OOM; see `GCP_TRAIN_MACHINE`) |
+| Train machine | `e2-standard-4` (CPU; bump if OOM; see `GCP_TRAIN_MACHINE`) |
+| Train machine (GPU) | `n1-standard-4` + `type=nvidia-tesla-t4,count=1` (see `--gpu`) |
+| Train zone (GPU) | `us-central1-a` (me-central1-b has no GPUs; see `GCP_TRAIN_ZONE`) |
 | Bucket | `gs://fluxtrader-train-artifacts` (single-region) |
 | Git | `main` of the repo (HTTPS) |
 | Epochs | 60 |
 | seq-len | 128 |
 | horizons | `5,30,60` (primary 30) |
 | pairs | `BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT` |
-| Device | cpu (GPU later — see design doc) |
+| Device | cpu (`--gpu` for cuda) |
 
 Change via `scripts/gcp_env`.
 
@@ -626,11 +681,10 @@ train VM, re-run `gcp_train.sh`.
 - **Bucket**: single-region storage of a dump (~0.5–2 GB) + small checkpoints;
   VM↔bucket transfer in-region is free. Well under $1/month.
 
-**CPU vs GPU:** train on CPU by default (lazy windows keep RAM tiny). GPU (T4) is
-~5–20× faster for the LSTM loop and worth it for frequent multi-hour retrains; the
-self-clean matters more there (idle GPU is expensive). GPU wiring (driver +
-toolkit + compose GPU + `--device cuda`) is a separate task — see the
-[design doc's GPU section](./archive/GCP_TRAIN_DESIGN.md).
+**CPU vs GPU:** CPU (`e2-standard-4`, ~$0.13/hr) is fine for quick runs. GPU
+(`n1-standard-4` + T4, ~$0.54/hr) is ~10-20x faster and worth it for frequent
+multi-hour retrains. The self-clean matters more on GPU — idle T4 burns ~$0.35/hr.
+Use `./scripts/gcp_train.sh --gpu` to enable; everything else is automatic.
 
 ---
 

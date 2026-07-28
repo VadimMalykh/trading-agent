@@ -15,6 +15,8 @@
 #   ./scripts/gcp_train.sh [epochs] [seq_len]
 #   TRAIN_PAIRS=BTCUSDT,ETHUSDT ./scripts/gcp_train.sh 60 128
 #   KEEP_VM=1 ./scripts/gcp_train.sh          # debug: don't auto delete/stop VM
+#   ./scripts/gcp_train.sh --gpu              # GPU mode (n1-standard-4 + T4)
+#   ./scripts/gcp_train.sh --gpu 120 256      # GPU + custom epochs/seq-len
 #
 # One-time bucket setup (run once):
 #   gcloud storage buckets create "$GCS_BUCKET" --location="$GCP_REGION" \
@@ -30,6 +32,24 @@ set -euo pipefail
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "$0")" && pwd)/gcp_common.sh"
 require_gcloud
+
+# --- parse --gpu flag --------------------------------------------------------
+_GPU_MODE=0
+_ARGS=()
+for _a in "$@"; do
+  if [[ "$_a" == "--gpu" ]]; then
+    _GPU_MODE=1
+  else
+    _ARGS+=("$_a")
+  fi
+done
+set -- "${_ARGS[@]+"${_ARGS[@]}"}"
+
+if [[ "$_GPU_MODE" == "1" ]]; then
+  TRAIN_DEVICE=cuda
+  GCP_TRAIN_MACHINE="$GCP_TRAIN_MACHINE_GPU"
+  GCP_ZONE="$GCP_TRAIN_ZONE"
+fi
 echo_cfg
 
 EPOCHS="${1:-$TRAIN_EPOCHS}"
@@ -47,7 +67,7 @@ PAIRS_FLAG=""
 if [[ -n "$PAIRS_ARG" ]]; then PAIRS_FLAG="--pairs ${PAIRS_ARG}"; fi
 
 echo ""
-echo "==> run_id=$RUN_ID  epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} quantile_head=$QUANTILE_HEAD"
+echo "==> run_id=$RUN_ID  epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} device=$TRAIN_DEVICE quantile_head=$QUANTILE_HEAD"
 
 # --- 0. sanity: bucket reachable -------------------------------------------------
 if ! gcloud storage ls "$GCS_BUCKET" >/dev/null 2>&1; then
@@ -64,24 +84,31 @@ if gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
      --project="$GCP_PROJECT" --zone="$GCP_ZONE" >/dev/null 2>&1; then
   STATUS=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
     --project="$GCP_PROJECT" --zone="$GCP_ZONE" --format='get(status)')
-  echo "    exists (status=$STATUS)"
-  if [[ "$STATUS" != "RUNNING" ]]; then
-    gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
-      --project="$GCP_PROJECT" --zone="$GCP_ZONE"
+  # Check machine type matches (handles CPU↔GPU switch without manual delete)
+  EXISTING_MACHINE=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
+    --project="$GCP_PROJECT" --zone="$GCP_ZONE" \
+    --format='value(machineType)' | awk -F/ '{print $NF}')
+  if [[ "$EXISTING_MACHINE" != "$GCP_TRAIN_MACHINE" ]]; then
+    echo "    machine mismatch ($EXISTING_MACHINE ≠ $GCP_TRAIN_MACHINE) → deleting + recreating"
+    gcloud compute instances delete "$GCP_TRAIN_INSTANCE" \
+      --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet
+    # fall through to create below
+  else
+    echo "    exists (status=$STATUS)"
+    if [[ "$STATUS" != "RUNNING" ]]; then
+      gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
+        --project="$GCP_PROJECT" --zone="$GCP_ZONE"
+    fi
+    # Skip to section 2
+    _VM_CREATED=1
   fi
 else
-  echo "    creating $GCP_TRAIN_MACHINE (scopes=cloud-platform) ..."
-  gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
-    --project="$GCP_PROJECT" \
-    --zone="$GCP_ZONE" \
-    --machine-type="$GCP_TRAIN_MACHINE" \
-    --image-family=ubuntu-2204-lts \
-    --image-project=ubuntu-os-cloud \
-    --boot-disk-size=50GB \
-    --boot-disk-type=pd-balanced \
-    --scopes=cloud-platform \
-    --tags=fluxtrader-train \
-    --metadata=startup-script='#!/bin/bash
+  _VM_CREATED=0
+fi
+
+if [[ "${_VM_CREATED:-0}" == "0" ]]; then
+  # --- startup script (CPU or GPU) ---
+  _STARTUP_CPU='#!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
@@ -97,23 +124,115 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 for u in $(ls /home 2>/dev/null); do usermod -aG docker "$u" || true; done
 touch /var/tmp/fluxtrader-docker-ready
 '
+
+  _STARTUP_GPU='#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# --- Phase 1: Docker (runs every boot) ---
+if ! command -v docker &>/dev/null; then
+  apt-get update -y
+  apt-get install -y ca-certificates curl git tmux
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  . /etc/os-release
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+    > /etc/apt/sources.list.d/docker.list
+  apt-get update -y
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+fi
+
+# --- Phase 2: NVIDIA driver (requires reboot) ---
+if [ ! -f /var/tmp/nvidia-driver-installed ]; then
+  apt-get update -y
+  apt-get install -y ubuntu-drivers-common
+  DEBIAN_FRONTEND=noninteractive ubuntu-drivers install --no-prompt
+  touch /var/tmp/nvidia-driver-installed
+  reboot
+fi
+
+# --- Phase 3: nvidia-container-toolkit (runs after reboot) ---
+if ! nvidia-container-toolkit --version &>/dev/null 2>&1; then
+  distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
+  curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+    gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  curl -s -L "https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list" | \
+    sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" | \
+    tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+  apt-get update -y
+  apt-get install -y nvidia-container-toolkit
+  nvidia-ctk runtime configure --runtime=docker
+  systemctl restart docker
+fi
+
+for u in $(ls /home 2>/dev/null); do usermod -aG docker "$u" || true; done
+touch /var/tmp/fluxtrader-docker-ready
+'
+
+  if [[ "$_GPU_MODE" == "1" ]]; then
+    echo "    creating $GCP_TRAIN_MACHINE + $GCP_TRAIN_ACCELERATOR (scopes=cloud-platform) ..."
+    gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
+      --project="$GCP_PROJECT" \
+      --zone="$GCP_ZONE" \
+      --machine-type="$GCP_TRAIN_MACHINE" \
+      --accelerator="$GCP_TRAIN_ACCELERATOR" \
+      --maintenance-policy=TERMINATE \
+      --image-family=ubuntu-2204-lts \
+      --image-project=ubuntu-os-cloud \
+      --boot-disk-size=50GB \
+      --boot-disk-type=pd-balanced \
+      --scopes=cloud-platform \
+      --tags=fluxtrader-train \
+      --metadata=startup-script="$_STARTUP_GPU"
+  else
+    echo "    creating $GCP_TRAIN_MACHINE (scopes=cloud-platform) ..."
+    gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
+      --project="$GCP_PROJECT" \
+      --zone="$GCP_ZONE" \
+      --machine-type="$GCP_TRAIN_MACHINE" \
+      --image-family=ubuntu-2204-lts \
+      --image-project=ubuntu-os-cloud \
+      --boot-disk-size=50GB \
+      --boot-disk-type=pd-balanced \
+      --scopes=cloud-platform \
+      --tags=fluxtrader-train \
+      --metadata=startup-script="$_STARTUP_CPU"
+  fi
 fi
 
 echo "==> waiting for SSH ..."
-for _ in $(seq 1 40); do
+# GPU first boot is slower (driver install + reboot): 120 × 5s = 10 min
+_SSH_TRIES=40
+if [[ "$_GPU_MODE" == "1" ]]; then _SSH_TRIES=120; fi
+for _ in $(seq 1 $_SSH_TRIES); do
   if gssh "$GCP_TRAIN_INSTANCE" "echo ok" >/dev/null 2>&1; then break; fi
   sleep 5
 done
-echo "==> waiting for Docker (first boot 1–3 min) ..."
-for i in $(seq 1 60); do
+echo "==> waiting for Docker (first boot 1–3 min; GPU first boot 5–10 min) ..."
+# GPU: driver install → reboot → container toolkit → docker restart → up to 10 min
+_DOCKER_TRIES=60
+if [[ "$_GPU_MODE" == "1" ]]; then _DOCKER_TRIES=120; fi
+for i in $(seq 1 $_DOCKER_TRIES); do
   if gssh "$GCP_TRAIN_INSTANCE" "docker compose version" >/dev/null 2>&1; then
     echo "    Docker OK"; break
   fi
-  if [[ "$i" -eq 60 ]]; then echo "ERROR: Docker not ready."; exit 1; fi
+  if [[ "$i" -eq $_DOCKER_TRIES ]]; then echo "ERROR: Docker not ready."; exit 1; fi
   sleep 5
 done
 gssh "$GCP_TRAIN_INSTANCE" \
   "sudo usermod -aG docker \$USER; sudo chmod 666 /var/run/docker.sock 2>/dev/null || true; command -v git >/dev/null || sudo apt-get install -y git; command -v tmux >/dev/null || sudo apt-get install -y tmux"
+
+if [[ "$_GPU_MODE" == "1" ]]; then
+  echo "==> verifying GPU (nvidia-smi) ..."
+  if ! gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi" >/dev/null 2>&1; then
+    echo "ERROR: nvidia-smi not available. GPU driver may not have installed."
+    echo "Try: gcloud compute instances stop $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT"
+    echo "Then start it again to re-trigger the startup script."
+    exit 1
+  fi
+  gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"
+fi
 
 # --- 2. fresh dump: always-on -> bucket -----------------------------------------
 echo ""
@@ -230,19 +349,49 @@ if ! [[ \"\$BOOK\" =~ ^[0-9]+\$ ]] || [[ \"\$BOOK\" -lt 100 ]]; then echo \"ERRO
 
 docker volume create \$MODEL_VOLUME_NAME >/dev/null 2>&1 || true
 
-echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY quantile_head=\$QUANTILE_HEAD ===\"
-docker compose --profile ml run --rm \
-  -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
-  -e QUANTILE_HEAD=\$QUANTILE_HEAD -e QUANTILE_LEVELS=\$QUANTILE_LEVELS -e QUANTILE_LOSS_WEIGHT=\$QUANTILE_LOSS_WEIGHT \
-  -e FLUX_GIT_SHA=\$GIT_SHA \
-  ml_trainer python train_m2.py --device \$TRAIN_DEVICE --epochs \$EPOCHS --seq-len \$SEQ_LEN \
+# --- GPU vs CPU docker runner ------------------------------------------------
+if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
+  echo \"=== building GPU image (Dockerfile.train.gpu) ===\"
+  docker build -t ml_trainer_gpu -f Dockerfile.train.gpu .
+
+  # docker run --gpus all with explicit mounts (compose run lacks GPU passthrough)
+  _DOCKER_GPU_RUN=\"docker run --gpus all --rm --network trading_agent_default\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -v \$HOME/\$REMOTE_REPO_NAME/ml/train:/workspace/train\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -v \$MODEL_VOLUME_NAME:/models\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e MODEL_DIR=/models\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e OUTPUT_DIR=/workspace/train/output\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e HORIZONS_MINUTES=\$HORIZONS\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e PRIMARY_HORIZON=\$PRIMARY\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e SEQ_LEN=\$SEQ_LEN\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e QUANTILE_HEAD=\$QUANTILE_HEAD\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e QUANTILE_LEVELS=\$QUANTILE_LEVELS\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e QUANTILE_LOSS_WEIGHT=\$QUANTILE_LOSS_WEIGHT\"
+  _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e FLUX_GIT_SHA=\$GIT_SHA\"
+fi
+
+echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY quantile_head=\$QUANTILE_HEAD device=\$TRAIN_DEVICE ===\"
+if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
+  \$_DOCKER_GPU_RUN ml_trainer_gpu python train_m2.py --device cuda --epochs \$EPOCHS --seq-len \$SEQ_LEN \
     --horizons \$HORIZONS --primary \$PRIMARY \$PAIRS_FLAG
+else
+  docker compose --profile ml run --rm \
+    -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
+    -e QUANTILE_HEAD=\$QUANTILE_HEAD -e QUANTILE_LEVELS=\$QUANTILE_LEVELS -e QUANTILE_LOSS_WEIGHT=\$QUANTILE_LOSS_WEIGHT \
+    -e FLUX_GIT_SHA=\$GIT_SHA \
+    ml_trainer python train_m2.py --device cpu --epochs \$EPOCHS --seq-len \$SEQ_LEN \
+      --horizons \$HORIZONS --primary \$PRIMARY \$PAIRS_FLAG
+fi
 
 echo \"=== eval_m2 ===\"
-docker compose --profile ml run --rm \
-  -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
-  ml_trainer python eval_m2.py --checkpoint /models/m2_multi.pt --device \$TRAIN_DEVICE \
+if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
+  \$_DOCKER_GPU_RUN ml_trainer_gpu python eval_m2.py --checkpoint /models/m2_multi.pt --device cuda \
     --gate 0.35,0.4,0.45,0.5,0.55,0.6 || true
+else
+  docker compose --profile ml run --rm \
+    -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
+    ml_trainer python eval_m2.py --checkpoint /models/m2_multi.pt --device cpu \
+      --gate 0.35,0.4,0.45,0.5,0.55,0.6 || true
+fi
 
 echo \"=== push checkpoint to bucket ===\"
 docker run --rm -v \$MODEL_VOLUME_NAME:/models -v \$HOME:/out alpine \
@@ -266,7 +415,11 @@ tail -n 30 \$HOME/train_m2.log 2>/dev/null || echo '(starting...)'
 "
 
 echo ""
-echo "OK — training started on $GCP_TRAIN_INSTANCE (run=$RUN_ID)."
+if [[ "$_GPU_MODE" == "1" ]]; then
+  echo "OK — GPU training started on $GCP_TRAIN_INSTANCE (run=$RUN_ID, device=cuda)."
+else
+  echo "OK — training started on $GCP_TRAIN_INSTANCE (run=$RUN_ID)."
+fi
 echo "The VM will DELETE itself on success, STOP itself on failure (KEEP_VM=$KEEP_VM)."
 echo "Mac may sleep now. Monitor:  ./scripts/gcp_status.sh"
 echo "When DONE:                   ./scripts/gcp_promote.sh"
