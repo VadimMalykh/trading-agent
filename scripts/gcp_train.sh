@@ -117,11 +117,18 @@ if gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
       echo "    exists (status=$STATUS)"
     fi
     if [[ "$STATUS" != "RUNNING" ]]; then
-      gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
-        --project="$GCP_PROJECT" --zone="$GCP_ZONE"
+      if ! gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE"; then
+        echo "    start failed (likely GPU stockout) → delete + recreate in another zone"
+        gcloud compute instances delete "$GCP_TRAIN_INSTANCE" \
+          --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet
+        _VM_CREATED=0
+      else
+        _VM_CREATED=1
+      fi
+    else
+      _VM_CREATED=1
     fi
-    # Skip to section 2
-    _VM_CREATED=1
   fi
 else
   _VM_CREATED=0
@@ -153,10 +160,18 @@ if [[ "${_VM_CREATED:-0}" == "0" && "$_GPU_MODE" == "1" ]]; then
       GCP_TRAIN_ACCELERATOR="type=${EXISTING_ACCEL},count=1"
     fi
     if [[ "$STATUS" != "RUNNING" ]]; then
-      gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
-        --project="$GCP_PROJECT" --zone="$GCP_ZONE"
+      if ! gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE"; then
+        echo "    start failed (likely GPU stockout) → delete + recreate"
+        gcloud compute instances delete "$GCP_TRAIN_INSTANCE" \
+          --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet
+        _VM_CREATED=0
+      else
+        _VM_CREATED=1
+      fi
+    else
+      _VM_CREATED=1
     fi
-    _VM_CREATED=1
   fi
 fi
 
@@ -197,8 +212,10 @@ if ! command -v docker &>/dev/null; then
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 fi
 
-# --- Phase 2: NVIDIA driver (requires reboot) ---
-if [ ! -f /var/tmp/nvidia-driver-installed ]; then
+# --- Phase 2: NVIDIA driver (skip if already working) ---
+if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+  touch /var/tmp/nvidia-driver-installed
+elif [ ! -f /var/tmp/nvidia-driver-installed ]; then
   apt-get update -y
   apt-get install -y ubuntu-drivers-common
   DEBIAN_FRONTEND=noninteractive ubuntu-drivers install --no-oem
@@ -206,9 +223,8 @@ if [ ! -f /var/tmp/nvidia-driver-installed ]; then
   reboot
 fi
 
-# --- Phase 3: nvidia-container-toolkit (runs after reboot) ---
+# --- Phase 3: nvidia-container-toolkit + Docker GPU runtime ---
 if ! nvidia-container-toolkit --version &>/dev/null 2>&1; then
-  distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
   curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
     gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
   curl -s -L "https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list" | \
@@ -216,6 +232,12 @@ if ! nvidia-container-toolkit --version &>/dev/null 2>&1; then
     tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
   apt-get update -y
   apt-get install -y nvidia-container-toolkit
+fi
+# Reconfigure every boot once the driver is up. Docker 25+ --gpus uses CDI;
+# missing /etc/cdi/nvidia.yaml → "no known GPU vendor found".
+if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null \
+    && command -v nvidia-ctk &>/dev/null; then
+  mkdir -p /etc/cdi /var/run/cdi
   nvidia-ctk runtime configure --runtime=docker
   nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
   systemctl restart docker
@@ -360,7 +382,8 @@ if [[ "$_GPU_MODE" == "1" ]]; then
   _GPU_TRIES=120
   for i in $(seq 1 $_GPU_TRIES); do
     if gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi" "$GCP_ZONE" >/dev/null 2>&1; then
-      echo "    GPU OK"; break
+      echo "    GPU OK (already installed — skipped driver install)"
+      break
     fi
     if [[ "$i" -eq $_GPU_TRIES ]]; then
       echo "ERROR: nvidia-smi not available after $((_GPU_TRIES * 5))s."
@@ -372,6 +395,38 @@ if [[ "$_GPU_MODE" == "1" ]]; then
     sleep 5
   done
   gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader" "$GCP_ZONE"
+  # Host driver OK is not enough: Docker must see the GPU. Fix CDI/runtime if needed.
+  echo "==> ensuring Docker can access GPU ..."
+  gssh "$GCP_TRAIN_INSTANCE" "set -e
+    sudo mkdir -p /etc/cdi /var/run/cdi
+    if ! command -v nvidia-ctk >/dev/null 2>&1; then
+      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+        sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+      curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+        sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
+      sudo apt-get update -y
+      sudo apt-get install -y nvidia-container-toolkit
+    fi
+    sudo nvidia-ctk runtime configure --runtime=docker
+    sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+    sudo systemctl restart docker
+    for i in \$(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+    sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+    # Prefer nvidia runtime — Docker 25+ --gpus goes through CDI and fails when
+    # specs are missing: 'failed to discover GPU vendor from CDI'.
+    if docker run --rm --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=all \
+         nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi; then
+      echo '    docker GPU OK (runtime=nvidia)'
+    elif docker run --rm --gpus all \
+         nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi; then
+      echo '    docker GPU OK (--gpus all)'
+    else
+      echo 'ERROR: host nvidia-smi OK but Docker cannot see GPU'
+      ls -la /etc/cdi/ 2>/dev/null || true
+      exit 1
+    fi
+  " "$GCP_ZONE"
 fi
 
 # --- 2. fresh dump: always-on -> bucket -----------------------------------------
@@ -493,11 +548,28 @@ docker volume create \$MODEL_VOLUME_NAME >/dev/null 2>&1 || true
 
 # --- GPU vs CPU docker runner ------------------------------------------------
 if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
-  echo \"=== building GPU image (Dockerfile.train.gpu) ===\"
-  docker build -t ml_trainer_gpu -f ml/train/Dockerfile.train.gpu ml/train
+  echo \"=== Docker GPU opts ===\"
+  # --gpus all breaks on Docker 25+ when CDI specs are stale/missing.
+  # nvidia runtime injects devices without Docker's CDI discovery path.
+  _GPU_OPTS=\"--runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=all\"
+  if ! docker run --rm \$_GPU_OPTS nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1; then
+    echo \"runtime=nvidia failed → refreshing CDI + trying --gpus all\"
+    sudo mkdir -p /etc/cdi /var/run/cdi
+    sudo nvidia-ctk runtime configure --runtime=docker || true
+    sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml || true
+    _GPU_OPTS=\"--gpus all\"
+    docker run --rm \$_GPU_OPTS nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+  fi
 
-  # docker run --gpus all with explicit mounts (compose run lacks GPU passthrough)
-  _DOCKER_GPU_RUN=\"docker run --gpus all --rm --network trading_agent_default\"
+  if docker image inspect ml_trainer_gpu >/dev/null 2>&1; then
+    echo \"=== GPU image ml_trainer_gpu already present (skip rebuild) ===\"
+  else
+    echo \"=== building GPU image (Dockerfile.train.gpu) ===\"
+    docker build -t ml_trainer_gpu -f ml/train/Dockerfile.train.gpu ml/train
+  fi
+
+  # compose run lacks GPU passthrough — plain docker run + bind-mount train code
+  _DOCKER_GPU_RUN=\"docker run \$_GPU_OPTS --rm --network trading_agent_default\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -v \$HOME/\$REMOTE_REPO_NAME/ml/train:/workspace/train\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -v \$MODEL_VOLUME_NAME:/models\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e MODEL_DIR=/models\"
