@@ -150,7 +150,7 @@ fi
 if [ ! -f /var/tmp/nvidia-driver-installed ]; then
   apt-get update -y
   apt-get install -y ubuntu-drivers-common
-  DEBIAN_FRONTEND=noninteractive ubuntu-drivers install --no-prompt
+  DEBIAN_FRONTEND=noninteractive ubuntu-drivers install --no-oem
   touch /var/tmp/nvidia-driver-installed
   reboot
 fi
