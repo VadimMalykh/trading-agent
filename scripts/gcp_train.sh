@@ -218,22 +218,31 @@ touch /var/tmp/fluxtrader-docker-ready
   }
 
   if [[ "$_GPU_MODE" == "1" && ${#_GPU_ZONES[@]} -gt 0 ]]; then
-    # Try zones until one succeeds
+    # Retry the full T4→L4 sweep across all zones; GPUs are often briefly
+    # unavailable while other preemptible/spot VMs churn.
+    _GPU_MAX_RETRIES="${GPU_MAX_RETRIES:-5}"
+    _GPU_RETRY_DELAY="${GPU_RETRY_DELAY:-30}"
     _VM_CREATED=0
-    for _zone in "${_GPU_ZONES[@]}"; do
-      if _create_vm "$_zone"; then
-        GCP_ZONE="$_zone"
-        export GCP_ZONE
-        _VM_CREATED=1
-        break
-      else
-        echo "    → zone $_zone unavailable, trying next ..."
+    for _attempt in $(seq 1 $_GPU_MAX_RETRIES); do
+      if [[ "$_attempt" -gt 1 ]]; then
+        echo ""
+        echo "==> retry $_attempt/$_GPU_MAX_RETRIES (waiting ${_GPU_RETRY_DELAY}s) ..."
+        sleep "$_GPU_RETRY_DELAY"
       fi
-    done
-    # Fallback to L4 GPU if T4 exhausted
-    if [[ "$_VM_CREATED" == "0" ]]; then
-      echo ""
-      echo "==> T4 exhausted in all $GCP_REGION zones, falling back to L4 (g2-standard-4) ..."
+
+      echo "==> trying T4 across ${#_GPU_ZONES[@]} zones ..."
+      for _zone in "${_GPU_ZONES[@]}"; do
+        echo "    creating $GCP_TRAIN_MACHINE + $GCP_TRAIN_ACCELERATOR in $_zone ..."
+        if _create_vm "$_zone"; then
+          GCP_ZONE="$_zone"
+          export GCP_ZONE
+          _VM_CREATED=1
+          break 2
+        fi
+        echo "    → zone $_zone unavailable"
+      done
+
+      echo "==> T4 exhausted, trying L4 (g2-standard-4) ..."
       _L4_MACHINE="g2-standard-4"
       _L4_ACCELERATOR="type=nvidia-l4,count=1"
       for _zone in "${_GPU_ZONES[@]}"; do
@@ -257,14 +266,14 @@ touch /var/tmp/fluxtrader-docker-ready
           GCP_TRAIN_ACCELERATOR="$_L4_ACCELERATOR"
           _VM_CREATED=1
           echo "    → L4 available in $_zone"
-          break
-        else
-          echo "    → zone $_zone unavailable, trying next ..."
+          break 2
         fi
+        echo "    → zone $_zone unavailable"
       done
-    fi
+    done
     if [[ "$_VM_CREATED" == "0" ]]; then
-      echo "ERROR: Could not create GPU VM (T4 or L4) in any zone in $GCP_REGION"
+      echo "ERROR: Could not create GPU VM (T4 or L4) in any zone in $GCP_REGION after $_GPU_MAX_RETRIES attempts."
+      echo "Set GPU_MAX_RETRIES=$((_GPU_MAX_RETRIES + 2)) GPU_RETRY_DELAY=60 to keep trying."
       exit 1
     fi
   else
@@ -296,13 +305,21 @@ gssh "$GCP_TRAIN_INSTANCE" \
   "$GCP_ZONE"
 
 if [[ "$_GPU_MODE" == "1" ]]; then
-  echo "==> verifying GPU (nvidia-smi) ..."
-  if ! gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi" "$GCP_ZONE" >/dev/null 2>&1; then
-    echo "ERROR: nvidia-smi not available. GPU driver may not have installed."
-    echo "Try: gcloud compute instances stop $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT"
-    echo "Then start it again to re-trigger the startup script."
-    exit 1
-  fi
+  echo "==> waiting for GPU driver (nvidia-smi) ..."
+  _GPU_TRIES=120
+  for i in $(seq 1 $_GPU_TRIES); do
+    if gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi" "$GCP_ZONE" >/dev/null 2>&1; then
+      echo "    GPU OK"; break
+    fi
+    if [[ "$i" -eq $_GPU_TRIES ]]; then
+      echo "ERROR: nvidia-smi not available after $((_GPU_TRIES * 5))s."
+      echo "GPU driver may not have installed. Try stopping and starting the VM:"
+      echo "  gcloud compute instances stop $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT"
+      echo "  gcloud compute instances start $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT"
+      exit 1
+    fi
+    sleep 5
+  done
   gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader" "$GCP_ZONE"
 fi
 
