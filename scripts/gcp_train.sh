@@ -166,6 +166,7 @@ if ! nvidia-container-toolkit --version &>/dev/null 2>&1; then
   apt-get update -y
   apt-get install -y nvidia-container-toolkit
   nvidia-ctk runtime configure --runtime=docker
+  nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
   systemctl restart docker
 fi
 
