@@ -59,14 +59,24 @@ def _safe_div(a, b, default=0.0):
     return out
 
 
-def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFrame:
+def build_feature_frame(
+    symbol: str,
+    candle_interval: str = "1m",
+    max_rows: int | None = None,
+) -> pd.DataFrame:
     """
     Align candles with nearest book/trade/funding/OI features.
     Returns DataFrame indexed by open_time with FEATURE_DIM columns + close for labels.
+    When max_rows is set, only the last N candles are loaded (saves memory for inference).
     """
-    candles = db.load_candles(symbol, candle_interval)
+    if max_rows is not None:
+        candles = db.load_candles_tail(symbol, candle_interval, n=max_rows)
+    else:
+        candles = db.load_candles(symbol, candle_interval)
     if candles.empty or len(candles) < 40:
         return pd.DataFrame()
+
+    min_time = candles["open_time"].iloc[0].isoformat() if max_rows is not None else None
 
     candles = candles.set_index("open_time").sort_index()
     feat = pd.DataFrame(index=candles.index)
@@ -80,7 +90,7 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
 
     # Order book (asof join). Presence mask lets the model tell real zeros from
     # "no book data" (per-row: forward-filled book known at that bar, else 0).
-    book = db.load_orderbook(symbol)
+    book = db.load_orderbook(symbol, since=min_time)
     if not book.empty:
         book = book.set_index("ts").sort_index()
         book_aligned = book.reindex(feat.index, method="ffill")
@@ -104,7 +114,7 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
         feat["has_book"] = 0.0
 
     # Trade flow
-    trades = db.load_market_trades(symbol)
+    trades = db.load_market_trades(symbol, since=min_time)
     if not trades.empty:
         trades = trades.set_index("window_start").sort_index()
         t_aligned = trades.reindex(feat.index, method="ffill")
@@ -126,7 +136,7 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
     # known at/before this bar (both are low-frequency, ffilled series).
     has_funding_oi = np.zeros(len(feat), dtype=np.float32)
 
-    funding = db.load_funding(symbol)
+    funding = db.load_funding(symbol, since=min_time)
     if not funding.empty:
         funding = funding.set_index("ts").sort_index()
         f_aligned = funding.reindex(feat.index, method="ffill")
@@ -137,7 +147,7 @@ def build_feature_frame(symbol: str, candle_interval: str = "1m") -> pd.DataFram
     else:
         feat["funding"] = 0.0
 
-    oi = db.load_open_interest(symbol)
+    oi = db.load_open_interest(symbol, since=min_time)
     if not oi.empty:
         oi = oi.set_index("ts").sort_index()
         o_aligned = oi.reindex(feat.index, method="ffill")

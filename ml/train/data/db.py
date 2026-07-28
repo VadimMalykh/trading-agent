@@ -52,18 +52,46 @@ def load_candles(
     return df
 
 
-def load_orderbook(symbol: str, limit: Optional[int] = None) -> pd.DataFrame:
+def load_candles_tail(
+    symbol: str,
+    interval: str = "1m",
+    n: int = 640,
+) -> pd.DataFrame:
     sql = """
+        SELECT open_time, open, high, low, close, volume, close_time
+        FROM candles
+        WHERE symbol = :symbol AND interval = :interval
+        ORDER BY open_time DESC
+        LIMIT :n
+    """
+    df = _read_sql(sql, {"symbol": symbol, "interval": interval, "n": int(n)})
+    if df.empty:
+        return df
+    df["open_time"] = pd.to_datetime(df["open_time"], utc=True)
+    return df.sort_values("open_time").reset_index(drop=True)
+
+
+def load_orderbook(
+    symbol: str,
+    limit: Optional[int] = None,
+    since: Optional[str] = None,
+) -> pd.DataFrame:
+    params: dict = {"symbol": symbol}
+    clauses = ["symbol = :symbol"]
+    if since:
+        clauses.append("ts >= :since")
+        params["since"] = since
+    sql = f"""
         SELECT ts, mid, spread, microprice, bid_volume, ask_volume, imbalance,
                bid_depth_near, ask_depth_near, bid_depth_far, ask_depth_far
         FROM orderbook_snapshots
-        WHERE symbol = :symbol
+        WHERE {' AND '.join(clauses)}
         ORDER BY ts ASC
     """
     if limit:
         sql += f" LIMIT {int(limit)}"
 
-    df = _read_sql(sql, {"symbol": symbol})
+    df = _read_sql(sql, params)
     if df.empty:
         return df
 
@@ -71,17 +99,26 @@ def load_orderbook(symbol: str, limit: Optional[int] = None) -> pd.DataFrame:
     return df
 
 
-def load_market_trades(symbol: str, limit: Optional[int] = None) -> pd.DataFrame:
-    sql = """
+def load_market_trades(
+    symbol: str,
+    limit: Optional[int] = None,
+    since: Optional[str] = None,
+) -> pd.DataFrame:
+    params: dict = {"symbol": symbol}
+    clauses = ["symbol = :symbol"]
+    if since:
+        clauses.append("window_start >= :since")
+        params["since"] = since
+    sql = f"""
         SELECT window_start, trade_count, volume, buy_volume, sell_volume, vwap, high, low
         FROM market_trades
-        WHERE symbol = :symbol
+        WHERE {' AND '.join(clauses)}
         ORDER BY window_start ASC
     """
     if limit:
         sql += f" LIMIT {int(limit)}"
 
-    df = _read_sql(sql, {"symbol": symbol})
+    df = _read_sql(sql, params)
     if df.empty:
         return df
 
@@ -89,27 +126,43 @@ def load_market_trades(symbol: str, limit: Optional[int] = None) -> pd.DataFrame
     return df
 
 
-def load_funding(symbol: str) -> pd.DataFrame:
-    sql = """
+def load_funding(
+    symbol: str,
+    since: Optional[str] = None,
+) -> pd.DataFrame:
+    params: dict = {"symbol": symbol}
+    clauses = ["symbol = :symbol"]
+    if since:
+        clauses.append("ts >= :since")
+        params["since"] = since
+    sql = f"""
         SELECT ts, mark_price, index_price, last_funding_rate
         FROM funding_rates
-        WHERE symbol = :symbol
+        WHERE {' AND '.join(clauses)}
         ORDER BY ts ASC
     """
-    df = _read_sql(sql, {"symbol": symbol})
+    df = _read_sql(sql, params)
     if not df.empty:
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
     return df
 
 
-def load_open_interest(symbol: str) -> pd.DataFrame:
-    sql = """
+def load_open_interest(
+    symbol: str,
+    since: Optional[str] = None,
+) -> pd.DataFrame:
+    params: dict = {"symbol": symbol}
+    clauses = ["symbol = :symbol"]
+    if since:
+        clauses.append("ts >= :since")
+        params["since"] = since
+    sql = f"""
         SELECT ts, open_interest
         FROM open_interest
-        WHERE symbol = :symbol
+        WHERE {' AND '.join(clauses)}
         ORDER BY ts ASC
     """
-    df = _read_sql(sql, {"symbol": symbol})
+    df = _read_sql(sql, params)
     if not df.empty:
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
     return df

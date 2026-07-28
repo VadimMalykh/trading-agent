@@ -10,6 +10,7 @@ Loads /models/m2_multi.pt, builds features from Postgres, returns gated signals.
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import sys
@@ -102,7 +103,9 @@ def load_model():
 
 def build_tensor(symbol: str):
     seq_len = _state.get("seq_len", SEQ_LEN)
-    frame = build_feature_frame(symbol, CANDLE_INTERVAL)
+    # Only the last ~max_rows candles are needed: seq_len for the model input
+    # plus a buffer for rolling/std computations.
+    frame = build_feature_frame(symbol, CANDLE_INTERVAL, max_rows=seq_len * 5)
     if frame.empty or len(frame) < seq_len:
         return None, f"not enough feature rows for {symbol} (have {len(frame)}, need {seq_len})"
 
@@ -191,6 +194,7 @@ def predict_symbol(symbol: str) -> dict:
         side = "FLAT"
         trade = False
 
+    gc.collect()
     return {
         "ok": True,
         "symbol": symbol,

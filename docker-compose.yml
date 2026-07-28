@@ -49,6 +49,7 @@ services:
       context: ./ml/train
       dockerfile: Dockerfile.train
     command: python serve.py
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://fluxtrader:secret@postgres:5432/fluxtrader
       MODEL_PATH: /models/m2_multi.pt
@@ -57,6 +58,7 @@ services:
       PRIMARY_HORIZON: ${PRIMARY_HORIZON:-30}
       HORIZONS_MINUTES: ${HORIZONS_MINUTES:-5,30,60}
       WHITELIST_PAIRS: ${WHITELIST_PAIRS:-BTCUSDT,ETHUSDT,SOLUSDT}
+      OMP_NUM_THREADS: 2
     ports:
       - "8001:8001"
     volumes:
