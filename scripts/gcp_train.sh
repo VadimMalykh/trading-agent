@@ -127,6 +127,39 @@ else
   _VM_CREATED=0
 fi
 
+# If VM wasn't found in GCP_ZONE, search all zones in the region.
+# Previous L4 fallback may have placed it in a different zone.
+if [[ "${_VM_CREATED:-0}" == "0" && "$_GPU_MODE" == "1" ]]; then
+  _FOUND_ZONE=$(gcloud compute instances list \
+    --project="$GCP_PROJECT" \
+    --filter="name=$GCP_TRAIN_INSTANCE" \
+    --format="value(zone)" 2>/dev/null | head -1 || true)
+  if [[ -n "$_FOUND_ZONE" ]]; then
+    _FOUND_ZONE=$(basename "$_FOUND_ZONE")
+    echo "    found $GCP_TRAIN_INSTANCE in $_FOUND_ZONE (not $GCP_ZONE) → adopting"
+    GCP_ZONE="$_FOUND_ZONE"
+    export GCP_ZONE
+    STATUS=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
+      --project="$GCP_PROJECT" --zone="$GCP_ZONE" --format='get(status)')
+    EXISTING_MACHINE=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
+      --project="$GCP_PROJECT" --zone="$GCP_ZONE" \
+      --format='value(machineType)' | awk -F/ '{print $NF}')
+    EXISTING_ACCEL=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
+      --project="$GCP_PROJECT" --zone="$GCP_ZONE" \
+      --format='get(accelerators[0].type)' 2>/dev/null || true)
+    echo "    exists ($EXISTING_MACHINE + ${EXISTING_ACCEL:-none}, status=$STATUS)"
+    if [[ -n "$EXISTING_ACCEL" ]]; then
+      GCP_TRAIN_MACHINE="$EXISTING_MACHINE"
+      GCP_TRAIN_ACCELERATOR="type=${EXISTING_ACCEL},count=1"
+    fi
+    if [[ "$STATUS" != "RUNNING" ]]; then
+      gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
+        --project="$GCP_PROJECT" --zone="$GCP_ZONE"
+    fi
+    _VM_CREATED=1
+  fi
+fi
+
 if [[ "${_VM_CREATED:-0}" == "0" ]]; then
   # --- startup script (CPU or GPU) ---
   _STARTUP_CPU='#!/bin/bash
