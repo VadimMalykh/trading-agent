@@ -91,17 +91,22 @@ if gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
   EXISTING_MACHINE=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
     --project="$GCP_PROJECT" --zone="$GCP_ZONE" \
     --format='value(machineType)' | awk -F/ '{print $NF}')
+  # GCE field is guestAccelerators (not "accelerators"). Wrong name → empty →
+  # g2+L4 looked like a CPU VM and triggered false "machine mismatch" deletes.
   EXISTING_ACCEL=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
     --project="$GCP_PROJECT" --zone="$GCP_ZONE" \
-    --format='get(accelerators[0].type)' 2>/dev/null || true)
-  # A mismatch only requires recreate when switching between CPU↔GPU, not between
-  # different GPU configs (e.g. n1-standard-4+T4 ↔ g2-standard-4+L4 from L4 fallback).
+    --format='value(guestAccelerators[0].acceleratorType.basename())' 2>/dev/null || true)
+  # g2 machine types always include an L4 even when guestAccelerators is sparse.
+  if [[ -z "$EXISTING_ACCEL" && "$EXISTING_MACHINE" == g2-* ]]; then
+    EXISTING_ACCEL="nvidia-l4"
+  fi
+  # Recreate only on CPU↔GPU switch, not GPU↔GPU (T4 n1 vs L4 g2 fallback).
   _MISMATCH=0
   if [[ "$EXISTING_MACHINE" != "$GCP_TRAIN_MACHINE" ]]; then
     if [[ "$_GPU_MODE" == "1" && -n "$EXISTING_ACCEL" ]]; then
-      echo "    exists as GPU VM ($EXISTING_MACHINE + $EXISTING_ACCEL, status=$STATUS)"
+      echo "    exists as GPU VM ($EXISTING_MACHINE + $EXISTING_ACCEL, status=$STATUS) → reuse"
     elif [[ "$_GPU_MODE" != "1" && -z "$EXISTING_ACCEL" ]]; then
-      echo "    exists as CPU VM ($EXISTING_MACHINE, status=$STATUS)"
+      echo "    exists as CPU VM ($EXISTING_MACHINE, status=$STATUS) → reuse"
     else
       _MISMATCH=1
     fi
@@ -153,8 +158,11 @@ if [[ "${_VM_CREATED:-0}" == "0" && "$_GPU_MODE" == "1" ]]; then
       --format='value(machineType)' | awk -F/ '{print $NF}')
     EXISTING_ACCEL=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
       --project="$GCP_PROJECT" --zone="$GCP_ZONE" \
-      --format='get(accelerators[0].type)' 2>/dev/null || true)
-    echo "    exists ($EXISTING_MACHINE + ${EXISTING_ACCEL:-none}, status=$STATUS)"
+      --format='value(guestAccelerators[0].acceleratorType.basename())' 2>/dev/null || true)
+    if [[ -z "$EXISTING_ACCEL" && "$EXISTING_MACHINE" == g2-* ]]; then
+      EXISTING_ACCEL="nvidia-l4"
+    fi
+    echo "    exists ($EXISTING_MACHINE + ${EXISTING_ACCEL:-none}, status=$STATUS) → reuse"
     if [[ -n "$EXISTING_ACCEL" ]]; then
       GCP_TRAIN_MACHINE="$EXISTING_MACHINE"
       GCP_TRAIN_ACCELERATOR="type=${EXISTING_ACCEL},count=1"
