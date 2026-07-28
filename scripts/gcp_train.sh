@@ -232,7 +232,6 @@ touch /var/tmp/fluxtrader-docker-ready
 
       echo "==> trying T4 across ${#_GPU_ZONES[@]} zones ..."
       for _zone in "${_GPU_ZONES[@]}"; do
-        echo "    creating $GCP_TRAIN_MACHINE + $GCP_TRAIN_ACCELERATOR in $_zone ..."
         if _create_vm "$_zone"; then
           GCP_ZONE="$_zone"
           export GCP_ZONE
@@ -289,8 +288,8 @@ for _ in $(seq 1 $_SSH_TRIES); do
   if gssh "$GCP_TRAIN_INSTANCE" "echo ok" "$GCP_ZONE" >/dev/null 2>&1; then break; fi
   sleep 5
 done
-echo "==> waiting for Docker (first boot 1–3 min; GPU first boot 5–10 min) ..."
-# GPU: driver install → reboot → container toolkit → docker restart → up to 10 min
+echo "==> waiting for Docker (first boot 1-3 min; GPU first boot 5-10 min) ..."
+# GPU: driver install -> reboot -> container toolkit -> docker restart -> up to 10 min
 _DOCKER_TRIES=60
 if [[ "$_GPU_MODE" == "1" ]]; then _DOCKER_TRIES=120; fi
 for i in $(seq 1 $_DOCKER_TRIES); do
