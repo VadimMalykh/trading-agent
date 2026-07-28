@@ -91,13 +91,31 @@ if gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
   EXISTING_MACHINE=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
     --project="$GCP_PROJECT" --zone="$GCP_ZONE" \
     --format='value(machineType)' | awk -F/ '{print $NF}')
+  EXISTING_ACCEL=$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
+    --project="$GCP_PROJECT" --zone="$GCP_ZONE" \
+    --format='get(accelerators[0].type)' 2>/dev/null || true)
+  # A mismatch only requires recreate when switching between CPU↔GPU, not between
+  # different GPU configs (e.g. n1-standard-4+T4 ↔ g2-standard-4+L4 from L4 fallback).
+  _MISMATCH=0
   if [[ "$EXISTING_MACHINE" != "$GCP_TRAIN_MACHINE" ]]; then
+    if [[ "$_GPU_MODE" == "1" && -n "$EXISTING_ACCEL" ]]; then
+      echo "    exists as GPU VM ($EXISTING_MACHINE + $EXISTING_ACCEL, status=$STATUS)"
+    elif [[ "$_GPU_MODE" != "1" && -z "$EXISTING_ACCEL" ]]; then
+      echo "    exists as CPU VM ($EXISTING_MACHINE, status=$STATUS)"
+    else
+      _MISMATCH=1
+    fi
+  fi
+  if [[ "$_MISMATCH" == "1" ]]; then
     echo "    machine mismatch ($EXISTING_MACHINE ≠ $GCP_TRAIN_MACHINE) → deleting + recreating"
     gcloud compute instances delete "$GCP_TRAIN_INSTANCE" \
       --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet
     # fall through to create below
   else
-    echo "    exists (status=$STATUS)"
+    # "exists as GPU/CPU VM" was already printed above if machine type differed
+    if [[ "$EXISTING_MACHINE" == "$GCP_TRAIN_MACHINE" ]]; then
+      echo "    exists (status=$STATUS)"
+    fi
     if [[ "$STATUS" != "RUNNING" ]]; then
       gcloud compute instances start "$GCP_TRAIN_INSTANCE" \
         --project="$GCP_PROJECT" --zone="$GCP_ZONE"
