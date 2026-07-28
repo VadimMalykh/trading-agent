@@ -71,15 +71,18 @@ require_gcloud() {
 }
 
 gssh() {
-  gcloud compute ssh "$1" --project="$GCP_PROJECT" --zone="$GCP_ZONE" --command="$2"
+  local zone="${3:-$GCP_ZONE}"
+  gcloud compute ssh "$1" --project="$GCP_PROJECT" --zone="$zone" --command="$2"
 }
 
 gscp_to() {
-  gcloud compute scp --project="$GCP_PROJECT" --zone="$GCP_ZONE" --recurse "$2" "$1:$3"
+  local zone="${4:-$GCP_ZONE}"
+  gcloud compute scp --project="$GCP_PROJECT" --zone="$zone" --recurse "$2" "$1:$3"
 }
 
 gscp_from() {
-  gcloud compute scp --project="$GCP_PROJECT" --zone="$GCP_ZONE" --recurse "$1:$2" "$3"
+  local zone="${4:-$GCP_ZONE}"
+  gcloud compute scp --project="$GCP_PROJECT" --zone="$zone" --recurse "$1:$2" "$3"
 }
 
 # Compose declares model_weights as external with this exact name

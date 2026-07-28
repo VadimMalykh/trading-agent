@@ -34,25 +34,31 @@ fi
 # derive run id + state for log tail / next-step hint
 RUN_ID="$RUN_ARG"
 STATE=""
+TRAIN_ZONE=""
+ACCELERATOR=""
 if [[ -n "$STATUS_JSON" ]]; then
   STATE="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')"
+  TRAIN_ZONE="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"zone":"\([^"]*\)".*/\1/p')"
+  ACCELERATOR="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"accelerator":"\([^"]*\)".*/\1/p')"
   if [[ -z "$RUN_ID" ]]; then
     RUN_ID="$(printf '%s' "$STATUS_JSON" | sed -n 's/.*"run":"\([^"]*\)".*/\1/p')"
   fi
 fi
+# Fall back to configured zone if status marker doesn't have one
+[[ -z "$TRAIN_ZONE" ]] && TRAIN_ZONE="$GCP_ZONE"
 
 # --- VM liveness ----------------------------------------------------------------
 VM_STATE="$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
-  --project="$GCP_PROJECT" --zone="$GCP_ZONE" --format='get(status)' 2>/dev/null || true)"
+  --project="$GCP_PROJECT" --zone="$TRAIN_ZONE" --format='get(status)' 2>/dev/null || true)"
 if [[ -n "$VM_STATE" ]]; then
-  echo "train VM $GCP_TRAIN_INSTANCE: $VM_STATE"
+  echo "train VM $GCP_TRAIN_INSTANCE: $VM_STATE (zone=$TRAIN_ZONE${ACCELERATOR:+, gpu=$ACCELERATOR})"
   if [[ "$VM_STATE" == "RUNNING" ]]; then
-    echo "live view:  gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxtrain"
+    echo "live view:  gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxtrain"
     echo "            (detach without stopping: Ctrl-b then d)"
   elif [[ "$VM_STATE" == "TERMINATED" ]]; then
     echo "VM is STOPPED (likely a FAILED run kept for debug). Start + inspect:"
-    echo "  gcloud compute instances start $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT"
-    echo "  gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT -- tail -n 120 '~/train_m2.log'"
+    echo "  gcloud compute instances start $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT"
+    echo "  gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tail -n 120 '~/train_m2.log'"
   fi
 else
   echo "train VM $GCP_TRAIN_INSTANCE: gone (self-deleted or never created)"

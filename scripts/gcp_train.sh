@@ -49,7 +49,10 @@ if [[ "$_GPU_MODE" == "1" ]]; then
   TRAIN_DEVICE=cuda
   GCP_TRAIN_MACHINE="$GCP_TRAIN_MACHINE_GPU"
   GCP_ZONE="$GCP_TRAIN_ZONE"
+  GCP_REGION="${GCP_ZONE%-*}"
+  export GCP_REGION
 fi
+_GCP_ZONE_ORIGINAL="$GCP_ZONE"
 echo_cfg
 
 EPOCHS="${1:-$TRAIN_EPOCHS}"
@@ -170,34 +173,102 @@ for u in $(ls /home 2>/dev/null); do usermod -aG docker "$u" || true; done
 touch /var/tmp/fluxtrader-docker-ready
 '
 
+  # GPU mode: try multiple zones in the region for resource availability
+  _GPU_ZONES=()
   if [[ "$_GPU_MODE" == "1" ]]; then
-    echo "    creating $GCP_TRAIN_MACHINE + $GCP_TRAIN_ACCELERATOR (scopes=cloud-platform) ..."
-    gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
-      --project="$GCP_PROJECT" \
-      --zone="$GCP_ZONE" \
-      --machine-type="$GCP_TRAIN_MACHINE" \
-      --accelerator="$GCP_TRAIN_ACCELERATOR" \
-      --maintenance-policy=TERMINATE \
-      --image-family=ubuntu-2204-lts \
-      --image-project=ubuntu-os-cloud \
-      --boot-disk-size=50GB \
-      --boot-disk-type=pd-balanced \
-      --scopes=cloud-platform \
-      --tags=fluxtrader-train \
-      --metadata=startup-script="$_STARTUP_GPU"
+    _GPU_ZONES=($(gcloud compute zones list --project="$GCP_PROJECT" --filter="region=$GCP_REGION" --format="value(name)" 2>/dev/null | sort))
+    # Move the preferred zone to the front
+    _PREFERRED_ZONE="$GCP_ZONE"
+    _GPU_ZONES=("$_PREFERRED_ZONE" "${_GPU_ZONES[@]/$_PREFERRED_ZONE/}")
+    # Remove duplicates while preserving order
+    _GPU_ZONES=($(echo "${_GPU_ZONES[@]}" | tr ' ' '\n' | awk '!seen[$0]++'))
+  fi
+
+  _create_vm() {
+    local zone="$1"
+    if [[ "$_GPU_MODE" == "1" ]]; then
+      echo "    creating $GCP_TRAIN_MACHINE + $GCP_TRAIN_ACCELERATOR in $zone ..."
+      gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
+        --project="$GCP_PROJECT" \
+        --zone="$zone" \
+        --machine-type="$GCP_TRAIN_MACHINE" \
+        --accelerator="$GCP_TRAIN_ACCELERATOR" \
+        --maintenance-policy=TERMINATE \
+        --image-family=ubuntu-2204-lts \
+        --image-project=ubuntu-os-cloud \
+        --boot-disk-size=50GB \
+        --boot-disk-type=pd-balanced \
+        --scopes=cloud-platform \
+        --tags=fluxtrader-train \
+        --metadata=startup-script="$_STARTUP_GPU"
+    else
+      echo "    creating $GCP_TRAIN_MACHINE in $zone ..."
+      gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
+        --project="$GCP_PROJECT" \
+        --zone="$zone" \
+        --machine-type="$GCP_TRAIN_MACHINE" \
+        --image-family=ubuntu-2204-lts \
+        --image-project=ubuntu-os-cloud \
+        --boot-disk-size=50GB \
+        --boot-disk-type=pd-balanced \
+        --scopes=cloud-platform \
+        --tags=fluxtrader-train \
+        --metadata=startup-script="$_STARTUP_CPU"
+    fi
+  }
+
+  if [[ "$_GPU_MODE" == "1" && ${#_GPU_ZONES[@]} -gt 0 ]]; then
+    # Try zones until one succeeds
+    _VM_CREATED=0
+    for _zone in "${_GPU_ZONES[@]}"; do
+      if _create_vm "$_zone"; then
+        GCP_ZONE="$_zone"
+        export GCP_ZONE
+        _VM_CREATED=1
+        break
+      else
+        echo "    → zone $_zone unavailable, trying next ..."
+      fi
+    done
+    # Fallback to L4 GPU if T4 exhausted
+    if [[ "$_VM_CREATED" == "0" ]]; then
+      echo ""
+      echo "==> T4 exhausted in all $GCP_REGION zones, falling back to L4 (g2-standard-4) ..."
+      _L4_MACHINE="g2-standard-4"
+      _L4_ACCELERATOR="type=nvidia-l4,count=1"
+      for _zone in "${_GPU_ZONES[@]}"; do
+        echo "    creating $_L4_MACHINE + $_L4_ACCELERATOR in $_zone ..."
+        if gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
+            --project="$GCP_PROJECT" \
+            --zone="$_zone" \
+            --machine-type="$_L4_MACHINE" \
+            --accelerator="$_L4_ACCELERATOR" \
+            --maintenance-policy=TERMINATE \
+            --image-family=ubuntu-2204-lts \
+            --image-project=ubuntu-os-cloud \
+            --boot-disk-size=50GB \
+            --boot-disk-type=pd-balanced \
+            --scopes=cloud-platform \
+            --tags=fluxtrader-train \
+            --metadata=startup-script="$_STARTUP_GPU"; then
+          GCP_ZONE="$_zone"
+          export GCP_ZONE
+          GCP_TRAIN_MACHINE="$_L4_MACHINE"
+          GCP_TRAIN_ACCELERATOR="$_L4_ACCELERATOR"
+          _VM_CREATED=1
+          echo "    → L4 available in $_zone"
+          break
+        else
+          echo "    → zone $_zone unavailable, trying next ..."
+        fi
+      done
+    fi
+    if [[ "$_VM_CREATED" == "0" ]]; then
+      echo "ERROR: Could not create GPU VM (T4 or L4) in any zone in $GCP_REGION"
+      exit 1
+    fi
   else
-    echo "    creating $GCP_TRAIN_MACHINE (scopes=cloud-platform) ..."
-    gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
-      --project="$GCP_PROJECT" \
-      --zone="$GCP_ZONE" \
-      --machine-type="$GCP_TRAIN_MACHINE" \
-      --image-family=ubuntu-2204-lts \
-      --image-project=ubuntu-os-cloud \
-      --boot-disk-size=50GB \
-      --boot-disk-type=pd-balanced \
-      --scopes=cloud-platform \
-      --tags=fluxtrader-train \
-      --metadata=startup-script="$_STARTUP_CPU"
+    _create_vm "$GCP_ZONE"
   fi
 fi
 
@@ -206,7 +277,7 @@ echo "==> waiting for SSH ..."
 _SSH_TRIES=40
 if [[ "$_GPU_MODE" == "1" ]]; then _SSH_TRIES=120; fi
 for _ in $(seq 1 $_SSH_TRIES); do
-  if gssh "$GCP_TRAIN_INSTANCE" "echo ok" >/dev/null 2>&1; then break; fi
+  if gssh "$GCP_TRAIN_INSTANCE" "echo ok" "$GCP_ZONE" >/dev/null 2>&1; then break; fi
   sleep 5
 done
 echo "==> waiting for Docker (first boot 1–3 min; GPU first boot 5–10 min) ..."
@@ -214,24 +285,25 @@ echo "==> waiting for Docker (first boot 1–3 min; GPU first boot 5–10 min) .
 _DOCKER_TRIES=60
 if [[ "$_GPU_MODE" == "1" ]]; then _DOCKER_TRIES=120; fi
 for i in $(seq 1 $_DOCKER_TRIES); do
-  if gssh "$GCP_TRAIN_INSTANCE" "docker compose version" >/dev/null 2>&1; then
+  if gssh "$GCP_TRAIN_INSTANCE" "docker compose version" "$GCP_ZONE" >/dev/null 2>&1; then
     echo "    Docker OK"; break
   fi
   if [[ "$i" -eq $_DOCKER_TRIES ]]; then echo "ERROR: Docker not ready."; exit 1; fi
   sleep 5
 done
 gssh "$GCP_TRAIN_INSTANCE" \
-  "sudo usermod -aG docker \$USER; sudo chmod 666 /var/run/docker.sock 2>/dev/null || true; command -v git >/dev/null || sudo apt-get install -y git; command -v tmux >/dev/null || sudo apt-get install -y tmux"
+  "sudo usermod -aG docker \$USER; sudo chmod 666 /var/run/docker.sock 2>/dev/null || true; command -v git >/dev/null || sudo apt-get install -y git; command -v tmux >/dev/null || sudo apt-get install -y tmux" \
+  "$GCP_ZONE"
 
 if [[ "$_GPU_MODE" == "1" ]]; then
   echo "==> verifying GPU (nvidia-smi) ..."
-  if ! gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi" >/dev/null 2>&1; then
+  if ! gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi" "$GCP_ZONE" >/dev/null 2>&1; then
     echo "ERROR: nvidia-smi not available. GPU driver may not have installed."
     echo "Try: gcloud compute instances stop $GCP_TRAIN_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT"
     echo "Then start it again to re-trigger the startup script."
     exit 1
   fi
-  gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"
+  gssh "$GCP_TRAIN_INSTANCE" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader" "$GCP_ZONE"
 fi
 
 # --- 2. fresh dump: always-on -> bucket -----------------------------------------
@@ -247,7 +319,7 @@ gssh "$GCP_ALWAYS_ON" "set -e
   ls -lh /tmp/fluxtrader_train.sql.gz
   gcloud storage cp /tmp/fluxtrader_train.sql.gz $GCS_BUCKET/dumps/$RUN_ID.sql.gz
   gcloud storage cp $GCS_BUCKET/dumps/$RUN_ID.sql.gz $GCS_BUCKET/dumps/latest.sql.gz
-"
+" "$_GCP_ZONE_ORIGINAL"
 
 # --- 3. write remote self-cleaning job and launch in tmux ------------------------
 # Mac-side values are injected as a small exported prelude; the quoted heredoc
@@ -272,6 +344,8 @@ export TRAIN_DEVICE='$TRAIN_DEVICE'
 export PAIRS_FLAG='$PAIRS_FLAG'
 export KEEP_VM='$KEEP_VM'
 export MODEL_VOLUME_NAME='$MODEL_VOLUME_NAME'
+export GCP_ZONE='$GCP_ZONE'
+export GCP_TRAIN_ACCELERATOR='$GCP_TRAIN_ACCELERATOR'
 PRELUDE
 cat >> \$HOME/run_flux_train.sh << 'ENDSCRIPT'
 set -Eeuo pipefail
@@ -285,8 +359,8 @@ finish() {
   local status=\"\$1\"
   echo \"=== finish: \$status \$(date -u) ===\"
   gcloud storage cp \"\$LOG\" \"\$GCS_BUCKET/logs/\$RUN_ID.log\" || true
-  printf '{\"status\":\"%s\",\"git_sha\":\"%s\",\"run\":\"%s\",\"ended\":\"%s\"}\n' \
-    \"\$status\" \"\${GIT_SHA:-}\" \"\$RUN_ID\" \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > /tmp/status.json
+  printf '{\"status\":\"%s\",\"git_sha\":\"%s\",\"run\":\"%s\",\"ended\":\"%s\",\"zone\":\"%s\",\"accelerator\":\"%s\"}\n' \
+    \"\$status\" \"\${GIT_SHA:-}\" \"\$RUN_ID\" \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \"\$GCP_ZONE\" \"\$GCP_TRAIN_ACCELERATOR\" > /tmp/status.json
   gcloud storage cp /tmp/status.json \"\$GCS_BUCKET/status/\$RUN_ID.json\" || true
   gcloud storage cp /tmp/status.json \"\$GCS_BUCKET/status/latest.json\" || true
 
@@ -308,8 +382,8 @@ trap 'code=\$?; finish \"\$([[ \$code -eq 0 ]] && echo DONE || echo FAILED)\"' E
 
 # Publish a RUNNING marker immediately so gcp_status.sh reflects THIS run while it
 # trains, instead of showing the previous run's stale DONE until the finish trap.
-printf '{\"status\":\"RUNNING\",\"git_sha\":\"%s\",\"run\":\"%s\",\"started\":\"%s\"}\n' \
-  \"\${GIT_SHA:-}\" \"\$RUN_ID\" \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > /tmp/status.json
+printf '{\"status\":\"RUNNING\",\"git_sha\":\"%s\",\"run\":\"%s\",\"started\":\"%s\",\"zone\":\"%s\",\"accelerator\":\"%s\"}\n' \
+  \"\${GIT_SHA:-}\" \"\$RUN_ID\" \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \"\$GCP_ZONE\" \"\$GCP_TRAIN_ACCELERATOR\" > /tmp/status.json
 gcloud storage cp /tmp/status.json \"\$GCS_BUCKET/status/\$RUN_ID.json\" || true
 gcloud storage cp /tmp/status.json \"\$GCS_BUCKET/status/latest.json\" || true
 
@@ -412,11 +486,11 @@ tmux ls
 sleep 8
 echo '--- log so far ---'
 tail -n 30 \$HOME/train_m2.log 2>/dev/null || echo '(starting...)'
-"
+" "$GCP_ZONE"
 
 echo ""
 if [[ "$_GPU_MODE" == "1" ]]; then
-  echo "OK — GPU training started on $GCP_TRAIN_INSTANCE (run=$RUN_ID, device=cuda)."
+  echo "OK — GPU training started on $GCP_TRAIN_INSTANCE ($GCP_TRAIN_MACHINE + $GCP_TRAIN_ACCELERATOR) (run=$RUN_ID, device=cuda)."
 else
   echo "OK — training started on $GCP_TRAIN_INSTANCE (run=$RUN_ID)."
 fi
