@@ -233,11 +233,12 @@ fi
 
 # --- Phase 3: nvidia-container-toolkit + Docker GPU runtime ---
 if ! nvidia-container-toolkit --version &>/dev/null 2>&1; then
-  curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
-    gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-  curl -s -L "https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list" | \
-    sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" | \
-    tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+  curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+    | gpg --batch --yes --no-tty --dearmor \
+      -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  curl -fsSL "https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list" \
+    | sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" \
+    > /etc/apt/sources.list.d/nvidia-container-toolkit.list
   apt-get update -y
   apt-get install -y nvidia-container-toolkit
 fi
@@ -408,11 +409,13 @@ if [[ "$_GPU_MODE" == "1" ]]; then
   gssh "$GCP_TRAIN_INSTANCE" "set -e
     sudo mkdir -p /etc/cdi /var/run/cdi
     if ! command -v nvidia-ctk >/dev/null 2>&1; then
-      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
-        sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-      curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-        sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
+      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey -o /tmp/nvidia-container-toolkit.asc
+      sudo gpg --batch --yes --no-tty --dearmor \
+        -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+        /tmp/nvidia-container-toolkit.asc
+      curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+        | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+        | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
       sudo apt-get update -y
       sudo apt-get install -y nvidia-container-toolkit
     fi
