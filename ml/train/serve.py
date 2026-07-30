@@ -185,7 +185,7 @@ def predict_symbol(symbol: str) -> dict:
             }
 
     primary_h = horizons_out.get(primary, next(iter(horizons_out.values())))
-    trade = primary_h["gated"]
+    trade = primary_h["gated"] or any(v["gated"] for v in horizons_out.values())
     if trade and primary_h["direction"] == "up":
         side = "BUY"
     elif trade and primary_h["direction"] == "down":
