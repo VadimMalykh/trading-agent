@@ -38,3 +38,6 @@ __pycache__/
 *.swo
 *~
 .DS_Store
+
+# Logs
+*.log
