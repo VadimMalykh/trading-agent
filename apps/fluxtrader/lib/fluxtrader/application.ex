@@ -17,6 +17,7 @@ defmodule FluxTrader.Application do
       FluxTrader.MarketData.Collector,
       FluxTrader.Trading.Executor,
       FluxTrader.Trading.RiskManager,
+      FluxTrader.Notifications.Telegram.RateLimiter,
       FluxTrader.ML.SignalEngine
     ]
 

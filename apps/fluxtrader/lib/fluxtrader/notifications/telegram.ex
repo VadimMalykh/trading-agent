@@ -2,6 +2,7 @@ defmodule FluxTrader.Notifications.Telegram do
   require Logger
 
   @base_url "https://api.telegram.org"
+  @rate_limiter FluxTrader.Notifications.Telegram.RateLimiter
 
   def bot_token do
     System.get_env("TELEGRAM_BOT_TOKEN") ||
@@ -22,8 +23,18 @@ defmodule FluxTrader.Notifications.Telegram do
   def send_trade_signal(%{trade: true, side: side, symbol: _symbol} = signal)
       when side in ["BUY", "SELL"] do
     if configured?() do
-      message = format_signal(signal)
-      send_message(message)
+      if rate_limited?(signal) do
+        Logger.debug(
+          "Telegram rate-limited for #{signal[:symbol]} " <>
+            "h=#{signal[:primary_horizon_m]}m — skipping"
+        )
+
+        :ok
+      else
+        message = format_signal(signal)
+        mark_sent(signal)
+        send_message(message)
+      end
     else
       Logger.debug("Telegram not configured — skipping notification")
       :ok
@@ -31,6 +42,25 @@ defmodule FluxTrader.Notifications.Telegram do
   end
 
   def send_trade_signal(_), do: :ok
+
+  defp rate_limit_key(signal), do: {signal[:symbol], signal[:primary_horizon_m]}
+
+  defp cooldown_ms(%{primary_horizon_m: h}) when is_integer(h) and h > 0, do: h * 60_000
+  defp cooldown_ms(_), do: 15 * 60_000
+
+  defp rate_limited?(signal) do
+    now = System.monotonic_time(:millisecond)
+
+    case Agent.get(@rate_limiter, &Map.get(&1, rate_limit_key(signal))) do
+      nil -> false
+      last -> now - last < cooldown_ms(signal)
+    end
+  end
+
+  defp mark_sent(signal) do
+    now = System.monotonic_time(:millisecond)
+    Agent.update(@rate_limiter, &Map.put(&1, rate_limit_key(signal), now))
+  end
 
   defp format_signal(signal) do
     side = signal[:side]
