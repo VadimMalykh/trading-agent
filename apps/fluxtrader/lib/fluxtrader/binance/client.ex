@@ -62,11 +62,10 @@ defmodule FluxTrader.Binance.Client do
     get("/fapi/v1/openInterest?#{params}")
   end
 
-  def force_orders(symbol, opts \\ []) do
-    limit = Keyword.get(opts, :limit, 50)
-    params = URI.encode_query(symbol: symbol, limit: limit)
-    get("/fapi/v1/allForceOrders?#{params}")
-  end
+  # NOTE: Binance's REST liquidation endpoint (/fapi/v1/allForceOrders) is
+  # auth-gated and unusable for public market-wide data. Liquidations are
+  # collected in real time via the WebSocket !forceOrder@arr stream in
+  # FluxTrader.Binance.WebSocket. There is no historical backfill.
 
   def place_order(order_params) do
     body =

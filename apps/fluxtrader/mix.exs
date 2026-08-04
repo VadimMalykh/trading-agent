@@ -31,6 +31,7 @@ defmodule FluxTrader.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:jason, "~> 1.4"},
       {:finch, "~> 0.18"},
+      {:gun, "~> 2.0"},
       {:phoenix_pubsub, "~> 2.1"}
     ]
   end

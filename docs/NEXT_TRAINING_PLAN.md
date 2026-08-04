@@ -196,23 +196,46 @@ docker compose --profile ml run --rm ml_trainer python train_m2.py \
   container directly (local or on the train VM), or add a passthrough if you want to
   run them through the GCP pipeline.
 
-**Ablation run LAUNCHED 2026-07-27 (always-on) — headers captured, RESULTS PENDING:**
-- Both arms configured identically (clean A/B): 8 pairs, dense window
-  2026-07-17 23:21 → 2026-07-27 ~09:3x UTC.
-  - book-ON:  Samples 70,384 | train 56,307 / val 14,077 | ablate_book=False
-  - book-OFF: Samples 70,412 | train 56,329 / val 14,083 | ablate_book=True (11 cols zeroed)
-  - per-pair live bars: BTC/ETH/SOL ~13,570; DOGE/WLD/HYPE ~8,870; ZEC ~2,977;
-    1000PEPE ~88 (too few — effectively noise for that pair).
-  - class balance (dense window): 30m down 0.21 / flat 0.60 / up 0.19 → FLAT-HEAVY
-    vs 0.43 on 180d. Recent low-drift regime; expect low coverage / modest edges.
-  - identical 3-class weights both arms (down~1.14 flat~0.67 up~1.18).
-- ⚠️ The epoch dir_acc lines + eval fixed-coverage tables were NOT captured this
-  session. **Next session: pull full logs for both arms and fill in the table below.**
+**Ablation run COMPLETED 2026-08-04 (`gcp_ablate.sh`, run=ablate-20260804T083752Z git=5aee602a):**
+- Both arms identical (clean A/B): 8 pairs, dense window `--require-book`,
+  epochs=40 seq=128 horizons=5,30,60. OFF arm zeroes the 11 book features.
+- Samples 161,651 | train 129,320 / val 32,331 | val window 2026-08-01 12:18 →
+  2026-08-04 07:39 UTC (~2.7 days). Metric = top-5% selective dir_acc, read via
+  Wilson LB (`lb=`), PRIMARY horizon, at the max-sel-score epoch.
+- Logs: `logs/ablate_{compare,on30,off30,on60,off60}.log`.
 
-  | horizon | book-ON top-5% dir_acc (lb) | book-OFF top-5% dir_acc (lb) | Δ | verdict |
-  |---------|----------------------------:|-----------------------------:|---|---------|
-  | 30m | _pending_ | _pending_ | | |
-  | 60m | _pending_ | _pending_ | | |
+  | horizon | book-ON top-5% dir_acc (lb) | book-OFF top-5% dir_acc (lb) | Δ (lb) | verdict |
+  |---------|----------------------------:|-----------------------------:|-------:|---------|
+  | 30m | 0.729 (**lb=0.691**) ep12 n=575 | 0.536 (lb=0.494) ep03 n=539 | **+0.197** | **book edge real** — LBs don't overlap |
+  | 60m | 0.650 (lb=0.610) ep01 n=577 | 0.630 (lb=0.587) ep01 n=505 | +0.023 | no verdict — both arms peaked ep1 then decayed (no real training) |
+
+- **Verdict:** at 30m the book edge clearly survives modeling (per decision rule
+  ⇒ escalate microstructure). At 60m no conclusion (init noise, not learning).
+- **Caveats:** single ~2.7d val window, thin high-confidence tail (n≈575), broad
+  3-class val acc only ~0.50–0.53 — edge lives entirely in the top-5% slice.
+  ⇒ **Next: walk-forward multi-window rerun of the 30m arm** to confirm robustness
+  before investing in collection (see item below).
+
+**⚠️ Liquidations feed BLOCKED (2026-08-04):** `liquidations` table = 0 rows. Root
+cause was (1) collector used REST `allForceOrders` (auth-gated, unusable for public
+data) and (2) errors were silently swallowed. Both fixed: the REST poll is removed
+and `FluxTrader.Binance.WebSocket` is now a real `gun`-based consumer of the WS
+`!forceOrder@arr` stream (auto-reconnect, writes to `liquidations`). BUT Binance
+**gates the WS data plane from cloud/datacenter egress**: verified from local +
+`fluxtrader-1` (me-central1) + `fluxtrader-train` (us-central1) — all get a `101`
+upgrade and a SUBSCRIBE ack but **zero market-data frames** (even `btcusdt@aggTrade`).
+REST (`fapi`) returns 200 everywhere. So liquidations cannot be collected via current
+access; there is no REST fallback and WS has no history anyway.
+- **Decision (2026-08-04): document + defer.** The 30m book edge above exists
+  WITHOUT liquidations, so this is not on the critical path. Options for later, in
+  preference order: (a) third-party vendor REST (Coinglass/Coinalyze — also gives
+  *history*, which WS never would); (b) proxy the WS through a non-datacenter
+  egress (realtime only); (c) drop liquidations from the feature set.
+- The WS consumer code is correct and ready — it will collect the instant it runs
+  from an unblocked egress. Do NOT re-debug the code; it's a network/vendor decision.
+- NOTE for M3: these features feed the RL policy later ("M2 describes the market;
+  M3 decides the trade"). A permanently-empty `liquidations` column would be a dead
+  RL input — resolve the source before the microstructure-rich run, not after.
 
 **Next runs, in order:**
 1. **Quantile re-run** with the two fixes: `TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh`

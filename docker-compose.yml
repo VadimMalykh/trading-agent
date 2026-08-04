@@ -26,7 +26,10 @@ services:
       - .:/app
       - app_build:/app/_build
       - app_deps:/app/deps
-    command: sh -c "mix deps.get && mix ecto.create && mix ecto.migrate && mix phx.server"
+    # deps.get may fail offline once deps are already in the app_deps volume
+    # (e.g. cowlib/gun transitive resolution against a cold hex cache). Deps are
+    # cached in the volume, so tolerate that and proceed to boot.
+    command: sh -c "(mix deps.get || echo 'deps.get skipped (offline); using cached deps') && mix deps.compile gun cowlib && mix ecto.create && mix ecto.migrate && mix phx.server"
 
   postgres:
     image: timescale/timescaledb:latest-pg16

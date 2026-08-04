@@ -67,6 +67,7 @@ from data.dataset import (
     labels_for_indices,
     pair_ids_for_indices,
     time_split_indices,
+    time_split_indices_window,
 )
 from data.db import load_whitelist_pairs, table_counts
 from data.features import BOOK_FEATURES
@@ -122,6 +123,23 @@ def parse_args():
         "--ablate-book",
         action="store_true",
         help="Zero all microstructure (book/trade/OI) features — the book-OFF arm of the ablation.",
+    )
+    p.add_argument(
+        "--val-frac",
+        type=float,
+        default=None,
+        help="Val window size as a fraction of time-ordered samples (default: VAL_FRACTION).",
+    )
+    p.add_argument(
+        "--val-offset",
+        type=float,
+        default=0.0,
+        help=(
+            "Walk-forward: end the val window this fraction of samples from the "
+            "latest sample; train = samples strictly before the val window. "
+            "0.0 = newest window (== trailing split). Step by --val-frac for "
+            "non-overlapping rolling-origin folds."
+        ),
     )
     return p.parse_args()
 
@@ -305,11 +323,18 @@ def main():
         if n < 10:
             sys.exit(2)
 
-    tr_idx, va_idx = time_split_indices(bundle.times, VAL_FRACTION)
+    val_frac = args.val_frac if args.val_frac is not None else VAL_FRACTION
+    if args.val_offset and args.val_offset > 0.0:
+        tr_idx, va_idx = time_split_indices_window(bundle.times, val_frac, args.val_offset)
+        split_kind = "walkforward_window"
+    else:
+        tr_idx, va_idx = time_split_indices(bundle.times, val_frac)
+        split_kind = "global_time"
     t_tr = bundle.times[tr_idx]
     t_va = bundle.times[va_idx]
     print(
-        f"Split global time | train={tr_idx.shape[0]} val={va_idx.shape[0]} | "
+        f"Split {split_kind} | val_frac={val_frac} val_offset={args.val_offset} | "
+        f"train={tr_idx.shape[0]} val={va_idx.shape[0]} | "
         f"train [{_ns_to_iso(int(t_tr.min()))} → {_ns_to_iso(int(t_tr.max()))}] | "
         f"val [{_ns_to_iso(int(t_va.min()))} → {_ns_to_iso(int(t_va.max()))}]"
     )
@@ -325,8 +350,9 @@ def main():
     apply_norm_to_bundle(bundle, norm_stats)
     meta["norm_stats"] = norm_stats
     meta["norm"] = "train_only_per_pair"
-    meta["val_fraction"] = VAL_FRACTION
-    meta["split"] = "global_time"
+    meta["val_fraction"] = val_frac
+    meta["val_offset"] = args.val_offset
+    meta["split"] = split_kind
 
     p_va = pair_ids_for_indices(bundle, va_idx)
     val_pair_counts = {p: int(np.sum(p_va == p)) for p in pairs}

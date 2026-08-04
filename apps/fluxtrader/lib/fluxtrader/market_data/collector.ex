@@ -7,7 +7,7 @@ defmodule FluxTrader.MarketData.Collector do
   require Logger
 
   alias FluxTrader.Binance.Client
-  alias FluxTrader.MarketData.{BookFeatures, MarketTrade, OrderbookSnapshot, FundingRate, OpenInterest, Liquidation}
+  alias FluxTrader.MarketData.{BookFeatures, MarketTrade, OrderbookSnapshot, FundingRate, OpenInterest}
   alias FluxTrader.Data.Candle
   alias FluxTrader.Repo
 
@@ -106,7 +106,8 @@ defmodule FluxTrader.MarketData.Collector do
     Enum.each(state.pairs, fn pair ->
       collect_funding(pair)
       collect_open_interest(pair)
-      collect_liquidations(pair)
+      # Liquidations are collected via Binance.WebSocket (!forceOrder@arr);
+      # the REST allForceOrders endpoint is auth-gated / unusable for public data.
     end)
 
     Process.send_after(self(), :poll_slow, @slow_interval_ms)
@@ -275,42 +276,6 @@ defmodule FluxTrader.MarketData.Collector do
 
       {:error, reason} ->
         Logger.warning("OI poll failed #{symbol}: #{inspect(reason)}")
-
-      _ ->
-        :ok
-    end
-  end
-
-  defp collect_liquidations(symbol) do
-    case Client.force_orders(symbol, limit: 20) do
-      {:ok, orders} when is_list(orders) ->
-        Enum.each(orders, fn o ->
-          attrs = %{
-            symbol: Map.get(o, "symbol", symbol),
-            ts: ms_to_dt(Map.get(o, "time") || Map.get(o, "updateTime")),
-            side: Map.get(o, "side"),
-            price: to_f(Map.get(o, "price") || Map.get(o, "averagePrice")),
-            quantity: to_f(Map.get(o, "origQty") || Map.get(o, "executedQty")),
-            order_id: to_string(Map.get(o, "orderId", ""))
-          }
-
-          if attrs.ts do
-            %Liquidation{}
-            |> Liquidation.changeset(attrs)
-            |> Repo.insert()
-            |> case do
-              {:ok, _} -> :ok
-              {:error, _} -> :ok
-            end
-          end
-        end)
-
-      {:error, {status, _}} when status in [401, 403, 404] ->
-        # Endpoint may require auth on some deployments; skip quietly
-        :ok
-
-      {:error, reason} ->
-        Logger.debug("Liquidations poll #{symbol}: #{inspect(reason)}")
 
       _ ->
         :ok
