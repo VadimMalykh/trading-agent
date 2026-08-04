@@ -217,6 +217,7 @@ export GIT_REF='$GIT_REF'
 export REMOTE_REPO_NAME='$REMOTE_REPO_NAME'
 export AUDIT_FLAGS='$AUDIT_FLAGS'
 export KEEP_VM='$KEEP_VM'
+export MODEL_VOLUME_NAME='$MODEL_VOLUME_NAME'
 PRELUDE
 cat >> \$HOME/run_flux_audit.sh << 'ENDSCRIPT'
 set -Eeuo pipefail
@@ -286,6 +287,8 @@ echo \"book_rows=\$BOOK\"
 if ! [[ \"\$BOOK\" =~ ^[0-9]+\$ ]] || [[ \"\$BOOK\" -lt 100 ]]; then echo \"ERROR: restore failed (book=\$BOOK)\"; exit 1; fi
 
 echo \"=== audit_microstructure.py \$AUDIT_FLAGS ===\"
+# compose declares model_weights as external -> must exist before 'run'.
+docker volume create \"\${MODEL_VOLUME_NAME:-trading_agent_model_weights}\" >/dev/null 2>&1 || true
 docker compose --profile ml run --rm \
   -e FLUX_GIT_SHA=\$GIT_SHA \
   ml_trainer python audit_microstructure.py \$AUDIT_FLAGS
