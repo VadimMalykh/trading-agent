@@ -36,7 +36,7 @@ Keep token spend low. Apply these by default:
 
 - **Be terse.** Do the work, then give a one-line summary. No preamble ("I'll now…"), no postamble ("Let me know if…"). Expand only when explicitly asked "why" or "explain".
 - **Keep important details.** Terse ≠ omitting what's needed to understand a change. State non-obvious decisions, gotchas, and side effects in one line each.
-- **Read files sparingly.** Prefer targeted `grep` and offset/limit reads over dumping whole files. Don't re-read a file you've already read.
+- **Read as much as you need.** This project involves analyzing large logs, docs, and other artifacts — read whole files and long excerpts freely when the task calls for it. Prefer targeted `grep` when hunting for something specific, but don't artificially truncate reads. Just avoid re-reading a file you've already read.
 - **Explore via subagents.** Use the Task tool for codebase searches so bulky tool output stays out of the main context.
 - **Prefer cheaper models for routine work** (edits, searches, boilerplate); reserve the largest model for hard reasoning.
 - **Fresh session per task.** Long sessions resend full history each turn — start a new session when switching tasks.
