@@ -138,6 +138,8 @@ class PairSeries:
     labels: Dict[str, np.ndarray]  # key -> [T] int64
     times: np.ndarray  # [T] int64 ns
     returns: Dict[str, np.ndarray]  # key -> [T] float32 raw forward return (quantile target)
+    close: np.ndarray = None  # [T] float64 close prices (momentum + buy-hold baselines)
+    book_present: np.ndarray = None  # [T] bool raw has_book flag (pre-norm, pre-ablation)
 
 
 @dataclass
@@ -240,6 +242,8 @@ def build_m2_index_bundle(
             return_cols[str(h)] = fwd.to_numpy(dtype=np.float32)
             np.nan_to_num(return_cols[str(h)], copy=False)
 
+        # Raw close prices (for momentum + buy-and-hold baselines and P&L sim).
+        close_arr = frame["close"].to_numpy(dtype=np.float64)
         del frame
 
         pi = len(series_list)
@@ -250,6 +254,8 @@ def build_m2_index_bundle(
                 labels=label_cols,
                 times=times_bar,
                 returns=return_cols,
+                close=close_arr,
+                book_present=has_book_bar.copy(),
             )
         )
 
@@ -264,10 +270,12 @@ def build_m2_index_bundle(
             # book features are real across the whole sequence the model sees.
             # rolling-all via cumulative count of "book present".
             csum = np.concatenate([[0], np.cumsum(has_book_bar.astype(np.int64))])
-            # count of book-present bars in (t-seq_len, t]  == csum[t+1]-csum[t+1-seq_len]
+            # count of book-present bars in [t-seq_len, t)  == csum[t]-csum[t-seq_len]
+            # (off-by-one fix: the window the model sees is [t-seq_len, t), i.e. the
+            # slice feats[t-seq_len:t]; the previous (t-seq_len, t] was shifted +1.)
             t_idx = np.arange(len(feats))
-            lo = np.clip(t_idx + 1 - seq_len, 0, None)
-            window_book = csum[t_idx + 1] - csum[lo]
+            lo = np.clip(t_idx - seq_len, 0, None)
+            window_book = csum[t_idx] - csum[lo]
             valid &= window_book >= seq_len
 
         idx = np.nonzero(valid)[0]

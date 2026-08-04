@@ -17,6 +17,15 @@
 #   KEEP_VM=1 ./scripts/gcp_train.sh          # debug: don't auto delete/stop VM
 #   ./scripts/gcp_train.sh --gpu              # GPU mode (n1-standard-4 + T4)
 #   ./scripts/gcp_train.sh --gpu 120 256      # GPU + custom epochs/seq-len
+#   ./scripts/gcp_train.sh --ref my-branch    # train an arbitrary branch/commit
+#   ./scripts/gcp_train.sh --quantile-head 1 --quantile-weight 0.2   # quant A/B
+#
+# Flags (order-independent; the first two bare numbers are epochs then seq_len):
+#   --gpu                     GPU mode
+#   --ref|--branch <name>     git ref to train (default: $GIT_REF, usually main)
+#   --quantile-head <0|1>     override TRAIN_QUANTILE_HEAD
+#   --quantile-weight <f>     override TRAIN_QUANTILE_LOSS_WEIGHT
+# Unknown --flags are rejected (previously they were silently misread as epochs).
 #
 # One-time bucket setup (run once):
 #   gcloud storage buckets create "$GCS_BUCKET" --location="$GCP_REGION" \
@@ -33,17 +42,40 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/gcp_common.sh"
 require_gcloud
 
-# --- parse --gpu flag --------------------------------------------------------
+# --- parse flags -------------------------------------------------------------
+# while/case parser: supports --gpu, --ref/--branch, --quantile-head,
+# --quantile-weight, and the two bare positionals (epochs, seq_len). Unknown
+# --flags are a hard error so a typo can no longer be misread as a positional.
 _GPU_MODE=0
+_REF_OVERRIDE=""
+_QHEAD_OVERRIDE=""
+_QWEIGHT_OVERRIDE=""
 _ARGS=()
-for _a in "$@"; do
-  if [[ "$_a" == "--gpu" ]]; then
-    _GPU_MODE=1
-  else
-    _ARGS+=("$_a")
-  fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --gpu)
+      _GPU_MODE=1; shift ;;
+    --ref|--branch)
+      [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value"; exit 1; }
+      _REF_OVERRIDE="$2"; shift 2 ;;
+    --quantile-head)
+      [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value (0|1)"; exit 1; }
+      _QHEAD_OVERRIDE="$2"; shift 2 ;;
+    --quantile-weight)
+      [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value"; exit 1; }
+      _QWEIGHT_OVERRIDE="$2"; shift 2 ;;
+    --*)
+      echo "ERROR: unknown flag '$1'"; exit 1 ;;
+    *)
+      _ARGS+=("$1"); shift ;;
+  esac
 done
 set -- "${_ARGS[@]+"${_ARGS[@]}"}"
+
+# --ref/--branch overrides GIT_REF (default from gcp_common.sh, usually main).
+if [[ -n "$_REF_OVERRIDE" ]]; then
+  GIT_REF="$_REF_OVERRIDE"
+fi
 
 _GCP_ZONE_ORIGINAL="$GCP_ZONE"
 if [[ "$_GPU_MODE" == "1" ]]; then
@@ -60,9 +92,9 @@ SEQ_LEN="${2:-$TRAIN_SEQ_LEN}"
 PAIRS_ARG="${TRAIN_PAIRS:-}"
 HORIZONS="${TRAIN_HORIZONS:-5,30,60}"
 PRIMARY="${TRAIN_PRIMARY:-30}"
-QUANTILE_HEAD="${TRAIN_QUANTILE_HEAD:-0}"
+QUANTILE_HEAD="${_QHEAD_OVERRIDE:-${TRAIN_QUANTILE_HEAD:-0}}"
 QUANTILE_LEVELS="${TRAIN_QUANTILE_LEVELS:-0.1,0.5,0.9}"
-QUANTILE_LOSS_WEIGHT="${TRAIN_QUANTILE_LOSS_WEIGHT:-0.2}"
+QUANTILE_LOSS_WEIGHT="${_QWEIGHT_OVERRIDE:-${TRAIN_QUANTILE_LOSS_WEIGHT:-0.2}}"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 R="\$HOME/${REMOTE_REPO_NAME}"
 
@@ -70,7 +102,7 @@ PAIRS_FLAG=""
 if [[ -n "$PAIRS_ARG" ]]; then PAIRS_FLAG="--pairs ${PAIRS_ARG}"; fi
 
 echo ""
-echo "==> run_id=$RUN_ID  epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} device=$TRAIN_DEVICE quantile_head=$QUANTILE_HEAD"
+echo "==> run_id=$RUN_ID  ref=$GIT_REF epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} device=$TRAIN_DEVICE quantile_head=$QUANTILE_HEAD quantile_weight=$QUANTILE_LOSS_WEIGHT"
 
 # --- 0. sanity: bucket reachable -------------------------------------------------
 if ! gcloud storage ls "$GCS_BUCKET" >/dev/null 2>&1; then

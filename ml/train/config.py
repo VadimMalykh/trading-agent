@@ -102,6 +102,16 @@ CLS_LABEL_SMOOTHING = float(os.environ.get("CLS_LABEL_SMOOTHING", "0.05"))
 CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.40"))
 GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.40"))
 
+# --- Cost model (eval P&L only) --------------------------------------------------
+# Round-trip trading cost used by the eval P&L simulator and cost-sweep. Purely a
+# reporting/analysis input at eval time; it does NOT affect training or serving.
+#   round_trip = 2 * (fee + slippage), expressed as a fraction (bps / 1e4).
+FEE_RATE_BPS = float(os.environ.get("FEE_RATE_BPS", "4"))
+SLIPPAGE_BPS = float(os.environ.get("SLIPPAGE_BPS", "3"))
+ROUND_TRIP_COST = 2.0 * (FEE_RATE_BPS + SLIPPAGE_BPS) / 1e4
+# Number of disjoint time windows for walk-forward edge/P&L reporting in eval.
+WF_WINDOWS = int(os.environ.get("WF_WINDOWS", "4"))
+
 # Feature vector size per timestep (must match features.py)
 # 16 signal features + 3 presence-mask flags (has_book/has_trades/has_funding_oi)
 # so the model distinguishes "genuinely zero" from "missing" microstructure. The
