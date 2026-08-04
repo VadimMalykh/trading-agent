@@ -609,6 +609,7 @@ collecting for book features over time.
 | `scripts/gcp_status.sh` | **2** — status + last 40 log lines from bucket; tmux attach if alive |
 | `scripts/gcp_logs.sh` | — full log of any run from the bucket (`--list`, `--save`) |
 | `scripts/gcp_promote.sh` | **3** — install checkpoint + serve code on always-on |
+| `scripts/gcp_audit.sh` | *(separate flow)* — microstructure signal audit on its own throwaway VM (see [Part 3](#part-3--microstructure-audit-separate-flow)) |
 
 Related: [GCP_MIGRATE.md](./GCP_MIGRATE.md) — first-time Mac → always-on data move.
 
@@ -687,5 +688,108 @@ multi-hour retrains. The self-clean matters more on GPU — idle T4 burns ~$0.35
 Use `./scripts/gcp_train.sh --gpu` to enable; everything else is automatic.
 
 ---
+---
 
-*Last updated: 2026-07-25*
+# Part 3 — Microstructure audit (separate flow)
+
+A **read-only signal audit** of the collected order-book / trade-flow / OI
+features (`ml/train/audit_microstructure.py`): does any microstructure feature
+carry directional signal *before* we invest weeks of collection? It is **not
+training** — it produces a report (`microstructure_audit.json`), no checkpoint.
+
+## Why a dedicated script/VM
+
+- The **always-on VM has only 2 GB** and runs collection + UI + inference. The
+  audit loads full book+candle history for every pair into pandas and the deep
+  dive holds several float64 copies per feature → it **OOM-kills** there and can
+  disrupt live collection. Don't run it on always-on.
+- `gcp_audit.sh` mirrors the training pipeline (dump → throwaway VM → restore →
+  run → upload results → self-clean) but on its **own** instance
+  (`GCP_AUDIT_INSTANCE`, default `fluxtrader-audit`) with its **own** status
+  marker (`status/audit_latest.json`) and tmux session (`fluxaudit`).
+- **Fully independent of training.** They share no VM, Postgres, tmux session, or
+  status marker, so **an audit and a training run can happen at the same time.**
+  `gcp_status.sh` tracks **training only**; audit has `./scripts/gcp_audit.sh --status`.
+
+## Run it
+
+From your **Mac**, repo root (must `git push` first — the VM clones `GIT_REF`):
+
+```bash
+# default: all pairs in the DB whitelist, horizons 5,30,60, deep dive on
+./scripts/gcp_audit.sh
+
+# restrict pairs / horizons, raise the min live-book rows bar:
+./scripts/gcp_audit.sh --pairs BTCUSDT,ETHUSDT,SOLUSDT --horizons 5,15,30,60
+./scripts/gcp_audit.sh --min-rows 2000
+
+# skip the stability/vol-control deep dive (faster, less memory):
+./scripts/gcp_audit.sh --no-deep
+
+# debug: keep the audit VM alive after the run:
+KEEP_VM=1 ./scripts/gcp_audit.sh
+```
+
+The command returns immediately; the VM **self-deletes on success**, **self-stops
+on failure**. Your Mac can sleep.
+
+## Watch + fetch results
+
+```bash
+./scripts/gcp_audit.sh --status            # audit VM liveness + last marker
+./scripts/gcp_audit.sh --list              # list past audit runs
+./scripts/gcp_audit.sh --fetch             # latest run: print log + save JSON locally
+./scripts/gcp_audit.sh --fetch audit-2026...Z   # a specific run
+
+# live view while the VM is up:
+gcloud compute ssh fluxtrader-audit --zone=me-central1-b --project=fluxtrader \
+  -- tmux attach -t fluxaudit
+```
+
+Results persist in the bucket even after the VM is gone:
+
+| Object | Contents |
+|--------|----------|
+| `gs://<bucket>/audits/<RUN_ID>.log` | full console output |
+| `gs://<bucket>/audits/<RUN_ID>.json` | `microstructure_audit.json` |
+| `gs://<bucket>/audits/latest.log` / `latest.json` | convenience copies |
+| `gs://<bucket>/status/audit_latest.json` | status marker (separate from training) |
+
+`--fetch` also saves the JSON to `$EXPORT_DIR/microstructure_audit_<run>.json`.
+
+## How to read it
+
+Per feature/horizon (from the script's own legend):
+
+- **Signal:** `|Spearman| >~ 0.03` **AND** `wilson_lb(sign_acc) > 0.51` on a pair
+  with enough live rows → a real (small) book edge → worth collecting more.
+- **All-noise:** `|rho| < ~0.01`, `lb <= 0.50` → not showing yet; keep collecting.
+- **Deep dive:** `STABLE + DIRECTIONAL` = genuine directional alpha (escalate);
+  `STABLE + VOL-PROXY` = risk feature → quantile head, not direction;
+  `UNSTABLE` = regime/trend artifact → keep collecting.
+- **Caveat baked in:** ~2–9 days is a **smell test only**, never a final verdict.
+
+## Config / defaults
+
+| Setting | Default | Where |
+|---------|---------|-------|
+| Audit VM | `fluxtrader-audit` (self-deletes on success) | `GCP_AUDIT_INSTANCE` in `gcp_common.sh` |
+| Machine | `e2-standard-4` (16 GB — no OOM) | `GCP_TRAIN_MACHINE` (shared) |
+| Pairs | DB whitelist (all pairs with book history) | `--pairs` |
+| Horizons | `5,30,60` (minutes) | `--horizons` |
+| Min live-book rows | 500 | `--min-rows` |
+| Deep dive | on | `--no-deep` to disable |
+
+## Audit troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| Run FAILED (VM stopped for debug) | `./scripts/gcp_audit.sh --status` shows the stopped VM + inspect commands; log is in the bucket (`--fetch`) and at `~/audit.log` on the VM. |
+| `--fetch` says no log/JSON | Run still in progress (uploaded only at finish) — use `--status` live view; or wrong run id (`--list`). |
+| Audit trained old code | You forgot to `git push` to `GIT_REF` before `gcp_audit.sh`. |
+| Restore empty (`book=…` too low) | Always-on postgres down, or too little `orderbook_snapshots` history yet. |
+| Forgot `KEEP_VM=1`, VM still up | `gcloud compute instances delete fluxtrader-audit --zone=me-central1-b --project=fluxtrader --quiet` |
+
+---
+
+*Last updated: 2026-08-04*

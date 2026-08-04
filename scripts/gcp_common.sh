@@ -17,6 +17,10 @@ fi
 : "${GCP_REGION:=${GCP_ZONE%-*}}"          # me-central1-b -> me-central1
 : "${GCP_ALWAYS_ON:=fluxtrader-1}"
 : "${GCP_TRAIN_INSTANCE:=fluxtrader-train}"
+# Separate throwaway VM for the microstructure audit (scripts/gcp_audit.sh).
+# MUST differ from GCP_TRAIN_INSTANCE so audit + training can run in parallel
+# without sharing a VM, Postgres, tmux session, or status marker.
+: "${GCP_AUDIT_INSTANCE:=fluxtrader-audit}"
 : "${GCP_TRAIN_MACHINE:=e2-standard-4}"
 # GPU machine type and accelerator (used when gcp_train.sh --gpu is passed).
 # n1-standard-4 + T4 is the best cost/speed ratio for LSTM training:
@@ -90,7 +94,7 @@ MODEL_VOLUME_NAME="${MODEL_VOLUME_NAME:-trading_agent_model_weights}"
 
 echo_cfg() {
   echo "project=$GCP_PROJECT  zone=$GCP_ZONE  region=$GCP_REGION"
-  echo "always-on=$GCP_ALWAYS_ON  train-vm=$GCP_TRAIN_INSTANCE ($GCP_TRAIN_MACHINE)"
+  echo "always-on=$GCP_ALWAYS_ON  train-vm=$GCP_TRAIN_INSTANCE ($GCP_TRAIN_MACHINE)  audit-vm=$GCP_AUDIT_INSTANCE"
   echo "bucket=$GCS_BUCKET"
   echo "git=$GIT_REMOTE @ $GIT_REF"
   echo "train: epochs=$TRAIN_EPOCHS seq=$TRAIN_SEQ_LEN device=$TRAIN_DEVICE"

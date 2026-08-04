@@ -10,6 +10,11 @@ export GCP_ALWAYS_ON=fluxtrader-1
 
 # Temporary train VM — created + self-deleted by ./scripts/gcp_train.sh
 export GCP_TRAIN_INSTANCE=fluxtrader-train
+
+# Temporary AUDIT VM — created + self-deleted by ./scripts/gcp_audit.sh
+# (microstructure signal audit). MUST differ from GCP_TRAIN_INSTANCE so an audit
+# and a training run can happen in parallel without sharing a VM / DB / marker.
+export GCP_AUDIT_INSTANCE=fluxtrader-audit
 # Training is CPU-bound, not memory-bound (lazy windows keep feature RAM ~tens of MB).
 # 4 vCPU speeds up the LSTM far more than extra RAM. e2-standard-4 is 4 vCPU / 16GB.
 # For 4 vCPU with less RAM (cost), use e2-custom-4-4096 (4 vCPU / 4GB).
