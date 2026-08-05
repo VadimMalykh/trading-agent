@@ -1,16 +1,30 @@
 defmodule FluxTrader.MarketData.BookFeatures do
   @moduledoc """
   Compress L2 top-N book into model-friendly features.
+
+  The collector now fetches a DEEP book (see BOOK_DEPTH_LIMIT) and stores the raw
+  ladder separately (`OrderbookLevel`). To keep the served model's feature
+  distribution stable, the 11 scalar features here are computed over only the top
+  `@scalar_levels` levels — the same depth the model was trained on — regardless of
+  how many levels were fetched. See docs/DATA_COLLECTION_AUDIT.md.
   """
+
+  # Number of book levels used to compute the compressed scalar features. Fixed at
+  # 20 to preserve the semantics the served model was trained on even though the
+  # collector may now pull far more levels for the raw ladder.
+  @scalar_levels 20
 
   @doc """
   Parse Binance depth response into feature map.
 
   Expects %{"bids" => [[price, qty], ...], "asks" => [[price, qty], ...]}
+
+  Only the top #{@scalar_levels} levels per side feed the scalar features (stable
+  semantics); the raw ladder is captured separately via `raw_levels/1`.
   """
   def from_depth(symbol, depth) when is_map(depth) do
-    bids = parse_levels(Map.get(depth, "bids", []))
-    asks = parse_levels(Map.get(depth, "asks", []))
+    bids = depth |> Map.get("bids", []) |> parse_levels() |> Enum.take(@scalar_levels)
+    asks = depth |> Map.get("asks", []) |> parse_levels() |> Enum.take(@scalar_levels)
 
     if bids == [] or asks == [] do
       {:error, :empty_book}
@@ -58,6 +72,65 @@ defmodule FluxTrader.MarketData.BookFeatures do
   end
 
   def from_depth(_, _), do: {:error, :invalid_depth}
+
+  @doc """
+  Extract the FULL raw ladder + exchange metadata from a Binance depth response,
+  shaped for `FluxTrader.MarketData.OrderbookLevel`. `ts` is passed in so the raw
+  row shares the exact timestamp of its paired `orderbook_snapshots` row (1:1 join
+  on symbol+ts). Returns `{:ok, attrs}` or `{:error, reason}`.
+
+  Levels are `[price, qty]` numeric pairs, best-first, with NO top-N truncation —
+  this is the lossless capture the scalar features intentionally discard.
+  """
+  def raw_levels(symbol, depth, ts) when is_map(depth) do
+    bids = depth |> Map.get("bids", []) |> parse_pairs()
+    asks = depth |> Map.get("asks", []) |> parse_pairs()
+
+    if bids == [] or asks == [] do
+      {:error, :empty_book}
+    else
+      {:ok,
+       %{
+         symbol: symbol,
+         ts: ts,
+         event_time: ms_to_dt(Map.get(depth, "E")),
+         transaction_time: ms_to_dt(Map.get(depth, "T")),
+         last_update_id: as_int(Map.get(depth, "lastUpdateId")),
+         depth: max(length(bids), length(asks)),
+         bids: bids,
+         asks: asks
+       }}
+    end
+  end
+
+  def raw_levels(_, _, _), do: {:error, :invalid_depth}
+
+  # Parse raw depth into a list of [price, qty] float pairs (for JSONB storage).
+  defp parse_pairs(levels) do
+    Enum.reduce(levels, [], fn
+      [price, qty | _], acc -> [[to_f(price), to_f(qty)] | acc]
+      _, acc -> acc
+    end)
+    |> Enum.reverse()
+  end
+
+  defp ms_to_dt(nil), do: nil
+
+  defp ms_to_dt(ms) when is_integer(ms),
+    do: DateTime.from_unix!(ms, :millisecond) |> DateTime.truncate(:microsecond)
+
+  defp ms_to_dt(_), do: nil
+
+  defp as_int(v) when is_integer(v), do: v
+
+  defp as_int(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {int, _} -> int
+      :error -> nil
+    end
+  end
+
+  defp as_int(_), do: nil
 
   defp parse_levels(levels) do
     Enum.map(levels, fn

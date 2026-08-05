@@ -3,6 +3,79 @@
 Context for a fresh session that will receive `quant_ab.sh` results. Read this
 first, then look at the logs the user pastes / the files under `logs/quant_ab_*`.
 
+---
+
+## ✅ VERDICT IN (run `quant_ab_20260804T144531Z`, gpu 60 128) — READ FIRST
+
+**Decision: keep the quantile head OFF (status quo). Defer — do not discard — for RL.**
+
+Only **2 of 3 arms** completed. `quant_w0.5` never launched — the train VM was in
+`us-central1-c` but the launcher adopted/looked in the wrong zone and
+`instances.describe` 404'd (`quant_w0.5_launch.out:14`). w0.5 is moot anyway (would
+be worse than w0.2). **`scripts/quant_ab.sh` has a zone-resolution bug to fix before
+the next multi-arm run.**
+
+Both completed arms: 8 pairs, ~937k val samples, val window 2026-05-15 → 2026-08-04.
+
+**Primary 30m fixed-cov Wilson-LB (the decision metric):**
+
+| cov  | quant_off | quant_w0.2 |
+|------|----------:|-----------:|
+| 0.01 | 0.523 | 0.529 |
+| 0.02 | 0.529 | 0.510 |
+| **0.05** | **0.539** | **0.495** |
+| 0.10 | 0.534 | 0.494 |
+| 0.20 | 0.524 | 0.497 |
+
+- **quant_off wins clearly.** At sel coverage 0.05: off lb=0.539 (edge ≈ +0.04) vs
+  w0.2 lb=0.495 (edge ≈ 0). Best sel_score off=0.5395 vs w0.2=0.4687.
+- Even at the "light" 0.2 weight the quantile head **erased the directional edge**
+  everywhere except the top ~1% tail — the same shared-encoder capacity theft the
+  config comment warned about at 0.5 (`ml/train/config.py:30`), just milder.
+- Walk-forward (off): 0.555 / 0.537 / 0.522 / 0.510 — positive & stable all 4
+  windows. w0.2: 0.530 / 0.480 / 0.502 / 0.504 — window 2 below 0.5 (negative).
+- Quantile calibration was actually FINE (30m band cov 0.789 vs 0.80 target,
+  p50_MAE tiny) — the head calibrates; it just isn't worth the directional cost on a
+  **shared** encoder.
+- Note: `QUANTILE_HEAD` already defaults to 0 (`config.py:26`, `gcp_common.sh:44`),
+  so "keep off" = **no change needed**. The A/B only turned it on explicitly per arm.
+
+**The bigger finding (orthogonal to quantiles):** the model has a real but tiny
+~+0.03–0.04 edge that lives in the **pre_book** era and collapses to ≈0.49
+(negative) in the recent **book** era (book-era split, off 30m: pre_book lb=0.548 vs
+book lb=0.491). That regime collapse — not the quantile question — is the real
+blocker. Tracked as **Task 1** at the top of `NEXT_TRAINING_PLAN.md`.
+
+### Quantile head for the future RL policy — decision & rationale
+
+The concern "quantiles should be very valuable for RL trade generation" is correct
+**in principle** and this A/B does **not** refute it. What the A/B killed is one
+*implementation* (a shared-encoder aux head), not the idea:
+
+- It disproved: a quantile head sharing the directional trunk pays for itself. It
+  does not — it steals capacity and dents direction even at weight 0.2.
+- It did NOT disprove: quantiles are informative. The head calibrated fine; it
+  produces a usable p10/p50/p90 distribution.
+
+**Sequencing decision: defer, don't discard.** An RL sizing/gating policy needs a
+healthy direction signal to act on; with direction at ~0.49 in the current book-era
+regime there is nothing to size. Fix Task 1 first. Then revisit quantiles via the
+**decoupled** experiments below (cheapest first), which directly test the
+capacity-theft hypothesis:
+
+1. **Detached head (cheap):** stop-gradient from the quantile head into the shared
+   encoder (or give it its own small encoder) so it cannot degrade direction. This
+   is the direct test of the A/B's failure mode; run it first when quantiles are
+   revisited.
+2. **Standalone risk model:** a fully separate model whose only job is the return
+   distribution, trained independently, consumed by the RL policy alongside the
+   direction model. Cleanest separation, more infra.
+3. **Analytic vol proxy for now:** the RL bootstrap may not even need a *learned*
+   quantile head — realized-vol / ATR-style bands give risk context on day one; add
+   the learned head only if it beats that baseline.
+
+Do NOT re-run w0.5, and do NOT flip the `QUANTILE_HEAD` default on.
+
 ## Why this A/B exists
 
 We compared training runs with the quantile head ON vs OFF (logs `logs/run*`):

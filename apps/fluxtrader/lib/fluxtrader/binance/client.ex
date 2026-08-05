@@ -24,7 +24,7 @@ defmodule FluxTrader.Binance.Client do
     get("/fapi/v1/klines?#{URI.encode_query(params)}")
   end
 
-  def order_book(symbol, limit \\ 20) do
+  def order_book(symbol, limit \\ 100) do
     params = URI.encode_query(symbol: symbol, limit: limit)
     get("/fapi/v1/depth?#{params}")
   end

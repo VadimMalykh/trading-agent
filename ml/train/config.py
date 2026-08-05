@@ -42,6 +42,23 @@ QUANTILE_LOSS_WEIGHT = float(os.environ.get("QUANTILE_LOSS_WEIGHT", "0.2"))
 CAL_PENALTY_WEIGHT = float(os.environ.get("CAL_PENALTY_WEIGHT", "0.5"))
 CAL_TARGET = float(os.environ.get("CAL_TARGET", "0"))  # 0 => band width (e.g. 0.80)
 CAL_TOL = float(os.environ.get("CAL_TOL", "0.10"))
+# --- Microstructure staleness caps (feature build) -------------------------------
+# The book/trade/OI/funding sources are asof-ffilled onto the 1m candle grid. A
+# collection OUTAGE (e.g. the 6.4-day book gap 2026-07-29→08-04) would otherwise
+# forward-fill a single FROZEN snapshot across thousands of bars, all mislabeled
+# has_*=1 — off-distribution garbage the model can't tell from fresh data (this was
+# the root cause of the book-era edge collapse; see docs/NEXT_TRAINING_PLAN.md
+# "TASK 1"). When the ffilled source is older than its cap we revert to the honest
+# "missing" path: zero that group's features AND set its presence mask to 0.
+# Caps are per-source because their natural cadence differs:
+#   book   ~7-16s   → minutes-scale cap
+#   trades ~per 1m  → minutes-scale cap
+#   funding/OI      → LOW frequency (hourly+); a long cap, else they'd read missing
+# 0 disables a cap (legacy unbounded-ffill behavior).
+BOOK_MAX_AGE_MIN = float(os.environ.get("BOOK_MAX_AGE_MIN", "5"))
+TRADES_MAX_AGE_MIN = float(os.environ.get("TRADES_MAX_AGE_MIN", "5"))
+FUNDING_OI_MAX_AGE_MIN = float(os.environ.get("FUNDING_OI_MAX_AGE_MIN", "480"))  # 8h
+
 FLAT_THRESHOLD = float(os.environ.get("FLAT_THRESHOLD", "0.002"))  # 0.2% default
 # Flat band scales roughly with horizon (bps of move to count as directional)
 FLAT_THRESHOLD_PER_HORIZON = {

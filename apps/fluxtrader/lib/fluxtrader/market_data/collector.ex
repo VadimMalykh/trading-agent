@@ -7,13 +7,28 @@ defmodule FluxTrader.MarketData.Collector do
   require Logger
 
   alias FluxTrader.Binance.Client
-  alias FluxTrader.MarketData.{BookFeatures, MarketTrade, OrderbookSnapshot, FundingRate, OpenInterest}
+
+  alias FluxTrader.MarketData.{
+    BookFeatures,
+    MarketTrade,
+    OrderbookSnapshot,
+    OrderbookLevel,
+    FundingRate,
+    OpenInterest
+  }
+
   alias FluxTrader.Data.Candle
   alias FluxTrader.Repo
 
   @book_interval_ms 5_000
   @trade_interval_ms 5_000
   @slow_interval_ms 60_000
+
+  # Depth levels to fetch per book poll. Fetch DEEP for the lossless raw ladder
+  # (OrderbookLevel); the compressed scalar features stay pinned to the top 20 in
+  # BookFeatures to preserve the served model's semantics. Tunable via config
+  # :fluxtrader, :book_depth_limit. See docs/DATA_COLLECTION_AUDIT.md.
+  @default_book_depth_limit 100
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -155,13 +170,18 @@ defmodule FluxTrader.MarketData.Collector do
   end
 
   defp collect_book(symbol) do
-    case Client.order_book(symbol, 20) do
+    case Client.order_book(symbol, book_depth_limit()) do
       {:ok, depth} ->
         case BookFeatures.from_depth(symbol, depth) do
           {:ok, features} ->
             %OrderbookSnapshot{}
             |> OrderbookSnapshot.changeset(features)
             |> Repo.insert(on_conflict: :nothing, conflict_target: [:symbol, :ts])
+
+            # Persist the FULL raw ladder losslessly, sharing the snapshot's ts so
+            # the two tables join 1:1 on (symbol, ts). Best-effort: a raw-ladder
+            # failure must not drop the scalar snapshot.
+            persist_raw_levels(symbol, depth, features.ts)
 
             Phoenix.PubSub.broadcast(FluxTrader.PubSub, "market:book", {:book, features})
 
@@ -172,6 +192,22 @@ defmodule FluxTrader.MarketData.Collector do
       {:error, reason} ->
         Logger.warning("Book poll failed #{symbol}: #{inspect(reason)}")
     end
+  end
+
+  defp persist_raw_levels(symbol, depth, ts) do
+    case BookFeatures.raw_levels(symbol, depth, ts) do
+      {:ok, attrs} ->
+        %OrderbookLevel{}
+        |> OrderbookLevel.changeset(attrs)
+        |> Repo.insert(on_conflict: :nothing, conflict_target: [:symbol, :ts])
+
+      {:error, reason} ->
+        Logger.debug("Raw book levels skip #{symbol}: #{inspect(reason)}")
+    end
+  end
+
+  defp book_depth_limit do
+    Application.get_env(:fluxtrader, :book_depth_limit, @default_book_depth_limit)
   end
 
   defp collect_trades(symbol, last_id) do

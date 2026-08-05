@@ -5,6 +5,174 @@ session and the exact steps/commands to execute.
 
 ---
 
+## 🔥 TASK 1 — DIAGNOSE THE BOOK-ERA EDGE COLLAPSE (current top priority, 2026-08-05)
+
+**Why this is #1:** the quant A/B (`quant_ab_20260804T144531Z`, see
+`docs/QUANT_AB_HANDOFF.md`) confirmed the real blocker is NOT the quantile head — it
+is that the model's directional edge lives in the **pre_book** era and collapses to
+≈0.49 (coin flip / negative) in the recent **book** era.
+
+Evidence (quant_off arm, PRIMARY 30m, book-era split of fixed-cov 0.05 edge):
+- pre_book: n=771,734  dir_acc=0.555  **lb=0.548**
+- book:     n=165,600  dir_acc=0.508  **lb=0.491**  ← negative edge
+
+The edge (~+0.03–0.04) is real but tiny and exists only where we do NOT need it (old
+regime). The recent book era — the regime we'll actually trade — is where it fails.
+This is a distribution-shift / feature-quality problem, **not** a capacity problem
+(the model early-stops at epoch 11–12, train/val loss move together, val_acc barely
+off base rate → no underfitting; bigger model would just overfit the small book era).
+
+**Hypothesis to test first — stale/misaligned microstructure in the recent era.**
+The asof joins in `ml/train/data/features.py` forward-fill the last known book/trade
+snapshot (`book.reindex(feat.index, method="ffill")`, ~`features.py:96`; trades
+~`:120`). The `has_book`/`has_trades`/`has_funding_oi` masks only flag **absence**,
+not **staleness** — a book snapshot that is hours old still reads `has_book==1` and
+gets forward-filled into every bar. If recent book data is sparser or more bursty
+than assumed, the model trained mostly on pre_book is fed stale features off its
+training distribution in the book era.
+
+**Diagnosis steps (read-only, no training — all in the ml_trainer container):**
+1. **Book/trade freshness distribution, pre_book vs book era.** For each pair,
+   compute the age (bar_time − last_snapshot_time) that the asof-ffill introduces,
+   and its distribution in each era. A large right tail in the book era confirms
+   staleness. (Add a temporary freshness column alongside the existing ffill, or a
+   standalone query script — do NOT change the served feature path yet.)
+2. **Feature distribution drift pre_book vs book** for the book features
+   (`data.features.BOOK_FEATURES`): mean/std/quantiles per era per pair. Large shifts
+   (esp. `spread_bps`, the one STABLE+DIRECTIONAL feature from the audit) explain
+   off-distribution behavior.
+3. **Per-pair book-era edge** (already in eval output — cross-read which pairs drive
+   the collapse; alts with the shortest book history are the prime suspects).
+4. **Confirm no leakage/label issue in the book era** (flat-rate, forward-return
+   distribution per era) so we're not chasing a label artifact.
+
+**Decision rule:**
+- If book-era features are demonstrably stale/misaligned → fix is FEATURE work
+  (staleness/age features so the model can discount stale book; possibly a max-age
+  cutoff that reverts to mask=0). This is the high-leverage path; do it before any
+  model/architecture change.
+- If features are clean but the *distribution* simply shifted → it's a data-quantity
+  / regime problem (dovetails with the queued walk-forward re-run at ≥~30d book
+  history) → keep collecting; do not over-invest in the model.
+- Only if features are clean AND enough book history exists AND edge still collapses
+  → then (and only then) consider a modest architecture change (temporal CNN / small
+  transformer + per-pair embeddings). No evidence yet that LSTM capacity is the
+  bottleneck, so this is explicitly deferred.
+
+**Explicitly NOT doing now (from this planning session):**
+- More candle history (400d→more): low value — adds more of the pre_book regime we
+  already have edge in; model isn't data-hungry (early-stops). Skip.
+- Bigger model (more layers/hidden): negative EV — no underfitting; overfits the
+  small book window (see the walk-forward overfitting note above). Don't.
+- Full architecture swap: premature — gated on Task 1 showing capacity is the ceiling.
+- More pairs: modest, *robustness* value only; do it alongside the Task-1 fix, not as
+  a fix by itself.
+- Quantile head: keep OFF; defer to RL via a **detached** head — see
+  `docs/QUANT_AB_HANDOFF.md` "Quantile head for the future RL policy".
+
+**Also fix (housekeeping):** `scripts/quant_ab.sh` zone-resolution bug that skipped
+the w0.5 arm (VM in `us-central1-c`, launcher looked elsewhere → 404). Needed before
+any future multi-arm run.
+
+### ✅ TASK 1 DIAGNOSIS DONE (2026-08-05) — ROOT CAUSE FOUND: stale-ffilled book data
+
+Ran read-only queries against the local Postgres (which holds the real book data,
+565k snapshots 2026-07-17→08-04, matching the training dump). Findings:
+
+1. **Normal book cadence is healthy** — snapshots every ~7–16s (p50 7.3s, p95 16s),
+   comfortably sub-1m-bar for all 8 pairs.
+2. **BUT there is a ~6.4-DAY book-collection OUTAGE: 2026-07-29 03:29 → 08-04 14:03**,
+   on ALL 8 pairs, and on ALL THREE feeds (orderbook, market_trades, open_interest —
+   identical max gap 9274 min). Plus a ~12.3h outage on 07-20 and a few ~30–37min
+   ones. This is a collector outage, not a query artifact.
+3. **The ffill has no age cap** (`features.py:96,120,142,153` use
+   `reindex(method="ffill")`), so during the outage a SINGLE frozen snapshot is
+   forward-filled across ~6 days of 1m bars — and every one of those bars still reads
+   **`has_book=1`**. The masks flag absence, never staleness, so the model cannot
+   tell fresh book from 6-day-old book.
+4. **Distribution proof (BTC, book era):** bucketing book-era bars by ffill age —
+   fresh(≤2m) `spread_bps` sd=0.011, imbalance mean +0.027; **stale(>1h)
+   `spread_bps` sd=0.000, imbalance mean +0.367** (a frozen, extreme, non-
+   representative snapshot). Off-distribution garbage stamped as present.
+5. **Scale:** the 6.4d outage alone poisons **13,232** of the eval's **165,600**
+   book-era bars; on recent-30d BTC ~**9.2%** of bars are >1h-stale and only ~62% are
+   truly fresh (≤2m). This overlaps exactly the val "book era" and walk-forward
+   window 4 where the 30m edge collapsed to lb≈0.49.
+
+**Conclusion:** the book-era edge collapse is **primarily a data-quality (stale
+ffill) artifact, not a model-capacity or a pure-regime-shift problem.** The model was
+trained/evaluated on book features that are frozen-stale for a large, mislabeled-as-
+present fraction of the recent window. This fully explains why more layers / more
+candle history would not help, and why the quantile head was never the issue.
+
+**Recommended fixes (feature work — do before any model/arch change), in order:**
+1. **Add a book-staleness cap + age feature.** ✅ **DONE (2026-08-05).** See "STALENESS
+   CAP IMPLEMENTED" below.
+2. **Re-run the quant_off baseline** with the staleness fix and re-check the
+   **book-era split** — success = book-era 30m wilson_lb rises toward the pre_book
+   ~0.548 (or at least stops being negative). This is the direct verification.
+   **← NEXT ACTION.** Launch: `./scripts/gcp_train.sh --gpu 60 128` (quant off is
+   the default); then `grep -nE 'Book-era|PRIMARY|cov0.05|Walk-forward' logs/<run>.log`.
+3. **Fix the collector outage root cause** so future data doesn't have multi-day
+   holes (separate infra task; see collector `apps/fluxtrader/**`). NB: the
+   2026-07-29→08-04 hole was a FULL collection outage — **candles too** had an
+   8776-min gap (BTC candles resume 08-04 05:44; book only 14:03), so ~500 bars/pair
+   had candles-but-stale-book. Until the collector is hardened, the staleness cap
+   makes training robust to holes regardless.
+
+### STALENESS CAP IMPLEMENTED (2026-08-05) — scope: cap only, FEATURE_DIM unchanged (19)
+
+Chosen scope (per user): **cap only, no new `book_age` column** — non-breaking, no
+checkpoint/serve/model-input changes. (A continuous age feature can be added later as
+its own dim-bumping run if wanted.)
+
+- `ml/train/config.py`: new caps `BOOK_MAX_AGE_MIN=5`, `TRADES_MAX_AGE_MIN=5`,
+  `FUNDING_OI_MAX_AGE_MIN=480` (8h — funding/OI are legitimately low-frequency; do
+  NOT apply the book cap to them). `0` disables a cap (legacy unbounded ffill).
+- `ml/train/data/features.py`:
+  - `_align_with_age(src, grid)` — asof-ffills a source onto the candle grid AND
+    ffills the source's own timestamp, so per-bar `age_min = grid_time −
+    ffilled_source_time`; pre-first-row bars get `age=+inf`.
+  - `_stale_mask(age, cap)` — True where age > cap (or absent).
+  - Book / trades / funding / OI blocks now zero their features on stale bars AND set
+    the presence mask (`has_book` / `has_trades` / `has_funding_oi`) to 0 there. So a
+    frozen snapshot forward-filled across an outage now honestly reads MISSING.
+- **No downstream changes:** `FEATURE_DIM` stays 19, column order unchanged; every
+  caller (`dataset.py`, `serve.py`, `audit_microstructure.py`) uses
+  `build_feature_frame` and gets the fix transparently. Serving also now rejects
+  stale book — correct.
+
+**Verification (ml_trainer container, real DB = training dump):**
+- `py_compile` clean on all touched + dependent files.
+- Cap ON: the 499 candles-present/book-stale bars (08-04 05:44→14:02) → `has_book=0`,
+  all book features 0; post-resume bars (14:04+) → `has_book=1`. Cap OFF (=0): same
+  499 bars read `has_book=1` with stale `spread_bps` ffilled (the reproduced bug).
+- Normal day (07-25): 0% stale. All 8 pairs build; book-era `has_book=1` fraction is
+  now HONEST: BTC/ETH/SOL 0.90, DOGE/WLD/HYPE 0.64, ZEC 0.31, 1000PEPE 0.15
+  (previously all ~1.0 regardless of staleness).
+
+**NOT committed** (per user workflow: commit only when asked).
+
+**Re-confirms the deferrals:** more candle data / bigger model / arch swap remain the
+wrong moves — none address stale ffill. More pairs still only add robustness. The
+walk-forward re-run (queued ~08-25) should be done AFTER the staleness fix, else it
+re-measures the same poisoned data.
+
+### Data-collection strategy → see `docs/DATA_COLLECTION_AUDIT.md` (2026-08-05)
+
+Full audit of what the collector captures vs silently drops, framed by
+backfillable-vs-collector-only. Headlines:
+- **Derived features** (longer-horizon returns, cross-pair/beta) come from candles we
+  ALREADY have → NOT time-sensitive; add deliberately, one attributable run at a time,
+  AFTER the staleness-fix baseline.
+- **Raw collection IS time-sensitive** (no backfill). Top item: the order book is
+  **lossily compressed at write time** — 20 levels pulled, only 11 scalars stored, raw
+  ladder discarded (`book_features.ex`). Every day of low-fidelity book history is
+  unrecoverable. Also worth starting now: long/short & taker ratios (collector-only),
+  exchange event timestamps. Liquidations remain blocked (vendor/egress decision).
+
+---
+
 ## ⏰ ACTION QUEUED — WALK-FORWARD RE-RUN (blocked on data, ~2026-08-25) — READ FIRST
 
 **Why this is here:** the 2026-08-04 walk-forward (`wf-20260804T144400Z`) did **not**
