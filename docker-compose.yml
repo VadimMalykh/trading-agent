@@ -26,10 +26,15 @@ services:
       - .:/app
       - app_build:/app/_build
       - app_deps:/app/deps
-    # deps.get may fail offline once deps are already in the app_deps volume
-    # (e.g. cowlib/gun transitive resolution against a cold hex cache). Deps are
-    # cached in the volume, so tolerate that and proceed to boot.
-    command: sh -c "(mix deps.get || echo 'deps.get skipped (offline); using cached deps') && mix deps.compile gun cowlib && mix ecto.create && mix ecto.migrate && mix phx.server"
+    # Deps are fetched AND compiled at image-build time (see Dockerfile.app), so
+    # no memory-heavy `mix deps.compile` runs at boot — this avoids OOM kills on
+    # small always-on hosts. The app_deps/app_build volumes seed from the image's
+    # precompiled artifacts on first run; recreate them after a deploy that
+    # changes deps (`docker compose down && docker volume rm trading_agent_app_deps
+    # trading_agent_app_build`). deps.get stays (offline-tolerant) as a no-op when
+    # the lockfile is already satisfied; `mix compile` only rebuilds changed app
+    # source from the bind mount.
+    command: sh -c "(mix deps.get || echo 'deps.get skipped (offline); using cached deps') && mix compile && mix ecto.create && mix ecto.migrate && mix phx.server"
 
   postgres:
     image: timescale/timescaledb:latest-pg16
