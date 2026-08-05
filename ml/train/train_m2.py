@@ -43,6 +43,7 @@ from config import (
     EPOCHS,
     FEATURE_DIM,
     HIDDEN_SIZE,
+    DROPOUT,
     HORIZONS_MINUTES,
     LR,
     MIN_GATED_FOR_CKPT,
@@ -280,6 +281,7 @@ def main():
     print(f"PyTorch {torch.__version__} | device={device}")
     print(f"Horizons (min): {horizons} | primary={primary_key}m | seq_len={args.seq_len}")
     print(f"lr={args.lr} wd={args.weight_decay} patience={args.patience} ckpt_gate={args.ckpt_gate}")
+    print(f"hidden_size={HIDDEN_SIZE} dropout={DROPOUT}")
 
     print("\nDB table counts:")
     try:
@@ -378,6 +380,7 @@ def main():
         directional_head=DIRECTIONAL_HEAD,
         quantile_head=QUANTILE_HEAD,
         quantile_levels=QUANTILE_LEVELS,
+        dropout=DROPOUT,
     ).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     print(
@@ -572,6 +575,7 @@ def main():
                     "seq_len": args.seq_len,
                     "feature_dim": FEATURE_DIM,
                     "hidden_size": HIDDEN_SIZE,
+                    "dropout": DROPOUT,
                     "directional_head": DIRECTIONAL_HEAD,
                     "cls_weight_mode": CLS_WEIGHT_MODE,
                     "cls_weight_clip": CLS_WEIGHT_CLIP,

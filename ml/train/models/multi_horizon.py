@@ -32,6 +32,7 @@ class SharedEncoderMultiHead(nn.Module):
         directional_head: bool = True,
         quantile_head: bool = False,
         quantile_levels: List[float] | None = None,
+        dropout: float = 0.2,
     ):
         super().__init__()
         horizons_minutes = horizons_minutes or [1, 15, 60]
@@ -40,20 +41,25 @@ class SharedEncoderMultiHead(nn.Module):
         self.has_directional_head = directional_head
         self.has_quantile_head = quantile_head
         self.quantile_levels = list(quantile_levels or [0.1, 0.5, 0.9])
+        # Regularization strength. Default 0.2 preserves the served candle model's
+        # behavior; raise (via DROPOUT env) for the tiny dense-book walk-forward
+        # regime where the model overfits within ~2-5 epochs. LSTM inter-layer
+        # dropout only applies with num_layers > 1.
+        self.dropout = float(dropout)
 
         self.encoder = nn.LSTM(
             input_size,
             hidden_size,
             batch_first=True,
             num_layers=2,
-            dropout=0.2,
+            dropout=self.dropout,
         )
         self.heads = nn.ModuleDict(
             {
                 h: nn.Sequential(
                     nn.Linear(hidden_size, 32),
                     nn.ReLU(),
-                    nn.Dropout(0.2),
+                    nn.Dropout(self.dropout),
                     nn.Linear(32, num_classes),
                 )
                 for h in self.horizons
@@ -65,7 +71,7 @@ class SharedEncoderMultiHead(nn.Module):
                     h: nn.Sequential(
                         nn.Linear(hidden_size, 32),
                         nn.ReLU(),
-                        nn.Dropout(0.2),
+                        nn.Dropout(self.dropout),
                         nn.Linear(32, 2),  # 0=down, 1=up
                     )
                     for h in self.horizons
@@ -80,7 +86,7 @@ class SharedEncoderMultiHead(nn.Module):
                     h: nn.Sequential(
                         nn.Linear(hidden_size, 32),
                         nn.ReLU(),
-                        nn.Dropout(0.2),
+                        nn.Dropout(self.dropout),
                         nn.Linear(32, n_q),
                     )
                     for h in self.horizons

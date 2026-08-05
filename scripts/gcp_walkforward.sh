@@ -12,10 +12,17 @@
 # It mirrors gcp_ablate.sh exactly (dump -> temp VM -> restore -> run -> compare
 # -> self-clean), differing only in: 30m only, and it sweeps --val-offset.
 #
-#   ./scripts/gcp_walkforward.sh                 # 40 epochs, seq 128, 3 folds
+#   ./scripts/gcp_walkforward.sh                 # 40 epochs, seq 128, 5 folds
 #   ./scripts/gcp_walkforward.sh 40 128 "0.0 0.2 0.4"   # epochs seq "offsets"
 #   VAL_FRAC=0.2 ./scripts/gcp_walkforward.sh
 #   KEEP_VM=1 ./scripts/gcp_walkforward.sh
+#
+# Anti-overfit knobs for the tiny dense-book regime (the model overfits within
+# ~2-5 epochs; see docs/NEXT_TRAINING_PLAN.md "Walk-forward re-run"). These pass
+# straight through to train_m2 via the ml_trainer container env:
+#   WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 ./scripts/gcp_walkforward.sh
+# Restrict to the 4 longest book-history pairs (drop ZEC/PEPE short coverage):
+#   WF_LONG_PAIRS_ONLY=1 ./scripts/gcp_walkforward.sh
 #
 #   status:  ./scripts/gcp_walkforward.sh --status
 #   results: ./scripts/gcp_walkforward.sh --fetch [run_id]
@@ -70,11 +77,28 @@ fi
 # --- args: epochs seq_len "offsets"; val_frac + pairs via env --------------------
 EPOCHS="${1:-40}"
 SEQ_LEN="${2:-128}"
-OFFSETS="${3:-0.0 0.2 0.4}"     # rolling-origin folds; step == VAL_FRAC for no overlap
+# More, finer folds by default (was "0.0 0.2 0.4"): one bad ~3d window no longer
+# dominates the min-gap verdict. Step defaults to VAL_FRAC=0.2 → overlapping folds
+# here, which is fine for a robustness read (each still trains strictly before its
+# own val window). Requires ≥~30d dense book so each fold's val slice isn't tiny.
+OFFSETS="${3:-0.0 0.1 0.2 0.3 0.4 0.5}"
 VAL_FRAC="${VAL_FRAC:-0.2}"
 PAIRS_ARG="${TRAIN_PAIRS:-}"
 HORIZONS="${TRAIN_HORIZONS:-5,30,60}"
 PRIMARY=30                       # this check is 30m-only (the arm with a real edge)
+
+# --- anti-overfit / regularization knobs for the dense-book regime --------------
+# Defaults preserve prior behavior (dropout 0.2, wd 1e-4, hidden 64). Override to
+# fight the ~2-5 epoch overfit seen in wf-20260804T144400Z.
+WF_DROPOUT="${WF_DROPOUT:-0.2}"
+WF_WEIGHT_DECAY="${WF_WEIGHT_DECAY:-1e-4}"
+WF_HIDDEN="${WF_HIDDEN:-64}"
+# WF_LONG_PAIRS_ONLY=1 restricts to the 4 pairs with the longest book history
+# (BTC/ETH/SOL/DOGE), dropping ZEC/PEPE/HYPE/WLD whose short coverage injects
+# noisier has_book windows. Only applied when TRAIN_PAIRS is not already set.
+if [[ "${WF_LONG_PAIRS_ONLY:-0}" == "1" && -z "$PAIRS_ARG" ]]; then
+  PAIRS_ARG="BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT"
+fi
 
 echo_cfg
 
@@ -191,6 +215,9 @@ export OFFSETS='$OFFSETS'
 export PAIRS_FLAG='$PAIRS_FLAG'
 export KEEP_VM='$KEEP_VM'
 export MODEL_VOLUME_NAME='$MODEL_VOLUME_NAME'
+export WF_DROPOUT='$WF_DROPOUT'
+export WF_WEIGHT_DECAY='$WF_WEIGHT_DECAY'
+export WF_HIDDEN='$WF_HIDDEN'
 PRELUDE
 cat >> \$HOME/run_flux_wf.sh << 'ENDSCRIPT'
 set -Eeuo pipefail
@@ -278,8 +305,10 @@ run_arm() {
     -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
     -e MODEL_DIR=/workspace/train/output/wf_\${tag}_\${ftag} \
     -e FLUX_GIT_SHA=\$GIT_SHA \
+    -e DROPOUT=\$WF_DROPOUT -e HIDDEN_SIZE=\$WF_HIDDEN \
     ml_trainer python train_m2.py --device cpu --epochs \$EPOCHS --seq-len \$SEQ_LEN \
       --horizons \$HORIZONS --primary \$PRIMARY \$PAIRS_FLAG --require-book \
+      --weight-decay \$WF_WEIGHT_DECAY \
       --val-frac \$VAL_FRAC --val-offset \$off \$extra \
     2>&1 | tee \"\$armlog\"
 
@@ -308,6 +337,7 @@ lb_of() { echo \"\$1\" | sed -n 's/.*lb=\\([0-9.]*\\).*/\\1/p'; }
 {
   echo \"Walk-forward 30m book-ON vs book-OFF — run=\$RUN_ID git=\${GIT_SHA:0:8}\"
   echo \"epochs=\$EPOCHS seq=\$SEQ_LEN val_frac=\$VAL_FRAC folds(offset)=\$OFFSETS\"
+  echo \"reg: dropout=\$WF_DROPOUT weight_decay=\$WF_WEIGHT_DECAY hidden=\$WF_HIDDEN\"
   echo \"pairs=\${PAIRS_FLAG:-DB-whitelist}. Rolling-origin: train strictly before each val window.\"
   echo \"Metric = train_m2 dense-window val, fixed top-5% coverage, primary 30m, Wilson LB.\"
   echo \"================================================================\"

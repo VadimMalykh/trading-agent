@@ -3,6 +3,72 @@
 Status doc so work survives session loss. Captures decisions from the planning
 session and the exact steps/commands to execute.
 
+---
+
+## ⏰ ACTION QUEUED — WALK-FORWARD RE-RUN (blocked on data, ~2026-08-25) — READ FIRST
+
+**Why this is here:** the 2026-08-04 walk-forward (`wf-20260804T144400Z`) did **not**
+confirm the 30m book edge. Per-fold Wilson-LB gaps (book-ON − book-OFF):
+
+| fold (val window) | ON lb | OFF lb | gap |
+|---|---:|---:|---:|
+| 0.0 (08-01→08-04) | 0.625 | 0.537 | **+0.088** |
+| 0.2 (07-29→08-01) | 0.552 | 0.477 | **+0.075** |
+| 0.4 (07-26→07-29) | 0.486 | 0.516 | **−0.030** |
+
+**MIN gap = −0.030** → fails the robustness rule (min gap must be > ~0.05 on ALL
+folds). The earlier single-window ablation (ON lb=0.691) was one lucky ~2.7d
+window. The edge shows in the two newest folds but flips negative in the oldest,
+and best epochs land at 2–5 with val loss already rising → **overfitting on a
+tiny dense-book sample**, not a stable edge.
+
+**Root cause is DATA QUANTITY, not the model.** With `--require-book`, samples
+only exist where book data exists: as of 2026-08-05 that's ~18 days
+(2026-07-17→08-04, ~164k samples), which the 3 folds carve into ≤130k train /
+~33k val slices each. Book history grows ~1 day/day.
+
+**❗ NOT a stale-dump bug (checked 2026-08-05).** The walk-forward dump is taken
+fresh from always-on each run; `wf_latest.sql.gz` held 1,045,291 orderbook rows
+through 2026-08-04, matching live DB. The "microstructure only to 01.08" someone
+noticed is just the **train/val split boundary of fold 0.0** (train ends 08-01,
+val = 08-01→08-04), i.e. correct no-leakage behavior — not the data ceiling.
+
+**TRIGGER TO RE-RUN:** when continuous book history ≥ **~30 days**
+(≈ **2026-08-25**; check via `scripts/gcp_order_book_stats.sh` — earliest
+`first_snapshot` across the traded pairs should be ≥ 30d old). That gives each of
+the finer folds a non-trivial val slice.
+
+**Re-run command (fixes already wired in — see "Fixes wired in" below):**
+```sh
+# stronger regularization for the tiny dense regime + 6 finer folds (defaults)
+WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 \
+  ./scripts/gcp_walkforward.sh
+# optional sharper read on the 4 longest-history pairs only:
+WF_LONG_PAIRS_ONLY=1 WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 \
+  ./scripts/gcp_walkforward.sh
+# fetch: ./scripts/gcp_walkforward.sh --fetch
+```
+
+**VERDICT RULE (unchanged):** min LB gap across ALL folds > ~0.05 → the 30m book
+edge is robust → proceed to microstructure-rich collection/run. If any fold's gap
+is ≤0 or LBs overlap → still not robust → keep collecting, do **not** over-invest.
+If the gap holds *only* once dropout/wd are cranked and hidden shrunk, note that
+the effect is small and capacity-sensitive.
+
+**Fixes wired in this session (2026-08-05) so the re-run is one command:**
+- `DROPOUT` env now drives LSTM + all head dropout (`ml/train/config.py`,
+  `models/multi_horizon.py`, threaded through `train_m2.py`; default 0.2 = served
+  candle model unchanged). Stamped into checkpoint `meta` + printed at startup.
+- `gcp_walkforward.sh` now: defaults to **6 finer folds**
+  (`0.0 0.1 0.2 0.3 0.4 0.5`); passes `WF_DROPOUT`/`WF_HIDDEN` (as env) and
+  `WF_WEIGHT_DECAY` (as `--weight-decay`) into each arm; supports
+  `WF_LONG_PAIRS_ONLY=1` (BTC/ETH/SOL/DOGE); records the reg config in the compare
+  header. `--weight-decay`, `--patience`, `HIDDEN_SIZE` were already tunable.
+- **NOTE:** these only affect the throwaway walk-forward VM/arms. Serving and the
+  candle model defaults are untouched.
+
+---
+
 ## TL;DR
 
 - Training is **compute-bound, never memory-bound** (feature RAM ~48 MiB via lazy
@@ -213,8 +279,12 @@ docker compose --profile ml run --rm ml_trainer python train_m2.py \
   ⇒ escalate microstructure). At 60m no conclusion (init noise, not learning).
 - **Caveats:** single ~2.7d val window, thin high-confidence tail (n≈575), broad
   3-class val acc only ~0.50–0.53 — edge lives entirely in the top-5% slice.
-  ⇒ **Next: walk-forward multi-window rerun of the 30m arm** to confirm robustness
-  before investing in collection (see item below).
+  ⇒ **Walk-forward multi-window rerun DONE (2026-08-04) — INCONCLUSIVE.** Min LB
+    gap = −0.030 across 3 folds (fails the >0.05 rule); best epochs 2–5 with rising
+    val loss ⇒ overfitting on the ~18d dense sample. Data quantity, not model, is
+    the bottleneck. See the pinned "WALK-FORWARD RE-RUN" section at the very top:
+    re-run at ≥~30d book history (~2026-08-25) with the wired-in anti-overfit knobs
+    before investing in collection.
 
 **⚠️ Liquidations feed BLOCKED (2026-08-04):** `liquidations` table = 0 rows. Root
 cause was (1) collector used REST `allForceOrders` (auth-gated, unusable for public
@@ -238,13 +308,18 @@ access; there is no REST fallback and WS has no history anyway.
   RL input — resolve the source before the microstructure-rich run, not after.
 
 **Next runs, in order:**
-1. **Quantile re-run** with the two fixes: `TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh`
+1. **Walk-forward re-run @ ≥~30d book history (~2026-08-25)** — the queued action.
+   See the pinned "WALK-FORWARD RE-RUN" section at the very top for the trigger,
+   one-line command, and verdict rule. This gates whether microstructure
+   collection is worth accelerating.
+2. **Quantile re-run** with the two fixes: `TRAIN_QUANTILE_HEAD=1 ./scripts/gcp_train.sh`
    (weight now defaults to 0.2). Promote **only if**: 30m top-5% dir_acc within
    ~0.01 of Run A (0.554) **AND** band[p10-p90] coverage ≈ 0.80 at the *saved*
    epoch (check the eval "Quantile calibration" line + the `cal_pen`/`sel` epoch
    log). Otherwise keep Run A served.
-2. **Microstructure-rich run** once book history ≥ ~60d (see roadmap above).
-3. **Reassess RL (M3)** only after the microstructure run.
+3. **Microstructure-rich run** once book history ≥ ~60d AND the walk-forward
+   re-run (step 1) confirms a robust edge (see roadmap above).
+4. **Reassess RL (M3)** only after the microstructure run.
 
 **Serving state:** Run A is the model currently promoted to the personal UI (not
 production). Do not promote Run B. Promote a future run only against the criteria

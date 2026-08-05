@@ -68,6 +68,10 @@ EPOCHS = int(os.environ.get("EPOCHS", "60"))
 LR = float(os.environ.get("LR", "5e-4"))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", "1e-4"))
 HIDDEN_SIZE = int(os.environ.get("HIDDEN_SIZE", "64"))
+# LSTM + head dropout. 0.2 default preserves the served candle model. Raise it
+# (and/or lower HIDDEN_SIZE) for the tiny dense-book walk-forward regime, where
+# the model overfits within ~2-5 epochs (see docs/NEXT_TRAINING_PLAN.md).
+DROPOUT = float(os.environ.get("DROPOUT", "0.2"))
 VAL_FRACTION = float(os.environ.get("VAL_FRACTION", "0.2"))
 # Patience raised: directional coverage kept climbing when the old run stopped.
 EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "10"))
