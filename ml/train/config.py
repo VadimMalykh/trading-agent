@@ -85,6 +85,12 @@ EPOCHS = int(os.environ.get("EPOCHS", "60"))
 LR = float(os.environ.get("LR", "5e-4"))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", "1e-4"))
 HIDDEN_SIZE = int(os.environ.get("HIDDEN_SIZE", "64"))
+# Encoder depth (stacked LSTM layers). Default 2 preserves the served model. The
+# GPU run early-stopped with train/val loss still moving together and the aux head
+# never emitting confidence >0.5 (see logs/latest_fixed.log) → the directional task
+# is UNDERfit, so capacity is a candidate lever now that we're on GPU. Bump via
+# NUM_LAYERS / HIDDEN_SIZE for a capacity arm; watch for book-era overfit.
+NUM_LAYERS = int(os.environ.get("NUM_LAYERS", "2"))
 # LSTM + head dropout. 0.2 default preserves the served candle model. Raise it
 # (and/or lower HIDDEN_SIZE) for the tiny dense-book walk-forward regime, where
 # the model overfits within ~2-5 epochs (see docs/NEXT_TRAINING_PLAN.md).
@@ -102,6 +108,24 @@ SEL_COVERAGE = float(os.environ.get("SEL_COVERAGE", "0.05"))
 # before a checkpoint's edge is trusted at full weight. Raised from 50 so a
 # lucky ~200-sample fluke can no longer win selection.
 MIN_GATED_FOR_CKPT = int(os.environ.get("MIN_GATED_FOR_CKPT", "500"))
+
+# --- Cost-aware checkpoint selection ---------------------------------------------
+# The Wilson-LB dir_acc score ranks a model on HIT-RATE only. At a real round-trip
+# cost, hit-rate ignores trade SIZE: being right 55% on tiny moves loses money while
+# 52% on large moves wins. SEL_NET_WEIGHT blends a cost-aware term (mean net return
+# per gated trade at SEL_COVERAGE, after SEL_COST_BPS round-trip, scaled to bps and
+# squashed) into the selection score so training targets expected P&L, not just
+# accuracy. 0.0 = legacy hit-rate-only selection (safe default until validated).
+#   sel_score = (1 - w) * edge_lb_score + w * net_ret_score
+# SEL_COST_BPS is the round-trip cost used ONLY for selection (kept separate from the
+# eval cost model FEE/SLIPPAGE so we can stress selection without touching reporting).
+SEL_NET_WEIGHT = float(os.environ.get("SEL_NET_WEIGHT", "0.0"))
+SEL_COST_BPS = float(os.environ.get("SEL_COST_BPS", "14"))
+# Net-return-per-trade (a fraction, e.g. 0.0006) is tiny vs the ~0.5 edge score, so
+# scale it into a comparable [0,1]-ish range before blending: score = 0.5 + net/SCALE,
+# clipped to [0,1]. SCALE≈one "unit" of net edge in return terms (default 0.002 = 20bps
+# per trade maps to score 1.0). Tunable; only affects selection ranking.
+SEL_NET_SCALE = float(os.environ.get("SEL_NET_SCALE", "0.002"))
 
 # --- 3-class head class weighting (down/flat/up) ---------------------------------
 # The plain inverse-frequency weighting (w = N / (3*count), mean-normalized) let

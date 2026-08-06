@@ -44,6 +44,7 @@ from config import (
     FEATURE_DIM,
     HIDDEN_SIZE,
     DROPOUT,
+    NUM_LAYERS,
     HORIZONS_MINUTES,
     LR,
     MIN_GATED_FOR_CKPT,
@@ -55,6 +56,9 @@ from config import (
     QUANTILE_LEVELS,
     QUANTILE_LOSS_WEIGHT,
     SEL_COVERAGE,
+    SEL_COST_BPS,
+    SEL_NET_SCALE,
+    SEL_NET_WEIGHT,
     SEQ_LEN,
     VAL_FRACTION,
     WEIGHT_DECAY,
@@ -72,7 +76,12 @@ from data.dataset import (
 )
 from data.db import load_whitelist_pairs, table_counts
 from data.features import BOOK_FEATURES
-from gate import dir_logits_to_three_class, fixed_coverage_metrics, gate_metrics
+from gate import (
+    dir_logits_to_three_class,
+    fixed_coverage_metrics,
+    fixed_coverage_net_return,
+    gate_metrics,
+)
 from models.multi_horizon import SharedEncoderMultiHead
 
 
@@ -235,12 +244,24 @@ def checkpoint_score(
     gate: float,
     min_gated: int,
     sel_coverage: float = SEL_COVERAGE,
+    fwd_ret: torch.Tensor | None = None,
+    net_weight: float = 0.0,
+    cost: float = 0.0,
+    net_scale: float = SEL_NET_SCALE,
 ) -> tuple[float, dict]:
     """
     Rank checkpoints by directional edge at a FIXED coverage (top-`sel_coverage`
     fraction of bars by confidence), using the Wilson lower bound of dir_acc so a
     lucky tiny sample cannot win. This replaces the old raw-dir_acc-at-threshold
     score, which selected on ~200 noisy samples.
+
+    Cost-aware blend (when `net_weight`>0 and `fwd_ret` is given): mix in the mean
+    NET return per gated trade at the same coverage, after a round-trip `cost`,
+    squashed to a comparable [0,1] scale. This makes selection prefer models whose
+    confident trades actually pay after cost — not just high hit-rate on tiny
+    moves (see docs/NEXT_TRAINING_PLAN.md "cost-aware selection").
+        sel = (1 - net_weight) * edge_lb_score + net_weight * net_score
+    net_weight=0 → identical to the legacy hit-rate-only behavior.
 
     The threshold-based gate_metrics are still computed and returned for logging /
     checkpoint meta, but no longer drive selection.
@@ -253,9 +274,25 @@ def checkpoint_score(
     lb = float(fc.get("dir_acc_wilson_lb") or 0.0)
     if n_dir < min_gated:
         # Not enough directional trades at target coverage to trust the edge.
-        score = lb * (n_dir / max(min_gated, 1))
+        edge_score = lb * (n_dir / max(min_gated, 1))
     else:
-        score = lb
+        edge_score = lb
+
+    if net_weight > 0.0 and fwd_ret is not None:
+        nr = fixed_coverage_net_return(logits, fwd_ret, sel_coverage, cost)
+        m["fixed_coverage_net"] = nr
+        net_per_trade = float(nr.get("net_per_trade") or 0.0)
+        # Squash net-return-per-trade into a [0,1] score comparable with edge_lb.
+        scale = net_scale if net_scale > 0 else 0.002
+        net_score = min(1.0, max(0.0, 0.5 + net_per_trade / scale))
+        # Same small-sample down-weight as the edge term.
+        if n_dir < min_gated:
+            net_score = net_score * (n_dir / max(min_gated, 1))
+        score = (1.0 - net_weight) * edge_score + net_weight * net_score
+        m["edge_score"] = edge_score
+        m["net_score"] = net_score
+    else:
+        score = edge_score
     return score, m
 
 
@@ -281,7 +318,14 @@ def main():
     print(f"PyTorch {torch.__version__} | device={device}")
     print(f"Horizons (min): {horizons} | primary={primary_key}m | seq_len={args.seq_len}")
     print(f"lr={args.lr} wd={args.weight_decay} patience={args.patience} ckpt_gate={args.ckpt_gate}")
-    print(f"hidden_size={HIDDEN_SIZE} dropout={DROPOUT}")
+    print(f"hidden_size={HIDDEN_SIZE} num_layers={NUM_LAYERS} dropout={DROPOUT}")
+    if SEL_NET_WEIGHT > 0:
+        print(
+            f"Cost-aware selection: net_weight={SEL_NET_WEIGHT} "
+            f"cost={SEL_COST_BPS}bps scale={SEL_NET_SCALE} (sel_cov={SEL_COVERAGE})"
+        )
+    else:
+        print("Cost-aware selection: off (hit-rate-only edge_lb score)")
 
     print("\nDB table counts:")
     try:
@@ -381,6 +425,7 @@ def main():
         quantile_head=QUANTILE_HEAD,
         quantile_levels=QUANTILE_LEVELS,
         dropout=DROPOUT,
+        num_layers=NUM_LAYERS,
     ).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     print(
@@ -468,6 +513,7 @@ def main():
         # Collect primary logits during val pass (avoid second full epoch)
         plogits_chunks, py_chunks = [], []
         pdir_chunks = []
+        pfwd_chunks = []  # primary-horizon realized forward return (cost-aware sel)
         pquant_chunks, pret_chunks = [], []  # primary-horizon quantiles + realized ret
         with torch.no_grad():
             for xb, yb in val_loader:
@@ -483,6 +529,7 @@ def main():
                 va_n += bs
                 plogits_chunks.append(logits[primary_key].cpu())
                 py_chunks.append(yb[primary_key].cpu())
+                pfwd_chunks.append(yb[f"ret_{primary_key}"].cpu())
                 if dir_logits is not None:
                     pdir_chunks.append(dir_logits[primary_key].cpu())
                 if quant is not None:
@@ -504,12 +551,22 @@ def main():
 
         if plogits_chunks:
             py = torch.cat(py_chunks, dim=0)
+            pfwd = torch.cat(pfwd_chunks, dim=0) if pfwd_chunks else None
             if pdir_chunks:
                 # Score on the clean directional-head signal when available.
                 score_logits = dir_logits_to_three_class(torch.cat(pdir_chunks, dim=0))
             else:
                 score_logits = torch.cat(plogits_chunks, dim=0)
-            score, gate_m = checkpoint_score(score_logits, py, args.ckpt_gate, MIN_GATED_FOR_CKPT)
+            score, gate_m = checkpoint_score(
+                score_logits,
+                py,
+                args.ckpt_gate,
+                MIN_GATED_FOR_CKPT,
+                fwd_ret=pfwd,
+                net_weight=SEL_NET_WEIGHT,
+                cost=SEL_COST_BPS / 1e4,
+                net_scale=SEL_NET_SCALE,
+            )
         else:
             score, gate_m = -1.0, {}
 
@@ -547,6 +604,15 @@ def main():
         fc_dir = float(fc.get("dir_acc") or 0.0)
         fc_lb = float(fc.get("dir_acc_wilson_lb") or 0.0)
         fc_n = int(fc.get("n_true_directional_gated") or 0)
+        if SEL_NET_WEIGHT > 0.0:
+            fcn = gate_m.get("fixed_coverage_net") or {}
+            net_pt_bps = float(fcn.get("net_per_trade") or 0.0) * 1e4
+            net_str = (
+                f" net/trade={net_pt_bps:+.1f}bps "
+                f"net_sc={float(gate_m.get('net_score') or 0.0):.3f}"
+            )
+        else:
+            net_str = ""
         if q_cov is not None:
             q_str = (
                 f" q[p{int(QUANTILE_LEVELS[0]*100)}-p{int(QUANTILE_LEVELS[-1]*100)}]"
@@ -558,7 +624,7 @@ def main():
             f"epoch {epoch:02d}  loss_tr={tr_loss:.4f} loss_va={va_loss:.4f}  "
             f"val_acc [{acc_str}]  "
             f"sel@cov{SEL_COVERAGE:.2f} dir_acc={fc_dir:.3f} lb={fc_lb:.3f} "
-            f"n_dir={fc_n} score={score:.4f}{q_str}"
+            f"n_dir={fc_n} score={score:.4f}{net_str}{q_str}"
         )
 
         if sel_score > best_score + 1e-6:
@@ -575,6 +641,7 @@ def main():
                     "seq_len": args.seq_len,
                     "feature_dim": FEATURE_DIM,
                     "hidden_size": HIDDEN_SIZE,
+                    "num_layers": NUM_LAYERS,
                     "dropout": DROPOUT,
                     "directional_head": DIRECTIONAL_HEAD,
                     "cls_weight_mode": CLS_WEIGHT_MODE,

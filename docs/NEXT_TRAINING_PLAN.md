@@ -158,6 +158,258 @@ wrong moves — none address stale ffill. More pairs still only add robustness. 
 walk-forward re-run (queued ~08-25) should be done AFTER the staleness fix, else it
 re-measures the same poisoned data.
 
+## 💰 TASK 2 — COST-AWARE SELECTION + CAPACITY ARM (2026-08-06)
+
+Context: the first successful GPU run (`20260805T025536Z`, sha `6e6d358e`, see
+`logs/latest_fixed.log`) trained clean and beat the momentum / buy-and-hold
+baselines, BUT:
+- 30m directional edge is real yet thin: fixed-cov 0.05 lb≈0.551, edge ≈+0.05–0.06.
+- **Every gate loses money in the eval P&L** (30m net_ret −43.8 even at gate 0.60):
+  a ~+5% hit-rate edge does not clear the 14bps round-trip at these holds.
+- Train/val loss still moving together at early-stop (33) and the aux head never
+  emits confidence >0.5 → the directional task is **under**fit, so on GPU capacity
+  is now a legitimate lever (this run supersedes the earlier CPU-era "don't grow the
+  model" caution, which assumed overfitting — see TASK 1; the staleness fix already
+  addressed the book-era confound that motivated that caution).
+
+Two changes implemented on this branch (NOT committed; no run launched yet).
+
+### 2a. Cost-aware checkpoint selection ✅ IMPLEMENTED (code only)
+
+**Problem.** `checkpoint_score` (`train_m2.py`) ranks epochs purely on the Wilson-LB
+of directional **hit-rate** at top-5% confidence. Hit-rate ignores trade SIZE: 55%
+right on tiny moves loses after cost; 52% right on large moves wins. Selection was
+optimizing the wrong quantity relative to the eval P&L.
+
+**Change.** Added an optional cost-aware term blended into the selection score:
+```
+sel = (1 - SEL_NET_WEIGHT) * edge_lb_score + SEL_NET_WEIGHT * net_score
+```
+- New `gate.fixed_coverage_net_return(logits, fwd_ret, coverage, cost)` — mean **net
+  return per gated trade** over the top-`coverage` bars by directional confidence,
+  after a round-trip `cost`. It is a per-bar top-coverage proxy (NOT the serial eval
+  sim): ignores holds / one-position-per-pair, so it's comparable across epochs but
+  is an **upper bound** on the turnover-limited eval P&L. Flat-true bars are included
+  (a real trade books its return regardless of the flat band).
+- `net_score = clip(0.5 + net_per_trade / SEL_NET_SCALE, 0, 1)`, same small-sample
+  (`MIN_GATED_FOR_CKPT`) down-weight as the edge term.
+- `train_m2.py` now collects the primary-horizon forward return in the val pass
+  (always available as the `ret_<h>` batch key) and passes it to `checkpoint_score`.
+- New config knobs (all env-overridable, **default OFF** = byte-identical legacy
+  behavior): `SEL_NET_WEIGHT=0.0`, `SEL_COST_BPS=14`, `SEL_NET_SCALE=0.002`.
+- Per-epoch log gains `net/trade=+X.Xbps net_sc=…` when `SEL_NET_WEIGHT>0`.
+
+**Design notes / caveats.**
+- Kept the cost SEPARATE from the eval cost model (`FEE_RATE_BPS`/`SLIPPAGE_BPS`) so
+  we can stress selection without touching reporting.
+- Deliberately did **not** replicate the serial simulator in the training loop
+  (needs times+pair_ids per val batch, expensive, and the proxy is enough to *rank*).
+  If the proxy and the serial sim disagree materially at eval, revisit.
+- `SEL_NET_SCALE=0.002` (20bps/trade → score 1.0) is a guess; tune once we see real
+  per-epoch `net/trade` values.
+
+**How to use.** First a diagnostic run at `SEL_NET_WEIGHT=0` (unchanged selection)
+just to read the new `net/trade` log column, then a proper arm:
+```sh
+# A/B: cost-aware selection on, primary 30m
+SEL_NET_WEIGHT=0.5 SEL_COST_BPS=14 ./scripts/gcp_train.sh --gpu 60 128
+# compare eval P&L / net_ret vs the 6e6d358e baseline at matched fixed-cov
+```
+
+### 2b. Encoder capacity knob ✅ IMPLEMENTED (code only)
+
+**Change.** `SharedEncoderMultiHead` gained a `num_layers` arg (LSTM inter-layer
+dropout auto-zeroed when `num_layers==1` to avoid the torch warning). New config
+`NUM_LAYERS=2` (default preserves the served model). Threaded through `train_m2.py`
+(construction + checkpoint meta), and reconstructed from meta in `serve.py` /
+`eval_m2.py` (default 2 for pre-capacity checkpoints → backward compatible).
+
+**Arms to try (one change per run, never with 2a in the same run):**
+```sh
+NUM_LAYERS=3 HIDDEN_SIZE=128 ./scripts/gcp_train.sh --gpu 60 128   # deeper+wider
+HIDDEN_SIZE=256 ./scripts/gcp_train.sh --gpu 60 128                # wider only
+```
+Watch for book-era overfit (the historical risk): compare the book vs pre_book
+fixed-cov split and walk-forward window 4. If edge_lb rises on train but the
+book-era / recent walk-forward window does not, it's overfitting — back off.
+
+**Longer-horizon lever (config-only, no code):** 60m already shows the best edge
+(+0.060 @5% cov) and amortizes the 14bps better than 30m. Try `PRIMARY_HORIZON=60`
+(and/or add 240m: `HORIZONS_MINUTES=5,30,60,240`) as a cheap arm.
+
+### Verification done (no training)
+- `py_compile` clean: `config.py gate.py train_m2.py serve.py eval_m2.py
+  models/multi_horizon.py` (in `trading_agent-ml_trainer`).
+- Functional: `fixed_coverage_net_return` + blended `checkpoint_score` on synthetic
+  data (net metric computes; blend shifts score toward profitable-trade models);
+  `SharedEncoderMultiHead` builds for `num_layers ∈ {1,2,3}` with no dropout warning.
+
+### 2c. 🔭 FUTURE — CONFIDENCE CALIBRATION (documented, NOT implemented)
+
+**Observation (from `logs/latest_fixed.log`, 30m calibration table).** The directional
+head's confidence is **compressed and uncalibrated**: every moved bar lands in
+`p(up) ∈ [0.30, 0.50)`, the head never emits confidence >0.5, and Brier≈0.25 (≈base
+rate). Consequences:
+- The serve/eval **absolute** gate (`GATE_THRESHOLD=0.40`) is meaningless — coverage
+  is 1.0 at 0.35–0.50 then drops to 0 at 0.55 (no bar is that confident). Threshold
+  gating effectively can't work; only the fixed-coverage top-k trick does.
+- Any downstream RL policy that consumes p(up)/confidence as a risk input gets a
+  miscalibrated signal.
+
+**Why deferred (not done now).** Cost-aware selection (2a) and capacity (2b) attack
+the size/strength of the edge, which is upstream of calibration — there's no point
+calibrating a confidence scale that we're about to change by retraining with a
+different objective/capacity. Calibration is a post-hoc wrapper; do it once the edge
+is worth trading.
+
+**Plan when we get to it (own task, after 2a/2b land a tradeable edge):**
+1. **Temperature scaling** (single scalar T on the directional logits) fit on a
+   held-out slice of the val window — cheapest, monotonic, preserves ranking/edge,
+   only rescales confidence. Store `T` in checkpoint meta; apply in `serve.py`
+   (`predict_dir_proba`) and in `eval_m2.py` before the gate sweep.
+2. If temperature is insufficient (still compressed), **isotonic regression** on
+   p(up) vs empirical up-rate (per horizon, possibly per-pair given the large
+   BTC-vs-alt spread in the log). Non-parametric, handles the compression, but needs
+   enough held-out bars and can overfit small pairs → guard with min-n.
+3. **Re-report the calibration table + Brier** after the fix (eval already computes
+   it — see the "Directional head calibration" block) and only then re-tune the
+   serve `GATE_THRESHOLD` to an absolute confidence that finally means something.
+4. **Do NOT** fold calibration into the selection score — keep it a post-hoc,
+   ranking-preserving wrapper so it can't distort which epoch is chosen. (Contrast
+   with the existing quantile `cal_pen`, which is a different, band-coverage penalty.)
+
+Open question: whether to calibrate per-pair. The per-pair eval shows very different
+ungated base rates (BTC ~0.64 vs HYPE ~0.38) and HYPE actually has *negative* 30m
+edge — per-pair calibration + possibly per-pair gate thresholds (or dropping no-edge
+pairs) is the natural companion, but adds complexity; decide with data in hand.
+
+### 2d. 🧪 "ONE-MODE" HYPOTHESIS + DIAGNOSTICS ✅ IMPLEMENTED (code only), 2026-08-06
+
+**Hypothesis (user, 2026-08-06):** maybe the last ~400d was a mostly-bearish market so
+the model "learned one mode" — predicts down and can't call ups.
+
+**Current read of the evidence (from `logs/latest_fixed.log`) — likely NOT a bearish
+label skew, but the symptom is partly real:**
+- **Labels are balanced, not bearish.** Train class balance (log ~1030): 30m
+  down=0.31 / flat=0.39 / up=0.30 (same at 5m/60m). A one-directional market would
+  show down ≫ up. It doesn't — because these are 5/30/60-min moves across 8 pairs
+  (val buy-and-hold is mixed: WLD +16.7, HYPE +10.3, ZEC +5.5 up; BTC/ETH/SOL/DOGE/
+  PEPE down; pooled ≈ −1.1, i.e. roughly flat, not bearish).
+- **The 3-class head DID collapse** — 30m/60m confusion matrices (log ~1131/1180) have
+  an all-zero `up` column (never predicts up). But this is the known flat-mass class-
+  collapse artifact (already fought with `sqrt_inv_freq` + label smoothing, cfg
+  106-120), on a head that does NOT drive gating.
+- **The directional head does NOT collapse** — its calibration table (log ~1163) shows
+  p(up) spanning [0.30,0.50) with empirical up-rate 0.43–0.49, and per-pair dir_acc is
+  two-sided (BTC 0.523, ZEC 0.517). Gating/edge come from THIS head. So the model
+  isn't stuck short; one auxiliary head collapsed.
+
+**Decisive test added (so we can confirm/refute on the next run, not argue from the
+confusion matrix):** two directional-SYMMETRY diagnostics in `eval_m2.py`:
+1. **`side_split_metrics` (gate.py)** → per-side (pred-up vs pred-down) `dir_acc /
+   wilson_lb / n_gated / n_dir` at fixed cov 0.05. Printed as "Side split @ fixed-cov
+   0.05 (did it learn one mode?)".
+2. **`long_short_pnl_split` (eval_m2.py)** → the serial `simulate_pnl` run once
+   long-only, once short-only, at the serve gate. Printed as "Long/short serial P&L".
+Both are also written to `eval_m2.json` under each horizon
+(`side_split_cov05`, `long_short_pnl`).
+
+**How to READ the new output (interpretation rule):**
+- **Two-sided / healthy:** up and down have comparable `n_dir` AND comparable
+  `dir_acc` (both >0.5); long and short both trade with similar net_ret sign.
+  → the "one-mode" hypothesis is REFUTED; edge is symmetric.
+- **One-mode / confirmed:** one side has `n_gated`≈0 or `dir_acc`≈0.5 while the other
+  carries all the edge; P&L is all long or all short.
+  → hypothesis CONFIRMED; then the fix is on the **3-class head** (stronger/focal
+  weighting, or drop it and gate purely off the directional head), NOT more data.
+- Verified on synthetic tensors: a symmetric model prints balanced up/down
+  (~486/514 gated, equal dir_acc) + balanced long/short P&L; a deliberately short-only
+  model prints `up n_gated=0` and all edge on `down`. The diagnostic discriminates.
+
+**My prior:** expect roughly two-sided on the directional head → hypothesis mostly
+refuted, but the run will settle it. Either way the action differs (2a/2b vs 3-class
+head fix), so this is worth measuring before the next training decision.
+
+---
+
+## 🚀 HOW TO RUN THE NEXT TRAINS (2026-08-06) — read before launching
+
+All runs go through `./scripts/gcp_train.sh` (creates a GPU VM, pulls a fresh DB dump
+from the always-on VM, restores Postgres, runs `train_m2.py` + `eval_m2.py`, pushes
+the checkpoint + full log to the bucket, then self-deletes). Usage:
+`./scripts/gcp_train.sh [--gpu] [epochs] [seq_len]` (defaults 60 / 128).
+
+**IMPORTANT — tuning knobs now pass through env (added 2026-08-06).** The launcher
+forwards a whitelist of env vars (`FLUX_TRAIN_ENV_KEYS` in `scripts/gcp_train.sh`) into
+BOTH the GPU (`docker run`) and CPU (`docker compose`) containers, so `config.py` picks
+them up. Set them on your Mac before the command. Whitelisted today:
+`SEL_NET_WEIGHT SEL_COST_BPS SEL_NET_SCALE SEL_COVERAGE NUM_LAYERS HIDDEN_SIZE DROPOUT
+LR WEIGHT_DECAY BATCH_SIZE CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING
+DIR_LOSS_WEIGHT BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN
+FEE_RATE_BPS SLIPPAGE_BPS`. Add new knobs to that list when you create them.
+(Before this change, arbitrary env did NOT reach the GPU container — only a hardcoded
+QUANTILE/HORIZON allowlist did. If a knob "had no effect" on an older GPU run, this is
+why.)
+
+**Golden rule: ONE change per run** (repo convention — never change data AND arch/
+selection in the same run, else you can't attribute the result).
+
+Recommended sequence (each is a separate run; the side-split diagnostic 2d prints on
+ALL of them for free):
+
+```sh
+# R0 — staleness-fix baseline (TASK 1). Default config; the reference point.
+./scripts/gcp_train.sh --gpu 60 128
+
+# R1 — cost-aware selection (2a). Targets net-of-cost P&L instead of hit-rate.
+SEL_NET_WEIGHT=0.5 SEL_COST_BPS=14 ./scripts/gcp_train.sh --gpu 60 128
+
+# R2 — capacity (2b). Deeper+wider encoder; watch book-era / walk-forward for overfit.
+NUM_LAYERS=3 HIDDEN_SIZE=128 ./scripts/gcp_train.sh --gpu 60 128
+
+# R3 — longer-horizon primary (2b lever, config-only). 60m amortizes cost better.
+TRAIN_PRIMARY=60 ./scripts/gcp_train.sh --gpu 60 128
+#   (TRAIN_PRIMARY / TRAIN_HORIZONS / TRAIN_PAIRS are read by gcp_train.sh directly.)
+```
+
+Monitor / retrieve:
+```sh
+./scripts/gcp_status.sh            # RUNNING / DONE / FAILED (reads bucket status/)
+./scripts/gcp_promote.sh           # promote DONE checkpoint to serving
+# full log of the latest run (what you pasted last time as logs/latest_fixed.log):
+#   gs://fluxtrader-train-artifacts/logs/<RUN_ID>.log   and   .../status/latest.json
+```
+
+### 📋 WHEN YOU COME BACK WITH RESULTS (context recovery for a fresh session)
+
+Paste the run's log (as before, e.g. save to `logs/<name>.log`) and tell me which arm
+it was (R0–R3 above / which env knobs). To re-orient quickly, I will look at, in the
+eval section of the log:
+1. **Side split @ fixed-cov 0.05** + **Long/short serial P&L** (NEW, 2d) → is the edge
+   two-sided? settles the one-mode question.
+2. **Fixed-coverage directional edge** (30m primary): `wilson_lb` @ cov 0.05/0.10 vs
+   the R0 baseline (`6e6d358e`: 30m lb≈0.551 @0.05).
+3. **Book-era split** (`book` vs `pre_book` lb) → did the staleness fix (TASK 1) lift
+   the book-era edge toward pre_book?
+4. **Walk-forward** windows 1–4 lb → is the edge stable across time / recent window?
+5. If cost-aware arm (R1): the per-epoch `net/trade=…bps net_sc=…` column + whether
+   the P&L sweep `net_ret` improved vs R0 at matched coverage.
+6. If capacity arm (R2): train vs val edge gap + book-era/WF-window-4 (overfit check).
+
+Key file:line anchors for me (this branch): cost-aware selection
+`ml/train/train_m2.py:checkpoint_score` + `gate.py:fixed_coverage_net_return`;
+capacity `models/multi_horizon.py` (`num_layers`) + `config.py:NUM_LAYERS`;
+symmetry diagnostics `gate.py:side_split_metrics` +
+`eval_m2.py:long_short_pnl_split`; env passthrough `scripts/gcp_train.sh`
+(`FLUX_TRAIN_ENV_KEYS`). Baseline run to compare against: `20260805T025536Z` /
+sha `6e6d358e` / `logs/latest_fixed.log`.
+
+**State as of 2026-08-06:** all of TASK 2 (2a–2d) + the env passthrough are
+implemented on a working branch but **NOT committed and NO run launched** (per the
+commit-only-when-asked workflow). Next action is yours: commit + launch R0…R3.
+
+---
+
 ### Data-collection strategy → see `docs/DATA_COLLECTION_AUDIT.md` (2026-08-05)
 
 Full audit of what the collector captures vs silently drops, framed by

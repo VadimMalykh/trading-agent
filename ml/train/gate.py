@@ -206,3 +206,107 @@ def fixed_coverage_metrics(
         "dir_acc_wilson_lb": wilson_lower_bound(hits, n_true_dir),
         "n_true_directional_gated": n_true_dir,
     }
+
+
+def side_split_metrics(
+    logits: torch.Tensor,
+    y_true: torch.Tensor,
+    coverage: float,
+) -> Dict[str, dict]:
+    """
+    Directional-symmetry diagnostic: at a FIXED top-`coverage` (by directional
+    confidence), split the gated bars by the model's PREDICTED side and report
+    dir_acc / count for each side separately.
+
+    Answers "did the model learn one mode?" — e.g. a model that only ever trades
+    (or is only accurate) short shows up as: pred_up n_dir ≈ 0 or pred_up dir_acc
+    ≈ 0.5 while pred_down carries all the edge. A healthy two-sided model shows
+    comparable n_dir and dir_acc on both sides. See docs/NEXT_TRAINING_PLAN.md
+    "one-mode hypothesis".
+
+    dir_acc per side is computed over gated bars whose TRUE label is directional
+    (flat excluded), matching fixed_coverage_metrics semantics. `n_gated` counts
+    ALL gated bars on that side (incl. true-flat) so you can see selection skew.
+    """
+    n = int(y_true.numel())
+    coverage = float(min(max(coverage, 0.0), 1.0))
+    k = int(round(n * coverage))
+    empty_side = {"n_gated": 0, "n_dir": 0, "dir_acc": 0.0, "wilson_lb": 0.0}
+    if n == 0 or k <= 0:
+        return {"up": dict(empty_side), "down": dict(empty_side)}
+
+    side, conf = directional_signal(logits)
+    topk = torch.topk(conf, k=min(k, n)).indices
+    mask = torch.zeros(n, dtype=torch.bool)
+    mask[topk] = True
+
+    out = {}
+    for name, side_val in (("up", 2), ("down", 0)):
+        sel = mask & (side == side_val)
+        n_gated = int(sel.sum().item())
+        true_dir = sel & (y_true != 1)
+        n_dir = int(true_dir.sum().item())
+        if n_dir == 0:
+            out[name] = {"n_gated": n_gated, "n_dir": 0, "dir_acc": 0.0, "wilson_lb": 0.0}
+            continue
+        hits = int((side[true_dir] == y_true[true_dir]).sum().item())
+        out[name] = {
+            "n_gated": n_gated,
+            "n_dir": n_dir,
+            "dir_acc": hits / n_dir,
+            "wilson_lb": wilson_lower_bound(hits, n_dir),
+        }
+    return out
+
+
+def fixed_coverage_net_return(
+    logits: torch.Tensor,
+    fwd_ret: torch.Tensor,
+    coverage: float,
+    cost: float,
+) -> Dict[str, float]:
+    """
+    Cost-aware companion to `fixed_coverage_metrics`: the mean net return PER
+    gated directional trade, after a round-trip `cost`, over the top-`coverage`
+    fraction of bars by directional confidence.
+
+    Rationale (see docs/NEXT_TRAINING_PLAN.md "cost-aware selection"): dir_acc /
+    edge rank a model on hit-rate only. But at a 14bps round-trip a model that is
+    right 55% of the time on tiny moves still loses money, while one right 52% of
+    the time on large moves can win. This metric ranks on the quantity we
+    actually care about — expected P&L per trade — while staying a simple,
+    per-bar, top-coverage proxy (NOT the serial eval sim): it ignores holds /
+    one-position-per-pair, so it is comparable across epochs but is an upper
+    bound on the serial simulator's turnover-limited P&L.
+
+    net_per_trade = mean_over_gated( side * fwd_ret ) - cost
+      side = +1 (up) / -1 (down); flat-true bars are INCLUDED here (unlike
+      dir_acc) because a real trade books its realized return regardless of
+      whether the move cleared the flat band. `fwd_ret` is the primary-horizon
+      forward return aligned to `logits`.
+    """
+    n = int(logits.shape[0])
+    coverage = float(min(max(coverage, 0.0), 1.0))
+    k = int(round(n * coverage))
+    empty = {
+        "coverage": coverage,
+        "n_gated": 0,
+        "net_per_trade": 0.0,
+        "gross_per_trade": 0.0,
+        "cost": float(cost),
+    }
+    if n == 0 or k <= 0:
+        return empty
+
+    side, conf = directional_signal(logits)
+    topk = torch.topk(conf, k=min(k, n)).indices
+    signed = torch.where(side[topk] == 2, 1.0, -1.0).to(fwd_ret.dtype)
+    trade_ret = signed * fwd_ret[topk]
+    gross = float(trade_ret.mean().item())
+    return {
+        "coverage": k / max(n, 1),
+        "n_gated": int(topk.numel()),
+        "net_per_trade": gross - float(cost),
+        "gross_per_trade": gross,
+        "cost": float(cost),
+    }

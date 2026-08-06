@@ -62,6 +62,7 @@ def load_model():
     horizons = meta.get("horizons_minutes") or HORIZONS_MINUTES
     feature_dim = meta.get("feature_dim", FEATURE_DIM)
     hidden = meta.get("hidden_size", 64)
+    num_layers = int(meta.get("num_layers", 2))  # pre-capacity ckpts had 2
     seq_len = meta.get("seq_len", SEQ_LEN)
     primary = str(meta.get("primary_horizon", PRIMARY))
     has_dir_head = bool(meta.get("directional_head", False))
@@ -75,6 +76,7 @@ def load_model():
         directional_head=has_dir_head,
         quantile_head=has_quantile_head,
         quantile_levels=quantile_levels,
+        num_layers=num_layers,
     )
     model.load_state_dict(ckpt["model_state"])
     model.eval()

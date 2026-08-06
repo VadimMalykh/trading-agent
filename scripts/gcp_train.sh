@@ -101,6 +101,27 @@ R="\$HOME/${REMOTE_REPO_NAME}"
 PAIRS_FLAG=""
 if [[ -n "$PAIRS_ARG" ]]; then PAIRS_FLAG="--pairs ${PAIRS_ARG}"; fi
 
+# --- tuning-knob passthrough --------------------------------------------------
+# Any of these env vars set on the LAUNCHER (your Mac) are forwarded into the
+# train/eval container so config.py picks them up. Unset → config.py default.
+# Extend this list when you add a new config knob you want to sweep from the CLI.
+#   e.g. SEL_NET_WEIGHT=0.5 NUM_LAYERS=3 ./scripts/gcp_train.sh --gpu 60 128
+FLUX_TRAIN_ENV_KEYS="${FLUX_TRAIN_ENV_KEYS:-\
+SEL_NET_WEIGHT SEL_COST_BPS SEL_NET_SCALE SEL_COVERAGE \
+NUM_LAYERS HIDDEN_SIZE DROPOUT LR WEIGHT_DECAY BATCH_SIZE \
+CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT \
+BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN \
+FEE_RATE_BPS SLIPPAGE_BPS}"
+# Build literal `export K='v'` lines for the keys that are actually set, so the
+# remote prelude re-exports them verbatim (survives the quoted-heredoc boundary).
+FLUX_TRAIN_ENV_EXPORTS=""
+for _k in $FLUX_TRAIN_ENV_KEYS; do
+  _v="${!_k:-}"          # bash indirect expansion (script shebang is bash)
+  if [[ -n "$_v" ]]; then
+    FLUX_TRAIN_ENV_EXPORTS+="export ${_k}='${_v}'"$'\n'
+  fi
+done
+
 echo ""
 echo "==> run_id=$RUN_ID  ref=$GIT_REF epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} device=$TRAIN_DEVICE quantile_head=$QUANTILE_HEAD quantile_weight=$QUANTILE_LOSS_WEIGHT"
 
@@ -512,6 +533,8 @@ export KEEP_VM='$KEEP_VM'
 export MODEL_VOLUME_NAME='$MODEL_VOLUME_NAME'
 export GCP_ZONE='$GCP_ZONE'
 export GCP_TRAIN_ACCELERATOR='$GCP_TRAIN_ACCELERATOR'
+export FLUX_TRAIN_ENV_KEYS='$FLUX_TRAIN_ENV_KEYS'
+$FLUX_TRAIN_ENV_EXPORTS
 PRELUDE
 cat >> \$HOME/run_flux_train.sh << 'ENDSCRIPT'
 set -Eeuo pipefail
@@ -624,7 +647,21 @@ if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e QUANTILE_LEVELS=\$QUANTILE_LEVELS\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e QUANTILE_LOSS_WEIGHT=\$QUANTILE_LOSS_WEIGHT\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e FLUX_GIT_SHA=\$GIT_SHA\"
+  # Generic passthrough for tuning knobs (cost-aware selection, capacity, class
+  # weighting, staleness caps, ...). Only forwarded when set on the launcher env,
+  # so unset vars keep their config.py defaults. Add new knobs here when created.
+  for _k in \$FLUX_TRAIN_ENV_KEYS; do
+    _v=\"\${!_k:-}\"
+    if [[ -n \"\$_v\" ]]; then _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e \$_k=\$_v\"; fi
+  done
 fi
+
+# Same tuning-knob passthrough for the CPU (docker compose) path.
+_CPU_ENV_OPTS=\"\"
+for _k in \$FLUX_TRAIN_ENV_KEYS; do
+  _v=\"\${!_k:-}\"
+  if [[ -n \"\$_v\" ]]; then _CPU_ENV_OPTS=\"\$_CPU_ENV_OPTS -e \$_k=\$_v\"; fi
+done
 
 echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY quantile_head=\$QUANTILE_HEAD device=\$TRAIN_DEVICE ===\"
 if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
@@ -634,7 +671,7 @@ else
   docker compose --profile ml run --rm \
     -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
     -e QUANTILE_HEAD=\$QUANTILE_HEAD -e QUANTILE_LEVELS=\$QUANTILE_LEVELS -e QUANTILE_LOSS_WEIGHT=\$QUANTILE_LOSS_WEIGHT \
-    -e FLUX_GIT_SHA=\$GIT_SHA \
+    -e FLUX_GIT_SHA=\$GIT_SHA \$_CPU_ENV_OPTS \
     ml_trainer python train_m2.py --device cpu --epochs \$EPOCHS --seq-len \$SEQ_LEN \
       --horizons \$HORIZONS --primary \$PRIMARY \$PAIRS_FLAG
 fi
@@ -645,7 +682,7 @@ if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
     --gate 0.35,0.4,0.45,0.5,0.55,0.6 || true
 else
   docker compose --profile ml run --rm \
-    -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
+    -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \$_CPU_ENV_OPTS \
     ml_trainer python eval_m2.py --checkpoint /models/m2_multi.pt --device cpu \
       --gate 0.35,0.4,0.45,0.5,0.55,0.6 || true
 fi

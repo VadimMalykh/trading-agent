@@ -45,6 +45,7 @@ from gate import (
     directional_signal,
     fixed_coverage_metrics,
     gate_sweep,
+    side_split_metrics,
 )
 from models.multi_horizon import SharedEncoderMultiHead
 
@@ -184,6 +185,42 @@ def _add_pnl_rows(sweep, dir_logits, y_true, fwd_ret, times, pair_ids, hold_bars
         row["daily_sharpe"] = pnl["daily_sharpe"]
         row["max_dd"] = pnl["max_dd"]
     return sweep
+
+
+def long_short_pnl_split(
+    dir_logits,
+    y_true,
+    fwd_ret,
+    times,
+    pair_ids,
+    hold_bars,
+    threshold,
+    cost=ROUND_TRIP_COST,
+):
+    """
+    Serial-sim P&L split by trade SIDE at a fixed gate threshold. Runs
+    `simulate_pnl` once with only long (pred up) bars gated, once with only short
+    (pred down) bars gated, so we can see whether the model's P&L is one-sided —
+    the direct P&L companion to `side_split_metrics` (accuracy). See
+    docs/NEXT_TRAINING_PLAN.md "one-mode hypothesis".
+    """
+    if dir_logits is None or fwd_ret is None or times is None:
+        return None
+    gate_logits = dir_logits_to_three_class(dir_logits)
+    side, conf = directional_signal(gate_logits)
+    passed = conf >= threshold
+    out = {}
+    for name, side_val in (("long", 2), ("short", 0)):
+        mask = passed & (side == side_val)
+        pnl = simulate_pnl(side, conf, mask, fwd_ret, times, pair_ids, hold_bars, cost)
+        out[name] = {
+            "net_ret": pnl["total_net_ret"],
+            "n_trades": pnl["n_trades"],
+            "win_rate": pnl["win_rate"],
+            "daily_sharpe": pnl["daily_sharpe"],
+            "max_dd": pnl["max_dd"],
+        }
+    return out
 
 
 def momentum_gate_logits(bundle, sample_idx, h_bars: int) -> torch.Tensor:
@@ -366,6 +403,15 @@ def run_horizon_report(
         _add_pnl_rows(sweep, dir_logits, y_true, fwd_ret, times, pair_ids, hold_bars, cost)
     fixed_cov = [fixed_coverage_metrics(gate_logits, y_true, c) for c in FIXED_COVERAGES]
 
+    # Directional-symmetry diagnostics ("one-mode" test): per-side accuracy at
+    # fixed cov 0.05, and per-side serial P&L at the serve gate.
+    side_split = side_split_metrics(gate_logits, y_true, 0.05)
+    ls_pnl = None
+    if fwd_ret is not None and times is not None and hold_bars is not None:
+        ls_pnl = long_short_pnl_split(
+            dir_logits, y_true, fwd_ret, times, pair_ids, hold_bars, GATE_THRESHOLD, cost
+        )
+
     serve_row = next((r for r in sweep if abs(r["threshold"] - GATE_THRESHOLD) < 1e-9), None)
     edge = None
     if serve_row and serve_row.get("n_gated", 0) > 0:
@@ -399,6 +445,8 @@ def run_horizon_report(
         "confusion": conf_matrix.tolist(),
         "gate_sweep": sweep,
         "fixed_coverage": fixed_cov,
+        "side_split_cov05": side_split,
+        "long_short_pnl": ls_pnl,
         "serve_gate": GATE_THRESHOLD,
         "serve_gate_dir_edge_vs_half": edge,
         "per_pair": per_pair,
@@ -436,6 +484,7 @@ def main():
     seq_len = meta.get("seq_len", SEQ_LEN)
     feature_dim = meta.get("feature_dim", FEATURE_DIM)
     hidden = meta.get("hidden_size", HIDDEN_SIZE)
+    num_layers = int(meta.get("num_layers", 2))  # pre-capacity ckpts had 2
     norm_stats = meta.get("norm_stats") or {}
     primary = str(meta.get("primary_horizon", horizons[min(1, len(horizons) - 1)]))
     has_dir_head = bool(meta.get("directional_head", False))
@@ -449,6 +498,7 @@ def main():
         directional_head=has_dir_head,
         quantile_head=has_quant_head,
         quantile_levels=quant_levels,
+        num_layers=num_layers,
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
@@ -601,6 +651,31 @@ def main():
                 f"{fc['n_true_directional_gated']:7d}"
             )
 
+        # Directional symmetry ("one-mode" test): is the edge/P&L two-sided, or
+        # does the model only really trade/win on one side?
+        ss = result.get("side_split_cov05") or {}
+        if ss:
+            print("Side split @ fixed-cov 0.05 (did it learn one mode?):")
+            print(f"  {'side':>5}  {'n_gated':>8}  {'n_dir':>7}  {'dir_acc':>8}  {'wilson_lb':>9}")
+            for name in ("up", "down"):
+                s = ss.get(name) or {}
+                print(
+                    f"  {name:>5}  {int(s.get('n_gated', 0)):8d}  {int(s.get('n_dir', 0)):7d}  "
+                    f"{float(s.get('dir_acc', 0.0)):8.3f}  {float(s.get('wilson_lb', 0.0)):9.3f}"
+                )
+        ls = result.get("long_short_pnl")
+        if ls:
+            print(f"Long/short serial P&L @ serve gate {GATE_THRESHOLD} (net of cost):")
+            for name in ("long", "short"):
+                v = ls.get(name) or {}
+                sh = v.get("daily_sharpe")
+                sh_s = f"{sh:.2f}" if sh is not None else "n/a"
+                print(
+                    f"  {name:>5}: net_ret={v.get('net_ret', 0.0):+.4f} "
+                    f"trades={int(v.get('n_trades', 0))} win={v.get('win_rate', 0.0):.3f} "
+                    f"sharpe={sh_s} maxdd={v.get('max_dd', 0.0):.4f}"
+                )
+
         # Book-era split of the directional edge (calendar-time confound). If the
         # edge concentrates in the book era, it's the zero→real feature
         # discontinuity, not learned microstructure.
@@ -677,6 +752,8 @@ def main():
             "confusion": result["confusion"],
             "gate_sweep": result["gate_sweep"],
             "fixed_coverage": result["fixed_coverage"],
+            "side_split_cov05": result.get("side_split_cov05"),
+            "long_short_pnl": result.get("long_short_pnl"),
             "quantile_calibration": calib,
             "directional_calibration": cal_dir,
             "book_era_split": book_split,

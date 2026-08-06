@@ -33,6 +33,7 @@ class SharedEncoderMultiHead(nn.Module):
         quantile_head: bool = False,
         quantile_levels: List[float] | None = None,
         dropout: float = 0.2,
+        num_layers: int = 2,
     ):
         super().__init__()
         horizons_minutes = horizons_minutes or [1, 15, 60]
@@ -46,13 +47,15 @@ class SharedEncoderMultiHead(nn.Module):
         # regime where the model overfits within ~2-5 epochs. LSTM inter-layer
         # dropout only applies with num_layers > 1.
         self.dropout = float(dropout)
+        self.num_layers = int(num_layers)
 
         self.encoder = nn.LSTM(
             input_size,
             hidden_size,
             batch_first=True,
-            num_layers=2,
-            dropout=self.dropout,
+            num_layers=self.num_layers,
+            # LSTM inter-layer dropout is a no-op (and warns) with a single layer.
+            dropout=self.dropout if self.num_layers > 1 else 0.0,
         )
         self.heads = nn.ModuleDict(
             {
