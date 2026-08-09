@@ -105,14 +105,20 @@ docker compose --profile ml run --rm ml_trainer \
   python backfill_history.py --symbols BTCUSDT,ETHUSDT,SOLUSDT --funding --days 180
 ```
 
-**Incremental / resume behavior.** `backfill_history.py` does **not** re-download
-data you already have. Before fetching it reads the latest stored row per
-(symbol, interval) from the DB (`max(open_time)` in `candles`, `max(ts)` in
-`funding_rates`) and starts only from what's missing — each pair/interval has its
-own cursor. `--days` is just the oldest data it's allowed to go back to (used as
-a fallback for pairs with no stored rows, and to fill backward gaps); it is not a
-"fetch this much" request. Re-running the script is cheap and idempotent:
-`INSERT ... ON CONFLICT DO NOTHING` skips anything that already exists.
+**Incremental / resume behavior.** `backfill_history.py` only fetches the parts
+of the `--days` window that are **missing**, per (symbol, interval). Before
+fetching it reads the stored coverage (`min/max(open_time)` in `candles`,
+`min/max(ts)` in `funding_rates`) and computes the gaps to fill:
+
+- older-than-stored data (extends history **backward** — e.g. you have 400 days
+  and ask for `--days 1000` → fetches the ~600 days before your oldest row), and
+- the tail newer than your latest stored row.
+
+Existing rows are never re-downloaded. Each pair/interval has its own cursor.
+`--days` is just the desired window length back from now; it is not a "fetch this
+much" request. Re-running the script is cheap and idempotent:
+`INSERT ... ON CONFLICT DO NOTHING` skips anything that already exists (covers
+gaps in the middle of stored data).
 
 **Flags**
 

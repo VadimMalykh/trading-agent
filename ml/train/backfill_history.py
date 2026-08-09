@@ -136,54 +136,101 @@ def upsert_funding(symbol: str, rows: list) -> int:
     return n
 
 
-def last_candle_time(symbol: str, interval: str) -> Optional[int]:
-    sql = text(
-        "SELECT max(open_time) FROM candles "
-        "WHERE symbol = :symbol AND interval = :interval"
-    )
-    with engine().connect() as conn:
-        v = conn.execute(sql, {"symbol": symbol, "interval": interval}).scalar()
-    return None if v is None else int(v.timestamp() * 1000)
+INTERVAL_STEP_MS = {
+    "1m": 60_000,
+    "5m": 300_000,
+    "15m": 900_000,
+    "1h": 3_600_000,
+    "4h": 14_400_000,
+}
 
 
-def last_funding_time(symbol: str) -> Optional[int]:
-    sql = text("SELECT max(ts) FROM funding_rates WHERE symbol = :symbol")
+def coverage_ms(
+    table: str, symbol: str, ts_col: str, extra: Optional[str] = None
+) -> Optional[tuple]:
+    """(min_ms, max_ms) of stored rows for a symbol, or None if no rows."""
+    sql = f"SELECT min({ts_col}), max({ts_col}) FROM {table} WHERE symbol = :symbol"
+    if extra:
+        sql += f" AND {extra}"
     with engine().connect() as conn:
-        v = conn.execute(sql, {"symbol": symbol}).scalar()
-    return None if v is None else int(v.timestamp() * 1000)
+        lo, hi = conn.execute(text(sql), {"symbol": symbol}).one()
+    if lo is None:
+        return None
+    return int(lo.timestamp() * 1000), int(hi.timestamp() * 1000)
+
+
+def fetch_ranges(
+    start: datetime,
+    end: datetime,
+    cov: Optional[tuple],
+    step_ms: int,
+) -> List[tuple]:
+    """
+    List of [from_ms, to_ms] ranges to fetch for [start, end] given stored
+    coverage, covering ONLY the missing parts (older-than-stored + tail).
+    Empty list → everything in the window is already stored.
+    """
+    start_ms = ms(start)
+    end_ms = ms(end)
+    if cov is None:
+        return [(start_ms, end_ms)]
+    lo, hi = cov
+    left_missing = lo > start_ms
+    right_missing = hi < end_ms - step_ms
+    if not left_missing and not right_missing:
+        return []
+    ranges = []
+    if left_missing:
+        ranges.append((start_ms, min(end_ms, lo)))
+    if right_missing:
+        ranges.append((max(start_ms, hi + step_ms), end_ms))
+    return ranges
+
+
+def _fetch_loop(
+    fetch, upsert, rows_to_last, symbol: str, ranges, label: str, page_size: int
+) -> int:
+    fmt = lambda m: datetime.fromtimestamp(m / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+    total = 0
+    for from_ms, to_ms in ranges:
+        print(f"    fetching {label} {fmt(from_ms)} → {fmt(to_ms)}")
+        cursor = from_ms
+        while cursor < to_ms:
+            batch = fetch(symbol, cursor, to_ms)
+            time.sleep(SLEEP_S)
+            if not batch:
+                break
+            total += upsert(symbol, batch)
+            last_t = rows_to_last(batch)
+            next_cursor = last_t + 1
+            if next_cursor <= cursor:
+                break
+            cursor = next_cursor
+            if len(batch) < page_size:
+                break
+    return total
 
 
 def backfill_klines(symbol: str, interval: str, days: int) -> int:
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
-    cursor = ms(start)
-    end_ms = ms(end)
-    total = 0
-    last = last_candle_time(symbol, interval)
-    if last is not None:
-        resume = datetime.fromtimestamp((last + 1) / 1000, tz=timezone.utc)
-        cursor = max(cursor, last + 1)
-        print(f"  klines {symbol} {interval}: resuming from stored {resume:%Y-%m-%d %H:%M:%S}Z")
-    print(f"  klines {symbol} {interval} from {start.date()} → {end.date()}")
-    if cursor >= end_ms:
-        print(f"    nothing to fetch (already up to date)")
+    step_ms = INTERVAL_STEP_MS.get(interval, 60_000)
+    cov = coverage_ms("candles", symbol, "open_time", f"interval = '{interval}'")
+    ranges = fetch_ranges(start, end, cov, step_ms)
+    fmt = lambda m: datetime.fromtimestamp(m / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+    print(f"  klines {symbol} {interval}: window {fmt(ms(start))} → {fmt(ms(end))}")
+    if not ranges:
+        print(f"    already covered, nothing to fetch")
         return 0
-
-    while cursor < end_ms:
-        batch = fetch_klines(symbol, interval, cursor, end_ms)
-        time.sleep(SLEEP_S)
-        if not batch:
-            break
-        total += upsert_candles(symbol, interval, batch)
-        last_open = int(batch[-1][0])
-        next_cursor = last_open + 1
-        if next_cursor <= cursor:
-            break
-        cursor = next_cursor
-        if len(batch) < MAX_LIMIT:
-            break
-        print(f"    … {symbol} {interval} inserted~{total} last_open_ms={last_open}")
-
+    total = _fetch_loop(
+        lambda s, f, t: fetch_klines(s, interval, f, t),
+        lambda s, b: upsert_candles(s, interval, b),
+        lambda b: int(b[-1][0]),
+        symbol,
+        ranges,
+        "klines",
+        MAX_LIMIT,
+    )
     print(f"  done {symbol} {interval}: ~{total} rows attempted")
     return total
 
@@ -191,33 +238,22 @@ def backfill_klines(symbol: str, interval: str, days: int) -> int:
 def backfill_funding(symbol: str, days: int) -> int:
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
-    cursor = ms(start)
-    end_ms = ms(end)
-    total = 0
-    last = last_funding_time(symbol)
-    if last is not None:
-        resume = datetime.fromtimestamp((last + 1) / 1000, tz=timezone.utc)
-        cursor = max(cursor, last + 1)
-        print(f"  funding {symbol}: resuming from stored {resume:%Y-%m-%d %H:%M:%S}Z")
-    print(f"  funding {symbol} from {start.date()} → {end.date()}")
-    if cursor >= end_ms:
-        print(f"    nothing to fetch (already up to date)")
+    cov = coverage_ms("funding_rates", symbol, "ts")
+    ranges = fetch_ranges(start, end, cov, 8 * 3_600_000)
+    fmt = lambda m: datetime.fromtimestamp(m / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+    print(f"  funding {symbol}: window {fmt(ms(start))} → {fmt(ms(end))}")
+    if not ranges:
+        print(f"    already covered, nothing to fetch")
         return 0
-
-    while cursor < end_ms:
-        batch = fetch_funding(symbol, cursor, end_ms)
-        time.sleep(SLEEP_S)
-        if not batch:
-            break
-        total += upsert_funding(symbol, batch)
-        last_t = int(batch[-1]["fundingTime"])
-        next_cursor = last_t + 1
-        if next_cursor <= cursor:
-            break
-        cursor = next_cursor
-        if len(batch) < 1000:
-            break
-
+    total = _fetch_loop(
+        fetch_funding,
+        upsert_funding,
+        lambda b: int(b[-1]["fundingTime"]),
+        symbol,
+        ranges,
+        "funding",
+        1000,
+    )
     print(f"  done funding {symbol}: ~{total} rows attempted")
     return total
 
