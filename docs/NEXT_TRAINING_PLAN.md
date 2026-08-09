@@ -5,6 +5,69 @@ session and the exact steps/commands to execute.
 
 ---
 
+## ▶️ START HERE (2026-08-09) — the one command to launch next
+
+R0–R3 are DONE and analyzed (see TASK 3 below). None found a cost-surviving edge;
+R3 was accidentally a duplicate of R0 (a silently-dropped env var — now fixed).
+
+**Launch this next (call it "R4" — the 60m-horizon run R3 was meant to be):**
+```sh
+TRAIN_PRIMARY=60 TRAIN_HORIZONS=5,30,60 ./scripts/gcp_train.sh --gpu 60 128
+```
+Then confirm the fix worked: the log must show `PRIMARY=60` in the
+`=== resolved knobs: …` line (and header `primary=60`). Save it as `logs/R4.log`.
+
+After R4, the next single-change runs are **R5** (cost-aware selection, now fixed)
+and **R6** (anti-collapse label rebalance, then capacity) — exact commands under
+"NEXT LAUNCH PLAN" in TASK 3. One change per run.
+
+**Caveat (my recommendation):** R4–R6 are TUNING and cannot create an edge that
+isn't there. The decisive test is the multi-fold walk-forward diagnostic (needs
+~30d book history, ~2026-08-25). Launch R4 if you want progress now; wait for the
+walk-forward if you want the answer that actually gates everything.
+
+### 📅 AFTER END OF AUGUST (≥30d book history) — the microdata ladder
+
+Plan agreed 2026-08-09: do R4–R6, report back, then wait for ~30d of book data
+(~2026-08-25) before the data-dependent steps below. Run these IN ORDER; each
+gates the next. Mechanics/commands live in the pinned "⏰ ACTION QUEUED —
+WALK-FORWARD RE-RUN" section (~line 596) and "Microstructure readiness roadmap"
+(~line 730) — this is the up-to-date decision layer over them.
+
+1. **Step A — Walk-forward diagnostic (the gate for everything).** When earliest
+   `first_snapshot` ≥ 30d old (check `scripts/gcp_order_book_stats.sh`):
+   ```sh
+   WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 ./scripts/gcp_walkforward.sh
+   ./scripts/gcp_walkforward.sh --fetch
+   ```
+   **VERDICT RULE:** book-ON − book-OFF Wilson-LB gap > ~0.05 on **ALL** folds →
+   the book edge is robust → go to Step B. If ANY fold's gap ≤0 or LBs overlap →
+   **STOP tuning, keep collecting, re-check at ~60d.** Do NOT over-invest.
+   - Updated context from R0–R3 (2026-08-09): the staleness fix did NOT lift the
+     book-era edge toward pre_book in the global-split eval (book lb stayed ~0.48–
+     0.53, recent walk-forward window 4 weakest). So the prior "edge is real, just
+     needs data" assumption is now IN DOUBT — Step A is a genuine test, not a
+     formality. Expect it may fail the verdict rule; that's an acceptable answer.
+
+2. **Step B — Microstructure-rich full run (ONLY if Step A passes).** At ~60–90d
+   book history, retrain on the window where microstructure is dense (not zero-
+   filled) and compare against the candle-only baseline. This is the first run where
+   the book features can actually carry signal. One change per run still applies.
+   Watch the same book-era / walk-forward-window-4 overfit checks.
+
+3. **Step C — Reassess RL (M3) — ONLY after Step B shows a tradeable, cost-surviving
+   edge.** No point building the policy layer on a model with ~0 net edge. If Steps
+   A/B keep failing, the honest conclusion is the candle+book feature set is not
+   enough and the next move is feature/data work (see `docs/DATA_COLLECTION_AUDIT.md`:
+   full-fidelity order book, long/short & taker ratios, liquidations vendor), NOT
+   more model tuning.
+
+**One-line summary of the whole plan:** R4–R6 now → wait → Step A walk-forward
+(pass/fail gate) → Step B microstructure run (only if A passes) → Step C RL (only if
+B is tradeable). Each arrow is a real stop/go decision, not a formality.
+
+---
+
 ## 🧭 TASK 3 — R0–R3 RESULTS ANALYSIS + HARNESS FIXES (2026-08-09) — READ FIRST
 
 This is the newest section. It supersedes TASK 2's "just launch R0–R3" plan: R0–R3
