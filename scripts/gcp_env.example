@@ -1,56 +1,64 @@
 # Copy once:  cp scripts/gcp_env.example scripts/gcp_env
 # Then edit if your names differ. scripts/gcp_env is gitignored.
+#
+# NOTE: every line uses  : "${VAR:=val}"  (default-assignment), NOT  export VAR=val.
+# This is deliberate: it sets VAR only when it is unset/empty, so an inline
+# override on the launcher — e.g.  TRAIN_PRIMARY=60 ./scripts/gcp_train.sh …
+# — always WINS. (A plain `export VAR=30` here would clobber your inline 60 back
+# to 30 when gcp_common.sh sources this file, silently voiding the run. That was
+# the R3/R4 primary-horizon bug.) gcp_common.sh / gcp_train.sh re-export whatever
+# child processes actually need, so no `export` is required here.
 
-export GCP_PROJECT=fluxtrader
-export GCP_ZONE=me-central1-b
+: "${GCP_PROJECT:=fluxtrader}"
+: "${GCP_ZONE:=me-central1-b}"
 # GCP_REGION is derived from the zone automatically (me-central1-b -> me-central1)
 
 # Always-on VM (collect + UI + inference) — leave running 24/7
-export GCP_ALWAYS_ON=fluxtrader-1
+: "${GCP_ALWAYS_ON:=fluxtrader-1}"
 
 # Temporary train VM — created + self-deleted by ./scripts/gcp_train.sh
-export GCP_TRAIN_INSTANCE=fluxtrader-train
+: "${GCP_TRAIN_INSTANCE:=fluxtrader-train}"
 
 # Temporary AUDIT VM — created + self-deleted by ./scripts/gcp_audit.sh
 # (microstructure signal audit). MUST differ from GCP_TRAIN_INSTANCE so an audit
 # and a training run can happen in parallel without sharing a VM / DB / marker.
-export GCP_AUDIT_INSTANCE=fluxtrader-audit
+: "${GCP_AUDIT_INSTANCE:=fluxtrader-audit}"
 # Training is CPU-bound, not memory-bound (lazy windows keep feature RAM ~tens of MB).
 # 4 vCPU speeds up the LSTM far more than extra RAM. e2-standard-4 is 4 vCPU / 16GB.
 # For 4 vCPU with less RAM (cost), use e2-custom-4-4096 (4 vCPU / 4GB).
-export GCP_TRAIN_MACHINE=e2-standard-4   # 4 vCPU / 16GB
+: "${GCP_TRAIN_MACHINE:=e2-standard-4}"   # 4 vCPU / 16GB
 
 # GPU training (./scripts/gcp_train.sh --gpu)
 # n1-standard-4 + T4 is the best cost/speed ratio for LSTM:
 #   ~$0.54/hr total (~$0.19 n1-standard-4 + ~$0.35 T4) vs ~$0.13/hr CPU.
 # GPU is ~10-20x faster for the LSTM loop. T4 has 16GB VRAM (massive overkill).
 # Alternatives: n1-standard-8+T4 (~$0.73/hr), g2-standard-4+L4 (~$0.70/hr, if available in zone).
-export GCP_TRAIN_MACHINE_GPU=n1-standard-4
-export GCP_TRAIN_ACCELERATOR=type=nvidia-tesla-t4,count=1
+: "${GCP_TRAIN_MACHINE_GPU:=n1-standard-4}"
+: "${GCP_TRAIN_ACCELERATOR:=type=nvidia-tesla-t4,count=1}"
 # GPU zone — me-central1-b has no GPUs. T4 is available in us-central1-*.
 # Cross-region GCS dump transfer is pennies (~$0.08/GB × ~1-2GB).
-export GCP_TRAIN_ZONE=us-central1-a
+: "${GCP_TRAIN_ZONE:=us-central1-a}"
 
 # Folder names under the VM user's $HOME (do not use ~/ or Mac paths)
-export REMOTE_REPO_NAME=trading_agent
+: "${REMOTE_REPO_NAME:=trading_agent}"
 
 # --- V2 pipeline: artifacts via GCS bucket, code via git ---------------------
 # Single-region bucket, SAME region as the VMs (create once, see gcp_train.sh -h).
-export GCS_BUCKET=gs://fluxtrader-train-artifacts
+: "${GCS_BUCKET:=gs://fluxtrader-train-artifacts}"
 # Reproducible code source. HTTPS so the VM can clone without your SSH key.
 # PRIVATE repo: use  https://<PAT>@github.com/VadimMalykh/trading-agent.git
-export GIT_REMOTE=https://github.com/VadimMalykh/trading-agent.git
-export GIT_REF=main                       # branch or commit SHA to train + serve
+: "${GIT_REMOTE:=https://github.com/VadimMalykh/trading-agent.git}"
+: "${GIT_REF:=main}"                       # branch or commit SHA to train + serve
 
 # Debug only: 1 = keep train VM alive after the job (never auto delete/stop)
-export KEEP_VM=0
+: "${KEEP_VM:=0}"
 
 # Training defaults (override on the command line of gcp_train.sh if you want)
-export TRAIN_EPOCHS=60
-export TRAIN_SEQ_LEN=128
-export TRAIN_DEVICE=cpu
+: "${TRAIN_EPOCHS:=60}"
+: "${TRAIN_SEQ_LEN:=128}"
+: "${TRAIN_DEVICE:=cpu}"
 # M2 Phase 1+2 defaults
-export TRAIN_HORIZONS=5,30,60
-export TRAIN_PRIMARY=30
+: "${TRAIN_HORIZONS:=5,30,60}"
+: "${TRAIN_PRIMARY:=30}"
 # 6 pairs: 3 majors + DOGE/WLD/HYPE (all have full ~180d candles per 2026-07-24 audit).
-export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT
+: "${TRAIN_PAIRS:=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT}"

@@ -5,12 +5,37 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/google-cloud-sdk/bin:$HOME/Downloads/google-cloud-sdk/bin:$PATH"
 
+# Sourcing scripts/gcp_env must NOT clobber an inline override the user passed on
+# the launcher (e.g.  TRAIN_PRIMARY=60 ./scripts/gcp_train.sh …). gcp_env now uses
+# ':=' default-assignment so inline vars win, but guard against a stray `export
+# VAR=…` slipping back in: snapshot the tunable knobs before sourcing and restore
+# any that were already set. (A plain `export TRAIN_PRIMARY=30` in gcp_env silently
+# voided R3/R4.)
+_FLUX_OVERRIDE_KEYS="TRAIN_EPOCHS TRAIN_SEQ_LEN TRAIN_DEVICE TRAIN_HORIZONS \
+TRAIN_PRIMARY TRAIN_PAIRS TRAIN_QUANTILE_HEAD TRAIN_QUANTILE_LEVELS \
+TRAIN_QUANTILE_LOSS_WEIGHT GIT_REF GIT_REMOTE GCS_BUCKET KEEP_VM \
+GCP_PROJECT GCP_ZONE GCP_TRAIN_ZONE"
+for _k in $_FLUX_OVERRIDE_KEYS; do
+  if [[ -n "${!_k:-}" ]]; then
+    eval "_FLUX_SAVED_${_k}=\${${_k}}"
+    eval "_FLUX_HAD_${_k}=1"
+  fi
+done
+
 if [[ -f "$ROOT/scripts/gcp_env" ]]; then
   # shellcheck disable=SC1091
   source "$ROOT/scripts/gcp_env"
 else
   echo "NOTE: optional config at scripts/gcp_env (copy from gcp_env.example)"
 fi
+
+# Restore inline overrides that gcp_env may have clobbered via `export`.
+for _k in $_FLUX_OVERRIDE_KEYS; do
+  if [[ "$(eval "echo \${_FLUX_HAD_${_k}:-}")" == "1" ]]; then
+    eval "${_k}=\${_FLUX_SAVED_${_k}}"
+  fi
+done
+unset _k _FLUX_OVERRIDE_KEYS
 
 : "${GCP_PROJECT:=fluxtrader}"
 : "${GCP_ZONE:=me-central1-b}"
