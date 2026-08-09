@@ -105,6 +105,32 @@ docker compose --profile ml run --rm ml_trainer \
   python backfill_history.py --symbols BTCUSDT,ETHUSDT,SOLUSDT --funding --days 180
 ```
 
+**Incremental / resume behavior.** `backfill_history.py` does **not** re-download
+data you already have. Before fetching it reads the latest stored row per
+(symbol, interval) from the DB (`max(open_time)` in `candles`, `max(ts)` in
+`funding_rates`) and starts only from what's missing — each pair/interval has its
+own cursor. `--days` is just the oldest data it's allowed to go back to (used as
+a fallback for pairs with no stored rows, and to fill backward gaps); it is not a
+"fetch this much" request. Re-running the script is cheap and idempotent:
+`INSERT ... ON CONFLICT DO NOTHING` skips anything that already exists.
+
+**Flags**
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--symbols` | env `WHITELIST_PAIRS` (`BTCUSDT,ETHUSDT,SOLUSDT`) | Comma-separated pairs to backfill |
+| `--intervals` | `1m,15m,1h` | Kline intervals to backfill (ignored with `--skip-klines`) |
+| `--days` | `90` | Max lookback window; oldest timestamp that will be fetched |
+| `--funding` | off | Also backfill funding rates |
+| `--skip-klines` | off | Skip kline backfill entirely — **funding only**. Use with `--funding` to fill funding history without touching candles (e.g. if the candle tables are already full). |
+
+Example — funding only, no candles:
+
+```bash
+docker compose --profile ml run --rm ml_trainer \
+  python backfill_history.py --symbols BTCUSDT,ETHUSDT,SOLUSDT --funding --days 180 --skip-klines
+```
+
 Keep the app running if you also want **live book/trades** to accumulate:
 
 ```bash

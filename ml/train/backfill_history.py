@@ -136,13 +136,38 @@ def upsert_funding(symbol: str, rows: list) -> int:
     return n
 
 
+def last_candle_time(symbol: str, interval: str) -> Optional[int]:
+    sql = text(
+        "SELECT max(open_time) FROM candles "
+        "WHERE symbol = :symbol AND interval = :interval"
+    )
+    with engine().connect() as conn:
+        v = conn.execute(sql, {"symbol": symbol, "interval": interval}).scalar()
+    return None if v is None else int(v.timestamp() * 1000)
+
+
+def last_funding_time(symbol: str) -> Optional[int]:
+    sql = text("SELECT max(ts) FROM funding_rates WHERE symbol = :symbol")
+    with engine().connect() as conn:
+        v = conn.execute(sql, {"symbol": symbol}).scalar()
+    return None if v is None else int(v.timestamp() * 1000)
+
+
 def backfill_klines(symbol: str, interval: str, days: int) -> int:
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
     cursor = ms(start)
     end_ms = ms(end)
     total = 0
+    last = last_candle_time(symbol, interval)
+    if last is not None:
+        resume = datetime.fromtimestamp((last + 1) / 1000, tz=timezone.utc)
+        cursor = max(cursor, last + 1)
+        print(f"  klines {symbol} {interval}: resuming from stored {resume:%Y-%m-%d %H:%M:%S}Z")
     print(f"  klines {symbol} {interval} from {start.date()} → {end.date()}")
+    if cursor >= end_ms:
+        print(f"    nothing to fetch (already up to date)")
+        return 0
 
     while cursor < end_ms:
         batch = fetch_klines(symbol, interval, cursor, end_ms)
@@ -169,7 +194,15 @@ def backfill_funding(symbol: str, days: int) -> int:
     cursor = ms(start)
     end_ms = ms(end)
     total = 0
+    last = last_funding_time(symbol)
+    if last is not None:
+        resume = datetime.fromtimestamp((last + 1) / 1000, tz=timezone.utc)
+        cursor = max(cursor, last + 1)
+        print(f"  funding {symbol}: resuming from stored {resume:%Y-%m-%d %H:%M:%S}Z")
     print(f"  funding {symbol} from {start.date()} → {end.date()}")
+    if cursor >= end_ms:
+        print(f"    nothing to fetch (already up to date)")
+        return 0
 
     while cursor < end_ms:
         batch = fetch_funding(symbol, cursor, end_ms)
