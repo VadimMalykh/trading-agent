@@ -122,9 +122,14 @@ MIN_GATED_FOR_CKPT = int(os.environ.get("MIN_GATED_FOR_CKPT", "500"))
 SEL_NET_WEIGHT = float(os.environ.get("SEL_NET_WEIGHT", "0.0"))
 SEL_COST_BPS = float(os.environ.get("SEL_COST_BPS", "14"))
 # Net-return-per-trade (a fraction, e.g. 0.0006) is tiny vs the ~0.5 edge score, so
-# scale it into a comparable [0,1]-ish range before blending: score = 0.5 + net/SCALE,
-# clipped to [0,1]. SCALE≈one "unit" of net edge in return terms (default 0.002 = 20bps
-# per trade maps to score 1.0). Tunable; only affects selection ranking.
+# squash it into a comparable (0,1) range before blending. Mapping is a smooth,
+# strictly-monotonic logistic centered at 0 (train_m2.checkpoint_score):
+#   net_score = sigmoid(2 * net_per_trade / SEL_NET_SCALE)
+#   net=0 → 0.5 ; net=+SCALE → ~0.88 ; net=-SCALE → ~0.12
+# SCALE ≈ the net-return width that spans most of (0,1). It NEVER saturates to
+# exactly 0/1, so — unlike the old clip(0.5+net/scale,0,1) — the score keeps
+# ranking epochs even when every epoch is net-negative to cost (the R1 failure
+# mode: net_sc pinned at 0.000 all run). Tunable; only affects selection ranking.
 SEL_NET_SCALE = float(os.environ.get("SEL_NET_SCALE", "0.002"))
 
 # --- 3-class head class weighting (down/flat/up) ---------------------------------

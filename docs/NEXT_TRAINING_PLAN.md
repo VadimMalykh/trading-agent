@@ -5,6 +5,151 @@ session and the exact steps/commands to execute.
 
 ---
 
+## 🧭 TASK 3 — R0–R3 RESULTS ANALYSIS + HARNESS FIXES (2026-08-09) — READ FIRST
+
+This is the newest section. It supersedes TASK 2's "just launch R0–R3" plan: R0–R3
+were run (`logs/R0.log … R3.log`) and analyzed. **None produced a cost-surviving
+edge; two collapsed; two experiments were void/no-ops.** Below is the read, the
+fixes made this session (code, NOT committed, no run launched), and the next plan.
+
+### What the five runs showed (all eval on primary 30m unless noted)
+
+| Run | Env | Best sel_score | eval dir_acc@cov0.05 (lb) | Verdict |
+|-----|-----|---------------:|--------------------------:|---------|
+| R0 baseline | `--gpu 60 128` | 0.542 (ep5) | 0.549 (0.542) | Best of batch; still net-negative P&L at 14bps every gate |
+| R1 cost-aware | `SEL_NET_WEIGHT=0.5 SEL_COST_BPS=14` | 0.269 | 0.529 (0.522) | **cost term was a dead no-op** (`net_sc=0.000` every epoch) |
+| R2 capacity | `NUM_LAYERS=3 HIDDEN_SIZE=128` | 0.518 | 0.496 (0.491) | **mode-collapsed to all-flat** (val_acc frozen 0.417/0.425/0.445) |
+| R2.1 cap+seq | `NUM_LAYERS=4 HIDDEN_SIZE=128 … 256` | 0.518 | 0.517 (0.509) | **same collapse**; only aux dir-head produced spread |
+| R3 "prim 60" | `TRAIN_PRIMARY=60` | 0.519 | 0.559 (30m) | **VOID — trained primary=30m** (env never took effect); ≈R0 replica |
+
+### Root findings (priority order)
+
+1. **R3 never tested 60m.** Its log header says `primary=30`. The "longer-horizon"
+   experiment did not happen; R3 just reproduced R0 (reassuring: 30m dir_acc
+   0.549→0.559). Cause: `TRAIN_PRIMARY=60` did not reach `train_m2.py --primary`
+   (the header would have said 60). **Fixed** below.
+2. **Cost-aware selection (R1) is broken by design at this signal level.** Old
+   `net_score = clip(0.5 + net_per_trade/scale, 0, 1)`; since NO model clears 14bps
+   at cov0.05, `net_per_trade≈-14bps` every epoch → clip pins `net_score=0.000` all
+   run. So `sel = 0.5*edge_lb + 0.5*0` — you didn't add a P&L signal, you halved and
+   de-noised the edge score (why R1 sel_score fell to ~0.25 and selection wandered).
+   **Fixed** below (smooth logistic, monotonic in the negative region).
+3. **R2/R2.1 capacity increase caused mode collapse, not learning.** `val_acc` pinned
+   at the base rate `[0.417,0.425,0.445]` for the whole run = 3-class argmax always
+   predicts flat. Bigger GRU + the too-gentle `sqrt_inv_freq clip=2.0` weights
+   (down=1.04/flat=0.89/up=1.06 — almost no pressure) let CE be minimized by dumping
+   everything in the 39–41% flat majority. Confusion matrices confirm whole zero
+   columns. Adding capacity to a collapsing recipe is wasted compute. **Collapse-guard
+   logging added** below so this is visible at epoch 1, not at eval.
+4. **The 3-class head is near-useless everywhere; the directional aux head carries
+   all the signal.** Even R0's 30m confusion matrix never predicts "up" (zero column).
+   Ungated 3-class acc 0.45–0.46. The tradeable product is the directional-head gate.
+5. **Whatever edge exists lives in `pre_book` and decays in the newest window.** Every
+   run: `pre_book` lb ~0.52–0.55 vs `book` era ~0.48–0.53, and walk-forward window 4
+   (newest, only one with real book coverage) is consistently weakest (R0 .537 → R3
+   .480). The staleness fix (TASK 1) did NOT lift book-era edge to pre_book levels.
+   This is the crux: **the edge is strongest exactly where we have least book data /
+   won't trade.** Strong hint the "edge" is partly memorized regime, not microstructure.
+6. **Selection is noisy.** sel_score bounces epoch-to-epoch on ~10–20k directional
+   samples with lb≈0.50; the "best" checkpoint is often a lucky epoch.
+
+### Honest conclusion
+
+At 30m on this feature set, out-of-sample book-era directional edge is ~0 after the
+staleness fix, and every P&L sim is deeply negative at 14bps. **Chasing capacity /
+cost-selection / horizon before confirming a real, out-of-sample, book-era edge is
+premature.** The gating question for everything downstream is: *does ANY cost-
+surviving edge exist in the regime we'll actually trade?* So far: probably not, or
+barely.
+
+### Fixes made this session (2026-08-09) — code only, NOT committed, NO run launched
+
+All verified with `py_compile` (via `python:3.11-slim` container — no ml_trainer
+image locally) and `bash -n`; net_score mapping spot-checked numerically.
+
+- **P0a — fail-loud knob plumbing (`scripts/gcp_train.sh`, `ml/train/train_m2.py`).**
+  The remote training log now echoes every resolved knob (`=== resolved knobs: …`
+  + `knob K=v` lines) BEFORE training, so a silently-dropped env var (the R3
+  `TRAIN_PRIMARY` failure) is visible in the log we keep. `train_m2.py` now prints a
+  loud `WARNING` when the requested `--primary` is not in `--horizons` and it falls
+  back (the silent fallback at `train_m2.py:313` is what voided R3). Added a comment
+  block documenting that `TRAIN_PRIMARY/TRAIN_HORIZONS/TRAIN_PAIRS` are consumed on
+  the launcher and forwarded as CLI flags (NOT via `FLUX_TRAIN_ENV_KEYS`).
+  **Keep primary ∈ horizons or it falls back.**
+- **P0b — smooth cost-aware `net_score` (`ml/train/train_m2.py:checkpoint_score`,
+  `config.py`).** Replaced `clip(0.5+net/scale,0,1)` with
+  `net_score = sigmoid(2*net_per_trade/SEL_NET_SCALE)`. Strictly monotonic across the
+  whole negative region (net=-14bps→0.198, -12bps→0.232, 0→0.5, +20bps→0.881), so the
+  less-unprofitable epoch always ranks higher even when all epochs lose to cost. This
+  makes R1's arm actually do something. `SEL_NET_SCALE` default unchanged (0.002).
+- **P1 — collapse-guard logging (`ml/train/train_m2.py`).** Every epoch line now ends
+  with `3cls_pred[d=.. f=.. u=..] dir_pred_up=..`: the primary-horizon 3-class argmax
+  prediction rates + the directional head's predicted-up rate. `f≈1.00` or `u≈0.00`
+  is the R2 collapse signature; `dir_pred_up` tells us WHICH head collapsed (the
+  3-class one collapsed in R2 while the dir head still spread). No behavior change.
+- **P1 — label-rebalance is already env-tunable** (`CLS_WEIGHT_MODE`,
+  `CLS_WEIGHT_CLIP`, `CLS_LABEL_SMOOTHING` ∈ `FLUX_TRAIN_ENV_KEYS`). Defaults left
+  intact (they preserve the served-model recipe); rebalancing becomes an explicit
+  launch arm (R6 below), not a silent default change.
+
+File:line anchors (this branch): `train_m2.py` primary-fallback warning (~line 313);
+`checkpoint_score` net_score logistic (~line 285); collapse-guard block (~line 572,
+`cls_rate_str`); `gcp_train.sh` resolved-knobs echo (just before the `train_m2` run
+line) + `TRAIN_PRIMARY` comment (~line 90). `math` now imported in `train_m2.py`.
+
+### 🚀 NEXT LAUNCH PLAN (do these; ONE change per run; all print collapse-guard now)
+
+**Priority is DIAGNOSIS, not tuning.** The first job answers whether a real edge
+exists; only then do the tuning arms make sense.
+
+```sh
+# R4 — TRUE 60m horizon (redo the void R3). 60m amortizes 14bps better & showed the
+#      best edge historically. primary MUST be in horizons.
+TRAIN_PRIMARY=60 TRAIN_HORIZONS=5,30,60 ./scripts/gcp_train.sh --gpu 60 128
+#   Verify in log: "=== resolved knobs: … PRIMARY=60 …" and header "primary=60".
+
+# R5 — cost-aware selection, NOW that net_score actually ranks (redo R1).
+SEL_NET_WEIGHT=0.5 SEL_COST_BPS=14 ./scripts/gcp_train.sh --gpu 60 128
+#   Verify: per-epoch "net_sc=" is NO LONGER 0.000 every epoch and moves with net/trade.
+
+# R6 — anti-collapse label rebalance (fixes the R2/R2.1 failure mode) THEN capacity.
+#      Do the rebalance FIRST at baseline capacity to confirm it stops collapse:
+CLS_WEIGHT_MODE=inv_freq CLS_WEIGHT_CLIP=4.0 CLS_LABEL_SMOOTHING=0.1 \
+  ./scripts/gcp_train.sh --gpu 60 128
+#   Verify: 3cls_pred[d/f/u] all well off 0/1 (no all-flat). If collapse is fixed,
+#   ONLY THEN retry capacity WITH the rebalance:
+# CLS_WEIGHT_MODE=inv_freq CLS_WEIGHT_CLIP=4.0 CLS_LABEL_SMOOTHING=0.1 \
+#   NUM_LAYERS=3 HIDDEN_SIZE=128 ./scripts/gcp_train.sh --gpu 60 128
+```
+
+**The real gating experiment (P2 diagnostic — arguably do BEFORE R4–R6):** a clean
+multi-fold walk-forward that reports mean±std of book-era vs pre_book lb and net/trade
+at fixed coverage. Use the existing `gcp_walkforward.sh` (see the pinned WALK-FORWARD
+section) once ≥30d book history exists (~2026-08-25). **Decision rule:** if book-era
+lb is not >0.50 out-of-sample across ALL folds, stop tuning and keep collecting data —
+capacity/horizon/cost-selection cannot manufacture an edge that isn't there.
+
+### 📋 WHEN RESULTS COME BACK (fresh-session recovery — read these log lines)
+
+For each run save `logs/<name>.log`, tell me the arm, and I'll read, in order:
+1. `=== resolved knobs: …` + `knob …` → confirm the intended env ACTUALLY applied
+   (this is how we catch the next R3-style silent drop).
+2. Per-epoch `3cls_pred[d/f/u] dir_pred_up` → did it collapse? which head?
+3. Per-epoch `net_sc=` (R5) → is the cost term alive (not 0.000) and ranking?
+4. Eval `Fixed-coverage directional edge` 30m lb @cov0.05/0.10 vs R0 (0.542).
+5. Eval `Book-era split` book vs pre_book lb → did anything lift the BOOK era?
+6. Eval `Walk-forward` win1–4 lb, esp. **window 4** (recent) → stable or decaying?
+7. Eval `Side split` + `Long/short P&L` → still one-sided?
+
+Baselines to compare: R0 = `20260806T044341Z` / sha `09f2d771` (`logs/R0.log`);
+older clean baseline `20260805T025536Z` / `6e6d358e` (`logs/latest_fixed.log`).
+
+**State as of 2026-08-09:** P0/P1 fixes above are on a working branch, **NOT
+committed, NO run launched** (commit-only-when-asked). Next action: commit, then
+launch R4 (and/or the walk-forward diagnostic).
+
+---
+
 ## 🔥 TASK 1 — DIAGNOSE THE BOOK-ERA EDGE COLLAPSE (current top priority, 2026-08-05)
 
 **Why this is #1:** the quant A/B (`quant_ab_20260804T144531Z`, see

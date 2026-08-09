@@ -87,6 +87,12 @@ if [[ "$_GPU_MODE" == "1" ]]; then
 fi
 echo_cfg
 
+# NOTE: TRAIN_PRIMARY / TRAIN_HORIZONS / TRAIN_PAIRS are consumed HERE on the
+# launcher (not via FLUX_TRAIN_ENV_KEYS) and forwarded as CLI flags in the remote
+# PRELUDE below (PRIMARY→--primary, HORIZONS→--horizons, PAIRS→--pairs). If you set
+# TRAIN_PRIMARY=60 but --horizons does not include 60, train_m2.py falls back to a
+# valid horizon and prints a WARNING (that silent fallback voided R3). Keep primary
+# ∈ horizons. The remote log now echoes the resolved PRIMARY (see "resolved knobs").
 EPOCHS="${1:-$TRAIN_EPOCHS}"
 SEQ_LEN="${2:-$TRAIN_SEQ_LEN}"
 PAIRS_ARG="${TRAIN_PAIRS:-}"
@@ -663,6 +669,13 @@ for _k in \$FLUX_TRAIN_ENV_KEYS; do
   if [[ -n \"\$_v\" ]]; then _CPU_ENV_OPTS=\"\$_CPU_ENV_OPTS -e \$_k=\$_v\"; fi
 done
 
+echo \"=== resolved knobs: EPOCHS=\$EPOCHS SEQ_LEN=\$SEQ_LEN HORIZONS=\$HORIZONS PRIMARY=\$PRIMARY QUANTILE_HEAD=\$QUANTILE_HEAD PAIRS_FLAG='\$PAIRS_FLAG' ===\"
+# Echo every forwarded tuning knob so a silently-dropped env var (e.g. the R3
+# TRAIN_PRIMARY that never took effect) is visible in the remote log, not just
+# the launcher stdout we don't keep.
+for _k in \$FLUX_TRAIN_ENV_KEYS; do
+  _v=\"\${!_k:-}\"; if [[ -n \"\$_v\" ]]; then echo \"    knob \$_k=\$_v\"; fi
+done
 echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY quantile_head=\$QUANTILE_HEAD device=\$TRAIN_DEVICE ===\"
 if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
   \$_DOCKER_GPU_RUN ml_trainer_gpu python train_m2.py --device cuda --epochs \$EPOCHS --seq-len \$SEQ_LEN \

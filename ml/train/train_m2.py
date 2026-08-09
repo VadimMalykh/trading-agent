@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from datetime import datetime, timezone
@@ -282,9 +283,22 @@ def checkpoint_score(
         nr = fixed_coverage_net_return(logits, fwd_ret, sel_coverage, cost)
         m["fixed_coverage_net"] = nr
         net_per_trade = float(nr.get("net_per_trade") or 0.0)
-        # Squash net-return-per-trade into a [0,1] score comparable with edge_lb.
+        # Map net-return-per-trade into a (0,1) score comparable with edge_lb.
+        #
+        # The old mapping was `clip(0.5 + net/scale, 0, 1)`. On this task NO model
+        # clears the 14bps cost at cov0.05, so net_per_trade is ~-14bps every epoch
+        # and the clip pinned net_score at 0.0 for the whole run (see R1: net_sc=0.000
+        # every epoch). A dead floor carries no ranking signal — cost-aware selection
+        # silently degenerated to `0.5*edge_lb`.
+        #
+        # Use a smooth logistic squash centered at 0 instead: it stays strictly
+        # monotonic in net_per_trade across the entire negative region, so the LESS
+        # unprofitable epoch always scores higher. `scale` is the return width (in
+        # fraction) that spans most of the (0,1) range. net=0 → 0.5; net=+scale →
+        # ~0.88; net=-scale → ~0.12. Never saturates to exactly 0/1, so gradient in
+        # the ranking is preserved even when every epoch loses to cost.
         scale = net_scale if net_scale > 0 else 0.002
-        net_score = min(1.0, max(0.0, 0.5 + net_per_trade / scale))
+        net_score = 1.0 / (1.0 + math.exp(-2.0 * net_per_trade / scale))
         # Same small-sample down-weight as the edge term.
         if n_dir < min_gated:
             net_score = net_score * (n_dir / max(min_gated, 1))
@@ -311,7 +325,13 @@ def main():
     horizon_keys = [str(h) for h in horizons]
     primary_key = str(args.primary)
     if primary_key not in horizon_keys:
-        primary_key = horizon_keys[min(1, len(horizon_keys) - 1)]
+        fallback = horizon_keys[min(1, len(horizon_keys) - 1)]
+        print(
+            f"WARNING: requested primary={args.primary} not in horizons "
+            f"{horizon_keys} → falling back to {fallback}. "
+            f"(If you passed TRAIN_PRIMARY, add the horizon to --horizons.)"
+        )
+        primary_key = fallback
 
     print("FluxTrader M2 Training (shared encoder + multi-head, lazy windows)")
     print("=" * 50)
@@ -549,6 +569,27 @@ def main():
             lo, hi = q_all[:, 0], q_all[:, -1]
             q_cov = float(((r_all >= lo) & (r_all <= hi)).float().mean().item())
 
+        # Collapse guard: 3-class argmax prediction rates on the primary horizon.
+        # R2/R2.1 (h=128) silently collapsed to all-flat for the entire run (val_acc
+        # frozen at the base rate every epoch). Logging the per-class predict-rate
+        # each epoch makes that failure visible on line 1 instead of at eval. A
+        # healthy head keeps all three rates well off 0/1; pred_up≈0 or pred_flat≈1
+        # is the collapse signature. Also report the directional head's predicted-up
+        # rate (the head that actually gates) so we can tell WHICH head collapsed.
+        cls_rate_str = ""
+        if plogits_chunks:
+            _pl = torch.cat(plogits_chunks, dim=0)
+            _pred = _pl.argmax(dim=1)
+            _n = max(int(_pred.numel()), 1)
+            _rd = float((_pred == 0).sum().item()) / _n
+            _rf = float((_pred == 1).sum().item()) / _n
+            _ru = float((_pred == 2).sum().item()) / _n
+            cls_rate_str = f" 3cls_pred[d={_rd:.2f} f={_rf:.2f} u={_ru:.2f}]"
+            if pdir_chunks:
+                _dl = torch.cat(pdir_chunks, dim=0)
+                _dir_up = float((_dl[:, 1] >= _dl[:, 0]).float().mean().item())
+                cls_rate_str += f" dir_pred_up={_dir_up:.2f}"
+
         if plogits_chunks:
             py = torch.cat(py_chunks, dim=0)
             pfwd = torch.cat(pfwd_chunks, dim=0) if pfwd_chunks else None
@@ -624,7 +665,7 @@ def main():
             f"epoch {epoch:02d}  loss_tr={tr_loss:.4f} loss_va={va_loss:.4f}  "
             f"val_acc [{acc_str}]  "
             f"sel@cov{SEL_COVERAGE:.2f} dir_acc={fc_dir:.3f} lb={fc_lb:.3f} "
-            f"n_dir={fc_n} score={score:.4f}{net_str}{q_str}"
+            f"n_dir={fc_n} score={score:.4f}{net_str}{q_str}{cls_rate_str}"
         )
 
         if sel_score > best_score + 1e-6:
