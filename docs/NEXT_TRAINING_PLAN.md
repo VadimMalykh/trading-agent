@@ -35,7 +35,7 @@ WALK-FORWARD RE-RUN" section (~line 596) and "Microstructure readiness roadmap"
 (~line 730) — this is the up-to-date decision layer over them.
 
 1. **Step A — Walk-forward diagnostic (the gate for everything).** When earliest
-   `first_snapshot` ≥ 30d old (check `scripts/gcp_order_book_stats.sh`):
+   `first_snapshot` ≥ 30d old (check `scripts/gcp_data_collection_stats.sh`):
    ```sh
    WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 ./scripts/gcp_walkforward.sh
    ./scripts/gcp_walkforward.sh --fetch
@@ -662,7 +662,7 @@ noticed is just the **train/val split boundary of fold 0.0** (train ends 08-01,
 val = 08-01→08-04), i.e. correct no-leakage behavior — not the data ceiling.
 
 **TRIGGER TO RE-RUN:** when continuous book history ≥ **~30 days**
-(≈ **2026-08-25**; check via `scripts/gcp_order_book_stats.sh` — earliest
+(≈ **2026-08-25**; check via `scripts/gcp_data_collection_stats.sh` — earliest
 `first_snapshot` across the traded pairs should be ≥ 30d old). That gives each of
 the finer folds a non-trivial val slice.
 

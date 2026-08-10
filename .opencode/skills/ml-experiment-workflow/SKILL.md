@@ -82,7 +82,7 @@ safe to run concurrently with `gcp_train.sh`):
   several rolling-origin folds to check it isn't a single-window fluke.
 - `./scripts/gcp_audit.sh` — runs `audit_microstructure.py` remotely (the
   always-on VM OOMs on it).
-- `./scripts/gcp_order_book_stats.sh` — SQL freshness/health checks on the
+- `./scripts/gcp_data_collection_stats.sh` — SQL freshness/health checks on the
   always-on collector's order book/trade/funding/OI tables.
 - `./scripts/quant_ab.sh` — 3-arm A/B on the quantile head (off / weight 0.2 / weight 0.5).
 
