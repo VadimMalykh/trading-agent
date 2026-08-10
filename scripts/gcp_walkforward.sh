@@ -194,6 +194,7 @@ gssh "$GCP_ALWAYS_ON" "set -e
   ls -lh /tmp/fluxtrader_wf.sql.gz
   gcloud storage cp /tmp/fluxtrader_wf.sql.gz $GCS_BUCKET/dumps/$RUN_ID.sql.gz
   gcloud storage cp $GCS_BUCKET/dumps/$RUN_ID.sql.gz $GCS_BUCKET/dumps/wf_latest.sql.gz
+  rm -f /tmp/fluxtrader_wf.sql.gz
 " "$GCP_ZONE"
 
 # --- 3. write remote self-cleaning walk-forward job and launch in tmux -----------

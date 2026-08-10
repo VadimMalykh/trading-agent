@@ -203,6 +203,7 @@ gssh "$GCP_ALWAYS_ON" "set -e
   ls -lh /tmp/fluxtrader_audit.sql.gz
   gcloud storage cp /tmp/fluxtrader_audit.sql.gz $GCS_BUCKET/dumps/$RUN_ID.sql.gz
   gcloud storage cp $GCS_BUCKET/dumps/$RUN_ID.sql.gz $GCS_BUCKET/dumps/audit_latest.sql.gz
+  rm -f /tmp/fluxtrader_audit.sql.gz
 " "$GCP_ZONE"
 
 # --- 3. write remote self-cleaning audit job and launch in tmux -----------------
