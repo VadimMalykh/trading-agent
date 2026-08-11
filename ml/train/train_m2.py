@@ -46,6 +46,8 @@ from config import (
     HIDDEN_SIZE,
     DROPOUT,
     NUM_LAYERS,
+    NUM_WORKERS,
+    PREFETCH_FACTOR,
     HORIZONS_MINUTES,
     LR,
     MIN_GATED_FOR_CKPT,
@@ -122,8 +124,14 @@ def parse_args():
     p.add_argument(
         "--num-workers",
         type=int,
-        default=2,
-        help="DataLoader workers (0 = main process only, lowest RAM; 2 parallelizes window slicing)",
+        default=NUM_WORKERS,
+        help="DataLoader workers (0 = main process only, lowest RAM; >1 parallelizes window slicing)",
+    )
+    p.add_argument(
+        "--prefetch-factor",
+        type=int,
+        default=PREFETCH_FACTOR,
+        help="Batches prefetched ahead per DataLoader worker",
     )
     p.add_argument(
         "--require-book",
@@ -426,6 +434,11 @@ def main():
 
     loader_kw = dict(
         batch_size=args.batch_size,
+        # Train is shuffled: windows are independent samples (each holds its own
+        # 128-bar history), so batch order is arbitrary. Unshuffled, the per-pair
+        # time-ordered index put ~32 overlapping windows from ONE pair at ONE
+        # moment in every batch — biased gradients, slower progress per epoch.
+        # Val stays ordered (aggregate metrics don't care).
         shuffle=False,
         collate_fn=collate_mh,
         num_workers=args.num_workers,
@@ -434,7 +447,12 @@ def main():
     if args.num_workers > 0:
         # keep workers alive between epochs so per-pair matrices aren't re-forked each epoch
         loader_kw["persistent_workers"] = True
-    train_loader = DataLoader(LazyMultiHorizonDataset(bundle, tr_idx, horizon_keys), **loader_kw)
+        # prefetch deeper than the torch default so workers stay ahead of the GPU
+        loader_kw["prefetch_factor"] = args.prefetch_factor
+    train_loader = DataLoader(
+        LazyMultiHorizonDataset(bundle, tr_idx, horizon_keys),
+        **{**loader_kw, "shuffle": True},
+    )
     val_loader = DataLoader(LazyMultiHorizonDataset(bundle, va_idx, horizon_keys), **loader_kw)
 
     model = SharedEncoderMultiHead(

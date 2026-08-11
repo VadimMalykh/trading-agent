@@ -80,7 +80,19 @@ CANDLE_INTERVAL = os.environ.get("CANDLE_INTERVAL", "1m")
 MODEL_DIR = os.environ.get("MODEL_DIR", "/models")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/workspace/train/output")
 
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "32"))
+# 256 (was 32): the M2 LSTM is tiny (~65k params), so a 32-batch GPU step was
+# ~117k steps/epoch bottlenecked on DataLoader IPC, not compute. Bigger batches
+# cut steps/epoch 8x and feed the GPU properly. A 256-batch input tensor is ~2.5MB
+# vs GBs of VRAM; no OOM risk at these sizes. Override with env BATCH_SIZE.
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "256"))
+# DataLoader workers for window slicing. The M2 model is data-pipeline-bound
+# (millions of windows/epoch), so a handful of workers keeps a GPU fed without
+# the main process doing per-sample slicing. n1-standard-4 has 4 vCPUs — 4 fits.
+# 0 = main process only (lowest RAM). Override with env NUM_WORKERS.
+NUM_WORKERS = int(os.environ.get("NUM_WORKERS", "4"))
+# Batches prefetched ahead per worker; 2 is the torch default, 4 smooths
+# pipeline jitter. Override with env PREFETCH_FACTOR.
+PREFETCH_FACTOR = int(os.environ.get("PREFETCH_FACTOR", "4"))
 EPOCHS = int(os.environ.get("EPOCHS", "60"))
 LR = float(os.environ.get("LR", "5e-4"))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", "1e-4"))
