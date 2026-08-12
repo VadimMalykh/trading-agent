@@ -15,13 +15,14 @@
 #   ./scripts/gcp_train.sh [epochs] [seq_len]
 #   TRAIN_PAIRS=BTCUSDT,ETHUSDT ./scripts/gcp_train.sh 60 128
 #   KEEP_VM=1 ./scripts/gcp_train.sh          # debug: don't auto delete/stop VM
-#   ./scripts/gcp_train.sh --gpu              # GPU mode (n1-standard-4 + T4)
-#   ./scripts/gcp_train.sh --gpu 120 256      # GPU + custom epochs/seq-len
+#   ./scripts/gcp_train.sh --cpu              # CPU mode (default is GPU)
+#   ./scripts/gcp_train.sh --gpu 120 256      # GPU (default) + custom epochs/seq-len
 #   ./scripts/gcp_train.sh --ref my-branch    # train an arbitrary branch/commit
 #   ./scripts/gcp_train.sh --quantile-head 1 --quantile-weight 0.2   # quant A/B
 #
 # Flags (order-independent; the first two bare numbers are epochs then seq_len):
-#   --gpu                     GPU mode
+#   --cpu                     CPU mode (overrides GPU default)
+#   --gpu                     GPU mode (default)
 #   --ref|--branch <name>     git ref to train (default: $GIT_REF, usually main)
 #   --quantile-head <0|1>     override TRAIN_QUANTILE_HEAD
 #   --quantile-weight <f>     override TRAIN_QUANTILE_LOSS_WEIGHT
@@ -43,10 +44,11 @@ source "$(cd "$(dirname "$0")" && pwd)/gcp_common.sh"
 require_gcloud
 
 # --- parse flags -------------------------------------------------------------
-# while/case parser: supports --gpu, --ref/--branch, --quantile-head,
+# while/case parser: supports --cpu/--gpu, --ref/--branch, --quantile-head,
 # --quantile-weight, and the two bare positionals (epochs, seq_len). Unknown
 # --flags are a hard error so a typo can no longer be misread as a positional.
-_GPU_MODE=0
+# GPU is the default; --cpu opts out.
+_GPU_MODE=1
 _REF_OVERRIDE=""
 _QHEAD_OVERRIDE=""
 _QWEIGHT_OVERRIDE=""
@@ -55,6 +57,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --gpu)
       _GPU_MODE=1; shift ;;
+    --cpu)
+      _GPU_MODE=0; shift ;;
     --ref|--branch)
       [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value"; exit 1; }
       _REF_OVERRIDE="$2"; shift 2 ;;
