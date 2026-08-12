@@ -5,26 +5,227 @@ session and the exact steps/commands to execute.
 
 ---
 
-## ▶️ START HERE (2026-08-09) — the one command to launch next
+## ▶️▶️ START HERE (2026-08-12) — PARALLEL CANDLE-ONLY TRACK (run these NOW)
 
-R0–R3 are DONE and analyzed (see TASK 3 below). None found a cost-surviving edge;
-R3 was accidentally a duplicate of R0 (a silently-dropped env var — now fixed).
+**Read this before the older "START HERE (2026-08-11)" section below.** That section
+is still correct — the order-book walk-forward is data-gated and we keep collecting —
+but it is NO LONGER the only thing we do while we wait. This session reframed the
+project: **order-book data is not our only remaining hope, and it was never
+evidence-ranked as the highest-EV lever** — it's just the one with a clean pending
+experiment. The R0–R6 failure mode ("edge lives in `pre_book`, decays in the newest
+window; the model is right but doesn't clear 14bps at 30-bar holds; the 3-class head
+is near-useless and the shared LSTM averages incompatible per-pair regimes") points at
+several **genuinely-untried, candle-only levers that need NO new data** (candles
+backfill to ~400d). We run those in parallel with the book-history wait.
 
-**Launch this next (call it "R4" — the 60m-horizon run R3 was meant to be):**
-```sh
-TRAIN_PRIMARY=60 TRAIN_HORIZONS=5,30,60 ./scripts/gcp_train.sh --gpu 60 128
-```
-Then confirm the fix worked: the log must show `PRIMARY=60` in the
-`=== resolved knobs: …` line (and header `primary=60`). Save it as `logs/R4.log`.
+### Why these are worth running (diagnosis, one line each)
+- The killer is **cost**, and cost **amortizes with horizon** — yet 4h/1d were NEVER
+  run (only 5m/30m/60m). `hold_bars` is derived from the horizon (`eval_m2.py:595`),
+  so a longer horizon automatically holds longer and clears 14bps more easily. This is
+  config-only and the single highest-EV untried idea.
+- The model is **one shared LSTM with NO per-pair embedding and NO cross-pair
+  features** (`multi_horizon.py` — `pair_ids` are used only for eval splits/norm, never
+  fed to the encoder). Per-pair base rates differ wildly (BTC ~0.64 vs HYPE ~0.38, HYPE
+  *negative* edge). Pooling forces the encoder to average incompatible regimes.
+- Labels are naive fixed-Δt forward-return sign. `MODEL.md` §4.3 *recommends*
+  **triple-barrier** labeling (TP/SL/timeout) and it was never implemented — the
+  standard fix for "right but not tradeable."
+- We've only ever tried **LSTM**. A GBT (LightGBM/XGBoost) baseline on windowed
+  features tells us fast whether we're **signal-limited or model-limited**.
 
-After R4, the next single-change runs are **R5** (cost-aware selection, now fixed)
-and **R6** (anti-collapse label rebalance, then capacity) — exact commands under
-"NEXT LAUNCH PLAN" in TASK 3. One change per run.
+### 🎯 EXPERIMENT LADDER — one change per run, highest-EV first
 
-**Caveat (my recommendation):** R4–R6 are TUNING and cannot create an edge that
-isn't there. The decisive test is the multi-fold walk-forward diagnostic (needs
-~30d book history, ~2026-08-25). Launch R4 if you want progress now; wait for the
-walk-forward if you want the answer that actually gates everything.
+Baselines to beat (from `logs/`): R0 = `20260806T044341Z` / `09f2d771`
+(30m dir_acc@cov0.05 lb 0.542); R6 best-of-batch 30m book-lb 0.559. **Verdict metric
+for every arm below: 30m-equivalent (or the arm's primary horizon) Wilson-LB edge at
+the live gate row AND net P&L at 14bps round-trip — not headline dir_acc.**
+Cross-check the same reading-guide lines as the older sections (side split, book-era
+split, walk-forward win1-4). Save each run's log to `logs/<ARM>.log` and record the
+result in the RESULTS TABLE below.
+
+- [ ] **E1 — Longer horizons (4h, 1d). ⬅️ START HERE. Config-only, no code, no new
+  data.** Directly attacks the cost problem. Two arms (separate runs):
+  ```sh
+  # E1a — 4h primary (240m). Flat threshold 0.6% already set (config.py:70).
+  TRAIN_HORIZONS=30,60,240 TRAIN_PRIMARY=240 ./scripts/gcp_train.sh --gpu 60 128
+  #   Verify in log: "=== resolved knobs: … PRIMARY=240 …" and header "primary=240".
+
+  # E1b — 1d primary (1440m). Flat threshold 1.5% added this session (config.py:71).
+  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=1440 ./scripts/gcp_train.sh --gpu 60 128
+  #   Verify: header "primary=1440". NOTE 1d labels are sparse on ~400d history →
+  #   watch n_dir at cov0.05; if <500 (MIN_GATED_FOR_CKPT) selection is untrustworthy.
+  ```
+  **Decision rule:** if a longer horizon shows Wilson-LB edge that **clears 14bps net**
+  at its (longer) hold where 30m did not → cost was the ceiling → make that horizon the
+  product and move to E-follow-ups on it. If still net-negative → cost isn't the only
+  problem → E2/E3 matter more.
+
+- [ ] **E2 — Per-pair conditioning (needs a small code change; see TASK E2 below).**
+  Add a learned pair embedding to the encoder input so one model can specialize per
+  pair instead of averaging BTC and HYPE. Cheapest first sub-step is FREE and needs no
+  code:
+  ```sh
+  # E2a — drop the known-negative-edge pair(s) from training (no code). If this alone
+  #        lifts the pooled edge, it confirms the pooling-averaging hypothesis.
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,ZECUSDT,1000PEPEUSDT \
+    ./scripts/gcp_train.sh --gpu 60 128      # (drops HYPEUSDT)
+  # E2b — pair embedding (AFTER implementing TASK E2). One env flag once wired:
+  #   PAIR_EMBED_DIM=8 ./scripts/gcp_train.sh --gpu 60 128
+  ```
+
+- [ ] **E3 — Triple-barrier labels (needs code; see TASK E3 below).** Label tradeable
+  TP/SL/timeout events instead of fixed-Δt sign. Standard fix for cost survival. Gate
+  behind E1/E2 unless they both fail, since it's the biggest code change.
+
+- [ ] **E4 — GBT sanity baseline (needs a small standalone script; see TASK E4).**
+  LightGBM on flattened windowed features. Not a production path — a **diagnostic**:
+  if a GBT with the same features/labels also can't clear cost, we're signal-limited
+  (→ data/features, incl. the order book), not model-limited (→ architecture).
+
+- [ ] **E5 — Cross-pair / regime features (free from candles; feature run).** Trailing
+  1h/4h/1d returns, longer rolling vol, BTC-beta. `FEATURE_DIM` bump → checkpoint/serve
+  change; do as its own attributable run only after E1-E4 triage. (Flagged in
+  `docs/DATA_COLLECTION_AUDIT.md` as "fully retroactive, zero collection lead time.")
+
+### 📌 ORDER OF OPERATIONS (what to actually do)
+1. **Launch E1a now** (`./scripts/gcp_train.sh --gpu` line above), then `E1b`.
+   These need nothing new. Poll `./scripts/gcp_status.sh`; fetch with
+   `./scripts/gcp_logs.sh <run_id> --save` → `logs/E1a.log` / `logs/E1b.log`.
+2. Bring results back **in a new session** (token hygiene) and paste the log path +
+   which arm. Next session reads the RESULTS TABLE + reading-guide lines and decides
+   E2 vs E3 vs stop.
+3. The order-book walk-forward (older section) stays queued and runs on its own
+   throwaway VM when book history ≥30d — **it does not block E1-E5 and E1-E5 do not
+   block it.** They are independent tracks.
+
+### 🧾 RESULTS TABLE (fill in as runs return — this is the session-to-session memory)
+
+| Arm | Run ID / sha | Primary | dir_acc@cov0.05 (lb) | net P&L @14bps (best gate) | Verdict |
+|-----|--------------|--------:|----------------------|----------------------------|---------|
+| E1a 4h | _pending_ | 240 | | | |
+| E1b 1d | _pending_ | 1440 | | | |
+| E2a drop-HYPE | _pending_ | 30 | | | |
+| E2b pair-embed | _pending_ | 30 | | | |
+| E3 triple-barrier | _pending_ | tbd | | | |
+| E4 GBT baseline | _pending_ | 30 | | | |
+
+### 🔧 CODE TASKS (implement when its arm comes up — NOT all now)
+
+- **TASK E2 — pair embedding (~1–2h).** `nn.Embedding(n_pairs, PAIR_EMBED_DIM)` in
+  `SharedEncoderMultiHead`; concat the per-pair vector to every timestep of the encoder
+  input (or to the pooled state). Thread `pair_id` through the dataset batch (it already
+  exists for eval — `dataset.py` has `pair_ids_for_indices`) into the train loop, and
+  through `serve.py` (symbol→id map stored in checkpoint meta). New config
+  `PAIR_EMBED_DIM=0` (0 = off = byte-identical legacy). Add `PAIR_EMBED_DIM` to
+  `FLUX_TRAIN_ENV_KEYS` in `scripts/gcp_train.sh`. Bumps model input → store id-map +
+  dim in meta and reconstruct in `eval_m2.py`/`serve.py` (same pattern as `NUM_LAYERS`).
+- **TASK E3 — triple-barrier labels (~half day).** New labeler in
+  `ml/train/data/features.py`: for each bar, walk forward to the horizon; label UP if
+  +vol-scaled TP hit first, DOWN if -SL first, FLAT if timeout. Gate behind a config
+  flag `LABEL_MODE=triple_barrier|fixed` (default `fixed` preserves current). Keep the
+  raw fwd-return for the quantile head. Update `make_labels*` callers in `dataset.py`.
+- **TASK E4 — GBT baseline (~2–3h, standalone).** New `ml/train/gbt_baseline.py`:
+  reuse `build_feature_frame` + `make_labels`, flatten the last `SEQ_LEN` bars (or a
+  small summary set) per sample, train LightGBM, run the SAME `gate.py` fixed-coverage
+  + `eval_m2.simulate_pnl` reporting so numbers are comparable to the LSTM. Add
+  `lightgbm` to `requirements.txt`. Diagnostic only — do not wire into serve.
+
+### ⚙️ Enabling change already made this session
+- `ml/train/config.py`: added `FLAT_THRESHOLD_PER_HORIZON[1440] = 0.015` (1d flat band;
+  env `FLAT_TH_1D`) so the E1b 1d arm labels correctly instead of falling back to the
+  0.2% default. **NOT committed** (commit-only-when-asked). No other code changed.
+
+---
+
+## ▶️ START HERE (2026-08-11) — WAITING ON DATA; nothing to launch now
+
+**R0–R6 are all DONE and analyzed. The tuning ladder is exhausted — no arm produced
+a cost-surviving edge. We are now blocked on book-history quantity for the ONE
+remaining decisive test (Step A walk-forward). Do NOT launch more tuning arms.**
+
+### What R4–R6 showed (2026-08-11; logs/R4.log, R4.1.log, R5.log, R6.log)
+
+Harness fixes from TASK 3 worked: all four runs show the intended env in
+`=== resolved knobs …` (no more R3-style silent drops).
+
+| Run | Arm | Primary | 30m book lb / pre_book lb | WF win-4 lb | Best P&L | Verdict |
+|-----|-----|--------:|---------------------------|------------:|---------:|---------|
+| R4 | 60m horizon | 60m | 0.495 / 0.512 | 0.486 | all neg | **60m has ~0 OOS edge** (lb 0.497 @cov0.05); kills the "go longer horizon" thesis — the old "60m +0.060" was the void-R3/candle artifact |
+| R4.1 | 5m horizon | 5m | 0.487 / 0.524 | — | −556 | **5m useless**; turnover annihilates it |
+| R5 | cost-aware sel | 30m | 0.540 / 0.574 | 0.555 | −3.1 @0.55 | `net_sc` term now alive (0.19–0.28, tracks net/trade) but every epoch still net-neg; **one-mode** (down side n=0) |
+| **R6** | label rebalance | 30m | **0.559 / 0.565** | **0.551** | −3.1 @0.55 | **best of batch**: first run where book-era lb ≈ pre_book (no collapse), **two-sided** (up 0.567 / down 0.551), WF flat+positive across all 4 folds (.568/.572/.558/.551) |
+
+**The one new signal is R6's non-collapsing, two-sided, walk-forward-stable book
+edge** — the profile the whole plan has been waiting to see. **BUT** three caveats
+stop it being a real win:
+1. **It's probably not the rebalance.** R6's `inv_freq clip=4.0` produced
+   near-identity class weights (down=1.02/flat=0.96/up=1.02 — the classes are already
+   near-balanced, so the knob was a near-no-op). So R6 ≈ R5 recipe; the book-lb lift
+   is more likely **run variance + the much larger val window** (R5/R6 val = Feb→Aug,
+   ~2.0M samples, vs the ~18-day book sliver in R0–R3) than the label change. The old
+   book-collapse may have been partly a small-sample artifact the staleness fix +
+   bigger window washed out. **This is a hypothesis, not a confirmed edge.**
+2. **Still loses money.** Every gate is net-negative; only gate 0.55 @1.5% coverage
+   is non-catastrophic (−3.1). A ~+7% hit-rate edge at cov0.05 still doesn't clear
+   14bps at 30-bar holds. **Do NOT promote R6.**
+3. It's a global-time split (one split), not the disjoint-fold walk-forward that the
+   verdict rule requires.
+
+**Conclusion:** tuning (horizon R4/R4.1, cost-selection R5, rebalance R6) has reported
+"no edge to tune." The only thing left that can move the needle is whether a real
+book/microstructure edge exists — and R6 gives the first *weak positive* on it. That
+must be confirmed by Step A (disjoint-fold walk-forward), which is **data-gated**.
+
+### 🔴 WHY WE'RE WAITING (data-collection check, 2026-08-11)
+
+Ran `scripts/gcp_data_collection_stats.sh`. Scalar order book history
+(`orderbook_snapshots`, what training consumes) by pair:
+
+| Pair(s) | book history (2026-08-11) | hits 30d ≈ |
+|---------|---------------------------|-----------|
+| BTC / ETH / SOL | **24d 20h** (from 2026-07-17) | **2026-08-16** |
+| DOGE / WLD / HYPE | ~21d 14h (from 2026-07-21) | ~2026-08-20 |
+| ZEC | 17d 12h (from 2026-07-25) | ~2026-08-24 |
+| 1000PEPE | 15d 11h (from 2026-07-27) | ~2026-08-26 |
+
+- **The ≥30d-per-traded-pair gate is NOT met yet.** Even the 4 longest pairs
+  (`WF_LONG_PAIRS_ONLY=1` = BTC/ETH/SOL/DOGE) are only ~22–25d. With `--require-book`
+  each of the 6 folds would carve a tiny dense-book val slice → exactly the
+  "one lucky ~3d window" fluke that voided the 2026-08-04 walk-forward. Running today
+  would re-measure noise, not answer the question.
+- All feeds are **fresh** (book/trade staleness <10s, funding/OI <1m) — no new outage.
+- **Separate note — raw L2 ladder** (`orderbook_levels`, the high-fidelity feed that
+  fixes the lossy 11-scalar compression) started 2026-08-05, so only **~6.5d** exists
+  and it is NOT yet a training input. This is the *future* high-value data (Step B+),
+  accumulating ~1d/day; it is not on the critical path for Step A.
+
+### ✅ WHAT WE DO NEXT AND WHEN (decision layer)
+
+1. **NOW → ~2026-08-16: do nothing / keep collecting.** No tuning arms (they're
+   exhausted). Let book history cross 30d. Optional cheap sanity only: re-run
+   `scripts/gcp_data_collection_stats.sh` to watch the earliest `first_snapshot` age.
+2. **~2026-08-16 (majors ≥30d): first walk-forward attempt, long-pairs-only.** BTC/
+   ETH/SOL/DOGE cross 30d first; run the diagnostic restricted to them for a sharp,
+   dense-book read without the noisier short-history pairs dragging folds:
+   ```sh
+   WF_LONG_PAIRS_ONLY=1 WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 \
+     ./scripts/gcp_walkforward.sh
+   ./scripts/gcp_walkforward.sh --fetch
+   ```
+3. **~2026-08-26 (all 8 pairs ≥30d): full walk-forward** (the plan's canonical Step A):
+   ```sh
+   WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 ./scripts/gcp_walkforward.sh
+   ./scripts/gcp_walkforward.sh --fetch
+   ```
+   **VERDICT RULE (unchanged):** book-ON − book-OFF Wilson-LB gap > ~0.05 on **ALL**
+   folds → book edge robust → go to Step B. If ANY fold's gap ≤0 or LBs overlap →
+   **STOP tuning, keep collecting, re-check at ~60d.** R6's global-split result makes
+   a pass *plausible* but not likely — treat it as a genuine test, not a formality.
+4. **Only if Step A passes → Step B / Step C** as below.
+
+**Why not just promote R6 and trade it now?** It's net-negative at every gate; serving
+it changes nothing tradeable and would only add cost/turnover. Promotion waits for a
+checkpoint that clears cost in the walk-forward.
 
 ### 📅 AFTER END OF AUGUST (≥30d book history) — the microdata ladder
 
@@ -633,7 +834,13 @@ backfillable-vs-collector-only. Headlines:
 
 ---
 
-## ⏰ ACTION QUEUED — WALK-FORWARD RE-RUN (blocked on data, ~2026-08-25) — READ FIRST
+ ## ⏰ ACTION QUEUED — WALK-FORWARD RE-RUN (blocked on data) — READ FIRST
+
+> **STATUS 2026-08-11:** still blocked. Fresh `gcp_data_collection_stats.sh` shows the
+> 4 longest pairs at ~24d20h (majors cross 30d ≈ 2026-08-16; full 8-pair ≈ 2026-08-26).
+> Exact per-pair ages + the staged NOW→08-16→08-26 launch plan live in the updated
+> "▶️ START HERE (2026-08-11)" section at the top — that is the current decision layer;
+> the mechanics below are still correct.
 
 **Why this is here:** the 2026-08-04 walk-forward (`wf-20260804T144400Z`) did **not**
 confirm the 30m book edge. Per-fold Wilson-LB gaps (book-ON − book-OFF):

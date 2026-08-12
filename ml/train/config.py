@@ -68,6 +68,7 @@ FLAT_THRESHOLD_PER_HORIZON = {
     30: float(os.environ.get("FLAT_TH_30M", "0.002")),
     60: float(os.environ.get("FLAT_TH_1H", "0.003")),
     240: float(os.environ.get("FLAT_TH_4H", "0.006")),
+    1440: float(os.environ.get("FLAT_TH_1D", "0.015")),
 }
 
 PAIRS = [
