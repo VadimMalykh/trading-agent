@@ -391,7 +391,24 @@ touch /var/tmp/fluxtrader-docker-ready
       echo "==> T4 exhausted, trying L4 (g2-standard-4) ..."
       _L4_MACHINE="g2-standard-4"
       _L4_ACCELERATOR="type=nvidia-l4,count=1"
+      # g2 machine types are NOT available in every zone of a region (e.g.
+      # us-central1 only in a/b/c, not f). Build the L4 zone list from zones
+      # that actually offer g2-standard-4, so we don't burn create attempts on
+      # "machine type does not exist" errors.
+      # Keep the preferred zone first; drop zones that don't offer g2-standard-4.
+      _L4_ZONES=()
       for _zone in "${_GPU_ZONES[@]}"; do
+        if gcloud compute machine-types list \
+             --project="$GCP_PROJECT" \
+             --filter="name=$_L4_MACHINE AND zone=$_zone" \
+             --format="value(name)" 2>/dev/null | grep -q "$_L4_MACHINE"; then
+          _L4_ZONES+=("$_zone")
+        else
+          echo "    skip $_zone (no $_L4_MACHINE)"
+        fi
+      done
+      for _zone in "${_L4_ZONES[@]}"; do
+        [[ -n "$_zone" ]] || continue
         echo "    creating $_L4_MACHINE + $_L4_ACCELERATOR in $_zone ..."
         if gcloud compute instances create "$GCP_TRAIN_INSTANCE" \
             --project="$GCP_PROJECT" \
