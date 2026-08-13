@@ -5,9 +5,89 @@ session and the exact steps/commands to execute.
 
 ---
 
-## ▶️▶️▶️ START HERE (2026-08-13) — E1/E2 RETURNED; pair-embed implemented; launch E-round-2
+## ▶️▶️▶️▶️ START HERE (2026-08-13 PM) — E-ROUND-2 RETURNED; E2b IS THE WINNER; promote + launch E3
 
-**Read this first.** The E1a/E1b/E2a/E2b batch (launched 2026-08-12) is DONE and
+**Read this first — supersedes the 2026-08-13 (AM) section below.** The E-round-2 batch
+(E2a′ / E2c / E2b′-for-real) is DONE and analyzed. Logs: `logs/E2a1.log` (E2a′ reseed),
+`logs/E2c.log` (majors-only 4-pair), `logs/E2b.log` (pair-embed dim=8, 8 pairs — the
+REAL E2b; the pair-embed code now exists and the config echo confirms
+`Pair embedding: ON dim=8 n_pairs=8`). All ran GPU, 60 epochs, seq_len 128, primary 30m.
+
+### 📊 What E-round-2 showed (verdict metric = 30m Wilson-LB @ fixed cov, HELD across WF folds)
+
+Every arm is still net-negative in the P&L sim at the 0.4 serve gate (14bps cost eats the
+~0.55 edge at full coverage) — unchanged ceiling. The discriminator is walk-forward
+stability of the fixed-cov Wilson-LB, esp. the most-recent (book-era) fold.
+
+| Arm | Run / log | cov05 lb | cov10 lb | WF folds (cov05 lb) | Verdict |
+|-----|-----------|---------:|---------:|---------------------|---------|
+| E2a′ 7-pair reseed | `logs/E2a1.log` | 0.568 | 0.557 | .590/.553/.568/**.542** | Reproduces E2a (~.003 off → edge is real, not seed noise). Edge front-loads in fold-1, decays to .542 by newest fold. |
+| E2c majors-only 4-pair | `logs/E2c.log` | 0.559 | 0.550 | .545/.554/.565/**.512** | **Weakest.** Fewer pairs hurt; newest fold collapses to .512 (≈coin flip in book era). More pairs > fewer — REJECT dropping to 4. |
+| **E2b pair-embed dim=8, 8 pairs** | `logs/E2b.log` | **0.566** | **0.556** | **.568/.572/.560/.548** | **✅ WINNER (most stable).** Tightest WF spread (0.024 vs ~0.05), strongest newest/book-era fold (.548). Pair-embed didn't raise peak edge but FLATTENED it across time = generalizing, not memorizing. Keeps all 8 pairs tradeable. |
+
+**Decision:** E2b is the candidate to serve — chosen on walk-forward *stability* in the
+book era (the regime we trade), not headline dir_acc. It's still net-negative at the 0.4
+gate, so promotion here means "make it the served base model + then attack the cost/
+calibration ceiling", not "it's profitable". Cost is still the true ceiling.
+
+### 📌 ORDER OF OPERATIONS (2026-08-13 PM → next session)
+
+1. **✅ DECIDED: promote E2b, then launch the E3 batch.** `latest.pt` currently = E2b
+   (`run=20260813T114311Z`, sha `a26b032b`, verified in the bucket). **`gcp_promote.sh`
+   only ever promotes `latest.pt` (no explicit-checkpoint arg) — so PROMOTE BEFORE
+   launching any new run, or the new run overwrites `latest.pt` and E2b can't be
+   promoted via the script.**
+   ```sh
+   ./scripts/gcp_promote.sh --local-copy   # installs on ALWAYS-ON GCP VM, restarts ml_inference there; --local-copy = Mac backup only
+   docker compose restart app              # only if ML_GATE_THRESHOLD/env changed locally
+   ```
+2. **Validate candidate new pairs BEFORE E3a** (they may have short/ragged history that
+   destabilizes WF): `./scripts/gcp_data_collection_stats.sh`.
+3. **Launch E3 batch** (independent throwaway VMs, safe concurrent). Fetch each with
+   `./scripts/gcp_logs.sh <run_id> --save` → `logs/E3a.log` / `logs/E3b.log` /
+   `logs/E3c.log`; FIRST grep each for the config echo (pairs + `PAIR_EMBED_DIM`) to
+   confirm it took effect (the E2b-no-op lesson).
+4. **Bring results back in a FRESH session**; update the RESULTS TABLE; pick winner by
+   the verdict metric.
+
+### 🎯 E3 LADDER — launch these (agreed 2026-08-13 PM; baseline to beat = E2b cov05 lb 0.566, WF newest-fold lb 0.548)
+
+- [ ] **E3a — MORE PAIRS (extend the winning 8-pair set, keep pair-embed=8).** More-pairs
+  monotonically helped WF stability (8 > 7 > 4); test if the trend continues. ⚠️ only
+  include new pairs that pass the step-2 freshness check.
+  ```sh
+  PAIR_EMBED_DIM=8 \
+    TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,AVAXUSDT,LINKUSDT,XRPUSDT,ADAUSDT \
+    ./scripts/gcp_train.sh --gpu 60 128
+  ```
+- [ ] **E3b / E3c — PAIR-EMBED DIM SWEEP** (same 8-pair set as E2b; dim=8 IS E2b, so only
+  run the two new points). Find where per-pair specialization peaks.
+  ```sh
+  PAIR_EMBED_DIM=4  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT ./scripts/gcp_train.sh --gpu 60 128
+  PAIR_EMBED_DIM=16 TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT ./scripts/gcp_train.sh --gpu 60 128
+  ```
+- [ ] **E-gate/cost — EVAL-ONLY (no GPU run needed).** All edge lives in the ≥0.55 tail;
+  the 0.4 serve gate over-trades. Re-eval the now-live E2b at a higher gate / read the
+  cov0.55 P&L row to find a cost-viable operating point; if net-positive there, raise
+  `GATE_THRESHOLD` / `ML_GATE_THRESHOLD` in `docker-compose.yml`.
+  ```sh
+  GATE_THRESHOLD=0.55 docker compose --profile ml run --rm ml_trainer python eval_m2.py --checkpoint /models/m2_multi.pt
+  ```
+- [ ] **E4 — CALIBRATION (retrain; do AFTER E3 results, one change at a time).** The head
+  is under-confident (no mass >0.60, brier ~0.249 in all runs) so the gate can't select
+  a small high-edge slice. Attack via loss change: temperature scaling / focal loss /
+  disable label smoothing. See TASK 2c below for the temperature-scaling plan.
+
+**Do NOT promote any E3 checkpoint** until its WF newest-fold lb ≥ E2b's 0.548 AND it
+holds across folds. E2b is the live baseline now.
+
+---
+
+## ▶️▶️▶️ (2026-08-13 AM) — E1/E2 batch analyzed; pair-embed implemented; launched E-round-2
+
+**Superseded by the PM section above (E-round-2 results are now in).** Kept for history.
+
+The E1a/E1b/E2a/E2b batch (launched 2026-08-12) is DONE and
 analyzed; results are in the RESULTS TABLE below and in `logs/E1a.log … E2b.log`.
 This session (a) analyzed those four runs and (b) **implemented the pair-embedding
 code (TASK E2)** that E2b was supposed to test but couldn't, because the knob didn't
@@ -214,9 +294,15 @@ result in the RESULTS TABLE below.
 | E1a 4h | `20260812T042319Z` / `e603b3d5` | 240 | 0.538 (0.533)* | all neg (best −1.66 @0.55) | **Reject.** 240m head WEAKER than 30m; its edge is in `pre_book` (lb .536) and **collapses in book era (lb .460)**. *fixed-cov table is for the 240m PRIMARY, not the served 30m. |
 | E1b 1d | `20260812T072224Z` / `736f26c6` | 1440 | 0.527 (0.523)* | ~flat (−0.47 long @0.4) | **Reject.** Unstable: WF fold-3 lb **0.390** (< coin flip) vs fold-2 .590. Momentum baseline (cov0.02 .603) ≈ model → 1d head just relearns trailing-return momentum. |
 | E2a drop-HYPE | `20260812T123234Z` / `5e6db5b9` | 30 | 0.557 (**0.552**) | all neg (−1.66 @0.55) | **Promising, needs reseed.** cov0.01 lb **0.624** (vs R6 .551), ≥ baseline through cov0.10. HYPE (worst ungated .389) polluted the pooled encoder. Small n_dir at cov0.01 + soft WF fold-4 (.539) → confirm with a seed. |
-| E2b pair-embed | `20260812T164805Z` / `5e6db5b9` | 30 | 0.553 (0.549) | all neg (−7.33 @0.55) | **INVALID — no-op run.** `PAIR_EMBED_DIM` was never read by the code (no embedding existed), so this was a reseed of R6 (matches R6 within noise). Pair embedding is now IMPLEMENTED this session; rerun as **E2b′**. |
-| E3 triple-barrier | _pending_ | tbd | | | |
-| E4 GBT baseline | _pending_ | 30 | | | |
+| E2b pair-embed (INVALID) | `20260812T164805Z` / `5e6db5b9` | 30 | 0.553 (0.549) | all neg (−7.33 @0.55) | **INVALID — no-op run.** `PAIR_EMBED_DIM` was never read by the code (no embedding existed), so this was a reseed of R6. Reran for real as E2b′ below. |
+| E2a′ 7-pair reseed | `logs/E2a1.log` | 30 | 0.572 (**0.568**) | all neg | Reproduces E2a (~.003) → drop-HYPE edge is real, not seed noise. WF folds .590/.553/.568/**.542** — front-loads early, decays by newest fold. |
+| E2c majors-only 4-pair | `logs/E2c.log` | 30 | 0.566 (0.559) | all neg | **Weakest — REJECT.** Fewer pairs hurt; newest WF fold .512 (≈coin flip in book era). More pairs > fewer. |
+| **E2b′ pair-embed dim=8** | `20260813T114311Z` / `a26b032b` (`logs/E2b.log`) | 30 | 0.569 (**0.566**) | all neg (−8.97 @0.55) | **✅ WINNER — PROMOTE.** Tightest WF spread (.568/.572/.560/**.548**); pair-embed flattened edge across time (generalizing). All 8 pairs tradeable. Chosen on WF stability, not headline acc. Still net-neg → cost is the ceiling (see E-gate/cost + E4). |
+| E3a more-pairs (12) | _pending_ | 30 | | | |
+| E3b/c pair-embed dim 4/16 | _pending_ | 30 | | | |
+| E4 calibration | _pending_ | 30 | | | |
+| E3 triple-barrier | _queued_ | tbd | | | |
+| E4 GBT baseline | _queued_ | 30 | | | |
 
 ### 🔧 CODE TASKS (implement when its arm comes up — NOT all now)
 
