@@ -108,6 +108,15 @@ NUM_LAYERS = int(os.environ.get("NUM_LAYERS", "2"))
 # (and/or lower HIDDEN_SIZE) for the tiny dense-book walk-forward regime, where
 # the model overfits within ~2-5 epochs (see docs/NEXT_TRAINING_PLAN.md).
 DROPOUT = float(os.environ.get("DROPOUT", "0.2"))
+# Per-pair identity embedding width. 0 (default) = OFF → the encoder is fully
+# pair-agnostic, exactly reproducing the served model. When >0 the model learns
+# an nn.Embedding(n_pairs+1, PAIR_EMBED_DIM) (last row = OOV/unknown-pair bucket)
+# and concatenates it to the pooled LSTM state before the heads, so the shared
+# encoder can specialize per symbol instead of being forced to average over pairs
+# whose ungated dir_acc spans ~0.39–0.66. Checkpoints record the ordered pair
+# vocab + this dim so eval/serve rebuild the same symbol→index map (unknown
+# symbol → OOV bucket). Old checkpoints (no vocab) load unchanged at dim 0.
+PAIR_EMBED_DIM = int(os.environ.get("PAIR_EMBED_DIM", "0"))
 VAL_FRACTION = float(os.environ.get("VAL_FRACTION", "0.2"))
 # Patience raised: directional coverage kept climbing when the old run stopped.
 EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "10"))

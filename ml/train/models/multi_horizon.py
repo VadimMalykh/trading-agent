@@ -34,6 +34,8 @@ class SharedEncoderMultiHead(nn.Module):
         quantile_levels: List[float] | None = None,
         dropout: float = 0.2,
         num_layers: int = 2,
+        n_pairs: int = 0,
+        pair_embed_dim: int = 0,
     ):
         super().__init__()
         horizons_minutes = horizons_minutes or [1, 15, 60]
@@ -49,6 +51,18 @@ class SharedEncoderMultiHead(nn.Module):
         self.dropout = float(dropout)
         self.num_layers = int(num_layers)
 
+        # Optional per-pair identity embedding. dim 0 → OFF (pair-agnostic, old
+        # behavior). n_pairs rows are the trained vocab; row index `n_pairs` is a
+        # reserved OOV/unknown-pair bucket used at serve time for symbols not seen
+        # in training. The embed vector is concatenated to the pooled encoder state,
+        # so the LSTM input_size (and all old checkpoints) stay unchanged.
+        self.n_pairs = int(n_pairs)
+        self.pair_embed_dim = int(pair_embed_dim)
+        self.has_pair_embed = self.pair_embed_dim > 0 and self.n_pairs > 0
+        if self.has_pair_embed:
+            self.pair_embed = nn.Embedding(self.n_pairs + 1, self.pair_embed_dim)
+        head_in = hidden_size + (self.pair_embed_dim if self.has_pair_embed else 0)
+
         self.encoder = nn.LSTM(
             input_size,
             hidden_size,
@@ -60,7 +74,7 @@ class SharedEncoderMultiHead(nn.Module):
         self.heads = nn.ModuleDict(
             {
                 h: nn.Sequential(
-                    nn.Linear(hidden_size, 32),
+                    nn.Linear(head_in, 32),
                     nn.ReLU(),
                     nn.Dropout(self.dropout),
                     nn.Linear(32, num_classes),
@@ -72,7 +86,7 @@ class SharedEncoderMultiHead(nn.Module):
             self.dir_heads = nn.ModuleDict(
                 {
                     h: nn.Sequential(
-                        nn.Linear(hidden_size, 32),
+                        nn.Linear(head_in, 32),
                         nn.ReLU(),
                         nn.Dropout(self.dropout),
                         nn.Linear(32, 2),  # 0=down, 1=up
@@ -87,7 +101,7 @@ class SharedEncoderMultiHead(nn.Module):
             self.quantile_heads = nn.ModuleDict(
                 {
                     h: nn.Sequential(
-                        nn.Linear(hidden_size, 32),
+                        nn.Linear(head_in, 32),
                         nn.ReLU(),
                         nn.Dropout(self.dropout),
                         nn.Linear(32, n_q),
@@ -96,18 +110,27 @@ class SharedEncoderMultiHead(nn.Module):
                 }
             )
 
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, T, F] -> [B, H]
+    def encode(self, x: torch.Tensor, pair_idx: torch.Tensor | None = None) -> torch.Tensor:
+        # x: [B, T, F] -> [B, H] (+ pair embed [B, E] when enabled)
         _, (hidden, _) = self.encoder(x)
-        return hidden[-1]
+        state = hidden[-1]
+        if self.has_pair_embed:
+            if pair_idx is None:
+                # No id supplied (e.g. an old caller) → OOV bucket for every row.
+                pair_idx = torch.full(
+                    (state.shape[0],), self.n_pairs, dtype=torch.long, device=state.device
+                )
+            emb = self.pair_embed(pair_idx.to(state.device))
+            state = torch.cat([state, emb], dim=-1)
+        return state
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
-        state = self.encode(x)
+    def forward(self, x: torch.Tensor, pair_idx: torch.Tensor | None = None) -> Dict[str, torch.Tensor]:
+        state = self.encode(x, pair_idx)
         return {h: self.heads[h](state) for h in self.horizons}
 
-    def forward_both(self, x: torch.Tensor):
+    def forward_both(self, x: torch.Tensor, pair_idx: torch.Tensor | None = None):
         """Return (three_class_logits, dir_logits_or_None) sharing one encode."""
-        state = self.encode(x)
+        state = self.encode(x, pair_idx)
         three = {h: self.heads[h](state) for h in self.horizons}
         if self.has_directional_head:
             two = {h: self.dir_heads[h](state) for h in self.horizons}
@@ -115,13 +138,13 @@ class SharedEncoderMultiHead(nn.Module):
             two = None
         return three, two
 
-    def forward_dir(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
-        state = self.encode(x)
+    def forward_dir(self, x: torch.Tensor, pair_idx: torch.Tensor | None = None) -> Dict[str, torch.Tensor]:
+        state = self.encode(x, pair_idx)
         return {h: self.dir_heads[h](state) for h in self.horizons}
 
-    def forward_quantiles(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward_quantiles(self, x: torch.Tensor, pair_idx: torch.Tensor | None = None) -> Dict[str, torch.Tensor]:
         """Per-horizon quantile predictions [B, n_quantiles] (monotone-sorted)."""
-        state = self.encode(x)
+        state = self.encode(x, pair_idx)
         return {h: self._sorted_quantiles(self.quantile_heads[h](state)) for h in self.horizons}
 
     @staticmethod
@@ -133,9 +156,9 @@ class SharedEncoderMultiHead(nn.Module):
         """
         return torch.sort(q, dim=-1).values
 
-    def forward_all(self, x: torch.Tensor):
+    def forward_all(self, x: torch.Tensor, pair_idx: torch.Tensor | None = None):
         """Return (three_class, dir_or_None, quantiles_or_None) sharing one encode."""
-        state = self.encode(x)
+        state = self.encode(x, pair_idx)
         three = {h: self.heads[h](state) for h in self.horizons}
         two = (
             {h: self.dir_heads[h](state) for h in self.horizons}
@@ -149,11 +172,11 @@ class SharedEncoderMultiHead(nn.Module):
         )
         return three, two, quant
 
-    def predict_proba(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
-        logits = self.forward(x)
+    def predict_proba(self, x: torch.Tensor, pair_idx: torch.Tensor | None = None) -> Dict[str, torch.Tensor]:
+        logits = self.forward(x, pair_idx)
         return {h: F.softmax(logit, dim=-1) for h, logit in logits.items()}
 
-    def predict_dir_proba(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def predict_dir_proba(self, x: torch.Tensor, pair_idx: torch.Tensor | None = None) -> Dict[str, torch.Tensor]:
         """p(up) from the directional head, per horizon."""
-        logits = self.forward_dir(x)
+        logits = self.forward_dir(x, pair_idx)
         return {h: F.softmax(logit, dim=-1)[:, 1] for h, logit in logits.items()}

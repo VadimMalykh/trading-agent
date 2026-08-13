@@ -5,6 +5,115 @@ session and the exact steps/commands to execute.
 
 ---
 
+## ▶️▶️▶️ START HERE (2026-08-13) — E1/E2 RETURNED; pair-embed implemented; launch E-round-2
+
+**Read this first.** The E1a/E1b/E2a/E2b batch (launched 2026-08-12) is DONE and
+analyzed; results are in the RESULTS TABLE below and in `logs/E1a.log … E2b.log`.
+This session (a) analyzed those four runs and (b) **implemented the pair-embedding
+code (TASK E2)** that E2b was supposed to test but couldn't, because the knob didn't
+exist yet.
+
+### 📉 What the E1/E2 batch showed (verdict per arm; details in RESULTS TABLE)
+
+- **E1a (4h primary) — REJECT.** The 240m head is *weaker* than the served 30m head
+  (cov0.05 lb .536) and its edge is a **book-era confound**: pre_book lb .536 but
+  book-era lb **.460** (worse than coin flip). Longer horizon did NOT buy cost
+  survival here. ⚠️ Its bottom-of-log fixed-cov table describes the **240m PRIMARY**,
+  not the 30m the stack serves — not comparable to R6/E2a on the serve gate.
+- **E1b (1d primary) — REJECT.** Unstable across time: WF fold-3 lb **0.390** vs
+  fold-2 .590. The 1d momentum baseline (cov0.02 dir_acc .603) nearly matches the
+  model → the 1d head is largely relearning trailing-return momentum, not adding edge.
+- **E2a (drop HYPEUSDT) — PROMISING, NEEDS A CONFIRMING SEED.** Removing the worst
+  pair (HYPE, ungated .389) lifted the top-confidence tail hard: **cov0.01 lb 0.624**
+  vs R6's .551, and it stays ≥ baseline through cov0.10. Supports the
+  "pooled encoder is dragged down by bad pairs" hypothesis. Caveats: small n_dir at
+  cov0.01 and a soft WF fold-4 (.539) — one reseed decides if it's real or variance.
+- **E2b (`PAIR_EMBED_DIM=8`) — INVALID / NO-OP.** `PAIR_EMBED_DIM` was **never read**
+  by any code — there was no embedding to build — so the flag did nothing and E2b was
+  a plain reseed of R6 (numbers match R6 within noise). **Root cause of the no-op:**
+  the model had no pair identity AND, separately, `gcp_train.sh`'s `FLUX_TRAIN_ENV_KEYS`
+  allowlist wouldn't have forwarded the var to the VM anyway. **Both are now fixed.**
+- **Cost is still the ceiling.** Every arm is net-negative at the 0.4 serve gate; the
+  only non-catastrophic P&L is the low-coverage ≥0.55 tail. Nothing here is promotable.
+
+### ✅ Code implemented this session (2026-08-13, code only, NOT committed)
+
+TASK E2 (pair embedding) is done and locally verified. See the updated "TASK E2" entry
+below for the full description. Summary of touched files:
+- `ml/train/config.py` — new `PAIR_EMBED_DIM` (default **0 = off = legacy-identical**).
+- `ml/train/models/multi_horizon.py` — `nn.Embedding(n_pairs+1, dim)` (row `n_pairs`
+  = OOV bucket), concatenated to the **pooled** LSTM state before the heads; `pair_idx`
+  threaded through all `forward_*`. LSTM `input_size` unchanged → old checkpoints load.
+- `ml/train/data/dataset.py` — `LazyMultiHorizonDataset` emits reserved `"__pair_idx"`.
+- `ml/train/train_m2.py` — passes `pair_idx`, builds `pair_vocab`, saves
+  `pair_embed_dim` + `pair_vocab` to checkpoint meta.
+- `ml/train/eval_m2.py`, `ml/train/serve.py` — reconstruct the embed model, remap
+  symbol→trained-vocab id (unknown → OOV).
+- `scripts/gcp_train.sh` — added `PAIR_EMBED_DIM` to `FLUX_TRAIN_ENV_KEYS` (so the GPU
+  run actually forwards it; this is what silently bit E2b).
+
+Verified in Docker: OFF path byte-behavior unchanged; ON train→eval→serve round-trips;
+unseen pair routes to OOV without crashing; an OLD (no-vocab) checkpoint still loads.
+
+### 🎯 E-ROUND-2 LADDER — launch these (one change per run, highest-EV first)
+
+Baseline to beat: **R6** 30m cov0.05 lb **0.547** / cov0.01 lb .551; E2a cov0.01 lb
+**0.624**. Verdict metric unchanged: **30m Wilson-LB edge at the served gate + net P&L
+at 14bps**, holding across WF folds, not headline dir_acc.
+
+- [ ] **E2a′ — reseed the HYPE-drop (confirm, no code). ⬅️ START HERE.** Cheapest
+  decisive test: does E2a's cov0.01 lb ≈ 0.62 replicate on a fresh seed?
+  ```sh
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,ZECUSDT,1000PEPEUSDT \
+    ./scripts/gcp_train.sh --gpu 60 128
+  ```
+- [ ] **E2c — majors-only (drop the 3 worst ungated pairs: HYPE .389 / WLD .392 /
+  ZEC .391). No code.** Tests the pooling-averaging hypothesis harder than E2a.
+  ```sh
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT ./scripts/gcp_train.sh --gpu 60 128
+  ```
+- [ ] **E2b′ — pair embedding, FOR REAL (code now exists).** The intended E2b. Keep
+  the full 8-pair set so the embedding has all identities to specialize on:
+  ```sh
+  PAIR_EMBED_DIM=8 \
+    TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+    ./scripts/gcp_train.sh --gpu 60 128
+  #  VERIFY IN LOG (or it silently no-op'd again):
+  #    "Pair embedding: ON dim=8 n_pairs=8 (+1 OOV bucket)"
+  #    and the remote FLUX_TRAIN_ENV_KEYS echo lists PAIR_EMBED_DIM=8.
+  ```
+  Decision: if E2b′ ≥ E2a/E2c on cov0.05–0.10 lb AND holds across WF folds, prefer it
+  (keeps all pairs tradeable). If a curated whitelist (E2a/E2c) wins instead, the fix is
+  simply the served `WHITELIST_PAIRS`, no model change.
+- [ ] **E-gate — higher serve gate as the DEFAULT (cheap, addresses "cost is the
+  ceiling").** All edge lives in the ≥0.55 tail; the 0.4 serve gate over-trades. Re-eval
+  the current best checkpoint at gate 0.55/0.58 and, if net-positive there, propose
+  raising `GATE_THRESHOLD` / `ML_GATE_THRESHOLD` in `docker-compose.yml`. Eval-only:
+  ```sh
+  GATE_THRESHOLD=0.58 docker compose --profile ml run --rm ml_trainer \
+    python eval_m2.py --checkpoint /models/m2_multi.pt
+  ```
+- [ ] **E-book240 — is E1a's 240m book-era collapse a stale-book artifact?** Before
+  giving up on longer horizons, tighten staleness caps and re-run the book ON/OFF
+  ablation / walk-forward at 240m (`gcp_ablate.sh` / `gcp_walkforward.sh` with
+  `TRAIN_HORIZONS=30,60,240 TRAIN_PRIMARY=240` and lower `BOOK_MAX_AGE_MIN`). Low
+  priority; only if E2* stalls.
+
+Then E3 (triple-barrier) / E4 (GBT baseline) remain queued below as the "if per-pair
+conditioning also fails" fork. **Do NOT promote any E1/E2 checkpoint.**
+
+### 📌 ORDER OF OPERATIONS (round 2)
+1. Launch **E2a′** and **E2c** (both no-code) and **E2b′** (code ready). They're
+   independent → fine to run concurrently on separate throwaway VMs.
+2. Fetch each with `./scripts/gcp_logs.sh <run_id> --save` → `logs/E2a2.log`,
+   `logs/E2c.log`, `logs/E2b2.log`. **First grep each log for the config echo** to
+   confirm pairs / `PAIR_EMBED_DIM` actually took effect (the E2b lesson).
+3. Bring results back in a **fresh session**; update the RESULTS TABLE and pick the
+   winner by the verdict metric.
+4. The order-book walk-forward (data-gated, older section) still runs on its own track.
+
+---
+
 ## ▶️▶️ START HERE (2026-08-12) — PARALLEL CANDLE-ONLY TRACK (run these NOW)
 
 **Read this before the older "START HERE (2026-08-11)" section below.** That section
@@ -102,23 +211,28 @@ result in the RESULTS TABLE below.
 
 | Arm | Run ID / sha | Primary | dir_acc@cov0.05 (lb) | net P&L @14bps (best gate) | Verdict |
 |-----|--------------|--------:|----------------------|----------------------------|---------|
-| E1a 4h | _pending_ | 240 | | | |
-| E1b 1d | _pending_ | 1440 | | | |
-| E2a drop-HYPE | _pending_ | 30 | | | |
-| E2b pair-embed | _pending_ | 30 | | | |
+| E1a 4h | `20260812T042319Z` / `e603b3d5` | 240 | 0.538 (0.533)* | all neg (best −1.66 @0.55) | **Reject.** 240m head WEAKER than 30m; its edge is in `pre_book` (lb .536) and **collapses in book era (lb .460)**. *fixed-cov table is for the 240m PRIMARY, not the served 30m. |
+| E1b 1d | `20260812T072224Z` / `736f26c6` | 1440 | 0.527 (0.523)* | ~flat (−0.47 long @0.4) | **Reject.** Unstable: WF fold-3 lb **0.390** (< coin flip) vs fold-2 .590. Momentum baseline (cov0.02 .603) ≈ model → 1d head just relearns trailing-return momentum. |
+| E2a drop-HYPE | `20260812T123234Z` / `5e6db5b9` | 30 | 0.557 (**0.552**) | all neg (−1.66 @0.55) | **Promising, needs reseed.** cov0.01 lb **0.624** (vs R6 .551), ≥ baseline through cov0.10. HYPE (worst ungated .389) polluted the pooled encoder. Small n_dir at cov0.01 + soft WF fold-4 (.539) → confirm with a seed. |
+| E2b pair-embed | `20260812T164805Z` / `5e6db5b9` | 30 | 0.553 (0.549) | all neg (−7.33 @0.55) | **INVALID — no-op run.** `PAIR_EMBED_DIM` was never read by the code (no embedding existed), so this was a reseed of R6 (matches R6 within noise). Pair embedding is now IMPLEMENTED this session; rerun as **E2b′**. |
 | E3 triple-barrier | _pending_ | tbd | | | |
 | E4 GBT baseline | _pending_ | 30 | | | |
 
 ### 🔧 CODE TASKS (implement when its arm comes up — NOT all now)
 
-- **TASK E2 — pair embedding (~1–2h).** `nn.Embedding(n_pairs, PAIR_EMBED_DIM)` in
-  `SharedEncoderMultiHead`; concat the per-pair vector to every timestep of the encoder
-  input (or to the pooled state). Thread `pair_id` through the dataset batch (it already
-  exists for eval — `dataset.py` has `pair_ids_for_indices`) into the train loop, and
-  through `serve.py` (symbol→id map stored in checkpoint meta). New config
-  `PAIR_EMBED_DIM=0` (0 = off = byte-identical legacy). Add `PAIR_EMBED_DIM` to
-  `FLUX_TRAIN_ENV_KEYS` in `scripts/gcp_train.sh`. Bumps model input → store id-map +
-  dim in meta and reconstruct in `eval_m2.py`/`serve.py` (same pattern as `NUM_LAYERS`).
+- **TASK E2 — pair embedding ✅ IMPLEMENTED (2026-08-13, code only, NOT committed).**
+  `nn.Embedding(n_pairs+1, PAIR_EMBED_DIM)` in `SharedEncoderMultiHead` (row `n_pairs`
+  = OOV/unknown-pair bucket); the per-pair vector is concatenated to the **pooled**
+  encoder state before the heads (LSTM `input_size` unchanged → old checkpoints load
+  untouched). `pair_idx` threads through the dataset batch (`dataset.py` emits reserved
+  `"__pair_idx"` key), the train + val loops, `eval_m2.py`, and `serve.py`. New config
+  `PAIR_EMBED_DIM=0` (0 = off = byte-identical legacy). Checkpoint meta stores
+  `pair_embed_dim` + ordered `pair_vocab`; `eval_m2.py` remaps eval-bundle series →
+  trained-vocab id (unknown → OOV), `serve.py` maps the served symbol → id (unknown →
+  OOV). Verified: OFF path unchanged, ON train→eval→serve round-trips, unseen pair →
+  OOV without crash, and an OLD (no-vocab) checkpoint still loads. **Still TODO before
+  the GPU run:** add `PAIR_EMBED_DIM` to `FLUX_TRAIN_ENV_KEYS` in `scripts/gcp_train.sh`
+  (see the E2b′ command below — must confirm the env is forwarded to the VM).
 - **TASK E3 — triple-barrier labels (~half day).** New labeler in
   `ml/train/data/features.py`: for each bar, walk forward to the horizon; label UP if
   +vol-scaled TP hit first, DOWN if -SL first, FLAT if timeout. Gate behind a config

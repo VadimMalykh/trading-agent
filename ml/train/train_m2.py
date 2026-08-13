@@ -47,6 +47,7 @@ from config import (
     DROPOUT,
     NUM_LAYERS,
     NUM_WORKERS,
+    PAIR_EMBED_DIM,
     PREFETCH_FACTOR,
     HORIZONS_MINUTES,
     LR,
@@ -239,7 +240,10 @@ def collect_primary_logits(model, loader, primary_key, device):
     with torch.no_grad():
         for xb, yb in loader:
             xb = xb.to(device)
-            out = model(xb)
+            pair_idx = yb.get("__pair_idx")
+            if pair_idx is not None:
+                pair_idx = pair_idx.to(device)
+            out = model(xb, pair_idx)
             logits_all.append(out[primary_key].cpu())
             y_all.append(yb[primary_key].cpu())
     if not logits_all:
@@ -455,6 +459,15 @@ def main():
     )
     val_loader = DataLoader(LazyMultiHorizonDataset(bundle, va_idx, horizon_keys), **loader_kw)
 
+    # Pair vocab = bundle.series order; the dataset's "__pair_idx" indexes into it.
+    # Recorded in the checkpoint so eval/serve rebuild the same symbol→index map.
+    pair_vocab = [s.pair for s in bundle.series]
+    n_pairs = len(pair_vocab) if PAIR_EMBED_DIM > 0 else 0
+    if PAIR_EMBED_DIM > 0:
+        print(f"Pair embedding: ON dim={PAIR_EMBED_DIM} n_pairs={n_pairs} (+1 OOV bucket)")
+    else:
+        print("Pair embedding: off (pair-agnostic encoder)")
+
     model = SharedEncoderMultiHead(
         input_size=FEATURE_DIM,
         hidden_size=HIDDEN_SIZE,
@@ -464,6 +477,8 @@ def main():
         quantile_levels=QUANTILE_LEVELS,
         dropout=DROPOUT,
         num_layers=NUM_LAYERS,
+        n_pairs=n_pairs,
+        pair_embed_dim=PAIR_EMBED_DIM,
     ).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     print(
@@ -522,8 +537,9 @@ def main():
         for xb, yb in train_loader:
             xb = xb.to(device)
             yb = {k: v.to(device) for k, v in yb.items()}
+            pair_idx = yb.get("__pair_idx")
             opt.zero_grad()
-            logits, dir_logits, quant = model.forward_all(xb)
+            logits, dir_logits, quant = model.forward_all(xb, pair_idx)
             loss = multi_loss(logits, yb, crits, horizon_keys)
             if dir_logits is not None:
                 dloss = directional_loss(dir_logits, yb, dir_crits, horizon_keys)
@@ -557,7 +573,8 @@ def main():
             for xb, yb in val_loader:
                 xb = xb.to(device)
                 yb = {k: v.to(device) for k, v in yb.items()}
-                logits, dir_logits, quant = model.forward_all(xb)
+                pair_idx = yb.get("__pair_idx")
+                logits, dir_logits, quant = model.forward_all(xb, pair_idx)
                 loss = multi_loss(logits, yb, crits, horizon_keys)
                 bs = xb.size(0)
                 va_loss += loss.item() * bs
@@ -702,6 +719,8 @@ def main():
                     "hidden_size": HIDDEN_SIZE,
                     "num_layers": NUM_LAYERS,
                     "dropout": DROPOUT,
+                    "pair_embed_dim": PAIR_EMBED_DIM,
+                    "pair_vocab": pair_vocab,
                     "directional_head": DIRECTIONAL_HEAD,
                     "cls_weight_mode": CLS_WEIGHT_MODE,
                     "cls_weight_clip": CLS_WEIGHT_CLIP,

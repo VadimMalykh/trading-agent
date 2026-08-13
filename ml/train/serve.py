@@ -68,6 +68,8 @@ def load_model():
     has_dir_head = bool(meta.get("directional_head", False))
     has_quantile_head = bool(meta.get("quantile_head", False))
     quantile_levels = meta.get("quantile_levels") or [0.1, 0.5, 0.9]
+    pair_embed_dim = int(meta.get("pair_embed_dim", 0))
+    pair_vocab = list(meta.get("pair_vocab") or [])
 
     model = SharedEncoderMultiHead(
         input_size=feature_dim,
@@ -77,12 +79,18 @@ def load_model():
         quantile_head=has_quantile_head,
         quantile_levels=quantile_levels,
         num_layers=num_layers,
+        n_pairs=len(pair_vocab) if pair_embed_dim > 0 else 0,
+        pair_embed_dim=pair_embed_dim,
     )
     model.load_state_dict(ckpt["model_state"])
     model.eval()
     _state["has_dir_head"] = has_dir_head
     _state["has_quantile_head"] = has_quantile_head
     _state["quantile_levels"] = quantile_levels
+    # symbol -> trained embedding row; unknown symbols use the OOV bucket.
+    _state["pair_embed_dim"] = pair_embed_dim
+    _state["pair_to_id"] = {p: i for i, p in enumerate(pair_vocab)}
+    _state["pair_oov_id"] = len(pair_vocab)
 
     _state.update(
         {
@@ -144,7 +152,11 @@ def predict_symbol(symbol: str) -> dict:
     x, price = packed
     model = _state["model"]
     has_dir = _state.get("has_dir_head", False)
-    logits_map, dir_map, quant_map = model.forward_all(x)
+    pair_idx = None
+    if _state.get("pair_embed_dim", 0) > 0:
+        pid = _state["pair_to_id"].get(symbol.upper(), _state["pair_oov_id"])
+        pair_idx = torch.tensor([pid], dtype=torch.long)
+    logits_map, dir_map, quant_map = model.forward_all(x, pair_idx)
     q_levels = _state.get("quantile_levels") or [0.1, 0.5, 0.9]
     horizons_out = {}
     primary = _state.get("primary") or PRIMARY

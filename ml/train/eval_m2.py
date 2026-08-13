@@ -490,6 +490,11 @@ def main():
     has_dir_head = bool(meta.get("directional_head", False))
     has_quant_head = bool(meta.get("quantile_head", False))
     quant_levels = meta.get("quantile_levels") or [0.1, 0.5, 0.9]
+    pair_embed_dim = int(meta.get("pair_embed_dim", 0))
+    pair_vocab = list(meta.get("pair_vocab") or [])
+    # symbol -> trained embedding row; unknown symbols fall back to the OOV bucket.
+    pair_to_id = {p: i for i, p in enumerate(pair_vocab)}
+    oov_id = len(pair_vocab)
 
     model = SharedEncoderMultiHead(
         input_size=feature_dim,
@@ -499,6 +504,8 @@ def main():
         quantile_head=has_quant_head,
         quantile_levels=quant_levels,
         num_layers=num_layers,
+        n_pairs=len(pair_vocab) if pair_embed_dim > 0 else 0,
+        pair_embed_dim=pair_embed_dim,
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
@@ -552,6 +559,16 @@ def main():
         num_workers=0,
     )
 
+    # The dataset emits "__pair_idx" in THIS bundle's series order; the embedding
+    # is indexed by the TRAINED pair vocab. Build a translation LUT (eval-series id
+    # -> trained id, unknown symbols -> OOV) so ids match what the model learned.
+    if pair_embed_dim > 0:
+        eval_series_to_trained = np.array(
+            [pair_to_id.get(s.pair, oov_id) for s in bundle.series], dtype=np.int64
+        )
+    else:
+        eval_series_to_trained = None
+
     all_logits = {h: [] for h in horizon_keys}
     all_dir = {h: [] for h in horizon_keys}
     all_y = {h: [] for h in horizon_keys}
@@ -561,7 +578,14 @@ def main():
     with torch.no_grad():
         for xb, yb in loader:
             xb = xb.to(device)
-            out, dir_out, quant_out = model.forward_all(xb)
+            pair_idx = yb.get("__pair_idx")
+            if pair_idx is not None and eval_series_to_trained is not None:
+                pair_idx = torch.from_numpy(
+                    eval_series_to_trained[pair_idx.numpy()]
+                ).to(device)
+            else:
+                pair_idx = None
+            out, dir_out, quant_out = model.forward_all(xb, pair_idx)
             for h in horizon_keys:
                 all_logits[h].append(out[h].cpu())
                 all_y[h].append(yb[h].cpu())

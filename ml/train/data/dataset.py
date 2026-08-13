@@ -626,4 +626,8 @@ class LazyMultiHorizonDataset(Dataset):
         # quantile loss reads them explicitly. collate stacks them generically.
         for k in self.horizon_keys:
             y[f"ret_{k}"] = torch.tensor(float(ser.returns[k][t]), dtype=torch.float32)
+        # Pair index (into bundle.series order) under the reserved "__pair_idx" key,
+        # so the optional per-pair embedding can look it up. Loss/acc code iterates
+        # the bare horizon keys and ignores it; collate stacks it generically.
+        y["__pair_idx"] = torch.tensor(pi, dtype=torch.long)
         return torch.from_numpy(x), y
