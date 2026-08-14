@@ -199,11 +199,11 @@ gssh "$GCP_ALWAYS_ON" "set -e
   TFLAGS=''
   for t in $DUMP_TABLES; do TFLAGS=\"\$TFLAGS -t \$t\"; done
   docker compose exec -T postgres bash -c \"pg_dump -U fluxtrader -d fluxtrader --format=plain --no-owner --no-acl \$TFLAGS\" \
-    | gzip > /tmp/fluxtrader_audit.sql.gz
-  ls -lh /tmp/fluxtrader_audit.sql.gz
-  gcloud storage cp /tmp/fluxtrader_audit.sql.gz $GCS_BUCKET/dumps/$RUN_ID.sql.gz
+    | gzip > /var/tmp/fluxtrader_audit.sql.gz
+  ls -lh /var/tmp/fluxtrader_audit.sql.gz
+  gcloud storage cp /var/tmp/fluxtrader_audit.sql.gz $GCS_BUCKET/dumps/$RUN_ID.sql.gz
   gcloud storage cp $GCS_BUCKET/dumps/$RUN_ID.sql.gz $GCS_BUCKET/dumps/audit_latest.sql.gz
-  rm -f /tmp/fluxtrader_audit.sql.gz
+  rm -f /var/tmp/fluxtrader_audit.sql.gz
 " "$GCP_ZONE"
 
 # --- 3. write remote self-cleaning audit job and launch in tmux -----------------
