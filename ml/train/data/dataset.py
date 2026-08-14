@@ -366,6 +366,12 @@ def time_split_indices_window(
     return tr_idx, va_idx
 
 
+# Row-chunk size for streaming norm stats / normalization. Keeps transient
+# float64 working memory bounded (~16MB/row at 19 features) instead of
+# materializing per-pair or global float64 copies of the whole matrix.
+_NORM_STREAM_ROWS = 1_000_000
+
+
 def fit_norm_from_bundle(
     bundle: M2IndexBundle,
     train_sample_idx: np.ndarray,
@@ -373,9 +379,20 @@ def fit_norm_from_bundle(
     """
     Per-pair mean/std from bars that appear in train windows
     (approx: all bars up to last train end-index per pair — cheap and stable).
+
+    Streams in float64 accumulators over row-chunks of the float32 feature
+    matrix: O(FEATURE_DIM) working set plus one bounded transient chunk instead
+    of float64 copies of every pair plus a concatenated global matrix (which
+    OOM'd 16GB train VMs on ~25M bars).
     """
+    f_dim = bundle.series[0].feats.shape[1] if bundle.series else 0
+    if f_dim == 0:
+        return {}
+
     stats: Dict[str, dict] = {}
-    flat_all: List[np.ndarray] = []
+    blocks: List[Tuple[str, np.ndarray, int]] = []  # (pair, block, n_rows)
+    g_sum = np.zeros(f_dim, dtype=np.float64)
+    g_n = 0
 
     for pi, ser in enumerate(bundle.series):
         mask = bundle.pair_i[train_sample_idx] == pi
@@ -388,21 +405,41 @@ def fit_norm_from_bundle(
         block = ser.feats[t_lo:t_hi]
         if block.size == 0:
             continue
-        flat = block.reshape(-1, block.shape[-1]).astype(np.float64)
-        flat_all.append(flat)
-        mean = flat.mean(axis=0)
-        std = flat.std(axis=0) + 1e-6
-        stats[ser.pair] = {
-            "mean": mean.astype(np.float32).tolist(),
-            "std": std.astype(np.float32).tolist(),
-        }
+        n = block.shape[0]
+        blocks.append((ser.pair, block, n))
 
-    if flat_all:
-        g = np.concatenate(flat_all, axis=0)
-        stats["_global"] = {
-            "mean": g.mean(axis=0).astype(np.float32).tolist(),
-            "std": (g.std(axis=0) + 1e-6).astype(np.float32).tolist(),
-        }
+        # Pass 1: per-pair + global mean (float64 accumulation, chunked)
+        s = np.zeros(f_dim, dtype=np.float64)
+        for lo in range(0, n, _NORM_STREAM_ROWS):
+            s += block[lo : lo + _NORM_STREAM_ROWS].sum(axis=0, dtype=np.float64)
+        mean = s / n
+        stats[ser.pair] = {"mean": mean.astype(np.float32).tolist()}
+        g_sum += s
+        g_n += n
+
+    if g_n == 0:
+        return stats
+    g_mean = g_sum / g_n
+
+    # Pass 2: per-pair + global std (mean of squared deviations, ddof=0)
+    g_var_sum = np.zeros(f_dim, dtype=np.float64)
+    for pair, block, n in blocks:
+        mean = np.asarray(stats[pair]["mean"], dtype=np.float64)
+        dev_sum = np.zeros(f_dim, dtype=np.float64)
+        for lo in range(0, n, _NORM_STREAM_ROWS):
+            chunk = block[lo : lo + _NORM_STREAM_ROWS]
+            dev = chunk.astype(np.float64) - mean
+            dev_sum += (dev * dev).sum(axis=0)
+            dg = chunk.astype(np.float64) - g_mean
+            g_var_sum += (dg * dg).sum(axis=0)
+        std = np.sqrt(dev_sum / n) + 1e-6
+        stats[pair]["std"] = std.astype(np.float32).tolist()
+
+    g_std = np.sqrt(g_var_sum / g_n) + 1e-6
+    stats["_global"] = {
+        "mean": g_mean.astype(np.float32).tolist(),
+        "std": g_std.astype(np.float32).tolist(),
+    }
     return stats
 
 
@@ -413,7 +450,10 @@ def apply_norm_to_bundle(bundle: M2IndexBundle, norm_stats: Dict[str, dict]) -> 
         st = norm_stats.get(ser.pair) or global_stats
         if st is None:
             continue
-        ser.feats = np.ascontiguousarray(apply_norm_to_matrix(ser.feats, st))
+        mean = np.asarray(st["mean"], dtype=np.float32)
+        std = np.asarray(st["std"], dtype=np.float32)
+        np.subtract(ser.feats, mean, out=ser.feats)
+        np.divide(ser.feats, std, out=ser.feats)
 
 
 def labels_for_indices(
