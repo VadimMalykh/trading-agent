@@ -19,16 +19,18 @@ cd ~/trading_agent && docker compose exec -T postgres psql -U fluxtrader -d flux
 CREATE OR REPLACE FUNCTION pg_temp.human_span(ts_a timestamp, ts_b timestamp)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT COALESCE(NULLIF(array_to_string(ARRAY[
+           NULLIF(CASE WHEN t.years > 0 THEN t.years || 'y' END, ''),
            NULLIF(CASE WHEN t.mons  > 0 THEN t.mons  || 'mo' END, ''),
            NULLIF(CASE WHEN t.days  > 0 THEN t.days  || 'd'  END, ''),
            NULLIF(CASE WHEN t.hours > 0 THEN t.hours || 'h'  END, ''),
            NULLIF(CASE WHEN t.mins  > 0 THEN t.mins  || 'm'  END, '')
          ], ' '), ''), '0m')
   FROM (SELECT
-          EXTRACT(MONTH  FROM justify_interval(ts_b - ts_a))::int AS mons,
-          EXTRACT(DAY    FROM justify_interval(ts_b - ts_a))::int AS days,
-          EXTRACT(HOUR   FROM justify_interval(ts_b - ts_a))::int AS hours,
-          EXTRACT(MINUTE FROM justify_interval(ts_b - ts_a))::int AS mins) t
+          EXTRACT(YEAR   FROM age(ts_b, ts_a))::int AS years,
+          EXTRACT(MONTH  FROM age(ts_b, ts_a))::int AS mons,
+          EXTRACT(DAY    FROM age(ts_b, ts_a))::int AS days,
+          EXTRACT(HOUR   FROM age(ts_b, ts_a))::int AS hours,
+          EXTRACT(MINUTE FROM age(ts_b, ts_a))::int AS mins) t
 $$;
 
 \echo '=== 1. Candles (candles) ==='
@@ -113,5 +115,42 @@ SELECT COUNT(*) AS rows,
        pg_temp.human_span(MIN(ts), MAX(ts)) AS existence,
        now() - MAX(ts) AS staleness
 FROM liquidations;
+
+\echo ''
+\echo '=== 9. Candles — INTERIOR gaps (missed rows strictly between first/last) ==='
+\echo '    gaps>0 means rows are missing INSIDE min..max — a backfill re-run will NOT fix those'
+\echo '    (it only fills older-than-first + tail). Tails past the last row are NOT flagged here;'
+\echo '    those are repaired by re-running gcp_backfill.sh. missing_hours = total missing span.'
+WITH step_sec AS (
+  SELECT symbol, interval, open_time,
+         CASE interval
+           WHEN '1m'  THEN 60
+           WHEN '5m'  THEN 300
+           WHEN '15m' THEN 900
+           WHEN '1h'  THEN 3600
+           WHEN '4h'  THEN 14400
+         END AS step
+  FROM candles
+), diffs AS (
+  SELECT symbol, interval, step, open_time AS gap_after,
+         lead(open_time) OVER (
+           PARTITION BY symbol, interval ORDER BY open_time
+         ) AS nxt
+  FROM step_sec
+  WHERE step IS NOT NULL
+)
+SELECT symbol,
+       interval,
+       COUNT(*) FILTER (
+         WHERE nxt IS NOT NULL AND nxt - gap_after > make_interval(secs => step)
+       ) AS gaps,
+       COALESCE(SUM(
+         CASE WHEN nxt IS NOT NULL AND nxt - gap_after > make_interval(secs => step)
+              THEN (EXTRACT(EPOCH FROM nxt - gap_after) - step) / 3600.0
+         END
+       ), 0)::bigint AS missing_hours
+FROM diffs
+GROUP BY symbol, interval
+ORDER BY symbol, interval;
 SQL
 EOF

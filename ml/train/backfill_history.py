@@ -30,9 +30,50 @@ FAPI = "https://fapi.binance.com"
 MAX_LIMIT = 1500
 SLEEP_S = 0.15
 
+# Retry 429/418/5xx and network errors with exponential backoff (up to ~90s).
+# A persistent failure now RAISES instead of silently returning [] and stopping
+# the range loop — so a dead pair/interval is never left half-downloaded without
+# an ERROR being surfaced (previously `if not batch: break` hid the truncation).
+MAX_ATTEMPTS = 12
+BACKOFF_BASE_S = 1.5
+BACKOFF_MAX_S = 90
+_SESSION = requests.Session()
+
 
 def ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
+
+
+def get_with_retry(url: str, params: dict) -> requests.Response:
+    last_status: Optional[int] = None
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            r = _SESSION.get(url, params=params, timeout=120)
+            if r.status_code == 200:
+                return r
+            last_status = r.status_code
+            retryable = r.status_code in (418, 429) or r.status_code >= 500
+        except requests.RequestException as exc:
+            if attempt == MAX_ATTEMPTS - 1:
+                raise RuntimeError(
+                    f"GET {url} failed after {MAX_ATTEMPTS} attempts: {exc!r}"
+                ) from exc
+            backoff = min(BACKOFF_MAX_S, BACKOFF_BASE_S * (2 ** attempt))
+            print(f"    [retry {attempt + 1}/{MAX_ATTEMPTS}] {type(exc).__name__}: backoff {backoff:.0f}s")
+            time.sleep(backoff)
+            continue
+        if not retryable:
+            raise RuntimeError(
+                f"GET {url} unexpected HTTP {r.status_code}: {r.text[:200]}"
+            )
+        if attempt == MAX_ATTEMPTS - 1:
+            raise RuntimeError(
+                f"GET {url} HTTP {last_status} after {MAX_ATTEMPTS} attempts"
+            )
+        backoff = min(BACKOFF_MAX_S, BACKOFF_BASE_S * (2 ** attempt))
+        print(f"    [retry {attempt + 1}/{MAX_ATTEMPTS}] HTTP {r.status_code}: backoff {backoff:.0f}s")
+        time.sleep(backoff)
+    raise RuntimeError(f"unreachable: GET {url}")
 
 
 def fetch_klines(symbol: str, interval: str, start_ms: int, end_ms: int) -> list:
@@ -43,15 +84,7 @@ def fetch_klines(symbol: str, interval: str, start_ms: int, end_ms: int) -> list
         "endTime": end_ms,
         "limit": MAX_LIMIT,
     }
-    for attempt in range(5):
-        r = requests.get(f"{FAPI}/fapi/v1/klines", params=params, timeout=60)
-        if r.status_code == 200:
-            return r.json()
-        if r.status_code == 429:
-            time.sleep(2 ** attempt)
-            continue
-        r.raise_for_status()
-    return []
+    return get_with_retry(f"{FAPI}/fapi/v1/klines", params).json()
 
 
 def fetch_funding(symbol: str, start_ms: int, end_ms: int) -> list:
@@ -61,15 +94,7 @@ def fetch_funding(symbol: str, start_ms: int, end_ms: int) -> list:
         "endTime": end_ms,
         "limit": 1000,
     }
-    for attempt in range(5):
-        r = requests.get(f"{FAPI}/fapi/v1/fundingRate", params=params, timeout=60)
-        if r.status_code == 200:
-            return r.json()
-        if r.status_code == 429:
-            time.sleep(2 ** attempt)
-            continue
-        r.raise_for_status()
-    return []
+    return get_with_retry(f"{FAPI}/fapi/v1/fundingRate", params).json()
 
 
 def upsert_candles(symbol: str, interval: str, rows: list) -> int:
@@ -187,6 +212,50 @@ def fetch_ranges(
     return ranges
 
 
+def gap_ranges_ms(
+    table: str,
+    symbol: str,
+    ts_col: str,
+    step_ms: int,
+    extra: Optional[str] = None,
+) -> List[tuple]:
+    """
+    INTERIOR missing ranges [from_ms, to_ms] strictly inside stored coverage,
+    detected via a lead() window (consecutive-row ts diffs > step_ms). Tails
+    past the last row are NOT included — those are handled by fetch_ranges().
+    Empty list → no interior holes.
+    """
+    sql = f"""
+        WITH g AS (
+          SELECT {ts_col} AS t,
+                 lead({ts_col}) OVER (PARTITION BY symbol ORDER BY {ts_col}) AS nxt
+          FROM {table}
+          WHERE symbol = :symbol{f' AND {extra}' if extra else ''}
+        )
+        SELECT
+          (EXTRACT(EPOCH FROM t) * 1000)::bigint + {step_ms} AS from_ms,
+          (EXTRACT(EPOCH FROM nxt) * 1000)::bigint - {step_ms} AS to_ms
+        FROM g
+        WHERE nxt IS NOT NULL
+          AND nxt - t > make_interval(secs => {step_ms} / 1000.0)
+        ORDER BY 1
+    """
+    with engine().connect() as conn:
+        rows = conn.execute(text(sql), {"symbol": symbol}).fetchall()
+    return [(int(r[0]), int(r[1])) for r in rows]
+
+
+def merge_ranges(ranges: List[tuple]) -> List[tuple]:
+    """Sort + merge overlapping/highlighting adjacent ranges (dedupe edges+gaps)."""
+    merged = []
+    for lo, hi in sorted(ranges):
+        if merged and lo <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+        else:
+            merged.append((lo, hi))
+    return merged
+
+
 def _fetch_loop(
     fetch, upsert, rows_to_last, symbol: str, ranges, label: str, page_size: int
 ) -> int:
@@ -195,7 +264,7 @@ def _fetch_loop(
     for from_ms, to_ms in ranges:
         print(f"    fetching {label} {fmt(from_ms)} → {fmt(to_ms)}")
         cursor = from_ms
-        while cursor < to_ms:
+        while cursor <= to_ms:
             batch = fetch(symbol, cursor, to_ms)
             time.sleep(SLEEP_S)
             if not batch:
@@ -217,6 +286,12 @@ def backfill_klines(symbol: str, interval: str, days: int) -> int:
     step_ms = INTERVAL_STEP_MS.get(interval, 60_000)
     cov = coverage_ms("candles", symbol, "open_time", f"interval = '{interval}'")
     ranges = fetch_ranges(start, end, cov, step_ms)
+    gaps = gap_ranges_ms(
+        "candles", symbol, "open_time", step_ms, f"interval = '{interval}'"
+    )
+    if gaps:
+        print(f"    {len(gaps)} interior gap(s) detected inside stored range")
+        ranges = merge_ranges(ranges + gaps)
     fmt = lambda m: datetime.fromtimestamp(m / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
     print(f"  klines {symbol} {interval}: window {fmt(ms(start))} → {fmt(ms(end))}")
     if not ranges:
@@ -240,6 +315,10 @@ def backfill_funding(symbol: str, days: int) -> int:
     start = end - timedelta(days=days)
     cov = coverage_ms("funding_rates", symbol, "ts")
     ranges = fetch_ranges(start, end, cov, 8 * 3_600_000)
+    gaps = gap_ranges_ms("funding_rates", symbol, "ts", 8 * 3_600_000)
+    if gaps:
+        print(f"    {len(gaps)} interior gap(s) detected inside stored range")
+        ranges = merge_ranges(ranges + gaps)
     fmt = lambda m: datetime.fromtimestamp(m / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
     print(f"  funding {symbol}: window {fmt(ms(start))} → {fmt(ms(end))}")
     if not ranges:

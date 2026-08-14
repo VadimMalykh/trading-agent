@@ -117,8 +117,15 @@ fetching it reads the stored coverage (`min/max(open_time)` in `candles`,
 Existing rows are never re-downloaded. Each pair/interval has its own cursor.
 `--days` is just the desired window length back from now; it is not a "fetch this
 much" request. Re-running the script is cheap and idempotent:
-`INSERT ... ON CONFLICT DO NOTHING` skips anything that already exists (covers
-gaps in the middle of stored data).
+`INSERT ... ON CONFLICT DO NOTHING` skips anything that already exists.
+
+> **Interior gaps ARE auto-repaired.** On top of the min/max edge fills, the
+> script scans for rows missing *between* the first and last candle (a `lead()`
+> window in Postgres) and fetches exactly those ranges — so a re-run heals holes
+> without touching existing rows. `gaps > 0` in
+> `./scripts/gcp_data_collection_stats.sh` section 9 should drop to 0 after a
+> re-run. Since 2026-08-14 `backfill_history.py` also retries 429/5xx/network
+> errors with backoff and aborts loudly instead of silently truncating a run.
 
 **Flags**
 
