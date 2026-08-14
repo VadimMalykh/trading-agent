@@ -166,10 +166,16 @@ def build_m2_index_bundle(
     candle_interval: str = CANDLE_INTERVAL,
     require_book: bool = False,
     ablate_features: List[str] | None = None,
+    max_rows: int | None = None,
 ) -> M2IndexBundle:
     """
     Load per-pair feature matrices once; record (pair, t) for each valid sample.
     Does NOT materialize [N, seq, F] (that caused multi-GB OOM).
+
+    max_rows: only the last N candles per pair are loaded (tail window, like
+    serve.py). Bounds peak RAM on small hosts (the always-on VM is 2GB and runs
+    postgres + app + inference concurrently) — a full 8-12 pair × ~180d bundle
+    plus accumulated eval tensors OOMs there. Default None = full history.
 
     Dense-window ablation support:
       require_book=True     -> a sample is valid only if the whole window
@@ -213,7 +219,7 @@ def build_m2_index_bundle(
         pair = pair.strip().upper()
         if not pair:
             continue
-        frame = build_feature_frame(pair, candle_interval)
+        frame = build_feature_frame(pair, candle_interval, max_rows=max_rows)
         if frame.empty or len(frame) < seq_len + max_h + 5:
             meta["n_per_pair"][pair] = 0
             continue

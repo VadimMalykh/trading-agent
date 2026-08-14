@@ -469,6 +469,13 @@ def main():
         default="",
         help="Comma-separated pairs. Default: UI whitelist from DB.",
     )
+    p.add_argument(
+        "--tail-days",
+        type=int,
+        default=None,
+        help="Only the last N days of 1m candles per pair (bounds RAM on small "
+        "hosts like the 2GB always-on VM). Default: full history.",
+    )
     args = p.parse_args()
 
     device = torch.device(args.device)
@@ -518,7 +525,18 @@ def main():
     print(f"Eval pairs: {pairs}")
     print(f"Checkpoint primary={primary}m seq_len={seq_len} norm={meta.get('norm', 'legacy')}")
 
-    bundle = build_m2_index_bundle(pairs=pairs, seq_len=seq_len, horizons_minutes=horizons)
+    # Tail window bounds peak RAM on small hosts: the always-on VM has 2GB and
+    # already runs postgres + app + ml_inference, so a full ~180d multi-pair
+    # bundle OOMs there (same failure mode training had before the streaming
+    # norm fix). 1m candles -> 1440 rows/day.
+    max_rows = None
+    if args.tail_days and args.tail_days > 0:
+        max_rows = args.tail_days * 1440
+        print(f"Tail window: last {args.tail_days}d (~{max_rows:,} 1m candles/pair)")
+
+    bundle = build_m2_index_bundle(
+        pairs=pairs, seq_len=seq_len, horizons_minutes=horizons, max_rows=max_rows
+    )
     tr_idx, va_idx = time_split_indices(bundle.times, VAL_FRACTION)
 
     if norm_stats:
