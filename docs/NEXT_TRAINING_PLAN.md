@@ -5,6 +5,30 @@ session and the exact steps/commands to execute.
 
 ---
 
+## 🌐 DATA & ENVIRONMENT — READ BEFORE CHECKING ANY DATA (standing note)
+
+**The source of truth for ALL data is the ALWAYS-ON GCP VM, not the local dev DB.**
+Training, eval, backfill, and data-collection all run against the collector Postgres on
+`fluxtrader-1`. The local `docker compose exec postgres` is a **throwaway dev DB** — it
+does NOT mirror the VM's candle/book history, its whitelist, or the extra backfilled
+pairs. **Never reason about pair readiness / history / row counts from the local DB.**
+
+- **Check VM data:** `./scripts/gcp_data_collection_stats.sh` (SSHes to the VM and runs
+  psql there). This is the ONLY correct way to see what history exists.
+- **Ad-hoc VM query:**
+  ```sh
+  gcloud compute ssh --zone me-central1-b fluxtrader-1 --project fluxtrader -- \
+    'cd ~/trading_agent && docker compose exec -T postgres psql -U fluxtrader -d fluxtrader -c "SELECT …"'
+  ```
+- **Pairs:** the 4 extras `AVAXUSDT,LINKUSDT,XRPUSDT,ADAUSDT` HAVE substantial backfilled
+  history on the VM (user backfilled them). They are NOT short/ragged. Any earlier note in
+  this file calling them short-history was based on the WRONG (local) DB — disregard it.
+
+(Lesson logged 2026-08-16: an agent checked the local DB, saw only partial history, and
+wrongly concluded the extra pairs were unusable. Don't repeat it.)
+
+---
+
 ## ▶️▶️▶️▶️▶️ START HERE (2026-08-16) — E3 BATCH ANALYZED; TUNING CEILING CONFIRMED; NEXT = WALK-FORWARD BOOK ON/OFF (data-gated ~08-17)
 
 **Supersedes the 2026-08-13 PM section below.** The E3 dim-sweep + the E-gate/cost eval
@@ -160,6 +184,84 @@ together next session: walk-forward answers "does book carry edge?"; GBT answers
 ANY candle signal there at all?". Together they tell you whether the ceiling is data,
 features, or architecture.
 
+### 🚀 HOW TO LAUNCH E4-GBT + E3 (exact commands — 2026-08-16)
+
+> ⚠️ **DATA SOURCE OF TRUTH = the ALWAYS-ON GCP VM, never the local dev DB.** All
+> training/eval/backfill run against the collector on `fluxtrader-1`
+> (`gcloud compute ssh --zone me-central1-b fluxtrader-1 … docker compose exec -T
+> postgres psql`). The local `docker compose exec postgres` is a throwaway dev DB and
+> does NOT mirror the VM's candle/book history or the additional backfilled pairs. Do
+> NOT check the local DB to reason about pair readiness — use
+> `./scripts/gcp_data_collection_stats.sh` (which SSHes to the VM). See the standing
+> note in the "DATA & ENVIRONMENT" section near the top of this file.
+
+**Which pairs?** The **DB UI whitelist** (`app_settings.whitelist_pairs`) is the default
+for both paths when `--pairs`/`TRAIN_PAIRS` is omitted. The 4 extra pairs
+(`AVAXUSDT,LINKUSDT,XRPUSDT,ADAUSDT`) DO have substantial backfilled history on the VM
+(user backfilled them — they are NOT short/ragged). Two independent decisions:
+
+- **E4-GBT (diagnostic) and E3 (label A/B): use the SAME pair set E2b was trained on so
+  results are attributable.** E2b = the 8-pair set
+  (`BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT`). The point of
+  each run is to isolate ONE variable (GBT: architecture; E3: the label). Changing the
+  pair set at the same time makes the result un-attributable — exactly what voided E3a
+  (pairs changed + embed accidentally off; line ~435). So keep these two on E2b's 8.
+- **"More pairs" (now 12, since the extras are backfilled) is its own clean experiment
+  (E3a).** With the extras confirmed to have history, E3a is now unblocked — run it
+  standalone (one variable: the pair set) with `PAIR_EMBED_DIM=8` and the 12-pair
+  `TRAIN_PAIRS` (see the E3 LADDER E3a command below). First confirm freshness/coverage on
+  the VM with `./scripts/gcp_data_collection_stats.sh`.
+
+**E4-GBT — LOCAL, run now (no GPU, no serve risk, safe concurrent with walk-forward).**
+The ml_trainer image can't do a CLEAN rebuild yet (pre-existing `torch==2.5.1+cpu` pin is
+gone from the PyTorch CPU index; plain `2.5.1` still exists — fix that pin before any
+rebuild). So install lightgbm into a running container from the EXISTING image:
+
+```sh
+docker compose --profile ml run -d --name gbt_run ml_trainer sleep infinity
+docker exec gbt_run pip install --no-cache-dir 'lightgbm>=4.1.0' -q
+docker exec gbt_run python gbt_baseline.py \
+  --pairs BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+  --out /workspace/train/output/gbt_8pair.json      # report → ml/train/output/ (bind mount)
+docker rm -f gbt_run
+```
+
+Notes:
+- Passing `--pairs` explicitly (vs relying on the whitelist) makes the run
+  self-documenting and immune to a later whitelist edit.
+- Optional flags: `--tail-days N` (bound RAM / restrict to book era), `--flatten` (full
+  SEQ_LEN×F window instead of the compact summary), `--label-mode triple_barrier`
+  (E3-flavored GBT), `--n-estimators/--num-leaves/--learning-rate` (GBT hyperparams).
+- Once the torch pin is fixed you can instead just
+  `docker compose --profile ml build ml_trainer` (lightgbm is now in requirements) and
+  drop the manual `pip install` step.
+
+**E3 triple-barrier — GPU (launches a throwaway VM).** One change vs E2b: the label mode.
+
+```sh
+LABEL_MODE=triple_barrier \
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+  ./scripts/gcp_train.sh --gpu 60 128
+./scripts/gcp_logs.sh <run_id> --save        # → logs/E3-tb.log
+```
+
+VERIFY IN LOG BEFORE trusting the run (the E2b/R3 silent-no-op lesson):
+- `=== resolved knobs: … LABEL_MODE=triple_barrier …` (env forwarded to the VM), and
+- `Training pairs: [...the 8 pairs...]`.
+
+Optional barrier tuning (defaults: symmetric 1.5× vol-scaled, 0.2% floor, 15-bar vol
+window): `TB_TP_MULT / TB_SL_MULT / TB_VOL_WINDOW / TB_MIN_BARRIER` (all in
+`FLUX_TRAIN_ENV_KEYS`, so they forward on `--gpu` runs).
+
+**Verdict rules:**
+- E3: compare 30m cov0.05 Wilson-LB + walk-forward NEWEST-fold lb vs E2b (**0.566** /
+  **0.548**). Do NOT promote unless newest-fold lb ≥ 0.548 AND it holds across folds.
+- E4-GBT: compare cov0.05 lb + net P&L vs E2b. GBT ≈ LSTM & net-neg → **signal-limited**
+  (pivot to data/features); GBT ≫ LSTM → architecture headroom; GBT ≪ LSTM → temporal
+  modeling is helping, signal is thin.
+
+**Read both in a FRESH session** (token hygiene) and fill the RESULTS TABLE.
+
 ---
 
 ## ▶️▶️▶️▶️ START HERE (2026-08-13 PM) — E-ROUND-2 RETURNED; E2b IS THE WINNER; promote + launch E3
@@ -198,8 +300,11 @@ calibration ceiling", not "it's profitable". Cost is still the true ceiling.
    ./scripts/gcp_promote.sh --local-copy   # installs on ALWAYS-ON GCP VM, restarts ml_inference there; --local-copy = Mac backup only
    docker compose restart app              # only if ML_GATE_THRESHOLD/env changed locally
    ```
-2. **Validate candidate new pairs BEFORE E3a** (they may have short/ragged history that
-   destabilizes WF): `./scripts/gcp_data_collection_stats.sh`.
+2. **Validate candidate new pairs BEFORE E3a** — check freshness/coverage on the VM (NOT
+   the local dev DB; see the DATA & ENVIRONMENT note at top):
+   `./scripts/gcp_data_collection_stats.sh`. (Update 2026-08-16: the 4 extras
+   AVAX/LINK/XRP/ADA were backfilled with substantial history, so they are candidates —
+   confirm freshness, not history length.)
 3. **Launch E3 batch** (independent throwaway VMs, safe concurrent). Fetch each with
    `./scripts/gcp_logs.sh <run_id> --save` → `logs/E3a.log` / `logs/E3b.log` /
    `logs/E3c.log`; FIRST grep each for the config echo (pairs + `PAIR_EMBED_DIM`) to

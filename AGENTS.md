@@ -17,7 +17,8 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 | Start stack | `docker compose up -d postgres ml_inference app` |
 | App shell / Mix | `docker compose exec app mix …` |
 | App logs | `docker compose logs -f app` |
-| DB (psql) | `docker compose exec postgres psql -U fluxtrader -d fluxtrader` |
+| DB (psql) — LOCAL DEV ONLY, not real data | `docker compose exec postgres psql -U fluxtrader -d fluxtrader` |
+| DB (psql) — REAL data (always-on VM) | `./scripts/gcp_data_collection_stats.sh` or SSH (see "Data lives on the always-on VM") |
 | ML train/backfill | `docker compose --profile ml run --rm ml_trainer python …` |
 | Inference | `curl http://localhost:8001/…` (or exec into `ml_inference`) |
 | Restart after Elixir code change | `docker compose restart app` (code is bind-mounted; `_build` is a volume) |
@@ -29,6 +30,26 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 - DB: service `postgres` user/db `fluxtrader` / password `secret`
 
 If a tool is missing on the host, use the matching container — never install it locally.
+
+## Data lives on the always-on VM — NOT the local DB (permanent)
+
+**All real data (candles, order book, trades, funding/OI, and every backfilled pair)
+lives on the always-on GCP collector VM `fluxtrader-1`. The local `docker compose exec
+postgres` is a throwaway DEV DB — it does NOT mirror the VM.** This is permanent: data
+collection stays on the VM across all project phases. Never reason about what data /
+which pairs / how much history exists by querying the local DB.
+
+- **Check VM data:** `./scripts/gcp_data_collection_stats.sh` (SSHes to the VM, runs psql
+  there, reports rows/first/last/staleness per table+symbol). This is the ONLY correct way.
+- **Ad-hoc VM query:**
+  ```sh
+  gcloud compute ssh --zone me-central1-b fluxtrader-1 --project fluxtrader -- \
+    'cd ~/trading_agent && docker compose exec -T postgres psql -U fluxtrader -d fluxtrader -c "SELECT …"'
+  ```
+- Training / eval / backfill all run against the VM's DB, not local.
+- Lesson (2026-08-16): checking the local DB showed only partial history and led to a
+  wrong "these pairs are short/ragged" conclusion. The pairs were fully backfilled on the
+  VM. Don't repeat it — always check the VM.
 
 ## Token efficiency
 
