@@ -90,6 +90,76 @@ NOT more model tuning. Triple-barrier labels (E3-label) is the one remaining *mo
 lever worth trying — it changes WHAT we predict (tradeable TP/SL vs fixed-Δt sign) and
 can create signal where fixed-Δt has none — but gate it behind Step A.
 
+### 🟢 PARALLEL TRACK — book-independent levers to run WHILE waiting on walk-forward
+
+The walk-forward wait does NOT block these; none need order-book data. Plan-recommended
+order is E4-GBT FIRST (cheapest, gates the others).
+
+**Status update 2026-08-16 (code only, NOT committed, NO run launched): E4-GBT and
+E3-triple-barrier are now IMPLEMENTED.** E5-cross-pair is still unimplemented.
+- `ml/train/gbt_baseline.py` — new standalone diagnostic. Reuses the M2 bundle, the
+  SAME global time split + per-pair norm, trains a LightGBM BINARY up/down classifier
+  on MOVED train bars (mirrors `train_m2.directional_loss`), maps p(up)→[down,flat,up]
+  logits via `gate.dir_logits_to_three_class`, then runs the IDENTICAL
+  `gate.fixed_coverage_metrics` + `eval_m2.simulate_pnl` + `side_split_metrics` +
+  `walk_forward_edge` reporting so numbers are directly LSTM-comparable. Default input
+  is a compact per-window summary (last bar + mean/std/min/max/delta over SEQ_LEN);
+  `--flatten` uses the full window. `--tail-days`, `--label-mode`, GBT hyperparams
+  exposed. Verified end-to-end in the ml_trainer container (3-pair/15d smoke).
+- `lightgbm>=4.1.0` added to `requirements.txt` + `requirements.gpu.txt`. ⚠️ The image
+  currently FAILS to rebuild on a PRE-EXISTING unrelated pin: `torch==2.5.1+cpu` local
+  tag was dropped from the PyTorch CPU index (plain `2.5.1` still exists). lightgbm
+  installs fine on top of the existing image; fix the torch pin before the next clean
+  rebuild (separate decision — it affects served numerics).
+- `LABEL_MODE=fixed|triple_barrier` (default `fixed` = byte-identical legacy) +
+  `TB_TP_MULT/TB_SL_MULT/TB_VOL_WINDOW/TB_MIN_BARRIER` added to `config.py`.
+  `data/features.py` gains `triple_barrier_labels()` (vol-scaled TP/SL/timeout,
+  close-to-barrier crossing, -1 invalid tail matches fwd-NaN) wired into
+  `make_labels_and_returns(..., label_mode=LABEL_MODE)`; the quantile head still trains
+  on the raw fixed-Δt forward return. Threaded through `dataset.py` (bundle meta records
+  `label_mode`) and forwarded on GPU runs via `LABEL_MODE`/`TB_*` in
+  `scripts/gcp_train.sh`'s `FLUX_TRAIN_ENV_KEYS`. Verified: labeler correct on synthetic
+  up/down/timeout series; OFF path unchanged.
+
+- **E4-GBT baseline — DIAGNOSTIC, do first (~2–3h, standalone, no serve risk).**
+  Answers the single most important open question: **signal-limited vs model-limited?**
+  New `ml/train/gbt_baseline.py`: reuse `build_feature_frame` + `make_labels`, flatten
+  the last `SEQ_LEN` bars (or a compact summary: last-bar + a few rolling stats) per
+  sample, train LightGBM (3-class or the up/down directional target to match the gated
+  head), then run the SAME `gate.py` fixed-coverage sweep + `eval_m2.simulate_pnl` so
+  numbers are directly comparable to the LSTM. Add `lightgbm` to `requirements*.txt`.
+  Diagnostic only — do NOT wire into serve.
+  - **Read:** GBT cov05 Wilson-LB + net P&L vs E2b (0.566 lb / all-neg P&L).
+  - **Decision:** GBT ≈ LSTM and also can't clear cost → **signal-limited** → stop
+    tuning architecture, pivot to data/features (book, cross-pair, taker ratios).
+    GBT clearly BEATS LSTM → LSTM is leaving signal on the table → architecture is
+    worth revisiting. GBT clearly WORSE → LSTM temporal modeling is helping; signal is
+    just thin.
+  - **Caveat:** candle-only + pooled val (pre-book-dominated), so a fail is the likely
+    and still-useful "we're signal-limited" answer; a pass would be genuinely new info.
+  - Runs local (`docker compose --profile ml run --rm ml_trainer python gbt_baseline.py`)
+    or on a throwaway VM; safe to run concurrent with `gcp_walkforward.sh`.
+
+- **E3-triple-barrier labels — MODELING (~half day code + 1 GPU run).** New labeler:
+  for each bar walk forward to the horizon, label UP if +vol-scaled TP hit first, DOWN
+  if -SL first, FLAT if timeout. Gate behind `LABEL_MODE=triple_barrier|fixed`
+  (default `fixed` = current). Keep raw fwd-return for the quantile head. Update
+  `make_labels*` callers in `dataset.py`. Standard fix for "right but not tradeable".
+  **Sequence after E4-GBT:** if GBT says signal-limited, triple-barrier is the ONE
+  modeling lever still worth a shot (it changes the target, not just the model); if
+  GBT says model-limited, do it too but architecture work competes.
+
+- **E5-cross-pair/regime features — FEATURE (~half day code + 1 GPU run).** Trailing
+  1h/4h/1d returns, longer rolling vol, BTC-beta. `FEATURE_DIM` bump → checkpoint/serve
+  change (attributable run of its own). Do AFTER E4-GBT triage. Free from candles,
+  zero collection lead time (`docs/DATA_COLLECTION_AUDIT.md`).
+
+**Recommended parallel plan:** build + run **E4-GBT** now (highest info/hour, unblocks
+the E3-vs-E5 choice, no serve risk) alongside the ~08-17 walk-forward. Read both
+together next session: walk-forward answers "does book carry edge?"; GBT answers "is
+ANY candle signal there at all?". Together they tell you whether the ceiling is data,
+features, or architecture.
+
 ---
 
 ## ▶️▶️▶️▶️ START HERE (2026-08-13 PM) — E-ROUND-2 RETURNED; E2b IS THE WINNER; promote + launch E3
@@ -390,8 +460,8 @@ result in the RESULTS TABLE below.
 | E3b2 pair-embed dim=16 | `logs/E3b2.log` | 30 | 0.554 | all neg | **Marginal.** Best book-era WF stability (flattest spread .017, newest fold **.562**) but lower headline. Not worth churn vs E2b (~1 LB pt, both non-promotable). WF .549/.566/.553/.562. |
 | E-gate/cost eval (E2b live) | `logs/eval_m2_E2b1/2/3.json` | 30 | tail-30d 0.477 (**0.454**) | all neg; **no cost-viable gate** | **ANSWERED — do not raise gate.** Gates .35–.50 identical (no conf spread); .55 → cov4% & LB .448 (<coinflip); .60 → zero cov. Recent-era edge ≈0. |
 | E4 calibration | — | 30 | — | — | **CANCELLED — wrong diagnosis.** Dir head has NO label smoothing already; it's calibrated to ~0 signal (Brier .2505), not under-confident. Sharpening would worsen P&L. |
-| E3 triple-barrier | _queued_ | tbd | | | |
-| E4 GBT baseline | _queued_ | 30 | | | |
+| E3 triple-barrier | _coded, not run_ (`LABEL_MODE=triple_barrier`) | tbd | | | |
+| E4 GBT baseline | _coded, not run_ (`gbt_baseline.py`) | 30 | | | |
 
 ### 🔧 CODE TASKS (implement when its arm comes up — NOT all now)
 

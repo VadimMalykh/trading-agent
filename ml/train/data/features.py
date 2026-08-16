@@ -10,6 +10,11 @@ from config import (
     BOOK_MAX_AGE_MIN,
     TRADES_MAX_AGE_MIN,
     FUNDING_OI_MAX_AGE_MIN,
+    LABEL_MODE,
+    TB_TP_MULT,
+    TB_SL_MULT,
+    TB_VOL_WINDOW,
+    TB_MIN_BARRIER,
 )
 from data import db
 
@@ -239,14 +244,87 @@ def make_labels(close: pd.Series, horizon_bars: int, flat_threshold: float) -> p
     return labels_from_return(forward_return(close, horizon_bars), flat_threshold)
 
 
+def triple_barrier_labels(
+    close: pd.Series,
+    horizon_bars: int,
+    tp_mult: float = TB_TP_MULT,
+    sl_mult: float = TB_SL_MULT,
+    vol_window: int = TB_VOL_WINDOW,
+    min_barrier: float = TB_MIN_BARRIER,
+) -> pd.Series:
+    """Triple-barrier direction label: 0=down / 1=flat(timeout) / 2=up / -1=invalid.
+
+    From each bar t, walk forward up to ``horizon_bars`` and check whether the
+    close crosses a volatility-scaled +TP or -SL barrier first:
+      UP   (2) if close >= entry*(1 + tp) before close <= entry*(1 - sl)
+      DOWN (0) if the -SL barrier is touched first
+      FLAT (1) if neither barrier is hit by the horizon (timeout)
+
+    Barriers are per-bar volatility-scaled: tp = tp_mult * sigma, sl = sl_mult *
+    sigma, where sigma = rolling std of 1-bar returns over ``vol_window`` bars,
+    floored at ``min_barrier`` so a dead-flat window still uses a sane band. This
+    labels what a TP/SL trade would REALIZE, unlike the fixed-Δt endpoint sign.
+
+    Tail bars without a full ``horizon_bars`` lookahead are -1 (invalid), matching
+    ``labels_from_return`` semantics so downstream validity masks drop them.
+
+    Uses close-to-barrier crossing (no intrabar high/low), a standard tradeable-
+    label approximation; on 1m bars over 30m+ horizons the discretization error is
+    small relative to the vol-scaled band.
+    """
+    c = close.to_numpy(dtype=np.float64)
+    n = c.shape[0]
+    ret1 = np.zeros(n, dtype=np.float64)
+    ret1[1:] = c[1:] / c[:-1] - 1.0
+    sigma = (
+        pd.Series(ret1).rolling(vol_window, min_periods=1).std().fillna(0.0).to_numpy()
+    )
+    tp = np.maximum(tp_mult * sigma, min_barrier)
+    sl = np.maximum(sl_mult * sigma, min_barrier)
+
+    labels = np.full(n, -1, dtype=np.int64)
+    last_valid = n - horizon_bars  # bars [0, last_valid) have a full lookahead
+    for t in range(max(0, last_valid)):
+        entry = c[t]
+        up_barrier = entry * (1.0 + tp[t])
+        dn_barrier = entry * (1.0 - sl[t])
+        lab = 1  # timeout / flat default
+        hi = t + horizon_bars
+        for j in range(t + 1, hi + 1):
+            cj = c[j]
+            if cj >= up_barrier:
+                lab = 2
+                break
+            if cj <= dn_barrier:
+                lab = 0
+                break
+        labels[t] = lab
+    return pd.Series(labels, index=close.index, dtype=int)
+
+
 def make_labels_and_returns(
-    close: pd.Series, horizon_bars: int, flat_threshold: float
+    close: pd.Series,
+    horizon_bars: int,
+    flat_threshold: float,
+    label_mode: str = LABEL_MODE,
 ) -> tuple[pd.Series, pd.Series]:
     """Return (3-class labels, raw forward return) sharing one fwd computation.
 
-    The raw forward return is the regression target for the quantile head; the
-    labels drive the 3-class + directional heads. Invalid tail bars are -1 in the
-    labels and NaN in the returns (masked out downstream).
+    The raw forward return is always the fixed-Δt forward return (the regression
+    target for the quantile head and the realized P&L per trade). The 3-class /
+    directional labels are derived per ``label_mode``:
+      "fixed"          -> sign of the fixed-Δt forward return vs flat_threshold
+                          (legacy, byte-identical to the served recipe).
+      "triple_barrier" -> volatility-scaled TP/SL/timeout (see triple_barrier_labels).
+
+    Invalid tail bars are -1 in the labels and NaN in the returns (masked out
+    downstream).
     """
     fwd = forward_return(close, horizon_bars)
+    if label_mode == "triple_barrier":
+        labels = triple_barrier_labels(close, horizon_bars)
+        # Keep the invalid-tail semantics aligned with the return series so the
+        # validity mask (label >= 0) and NaN forward returns agree.
+        labels[fwd.isna()] = -1
+        return labels, fwd
     return labels_from_return(fwd, flat_threshold), fwd

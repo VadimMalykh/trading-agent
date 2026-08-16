@@ -7,4 +7,5 @@ pandas>=2.1.0
 psycopg2-binary>=2.9.9
 SQLAlchemy>=2.0.0
 scikit-learn>=1.3.0
+lightgbm>=4.1.0  # GBT diagnostic baseline (gbt_baseline.py); not a serve dependency
 requests>=2.31.0

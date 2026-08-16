@@ -17,6 +17,7 @@ from config import (
     FLAT_THRESHOLD_PER_HORIZON,
     HORIZON_MINUTES,
     HORIZONS_MINUTES,
+    LABEL_MODE,
     PAIRS,
     SEQ_LEN,
 )
@@ -213,6 +214,7 @@ def build_m2_index_bundle(
         "layout": "lazy_index",
         "require_book": bool(require_book),
         "ablated_features": list(ablate_features or []),
+        "label_mode": LABEL_MODE,
     }
 
     for pair in pairs:

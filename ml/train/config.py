@@ -71,6 +71,26 @@ FLAT_THRESHOLD_PER_HORIZON = {
     1440: float(os.environ.get("FLAT_TH_1D", "0.015")),
 }
 
+# --- Label mode (E3: triple-barrier) ---------------------------------------------
+# How the 3-class direction label is derived from price after a bar:
+#   fixed          (default, legacy): sign of the fixed-Δt forward return over the
+#                  horizon vs FLAT_THRESHOLD. Byte-identical to the served recipe.
+#   triple_barrier: from each bar, walk forward up to the horizon; label UP if a
+#                  +TP barrier is hit before a -SL barrier, DOWN if -SL hits first,
+#                  FLAT if neither is touched by the horizon (timeout). This labels
+#                  what a TP/SL trade would ACTUALLY realize (tradeable), not the
+#                  fixed-Δt endpoint sign — the standard fix for "right but not
+#                  tradeable" (see docs/NEXT_TRAINING_PLAN.md E3). The quantile head
+#                  still trains on the raw fixed-Δt forward return regardless.
+# Barriers are volatility-scaled: TP/SL = TB_TP_MULT/TB_SL_MULT * rolling return std
+# (ret_std over TB_VOL_WINDOW bars) at the entry bar, floored at TB_MIN_BARRIER so a
+# dead-flat window still uses a sane band. Symmetric by default (TP == SL).
+LABEL_MODE = os.environ.get("LABEL_MODE", "fixed")
+TB_TP_MULT = float(os.environ.get("TB_TP_MULT", "1.5"))
+TB_SL_MULT = float(os.environ.get("TB_SL_MULT", "1.5"))
+TB_VOL_WINDOW = int(os.environ.get("TB_VOL_WINDOW", "15"))
+TB_MIN_BARRIER = float(os.environ.get("TB_MIN_BARRIER", "0.002"))  # 0.2% floor
+
 PAIRS = [
     p.strip()
     for p in os.environ.get("WHITELIST_PAIRS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",")
