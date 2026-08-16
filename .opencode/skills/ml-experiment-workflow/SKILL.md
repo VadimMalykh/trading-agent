@@ -88,6 +88,16 @@ safe to run concurrently with `gcp_train.sh`):
 
 ## Interpreting `eval_m2.py` output
 
+**`--gate` vs `GATE_THRESHOLD` — do NOT confuse them (avoids redundant runs).**
+`eval_m2.py --gate 0.35,0.4,...` is the *sweep list*: it evaluates ALL those
+thresholds in ONE run (`eval_m2.py:462`, split at :617) and prints one row per
+threshold. `GATE_THRESHOLD` (env, `config.py:175`, default 0.40) is only the
+*serve default* — in eval it merely marks that row with `*` and force-inserts
+it into the sweep if missing. So running the same checkpoint 3× with different
+`GATE_THRESHOLD` and no `--gate` gives ~identical tables (only the `*` moves) —
+wasted compute. To compare thresholds, use ONE run with the full `--gate` list;
+set `GATE_THRESHOLD` only to highlight your intended serve gate.
+
 Per horizon, per confidence threshold in the gate sweep:
 - `dir_acc` — directional accuracy on gated predictions.
 - `dir_acc_wilson_lb` (printed as `wilson_lb`) — Wilson lower bound on
@@ -102,7 +112,16 @@ Per horizon, per confidence threshold in the gate sweep:
 - `walk_forward_edge` — same dir_acc/Wilson-LB, split across disjoint time
   windows; an edge that only shows up in one window is suspect.
 - `calibration_report` — Brier-style bucketed calibration; only meaningful
-  alongside directional accuracy, not instead of it.
+  alongside directional accuracy, not instead of it. **Read it correctly before
+  proposing a "calibration fix":** if p(up) mass is squeezed into a narrow band
+  (e.g. [0.48,0.53]) AND `mean_pred ≈ empirical_up` in each bin with Brier ≈ 0.25,
+  the head is *well-calibrated to ~zero signal*, NOT under-confident — temperature
+  scaling / focal loss would then sharpen edgeless predictions and worsen P&L.
+  Under-confidence only holds if `empirical_up` is systematically MORE extreme than
+  `mean_pred`. Note the aux directional head (what gates) is trained with plain
+  weighted CE and NO label smoothing (`train_m2.py:523`); `CLS_LABEL_SMOOTHING`
+  affects only the unused 3-class head, so "disable label smoothing" is a no-op
+  for the gate.
 - `book_era_edge_split` — same metrics segmented by whether the microstructure
   ("book") era was live at that time, to catch outage-poisoned periods.
 

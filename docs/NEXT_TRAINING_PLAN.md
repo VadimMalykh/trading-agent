@@ -5,6 +5,93 @@ session and the exact steps/commands to execute.
 
 ---
 
+## ▶️▶️▶️▶️▶️ START HERE (2026-08-16) — E3 BATCH ANALYZED; TUNING CEILING CONFIRMED; NEXT = WALK-FORWARD BOOK ON/OFF (data-gated ~08-17)
+
+**Supersedes the 2026-08-13 PM section below.** The E3 dim-sweep + the E-gate/cost eval
+returned and are analyzed. Bottom line: **pair/dim tuning has hit its ceiling and E4
+(calibration) is based on a wrong diagnosis — do NOT run it.** The next real decision is
+the data-gated walk-forward book ON/OFF (Step A), which becomes valid ~2026-08-17.
+
+### 📊 What E3 showed (verdict = 30m cov05 Wilson-LB + WF stability, esp. newest/book-era fold)
+
+| Arm | dim / pairs | cov05 lb | WF folds (cov05 lb) | newest fold | WF spread | Verdict |
+|-----|-------------|---------:|---------------------|------------:|----------:|---------|
+| E3b1 | dim=4, 8p | 0.559 | .554/.578/.582/**.533** | 0.533 | 0.049 | **Reject.** Lowest peak; newest/book-era fold decays worst. Under-specialized. |
+| **E2b (live)** | dim=8, 8p | **0.566** | .568/.572/.560/**.548** | 0.548 | 0.024 | Incumbent. Best headline, strong newest fold. |
+| E3b2 | dim=16, 8p | 0.554 | .549/.566/.553/**.562** | **0.562** | **0.017** | **Marginally best book-era stability** (flattest WF, strongest newest fold) but lower headline. Non-promotable (still net-neg). Not worth the churn vs E2b for ~1 LB pt. |
+| E3a | off, 12p | **VOID** | — | — | — | **Log truncated at eval start** (`logs/E3a.log` ends mid-eval; `logs/error.log` = failed `gcp_logs.sh` fetch of run `20260814T144713Z`). Also `PAIR_EMBED_DIM` was accidentally OMITTED → pair-embed OFF (plan said dim=8), so even if re-fetched it confounds "more pairs" with "dropped embedding". Re-run cleanly if the 12-pair question still matters. |
+
+Dim curve is non-monotonic (peak acc @8, best book-era stability @16), but all gaps are
+~1.5 LB pts — within noise. **No E3 arm is promotable; all are net-negative and all show
+the same recent-era collapse. Keep E2b live.**
+
+### 🚫 E-gate/cost — ANSWERED: there is NO cost-viable operating point (do not raise the gate)
+
+The three `GATE_THRESHOLD=0.55/0.60/0.65 … eval_m2.py --tail-days 30` runs
+(`logs/eval_m2_E2b1/2/3.json`) are the **same live E2b checkpoint on the same window** —
+`GATE_THRESHOLD` w/o `--gate` only moves the `*` marker; use `--gate a,b,c` for a real
+sweep in ONE run (see skill note). What the gate sweep on the recent (all-book-era) tail-30d shows:
+
+- Gates **0.35–0.50 are identical** (cov=1.0, 2296 trades) — the dir head emits **no
+  confidence spread** on recent data, so no sub-0.55 gate filters anything.
+- Gate **0.55**: cov→4%, dir_acc **0.473 / LB 0.448** (*below coin flip*), net still neg.
+- Gate **0.60**: **zero coverage** — head never exceeds 0.60 confidence.
+- Tail-30d ungated dir_acc@cov05 = **0.477 / LB 0.454** — **below coin flip in the exact
+  regime we trade.** (Training-log book-era LB ~0.53 was inflated by pre-book bleed + a
+  larger window; the pure recent 30d is coin-flip-to-negative.)
+
+### 🛑 E4 (calibration) — DIAGNOSIS WAS WRONG; DO NOT RUN AS PLANNED
+
+The plan said "head is under-confident → sharpen it (temperature/focal/kill label
+smoothing)". The code + data refute this:
+1. **The directional head — the one that gates — already has NO label smoothing**
+   (`train_m2.py:523-525`, plain weighted CE). `CLS_LABEL_SMOOTHING` only touches the
+   unused 3-class head. So "disable label smoothing" is a no-op for the gate.
+2. **The head is not under-confident — it's correctly calibrated to ~zero signal.**
+   Tail-30d directional calibration (`eval_m2_E2b1.json`): all p(up) mass in [0.48,0.53];
+   in the [0.50,0.60) bin mean_pred=0.532 vs empirical_up=**0.492** (over-, not under-,
+   stated); **Brier 0.2505 ≈ 0.25 coin-flip baseline**.
+3. Temperature scaling / focal loss would **sharpen an edgeless distribution → confident
+   wrong predictions → worse P&L.** You cannot calibrate signal into existence.
+
+### ✅ DECISION — NEXT IS STEP A (walk-forward book ON/OFF), data-gated to ~2026-08-17
+
+The consistent pattern R0→E3: **the recent book-era edge is ~0; this is a data/feature
+problem, not a model problem.** So the correct next step is the diagnostic that gates
+everything downstream — does microstructure carry ANY real edge — NOT more tuning.
+
+Book history (checked 2026-08-16 via `orderbook_snapshots`):
+
+| Pair(s) | book age (2026-08-16) | ≥30d |
+|---------|-----------------------|------|
+| BTC/ETH/SOL | **29d 5h** | **~2026-08-17 (≈19h away)** |
+| DOGE/WLD/HYPE | ~26d | ~08-20 |
+| ZEC | ~22d | ~08-24 |
+| 1000PEPE | ~20d | ~08-26 |
+
+**Do NOT launch today** — even the majors are ~19h short of 30d; running now carves
+tiny dense-book val slices per fold and re-measures noise (the exact fluke the plan
+warns about). **~2026-08-17, once BTC/ETH/SOL cross 30d, launch long-pairs-only:**
+
+```sh
+WF_LONG_PAIRS_ONLY=1 WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 \
+  ./scripts/gcp_walkforward.sh
+./scripts/gcp_walkforward.sh --fetch   # → logs/... compare table
+```
+
+**VERDICT RULE (unchanged):** book-ON − book-OFF Wilson-LB gap > ~0.05 on **ALL** folds
+→ book edge robust → Step B. If ANY fold's gap ≤0 or LBs overlap → **STOP tuning, keep
+collecting, re-check at ~60d.** Given the tail-30d coin-flip result, expect this may
+fail; that is an acceptable (and informative) answer. Full 8-pair walk-forward ~08-26.
+
+**If Step A fails:** the honest path is feature/data work (full-fidelity L2 book —
+`orderbook_levels` accumulating since 08-05; long/short & taker ratios; liquidations),
+NOT more model tuning. Triple-barrier labels (E3-label) is the one remaining *modeling*
+lever worth trying — it changes WHAT we predict (tradeable TP/SL vs fixed-Δt sign) and
+can create signal where fixed-Δt has none — but gate it behind Step A.
+
+---
+
 ## ▶️▶️▶️▶️ START HERE (2026-08-13 PM) — E-ROUND-2 RETURNED; E2b IS THE WINNER; promote + launch E3
 
 **Read this first — supersedes the 2026-08-13 (AM) section below.** The E-round-2 batch
@@ -298,9 +385,11 @@ result in the RESULTS TABLE below.
 | E2a′ 7-pair reseed | `logs/E2a1.log` | 30 | 0.572 (**0.568**) | all neg | Reproduces E2a (~.003) → drop-HYPE edge is real, not seed noise. WF folds .590/.553/.568/**.542** — front-loads early, decays by newest fold. |
 | E2c majors-only 4-pair | `logs/E2c.log` | 30 | 0.566 (0.559) | all neg | **Weakest — REJECT.** Fewer pairs hurt; newest WF fold .512 (≈coin flip in book era). More pairs > fewer. |
 | **E2b′ pair-embed dim=8** | `20260813T114311Z` / `a26b032b` (`logs/E2b.log`) | 30 | 0.569 (**0.566**) | all neg (−8.97 @0.55) | **✅ WINNER — PROMOTE.** Tightest WF spread (.568/.572/.560/**.548**); pair-embed flattened edge across time (generalizing). All 8 pairs tradeable. Chosen on WF stability, not headline acc. Still net-neg → cost is the ceiling (see E-gate/cost + E4). |
-| E3a more-pairs (12) | _pending_ | 30 | | | |
-| E3b/c pair-embed dim 4/16 | _pending_ | 30 | | | |
-| E4 calibration | _pending_ | 30 | | | |
+| E3a more-pairs (12, embed OFF) | `20260814T144713Z` (`logs/E3a.log`) | 30 | **VOID** | — | **Log truncated at eval start** + `PAIR_EMBED_DIM` omitted (embed OFF, not dim=8 as planned). Re-run cleanly if 12-pair Q still matters. |
+| E3b1 pair-embed dim=4 | `logs/E3b1.log` | 30 | 0.559 | all neg | **Reject.** Lowest peak; newest/book-era WF fold .533 (worst). WF folds .554/.578/.582/.533. Under-specialized. |
+| E3b2 pair-embed dim=16 | `logs/E3b2.log` | 30 | 0.554 | all neg | **Marginal.** Best book-era WF stability (flattest spread .017, newest fold **.562**) but lower headline. Not worth churn vs E2b (~1 LB pt, both non-promotable). WF .549/.566/.553/.562. |
+| E-gate/cost eval (E2b live) | `logs/eval_m2_E2b1/2/3.json` | 30 | tail-30d 0.477 (**0.454**) | all neg; **no cost-viable gate** | **ANSWERED — do not raise gate.** Gates .35–.50 identical (no conf spread); .55 → cov4% & LB .448 (<coinflip); .60 → zero cov. Recent-era edge ≈0. |
+| E4 calibration | — | 30 | — | — | **CANCELLED — wrong diagnosis.** Dir head has NO label smoothing already; it's calibrated to ~0 signal (Brier .2505), not under-confident. Sharpening would worsen P&L. |
 | E3 triple-barrier | _queued_ | tbd | | | |
 | E4 GBT baseline | _queued_ | 30 | | | |
 
