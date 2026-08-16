@@ -134,7 +134,21 @@ E3-triple-barrier are now IMPLEMENTED.** E5-cross-pair is still unimplemented.
   currently FAILS to rebuild on a PRE-EXISTING unrelated pin: `torch==2.5.1+cpu` local
   tag was dropped from the PyTorch CPU index (plain `2.5.1` still exists). lightgbm
   installs fine on top of the existing image; fix the torch pin before the next clean
-  rebuild (separate decision — it affects served numerics).
+  rebuild (separate decision — it affects served numerics). `scripts/gcp_gbt.sh` works
+  around it by relaxing the pin in the throwaway VM's checkout only (see below).
+- **2026-08-16 (later): the first 8-pair launch was OOM-killed on the always-on VM (2GB).**
+  Two fixes landed: (a) `scripts/gcp_gbt.sh` — throwaway self-cleaning VM for this
+  diagnostic, mirroring `gcp_audit.sh`; that is now the documented way to run it;
+  (b) `gbt_baseline.py` memory rework — X is built only for the rows actually fitted
+  (was: all train rows, then a boolean-mask copy = 2× peak), handed to LightGBM's native
+  API as a constructed `Dataset` so the raw float32 matrix is freed before boosting, val
+  streamed through `predict` in bounded chunks, unused bundle arrays (non-primary
+  horizons, closes, book mask) dropped after the split, a `--max-train-rows` cap, and
+  `[mem] rss=` traces at every step. Feature values are unchanged (verified
+  bit-comparable) and the LightGBM params are exact equivalents of the previous
+  `LGBMClassifier` kwargs, so it is the same experiment — just several times lighter.
+  Also: the silent `PRIMARY_HORIZON ∉ HORIZONS_MINUTES` fallback now WARNS loudly — the
+  aborted run had resolved to `primary=5m`, which is NOT E2b-comparable.
 - `LABEL_MODE=fixed|triple_barrier` (default `fixed` = byte-identical legacy) +
   `TB_TP_MULT/TB_SL_MULT/TB_VOL_WINDOW/TB_MIN_BARRIER` added to `config.py`.
   `data/features.py` gains `triple_barrier_labels()` (vol-scaled TP/SL/timeout,
@@ -161,8 +175,8 @@ E3-triple-barrier are now IMPLEMENTED.** E5-cross-pair is still unimplemented.
     just thin.
   - **Caveat:** candle-only + pooled val (pre-book-dominated), so a fail is the likely
     and still-useful "we're signal-limited" answer; a pass would be genuinely new info.
-  - Runs local (`docker compose --profile ml run --rm ml_trainer python gbt_baseline.py`)
-    or on a throwaway VM; safe to run concurrent with `gcp_walkforward.sh`.
+  - Run it with `./scripts/gcp_gbt.sh` (own throwaway VM, self-cleaning); safe to run
+    concurrent with `gcp_walkforward.sh`. NOT on the always-on VM — 2GB, OOM-kills it.
 
 - **E3-triple-barrier labels — MODELING (~half day code + 1 GPU run).** New labeler:
   for each bar walk forward to the horizon, label UP if +vol-scaled TP hit first, DOWN
@@ -212,29 +226,55 @@ for both paths when `--pairs`/`TRAIN_PAIRS` is omitted. The 4 extra pairs
   `TRAIN_PAIRS` (see the E3 LADDER E3a command below). First confirm freshness/coverage on
   the VM with `./scripts/gcp_data_collection_stats.sh`.
 
-**E4-GBT — LOCAL, run now (no GPU, no serve risk, safe concurrent with walk-forward).**
-The ml_trainer image can't do a CLEAN rebuild yet (pre-existing `torch==2.5.1+cpu` pin is
-gone from the PyTorch CPU index; plain `2.5.1` still exists — fix that pin before any
-rebuild). So install lightgbm into a running container from the EXISTING image:
+**E4-GBT — THROWAWAY VM, run now (no GPU, no serve risk, safe concurrent with
+walk-forward).** ⚠️ **Do NOT run this on the always-on VM.** That was tried
+(2026-08-16) and the kernel OOM-killed it mid-bundle: the box is 2GB and already runs
+postgres + app + ml_inference, while an 8-pair full-history run needs ~2-4GB (the design
+matrix, not the bundle, dominates). The kill is SILENT — the log stops after
+`Building bundle...` and no report is written. Same reason `gcp_audit.sh` exists.
 
 ```sh
-docker compose --profile ml run -d --name gbt_run ml_trainer sleep infinity
-docker exec gbt_run pip install --no-cache-dir 'lightgbm>=4.1.0' -q
-docker exec gbt_run python gbt_baseline.py \
-  --pairs BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-  --out /workspace/train/output/gbt_8pair.json      # report → ml/train/output/ (bind mount)
-docker rm -f gbt_run
+./scripts/gcp_gbt.sh                       # E2b 8-pair set, horizons 5,30,60, primary 30m
+./scripts/gcp_gbt.sh --status              # VM liveness + marker
+./scripts/gcp_gbt.sh --fetch               # summary tables + report JSON (→ $EXPORT_DIR)
+./scripts/gcp_gbt.sh --log                 # full console log
 ```
 
+It mirrors `gcp_audit.sh`: fresh dump from always-on → own temp VM (`fluxtrader-gbt`,
+e2-standard-4 = 4 vCPU/16GB) → restore → `gbt_baseline.py` in `ml_trainer` → push
+log + JSON + summary to `gs://…/gbt/` → self-DELETE on success / self-STOP on failure.
+Separate VM, tmux session and status marker from train/audit/ablate, so it can run
+concurrently with the walk-forward. Never writes a checkpoint.
+
 Notes:
-- Passing `--pairs` explicitly (vs relying on the whitelist) makes the run
-  self-documenting and immune to a later whitelist edit.
-- Optional flags: `--tail-days N` (bound RAM / restrict to book era), `--flatten` (full
-  SEQ_LEN×F window instead of the compact summary), `--label-mode triple_barrier`
-  (E3-flavored GBT), `--n-estimators/--num-leaves/--learning-rate` (GBT hyperparams).
-- Once the torch pin is fixed you can instead just
-  `docker compose --profile ml build ml_trainer` (lightgbm is now in requirements) and
-  drop the manual `pip install` step.
+- Defaults `--pairs` to E2b's 8 pairs (attributability) and passes
+  `HORIZONS_MINUTES=5,30,60 PRIMARY_HORIZON=30 SEQ_LEN=128` EXPLICITLY, then echoes
+  them as `=== resolved knobs: … ===`. This matters: `gbt_baseline.py` takes horizons
+  from config env, and the always-on container's env made the aborted run print
+  `primary=5m` — 5m numbers are NOT comparable to E2b's 30m. The script hard-errors if
+  `GBT_PRIMARY ∉ GBT_HORIZONS`, and the python now prints a loud WARNING instead of
+  silently falling back (the R3 lesson).
+- Any other flag is passed through verbatim: `--tail-days N`, `--max-train-rows N`
+  (both bound RAM), `--flatten` (full SEQ_LEN×F window), `--label-mode triple_barrier`
+  (E3-flavored GBT), `--n-estimators/--num-leaves/--learning-rate/--seed`, `--chunk-mb`.
+- The script builds `ml_trainer` on the temp VM. The pre-existing `torch==2.5.1+cpu` pin
+  no longer resolves on the PyTorch CPU index, so the build falls back (in the temp VM's
+  checkout ONLY, with a warning) to `torch==2.5.1`, then to unpinned CPU torch. Safe
+  here: this diagnostic uses torch purely for the gate/P&L tensor math, never to train
+  or load a model. Fixing the pin for real still affects TRAINED numerics → separate
+  decision, untouched.
+- Container path (only if you have a DB + ≥4GB free where you run it — the local dev DB
+  is NOT the real data, see AGENTS.md):
+  ```sh
+  docker compose --profile ml run --rm \
+    -e HORIZONS_MINUTES=5,30,60 -e PRIMARY_HORIZON=30 -e SEQ_LEN=128 \
+    ml_trainer python gbt_baseline.py \
+      --pairs BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+      --tail-days 90 --max-train-rows 400000 \
+      --out /workspace/train/output/gbt_8pair.json   # → ml/train/output/ (bind mount)
+  ```
+- `gbt_baseline.py` prints `[mem] <step>: rss=… MB` at each stage, so if a run ever does
+  get killed the log shows exactly which step blew the budget.
 
 **E3 triple-barrier — GPU (launches a throwaway VM).** One change vs E2b: the label mode.
 
