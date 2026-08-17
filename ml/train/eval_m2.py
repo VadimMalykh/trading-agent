@@ -52,8 +52,25 @@ from models.multi_horizon import SharedEncoderMultiHead
 # Coverages at which to report a stable, cross-model-comparable directional edge.
 FIXED_COVERAGES = [0.01, 0.02, 0.05, 0.10, 0.20]
 
-# Bar duration in seconds (1m candles) — used by the serial P&L hold logic.
-BAR_SECONDS = 60
+# Bar duration in seconds — used by the serial P&L hold logic to decide when an open
+# position has been held long enough. Was hardcoded to 60, which silently assumed 1m
+# candles: under CANDLE_INTERVAL=15m a 4h horizon (16 bars) would have used a 16-MINUTE
+# hold, so the sim would open a new position ~15x too often and the reported net_ret /
+# trade count would be meaningless. Derived from CANDLE_INTERVAL now.
+_BAR_SECONDS_BY_INTERVAL = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600}
+
+
+def bar_seconds(candle_interval: str = CANDLE_INTERVAL) -> int:
+    secs = _BAR_SECONDS_BY_INTERVAL.get(candle_interval)
+    if secs is None:
+        raise ValueError(
+            f"CANDLE_INTERVAL={candle_interval!r} has no known bar duration; add it to "
+            "_BAR_SECONDS_BY_INTERVAL (and to dataset.horizon_bars) before running."
+        )
+    return secs
+
+
+BAR_SECONDS = bar_seconds()
 
 
 def collate_mh(batch):

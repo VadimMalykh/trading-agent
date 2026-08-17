@@ -18,6 +18,10 @@ from config import (
     HORIZON_MINUTES,
     HORIZONS_MINUTES,
     LABEL_MODE,
+    NORM_CLIP,
+    NORM_DEGENERATE_MODE,
+    NORM_DEGENERATE_STD,
+    NORM_LEGACY_BROKEN_STD,
     PAIRS,
     SEQ_LEN,
 )
@@ -30,9 +34,28 @@ from data.features import (
 )
 
 
+BAR_MINUTES_BY_INTERVAL = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
+
+
 def horizon_bars(candle_interval: str, horizon_minutes: int) -> int:
-    mapping = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
-    bar = mapping.get(candle_interval, 1)
+    """Bars needed to span `horizon_minutes` at `candle_interval`.
+
+    Raises on an unknown interval instead of silently assuming 1m — a silent
+    fallback here would scale every horizon (and therefore every label and every
+    P&L hold) by the wrong factor. Cf. the R3 silent-primary-fallback lesson.
+    """
+    bar = BAR_MINUTES_BY_INTERVAL.get(candle_interval)
+    if bar is None:
+        raise ValueError(
+            f"CANDLE_INTERVAL={candle_interval!r} is not a known bar size "
+            f"(known: {sorted(BAR_MINUTES_BY_INTERVAL)})."
+        )
+    if horizon_minutes % bar != 0:
+        print(
+            f"  WARNING [horizon] {horizon_minutes}m is not a multiple of the "
+            f"{candle_interval} bar; truncating to {max(1, horizon_minutes // bar)} bars "
+            f"(= {max(1, horizon_minutes // bar) * bar}m)."
+        )
     return max(1, horizon_minutes // bar)
 
 
@@ -45,11 +68,203 @@ def _ts_to_i64(index_val) -> np.int64:
     return np.int64(ts.value)
 
 
+_DEGENERATE_ACTION = (
+    "forcing them to 0 (NORM_DEGENERATE_MODE=zero: what the model actually saw in "
+    "training)" if NORM_DEGENERATE_MODE == "zero"
+    else "passing them through UNSCALED (NORM_DEGENERATE_MODE=passthrough)"
+)
+_DEGENERATE_HINT = (
+    "           These features carry NO training signal (their source has no history\n"
+    "           inside the train window), so the model cannot have learned from them.\n"
+    "           To actually use them, train on a window where they EXIST "
+    "(--require-book)\n"
+    "           or drop them from FEATURE_COLS. A normalization setting cannot fix it."
+)
+
+
+def degenerate_std_mask(std: np.ndarray, threshold: float = NORM_DEGENERATE_STD) -> np.ndarray:
+    """Bool mask of columns whose std carries no information (see config NORM_*)."""
+    return np.asarray(std) <= threshold
+
+
+def _fix_degenerate_std(
+    std: np.ndarray,
+    threshold: float,
+    label: str,
+    feature_names: Sequence[str] | None = None,
+) -> tuple[np.ndarray, List[int]]:
+    """Rewrite degenerate stds to 1.0 and report which columns were affected.
+
+    A column whose std is <= `threshold` has no variance, so dividing by it is
+    meaningless and — with the old additive-epsilon std of 1e-6 — actively
+    catastrophic (see the NORM_* block in config.py). std=1.0 removes the blowup;
+    the returned index list then drives `zero_degenerate`, which under the default
+    NORM_DEGENERATE_MODE=zero pins those columns to 0 so train/val/serve all show
+    the model the same (uninformative) value it was trained on.
+    """
+    std = np.array(std, dtype=np.float32, copy=True)
+    bad = degenerate_std_mask(std, threshold)
+    idx = [int(i) for i in np.nonzero(bad)[0]]
+    if idx:
+        std[bad] = 1.0
+        names = feature_names if feature_names is not None else FEATURE_COLS
+        shown = [
+            (names[i] if i < len(names) else f"col{i}") for i in idx
+        ]
+        print(
+            f"  WARNING [norm] {label}: {len(idx)}/{std.shape[0]} features have "
+            f"DEGENERATE train variance (std<={threshold:g}) -> {_DEGENERATE_ACTION} "
+            f"instead of dividing by ~0. Affected: {', '.join(shown)}"
+        )
+        print(_DEGENERATE_HINT)
+    return std, idx
+
+
+def finalize_train_std(
+    std_raw: np.ndarray,
+    label: str,
+    feature_names: Sequence[str] | None = None,
+    eps: float = 1e-6,
+) -> tuple[np.ndarray, List[int]]:
+    """Turn a raw train std into the std actually used for normalization.
+
+    Healthy columns keep the legacy `raw + eps` value byte-for-byte, so this is a
+    no-op for every feature that was already scaled sanely. Columns whose RAW std
+    is <= NORM_DEGENERATE_STD (i.e. constant in train) get std=1.0 instead of the
+    old `0 + eps = 1e-6`, which is the whole point of the fix. The threshold is
+    checked on the RAW std, before eps is added — checking afterwards would never
+    fire, since `0 + 1e-6` sits above any sane degeneracy threshold.
+    """
+    std_raw = np.asarray(std_raw, dtype=np.float32)
+    std = (std_raw + np.float32(eps)).astype(np.float32)
+    bad = degenerate_std_mask(std_raw, NORM_DEGENERATE_STD)
+    idx = [int(i) for i in np.nonzero(bad)[0]]
+    if idx:
+        std[bad] = 1.0
+        names = feature_names if feature_names is not None else FEATURE_COLS
+        shown = [(names[i] if i < len(names) else f"col{i}") for i in idx]
+        print(
+            f"  WARNING [norm] {label}: {len(idx)}/{std.shape[0]} features are "
+            f"CONSTANT in the train window (raw std<={NORM_DEGENERATE_STD:g}) -> "
+            f"{_DEGENERATE_ACTION} instead of dividing by ~0. "
+            f"Affected: {', '.join(shown)}"
+        )
+        print(_DEGENERATE_HINT)
+    return std, idx
+
+
+def sanitize_norm_stats(
+    norm_stats: Dict[str, dict],
+    label: str = "checkpoint",
+    feature_names: Sequence[str] | None = None,
+) -> Dict[str, dict]:
+    """Repair the broken std=1e-6 baked into pre-2026-08-17 checkpoints.
+
+    Every checkpoint trained on a global-time split before the fix stored
+    std=1e-6 (=0 + additive epsilon) for each feature that was constant in train,
+    so applying those stats multiplied live/val inputs by 1e6. Rewrite any stored
+    std at or below NORM_LEGACY_BROKEN_STD to 1.0 so the column passes through
+    unscaled. Returns a NEW dict; the input is not mutated.
+
+    Threshold choice: 1.1e-6 is coarser than the 1e-8 used at FIT time (there we see
+    the raw std, before the epsilon). It could in principle also catch a column whose
+    real std is genuinely below ~1e-6 — `micro_mid` on BTC is the only plausible
+    candidate. That mis-fire is benign (the feature passes through at ~1e-6 magnitude,
+    i.e. the model ignores it) whereas a missed broken column multiplies inputs by
+    1e6, so the asymmetry justifies being aggressive here. It is logged either way,
+    and it only applies to checkpoints written before the fix — newly fitted stats
+    use the precise raw-std threshold and never reach this path.
+    """
+    if not norm_stats:
+        return norm_stats
+    out: Dict[str, dict] = {}
+    for key, st in norm_stats.items():
+        if not isinstance(st, dict) or "std" not in st:
+            out[key] = st
+            continue
+        std, idx = _fix_degenerate_std(
+            np.asarray(st["std"], dtype=np.float32),
+            NORM_LEGACY_BROKEN_STD,
+            f"{label}[{key}]",
+            feature_names,
+        )
+        new = dict(st)
+        new["std"] = std.tolist()
+        if idx:
+            new["degenerate_cols"] = idx
+        out[key] = new
+    return out
+
+
+def clip_norm(arr: np.ndarray, clip: float = NORM_CLIP) -> np.ndarray:
+    """Clip normalized features to +/-clip in place (0 disables). See config NORM_CLIP."""
+    if clip and clip > 0:
+        np.clip(arr, -clip, clip, out=arr)
+    return arr
+
+
+def zero_degenerate(arr: np.ndarray, cols: Sequence[int] | None) -> np.ndarray:
+    """Pin train-constant feature columns to 0 (last axis), in place.
+
+    Applied identically in train, eval and serve so the model always sees the same
+    value for a feature it could not learn from. See config NORM_DEGENERATE_MODE.
+    """
+    if not cols or NORM_DEGENERATE_MODE != "zero" or arr.size == 0:
+        return arr
+    idx = np.asarray(list(cols), dtype=np.intp)
+    idx = idx[idx < arr.shape[-1]]
+    if idx.size:
+        arr[..., idx] = 0.0
+    return arr
+
+
+# Above this, a normalized value cannot be a fat tail — it means the scale itself is
+# wrong (the old std=1e-6 bug produced 1e6..1e8). Between NORM_CLIP and this, values are
+# plausible heavy-tailed outliers that NORM_CLIP winsorizes; that is expected on crypto
+# 1m/15m returns and is not a defect.
+_NORM_BROKEN_Z = 1000.0
+
+
+def norm_range_report(
+    arr: np.ndarray, label: str, feature_names: Sequence[str] | None = None
+) -> float:
+    """Print max|z| (and the column responsible) after normalization.
+
+    Streams over row-chunks: `np.abs(arr)` on a full 25M x 19 float32 matrix would
+    allocate ~1.9GB, which is exactly the kind of transient that has OOM-killed these
+    runs before.
+    """
+    if arr.size == 0:
+        return 0.0
+    f = arr.shape[-1]
+    col_max = np.zeros(f, dtype=np.float32)
+    flat = arr.reshape(-1, f)
+    for lo in range(0, flat.shape[0], _NORM_STREAM_ROWS):
+        chunk = flat[lo : lo + _NORM_STREAM_ROWS]
+        np.maximum(col_max, np.nanmax(np.abs(chunk), axis=0), out=col_max)
+    j = int(np.argmax(col_max))
+    mx = float(col_max[j])
+    names = feature_names if feature_names is not None else FEATURE_COLS
+    worst = names[j] if j < len(names) else f"col{j}"
+    limit = NORM_CLIP if NORM_CLIP and NORM_CLIP > 0 else 50.0
+    if mx > _NORM_BROKEN_Z:
+        flag = "  <== BROKEN SCALE (not a fat tail — check norm stats)"
+    elif mx > limit:
+        flag = f"  (heavy tail, winsorized at +/-{limit:g})"
+    else:
+        flag = ""
+    print(f"  [norm] {label}: max|z|={mx:.4g} on '{worst}'{flag}")
+    return mx
+
+
 def apply_norm_to_matrix(feats: np.ndarray, stats: dict) -> np.ndarray:
     """In-place-ish z-score of [T, F] using {mean, std} lists."""
     mean = np.asarray(stats["mean"], dtype=np.float32)
-    std = np.asarray(stats["std"], dtype=np.float32)
-    return (feats - mean) / std
+    std, degen = _fix_degenerate_std(
+        np.asarray(stats["std"], dtype=np.float32), NORM_LEGACY_BROKEN_STD, "matrix"
+    )
+    out = (feats - mean) / std
+    return clip_norm(zero_degenerate(out, stats.get("degenerate_cols") or degen))
 
 
 def apply_feature_norm(
@@ -57,7 +272,12 @@ def apply_feature_norm(
     pair_ids: np.ndarray,
     norm_stats: Dict[str, dict],
 ) -> np.ndarray:
-    """Legacy helper for serve / tests: apply per-pair z-score on [N,T,F]."""
+    """Legacy helper for serve / tests: apply per-pair z-score on [N,T,F].
+
+    Assumes `norm_stats` was already run through `sanitize_norm_stats` (serve.py
+    does this at load). Degenerate stds are repaired defensively here too, but
+    silently — otherwise every inference request would re-log the same warning.
+    """
     if not norm_stats or X.size == 0:
         return X
     out = X.copy()
@@ -67,10 +287,14 @@ def apply_feature_norm(
         if st is None:
             continue
         mean = np.asarray(st["mean"], dtype=np.float32).reshape(1, 1, -1)
-        std = np.asarray(st["std"], dtype=np.float32).reshape(1, 1, -1)
+        std = np.asarray(st["std"], dtype=np.float32)
+        bad = degenerate_std_mask(std, NORM_LEGACY_BROKEN_STD)
+        std = np.where(bad, np.float32(1.0), std).reshape(1, 1, -1)
         mask = pair_ids == pair
-        out[mask] = (out[mask] - mean) / std
-    return out
+        sub = (out[mask] - mean) / std
+        cols = st.get("degenerate_cols") or [int(i) for i in np.nonzero(bad)[0]]
+        out[mask] = zero_degenerate(sub, cols)
+    return clip_norm(out)
 
 
 def build_arrays(
@@ -101,8 +325,13 @@ def build_arrays(
 
         if normalize:
             mean = feats.mean(axis=0, keepdims=True)
-            std = feats.std(axis=0, keepdims=True) + 1e-6
-            feats = (feats - mean) / std
+            # Same degenerate-column guard as the M2 path (config NORM_* block):
+            # a constant column must not be divided by ~0.
+            std_row, degen = finalize_train_std(
+                feats.std(axis=0), f"M1 build_arrays[{pair}]"
+            )
+            feats = (feats - mean) / std_row.reshape(1, -1)
+            feats = clip_norm(zero_degenerate(feats, degen))
 
         count = 0
         for i in range(seq_len, len(feats) - h_bars):
@@ -440,19 +669,34 @@ def fit_norm_from_bundle(
             dev_sum += (dev * dev).sum(axis=0)
             dg = chunk.astype(np.float64) - g_mean
             g_var_sum += (dg * dg).sum(axis=0)
-        std = np.sqrt(dev_sum / n) + 1e-6
+        std, degen = finalize_train_std(np.sqrt(dev_sum / n), f"train fit[{pair}]")
         stats[pair]["std"] = std.astype(np.float32).tolist()
+        if degen:
+            stats[pair]["degenerate_cols"] = degen
 
-    g_std = np.sqrt(g_var_sum / g_n) + 1e-6
+    g_std, g_degen = finalize_train_std(np.sqrt(g_var_sum / g_n), "train fit[_global]")
     stats["_global"] = {
         "mean": g_mean.astype(np.float32).tolist(),
         "std": g_std.astype(np.float32).tolist(),
     }
+    if g_degen:
+        stats["_global"]["degenerate_cols"] = g_degen
     return stats
 
 
-def apply_norm_to_bundle(bundle: M2IndexBundle, norm_stats: Dict[str, dict]) -> None:
-    """Normalize each pair matrix in-place using checkpoint-style stats."""
+def apply_norm_to_bundle(
+    bundle: M2IndexBundle,
+    norm_stats: Dict[str, dict],
+    report: bool = True,
+) -> None:
+    """Normalize each pair matrix in-place using checkpoint-style stats.
+
+    `norm_stats` coming from a pre-2026-08-17 checkpoint is sanitized first, so
+    loading an old checkpoint for eval no longer multiplies book/trade/OI features
+    by 1e6. Values are clipped to +/-NORM_CLIP and the realized max|z| is printed
+    per pair — a healthy feature set stays far below the clip.
+    """
+    norm_stats = sanitize_norm_stats(norm_stats, "loaded norm_stats")
     global_stats = norm_stats.get("_global")
     for ser in bundle.series:
         st = norm_stats.get(ser.pair) or global_stats
@@ -462,6 +706,12 @@ def apply_norm_to_bundle(bundle: M2IndexBundle, norm_stats: Dict[str, dict]) -> 
         std = np.asarray(st["std"], dtype=np.float32)
         np.subtract(ser.feats, mean, out=ser.feats)
         np.divide(ser.feats, std, out=ser.feats)
+        zero_degenerate(ser.feats, st.get("degenerate_cols"))
+        # Report BEFORE clipping — afterwards max|z| can never exceed the clip, so
+        # the whole point (surfacing a scaling blowup) would be hidden.
+        if report:
+            norm_range_report(ser.feats, f"normalized[{ser.pair}]")
+        clip_norm(ser.feats)
 
 
 def labels_for_indices(

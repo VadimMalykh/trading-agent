@@ -30,12 +30,19 @@ from config import (
     GATE_THRESHOLD as CFG_GATE,
     HORIZONS_MINUTES,
     MODEL_DIR,
+    NORM_DEGENERATE_MODE,
     PAIRS,
     PRIMARY_HORIZON,
     SEQ_LEN,
 )
 from data.db import load_whitelist_pairs
-from data.dataset import apply_feature_norm
+from data.dataset import (
+    apply_feature_norm,
+    clip_norm,
+    finalize_train_std,
+    sanitize_norm_stats,
+    zero_degenerate,
+)
 from data.features import build_feature_frame
 from gate import directional_signal
 from models.multi_horizon import SharedEncoderMultiHead
@@ -92,6 +99,23 @@ def load_model():
     _state["pair_to_id"] = {p: i for i, p in enumerate(pair_vocab)}
     _state["pair_oov_id"] = len(pair_vocab)
 
+    # P0 FIX 2026-08-17: repair the broken std=1e-6 that every checkpoint written
+    # before this date has baked into meta.norm_stats for features that were constant
+    # in its train window (order book / trades / OI, whose collection started long
+    # after those train windows end). Live bars DO have that data, so serving with
+    # the raw stats multiplied 13 of 19 input channels by ~1e6 (trade_count reached
+    # ~1e8), saturating the encoder into emitting a near-constant. Sanitizing here
+    # makes those channels pass through unscaled instead. See config.py NORM_* and
+    # docs/NEXT_TRAINING_PLAN.md.
+    raw_norm = meta.get("norm_stats") or {}
+    norm_stats = sanitize_norm_stats(raw_norm, f"serve ckpt {path}") if raw_norm else {}
+    # Worst pair, NOT the sum across pairs — summing 12 dead columns over 9 pairs
+    # reads as "109 broken features" out of 19, which is nonsense.
+    n_degen = max(
+        (len(st.get("degenerate_cols", [])) for st in norm_stats.values()
+         if isinstance(st, dict)),
+        default=0,
+    )
     _state.update(
         {
             "model": model,
@@ -99,7 +123,8 @@ def load_model():
             "horizons": horizons,
             "seq_len": seq_len,
             "primary": primary,
-            "norm_stats": meta.get("norm_stats") or {},
+            "norm_stats": norm_stats,
+            "norm_degenerate_cols": n_degen,
             "error": None,
             "device": device,
         }
@@ -108,6 +133,15 @@ def load_model():
         f"Loaded {path} horizons={horizons} seq_len={seq_len} "
         f"primary={primary} norm={'ckpt' if _state['norm_stats'] else 'rolling-fallback'}"
     )
+    if n_degen:
+        print(
+            f"  WARNING: up to {n_degen}/{FEATURE_DIM} feature columns had NO variance in "
+            "this checkpoint's train window (pre-2026-08-17 norm bug). They are now "
+            f"neutralized at load ({NORM_DEGENERATE_MODE}) instead of being multiplied by "
+            "~1e6, so serving is no longer degenerate — but the model never LEARNED from "
+            "those channels, so its live predictions are effectively CANDLE-ONLY. "
+            "Re-train + re-promote for a trustworthy microstructure signal."
+        )
     return True
 
 
@@ -128,11 +162,15 @@ def build_tensor(symbol: str):
         X = apply_feature_norm(X, pair_ids, norm_stats)
         x = X[0]
     else:
-        # Legacy checkpoints without norm_stats
+        # Legacy checkpoints without norm_stats. Same degenerate-column guard as the
+        # training path: a feature that is constant across the rolling window (e.g. a
+        # source that is currently down, so its column is all zeros) must not be
+        # divided by ~0.
         window = feats[-max(seq_len * 3, 64) :]
         mean = window.mean(axis=0, keepdims=True)
-        std = window.std(axis=0, keepdims=True) + 1e-6
-        feats = (feats - mean) / std
+        std_row, degen = finalize_train_std(window.std(axis=0), "serve rolling-fallback")
+        feats = (feats - mean) / std_row.reshape(1, -1)
+        feats = clip_norm(zero_degenerate(feats, degen))
         x = feats[-seq_len:]
 
     close = float(frame["close"].iloc[-1])
@@ -252,6 +290,10 @@ class Handler(BaseHTTPRequestHandler):
                         "horizons": _state.get("horizons"),
                         "primary": _state.get("primary"),
                         "norm": "ckpt" if _state.get("norm_stats") else "rolling-fallback",
+                        # >0 means this checkpoint was trained with those feature
+                        # columns constant (pre-2026-08-17 norm bug): they are now
+                        # sanitized at load, but the model never learned from them.
+                        "norm_degenerate_cols": _state.get("norm_degenerate_cols", 0),
                     },
                 )
 

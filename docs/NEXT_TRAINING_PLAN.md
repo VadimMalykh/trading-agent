@@ -29,7 +29,499 @@ wrongly concluded the extra pairs were unusable. Don't repeat it.)
 
 ---
 
-## ▶️▶️▶️▶️▶️ START HERE (2026-08-16) — E3 BATCH ANALYZED; TUNING CEILING CONFIRMED; NEXT = WALK-FORWARD BOOK ON/OFF (data-gated ~08-17)
+## ▶️▶️▶️▶️▶️▶️ START HERE (2026-08-17) — 🔴 NORMALIZATION BUG FOUND; MOST E-SERIES CONCLUSIONS ARE ARTIFACTS; BOOK NOW ≥30d
+
+**Supersedes the 2026-08-16 section below.** E3-tb + E4-GBT returned. Analyzing them
+turned up a **proven, decisive bug in per-pair feature normalization** that invalidates
+the "recent book-era edge is ~0 / we're signal-limited / no cost-viable gate" narrative
+the last five sessions were built on. Read this whole section before launching anything.
+
+### 🔴 P0 BUG — train-only z-score divides 12–13 of 19 features by std=1e-6
+
+`data/dataset.py:443` (and `:446`): `std = np.sqrt(dev_sum / n) + 1e-6`. The `+1e-6` is
+an *additive* epsilon, not a floor. For a feature column that is **identically zero
+across the whole TRAIN window**, this yields `mean=0, std=1e-6`, and
+`apply_norm_to_bundle` then divides the ENTIRE matrix (train **and** val) by `1e-6`.
+
+Which columns are identically zero in train? All the ones whose source only started
+being collected in the last ~30 days. Current split (E3-tb):
+`train [2022-08-25 → 2026-01-29]`, `val [2026-01-29 → 2026-08-16]`, but
+`orderbook_snapshots` / `market_trades` / `open_interest` all start **2026-07-17** —
+i.e. **zero overlap with train**. So in train these are all exactly 0:
+
+`spread_bps, imbalance, micro_mid, bid_ask_vol_ratio, depth_near_imb, trade_count,
+buy_sell_imb, trade_vol, oi, oi_chg, has_book, has_trades` = **12 of 19 features**
+(plus `has_funding_oi`, constant-1 rather than constant-0 — see the note under the proof).
+
+Only `ret_1, hl_range, oc_range, log_vol, funding, ret_std_15` are normalized sanely
+(`funding` reaches back to 2023-11 / 2022-08, so it has variance).
+
+Note the irony: `config.py:212` claims "The masks also protect per-pair z-score norm from
+near-constant (mostly-zero) features when a source has little/no history." The masks do
+nothing of the kind — **they are themselves two of the exploding columns.**
+
+**PROOF — verified directly on the E3-tb checkpoint**
+(`gs://fluxtrader-train-artifacts/checkpoints/m2_multi_20260816T023427Z_d5d5b67a.pt`,
+`meta.feature_dim=19`, `meta.label_mode=triple_barrier`, `meta.pair_embed_dim=0`).
+`meta.norm_stats['BTCUSDT']`:
+
+```
+ret_1              mean= 9.58e-07   std= 6.96e-04     sane
+hl_range           mean= 7.39e-04   std= 7.73e-04     sane
+oc_range           mean= 9.57e-07   std= 6.95e-04     sane
+log_vol            mean= 4.382      std= 1.095        sane
+spread_bps         mean= 0          std= 1e-06   <== DEGENERATE
+imbalance          mean= 0          std= 1e-06   <== DEGENERATE
+micro_mid          mean= 0          std= 1e-06   <== DEGENERATE
+bid_ask_vol_ratio  mean= 0          std= 1e-06   <== DEGENERATE
+depth_near_imb     mean= 0          std= 1e-06   <== DEGENERATE
+trade_count        mean= 0          std= 1e-06   <== DEGENERATE
+buy_sell_imb       mean= 0          std= 1e-06   <== DEGENERATE
+trade_vol          mean= 0          std= 1e-06   <== DEGENERATE
+funding            mean= 8.15e-05   std= 9.63e-05     sane
+oi                 mean= 0          std= 1e-06   <== DEGENERATE
+oi_chg             mean= 0          std= 1e-06   <== DEGENERATE
+ret_std_15         mean= 5.56e-04   std= 4.20e-04     sane
+has_book           mean= 0          std= 1e-06   <== DEGENERATE
+has_trades         mean= 0          std= 1e-06   <== DEGENERATE
+has_funding_oi     mean= 1          std= 1e-06   <== DEGENERATE (mean=1, see note)
+```
+
+**13 of 19 columns degenerate; only 6 are normalized.** Identical for ETH, SOL and
+`_global` (ETH's `has_funding_oi` std=0.0111, so that one column is pair-dependent).
+Note `has_funding_oi` is centered at mean=1, so it maps to ~0 while it stays 1 — but any
+bar where funding/OI goes stale becomes **−1e6**. The other 12 are centered at 0, so they
+explode the moment their source appears in val. Repro:
+```sh
+gcloud storage cp gs://fluxtrader-train-artifacts/checkpoints/m2_multi_20260816T023427Z_d5d5b67a.pt /tmp/ck.pt
+docker compose --profile ml run --rm -T -v /tmp/ck.pt:/tmp/ck.pt:ro ml_trainer python -c \
+  "import torch;m=torch.load('/tmp/ck.pt',map_location='cpu',weights_only=False)['meta'];print(m['norm_stats']['BTCUSDT']['std'])"
+```
+The same 11-column signature is present in the older 16-feature
+`m2_multi_epoch_snapshot.pt`, so **every checkpoint this project has ever produced on a
+global-time split carries this defect.**
+
+**Consequence.** The instant val crosses 2026-07-17, those inputs jump from 0 to
+`value / 1e-6`:
+
+| feature | raw scale | z after norm |
+|---|---|---|
+| `has_book` / `has_trades` | 1.0 | **1e6** |
+| `imbalance`, `micro_mid`, `depth_near_imb` | O(1) | **~1e6** |
+| `spread_bps` | ~0.5–2 | **~1e6** |
+| `trade_vol` = log1p(vol) | ~10 | **~1e7** |
+| `oi` = log1p(OI) | ~20 | **~2e7** |
+| `trade_count` | ~1e2 | **~1e8** |
+
+An LSTM fed 1e6–1e8-magnitude inputs saturates completely and emits a near-constant
+output. **This is not a subtle effect — it is a hard cliff at the exact timestamp the
+book era begins.**
+
+### 🧹 WHAT THIS INVALIDATES (re-derive, do not trust)
+
+Everything below was measured through the cliff and must be re-measured after the fix:
+
+- ❌ **"tail-30d dir_acc = 0.477, below coin flip"** (`eval_m2_E2b1/2/3.json`). `--tail-days
+  30` is *entirely* inside the book era → the model was evaluated exclusively on
+  1e6-magnitude inputs. This is the flagship "there is no edge in the regime we trade"
+  number and it is an artifact.
+- ❌ **"the gate emits no confidence spread; gates 0.35–0.50 identical; 0.60 zero
+  coverage"** — that is the signature of a saturated network emitting a constant, which
+  is exactly what exploded inputs produce.
+- ❌ **"E4 calibration diagnosis was wrong; head is correctly calibrated to ~zero
+  signal; Brier 0.2505"** — Brier ≈ 0.25 with all mass in [0.48,0.53] is *also* the
+  signature of a constant output. The conclusion ("you cannot calibrate signal into
+  existence") may still be right, but the evidence for it does not survive.
+- ❌ **"the recent/book-era WF fold decays"** (the metric that drove the whole E1→E3
+  ladder, and the reason E2b beat E3b1/E3b2). The newest fold is the only fold that
+  contains the cliff. Per-arm newest-fold LBs were compared as if they measured regime
+  robustness; they were partly measuring how each arm degrades under input explosion.
+- ⚠️ **"pair/dim tuning has hit its ceiling"** — plausible, but every arm was ranked on
+  a partly-corrupted verdict metric.
+- ✅ **STILL VALID: `gcp_ablate.sh` / `gcp_walkforward.sh` results.** Those use
+  `--require-book`, which restricts *train* to the dense book window, so the book
+  columns have real variance in train and std is sane. That is the ONE setup where
+  normalization was correct — and it is the setup that found book-ON lb=0.691 vs
+  book-OFF lb=0.494. Consistent: book features look informative exactly where they were
+  correctly scaled, and worthless exactly where they were exploded.
+- ✅ **STILL VALID: E4-GBT's numbers.** LightGBM is scale-invariant (splits are
+  monotone-transform-invariant), so the norm bug cannot hurt it. GBT's 0.5314 is a clean
+  read; the LSTM's 0.530 is a *handicapped* read.
+
+### 🚨 P0 — THE SERVED MODEL IS ALSO AFFECTED
+
+`serve.py:123-128` applies the checkpoint's saved `norm_stats` to live features via
+`apply_feature_norm`. Live bars **do** have book/trade/OI data. So the promoted
+checkpoint in the always-on UI is being fed ~1e6–1e8-magnitude inputs on 12 of 19
+channels on every request. Whatever it is currently emitting is meaningless. This needs
+checking/fixing before any live-signal read is trusted.
+
+### 📊 E3-tb (triple-barrier) — VERDICT: CONFOUNDED, INCONCLUSIVE. Re-run.
+
+`logs/E3-tb.log`, run `20260816T023427Z`. It was meant to change ONE variable vs E2b.
+It changed **three**:
+
+1. ✅ `LABEL_MODE=triple_barrier` (intended; verified in `resolved knobs`).
+2. ❌ **`PAIR_EMBED_DIM` was omitted → `Pair embedding: off (pair-agnostic encoder)`**
+   (log line, cf. E2b `Pair embedding: ON dim=8`). This is *literally the same mistake
+   that voided E3a*, one session after it was documented. `PAIR_EMBED_DIM` is in
+   `FLUX_TRAIN_ENV_KEYS` but defaults to `0`, so omitting it silently disables the
+   feature that won E-round-2. **Root cause: the launch command written in this very
+   document (the "E3 triple-barrier — GPU" block below) omits `PAIR_EMBED_DIM=8`.** Fix
+   the class of bug, not the instance: change `config.py:139` to `PAIR_EMBED_DIM` default
+   `8` (the live/promoted setting), so "forgot to pass it" degrades to the incumbent
+   instead of to a silently different architecture.
+3. ❌ **The dataset changed under us.** ETH 1m was backfilled from 669k → **2,090,599**
+   bars (now starts 2022-08-25), so `Samples` went 9.98M → 11.42M, the train window
+   start moved 2023-11-13 → 2022-08-25, and **the val boundary moved 2026-02-21 →
+   2026-01-29**. E2b's `0.566` was measured on a different val window. Any E2b-vs-E3-tb
+   comparison is invalid in both directions.
+
+Numbers for the record (30m primary, ⚠️ dir_acc here is scored against *triple-barrier*
+labels, so it is not the same quantity as E2b's fixed-Δt dir_acc):
+
+| metric | E3-tb | E2b (old data, fixed labels) |
+|---|---:|---:|
+| cov05 dir_acc / lb | 0.533 / **0.530** | 0.566 |
+| WF folds cov05 lb | .528 / .548 / .510 / **.539** | .568/.572/.560/**.548** |
+| net_ret @gate0.4 | −106.1 (76,168 trades) | all-neg |
+| early stop | epoch 17 (best 07/17) | epoch 19 |
+| train class bal 30m | d .44 / **f .12** / u .44 | d .33 / f .35 / u .33 |
+| train class bal 60m | d .48 / **f .05** / u .47 | d .32 / f .37 / u .32 |
+
+Two real, actionable findings independent of the confounds:
+
+- 🔧 **The barriers are mis-parameterized.** At `TB_TP_MULT=TB_SL_MULT=1.5`,
+  `TB_VOL_WINDOW=15`, `TB_MIN_BARRIER=0.002`, the timeout ("flat") class is only **12%
+  at 30m and 5% at 60m** — i.e. a barrier is hit almost always, so the label degenerates
+  into "which side of the path moved first", not "was this a tradeable TP". Widen the
+  band (`TB_TP_MULT=2.5–3.0`, and/or `TB_VOL_WINDOW=60`) to land flat around 30–40%.
+- 🔧 **The P&L sim does not implement the barrier exit.** `eval_m2.simulate_pnl` books
+  `fwd_ret` at a **fixed `hold_bars`** (`eval_m2.py:74-133`). Under TB labels the model
+  predicts a TP/SL outcome but the simulator measures a fixed-Δt hold — a policy
+  mismatch, so `net_ret=-106` is not the P&L of the strategy being labeled. Triple-barrier
+  cannot be evaluated until `simulate_pnl` gains a barrier-aware exit (walk forward to
+  first TP/SL touch, else timeout). **Do not re-run E3-tb before this exists** — the run
+  cannot answer its own question.
+
+### 📊 E4-GBT — VERDICT: no architecture headroom; ~all of the candle edge is static
+
+`logs/E4-gbt.log`, run `gbt-20260816T132201Z`. Ran clean: knobs echoed correctly
+(`HORIZONS=5,30,60 PRIMARY=30 SEQ_LEN=128`), 8-pair E2b set, `label_mode=fixed`,
+5,680,167 moved train bars, D=114 compact-summary cols, peak rss 4.96GB (the memory
+rework held). **Same dataset/split as E3-tb** (train 9,143,828 / val 2,285,958, val
+starts 2026-01-30) → **E4-GBT and E3-tb ARE directly comparable to each other**, and
+neither is comparable to E2b.
+
+| metric | E4-GBT (trees, scale-invariant) | E3-tb (LSTM, same data) |
+|---|---:|---:|
+| cov05 dir_acc / lb | 0.5355 / **0.5314** | 0.533 / **0.530** |
+| cov10 lb | 0.5279 | 0.526 |
+| cov01 lb | **0.4892** ⚠️ | 0.532 |
+| WF folds cov05 lb | .5557 / .5312 / .5068 / **.5172** | .528/.548/.510/**.539** |
+| net @cov05 | −12.14 (9,932 trades) | — |
+
+- **A 114-column static summary of the window matches a 128-step LSTM to within 0.0014
+  LB.** Temporal sequence modeling is contributing ~nothing on candle features. Combined
+  with the fact that the LSTM was *handicapped* by the norm bug and still tied, the
+  honest read is: **architecture is not the bottleneck, and the candle-only edge is
+  ~0.53 at 5% coverage.** No reason to spend another run on encoder capacity/shape.
+- ⚠️ **GBT's confidence ordering is broken at the top:** cov01 lb **0.4892** < cov05
+  0.5314 < cov10 0.5279. Its *most* confident predictions are its *worst* (below coin
+  flip). Real signal is monotone in confidence. Treat GBT p(up) as a ranking with a
+  garbage tail, and don't copy its calibration.
+- Do NOT read this as "signal-limited, full stop". It bounds the **candle-only, fixed-Δt,
+  30m** cell of the search space. It says nothing about book features (structurally
+  untrainable in this split — see above), longer horizons, or barrier labels.
+
+### 💰 THE REAL BLOCKER IS THE COST/HORIZON RATIO — and nobody has computed it
+
+This is the most important number in the project and it is absent from every prior
+section. Break-even for a directional strategy:
+
+```
+gross per trade = (2·acc − 1) · E|r_T|   must exceed   round-trip cost
+E|r_T| ≈ 0.8 · σ_1m · √T                (σ_1m from the checkpoint norm stats:
+                                         BTC 7.1e-4, ETH 9.4e-4, SOL 1.03e-3 → ~8.5e-4)
+```
+
+With σ_1m ≈ 8.5e-4 and the current cost model (`FEE_RATE_BPS=4` + `SLIPPAGE_BPS=3` per
+side → **14bps round-trip**):
+
+| horizon | E&#124;r&#124; | break-even acc @14bps (taker) | break-even acc @5bps (maker) |
+|---|---:|---:|---:|
+| 30m | ~30bps | **0.733** | 0.583 |
+| 60m | ~42bps | 0.667 | 0.560 |
+| 4h | ~85bps | 0.582 | **0.529** ✅ |
+| 12h | ~147bps | 0.548 | 0.517 ✅ |
+| 24h | ~208bps | **0.534** ✅ | 0.512 ✅ |
+
+**We have been chasing 0.53–0.57 accuracy at a horizon that requires 0.73.** Every
+single "all arms are net-negative" line in this document is explained by this table and
+by nothing else. Confirmed empirically: the observed gross per trade at cov05 is
+**+1.78bps** (GBT: net −12.22bps/trade + 14bps cost) — genuinely positive, just 7.9×
+too small to pay the toll.
+
+Two levers, and only two: **make E|r| bigger (longer horizon)** or **make cost smaller
+(maker/limit execution)**. Accuracy tuning cannot close a 7.9× gap; that is why fourteen
+runs of it produced nothing. Empirically accuracy is roughly *flat* in horizon (30m cov05
+lb 0.530 vs 60m 0.529 in the same E3-tb run) while E|r| grows as √T — so horizon is
+close to free edge. **4h with maker execution, or 24h with taker, is the first cell of
+the space where a 0.535 model makes money.**
+
+### 📚 DATA STATUS (verified on the always-on VM, 2026-08-17 02:38 UTC)
+
+`./scripts/gcp_data_collection_stats.sh` → `/tmp/dcstats.txt`.
+
+| source | coverage |
+|---|---|
+| `orderbook_snapshots` | **BTC/ETH/SOL 30d 5h ✅** (from 2026-07-17 21:13) · DOGE/HYPE/WLD 26d 23h · ZEC 22d 21h · 1000PEPE 20d 21h · ADA/AVAX/LINK/XRP 3d. Cadence ~1/10s (~6 per 1m bar). |
+| `orderbook_levels` (raw L2) | **all 8 main pairs 11d 22h** (from 2026-08-05), **100 bid + 100 ask levels**, `missing_update_id=0`, `missing_event_time=0`. Clean. Cadence ~1/10s. |
+| `market_trades` | mirrors snapshots (BTC/ETH/SOL 30d 5h) |
+| `open_interest` | BTC/ETH/SOL 30d 5h · others 20–27d · extras 3d |
+| `funding_rates` | 2y9mo–3y11mo (the only microstructure source with real history) |
+| `liquidations` | **0 rows — still empty** (WS egress blocked). Drop it from all plans until the collector is fixed. |
+| candles | 0 interior gaps, all 12 pairs, 1m/5m/15m/1h ✅ |
+
+⚠️ **1m candle history is ragged across pairs.** ETH 1m starts **2022-08-25** (2.09M
+bars) but BTC/SOL/DOGE/WLD/ZEC/1000PEPE 1m start **2023-11-13** (1.45M) — while BTC *5m*
+goes back to 2022-08-25. So the first ~15 months of the current train window contain
+**ETH only**. That is what moved the split and broke E2b comparability. Fix by
+backfilling 1m to 2022-08-25 for all 8 (Binance has it — the 5m proves it) or by
+trimming to the common start. Either way, **pin it before the next baseline**, and
+re-pin the baseline whenever it changes.
+
+### ✅ DECISION — ORDER OF OPERATIONS (2026-08-17)
+
+**Nothing else is worth running until F1 lands.** Every verdict metric currently in use
+is measured through the cliff.
+
+**F1 — ✅ DONE 2026-08-17 (code only, NOT committed, NO run launched).**
+- `config.py`: new `NORM_*` block — `NORM_DEGENERATE_STD` (1e-8), `NORM_CLIP` (50),
+  `NORM_DEGENERATE_MODE` (`zero`|`passthrough`, default **zero**),
+  `NORM_LEGACY_BROKEN_STD` (1.1e-6). Full rationale is in the comments there.
+- `data/dataset.py`: new `finalize_train_std()` replaces the bare `+1e-6` at BOTH fit
+  sites (M2 `fit_norm_from_bundle`, M1 `build_arrays`). It checks the **raw** std before
+  the epsilon is added (checking after would never fire — `0 + 1e-6` is above any sane
+  threshold) and rewrites degenerate columns to `std=1.0`. **Healthy columns keep the
+  legacy `raw + 1e-6` value byte-for-byte**, so this is a no-op wherever scaling was
+  already sane — verified in a unit check.
+- `NORM_DEGENERATE_MODE=zero` (default): a train-constant column is pinned to **0** in
+  train, eval AND serve via `zero_degenerate()`. This is the only train/val-consistent
+  choice — the model was trained with that input pinned, so feeding it a real value at
+  val/serve time is out-of-distribution for a channel it demonstrably learned nothing
+  from. `passthrough` keeps the centered raw value (bounded by `NORM_CLIP`) and exists to
+  measure how much the shift was costing. Measured on the dev DB: `passthrough` leaves
+  junk of magnitude ~470 (`bid_ask_vol_ratio`) in the inputs; `zero` removes it.
+- `NORM_CLIP=50` winsorizes everything as a second, cause-agnostic guard. It catches the
+  NEAR-constant case the threshold cannot: a column with a small-but-nonzero std still
+  produces huge z. Confirmed real — see the `oi` note below.
+- `sanitize_norm_stats()` repairs **loaded** checkpoints, so `apply_norm_to_bundle` /
+  eval / serve no longer explode when reading any pre-fix checkpoint.
+- Loud `WARNING [norm] …` naming every degenerate (pair, feature), in train, eval and
+  serve. Plus `[norm] <pair>: max|z|=… on '<worst column>'`, which names the offending
+  feature — that is what made the `oi` problem below visible. It distinguishes
+  `BROKEN SCALE` (>1000, i.e. a scaling bug) from `heavy tail, winsorized` (50–1000,
+  legitimate on crypto returns), so it doesn't cry wolf.
+- The `max|z|` report streams over row-chunks: `np.abs(arr)` on a 25M×19 float32 matrix
+  would allocate ~1.9GB, exactly the kind of transient that has OOM-killed these runs.
+- `PAIR_EMBED_DIM` default flipped `0 → 8` (see the E3-tb section: omitting it silently
+  trained a different architecture and voided two runs in a row).
+
+Verified (all in the `ml_trainer` container):
+| check | result |
+|---|---|
+| healthy cols byte-identical to legacy `raw+1e-6` | ✅ |
+| a real book row: `spread_bps` z | **1.2e6 → 1.2** |
+| a real book row: `has_book` z | **1e6 → 1.0** |
+| E3-tb ckpt sanitized: any `1e-6` left | ✅ none (13 cols repaired for BTC, 12 others) |
+| `train_m2` end-to-end @ `CANDLE_INTERVAL=15m`, horizons 60/240/1440 | ✅ |
+| `eval_m2` end-to-end, same | ✅ |
+| main-track `max\|z\|` | **470 → 37.6** (worst is now `hl_range`, a real fat tail) |
+| `--require-book` arm: real book features still live | ✅ only the 3 presence masks are constant (constant by construction there — they carry no information, so zeroing them loses nothing) |
+
+**F2 — ✅ DONE 2026-08-17.** `serve.py` now runs `sanitize_norm_stats()` on the
+checkpoint's stats at load, applies the same `zero_degenerate` + `clip_norm`, fixes the
+same bug in the legacy rolling-fallback branch, logs a loud warning, and exposes
+`norm_degenerate_cols` on `/health` (worst pair, not the sum across pairs).
+
+Verified against the real promoted-lineage checkpoint (`m2_multi_20260816T023427Z`), with
+a synthetic live window that has book data present, as live bars do:
+
+| | before | after |
+|---|---:|---:|
+| live-window `max\|z\|` | ~3.5e8 | **1.32** |
+| book/trade/OI channels | ~1e6–1e8 | **0.0** (what the model actually trained on) |
+| `/health.norm_degenerate_cols` | — | `13` |
+
+⚠️ **This makes serving non-degenerate, it does NOT make it good.** The model still never
+learned from those 13 channels, so the live signal is effectively candle-only. A
+trustworthy microstructure signal needs F5 (re-train) + re-promote. The startup warning
+says exactly this so it can't be forgotten.
+
+**🔧 NEW FINDING (from F1's max|z| report): `oi` is badly conditioned.** In the
+`--require-book` dense window, `max|z|` is **526 (BTC) / 863 (DOGE) on `oi`** — a
+legitimate heavy tail, not the norm bug, so `NORM_CLIP` winsorizes it. Cause:
+`oi = log1p(open_interest)` is a *level*. Within any short window it is near-constant, so
+its per-pair std is tiny, and an ordinary OI drift becomes hundreds of sigma. A level is
+also non-stationary across the full history. `oi_chg` (the relative change) is the
+correctly-conditioned feature and already exists. **Action for F6: drop the raw `oi`
+level, or replace it with a rolling-normalized / differenced version.** Same question
+applies to `log_vol`. Low risk, likely free accuracy in the dense-book arm.
+
+**F3 — P1 RUN: Step A walk-forward book ON/OFF — NOW VALID, LAUNCH IT.** BTC/ETH/SOL
+crossed 30d at ~2026-08-16 21:13 UTC; DOGE is at 27d. This is the one test whose
+normalization was always sane, it is the gate on all microstructure investment, and it
+is now unblocked.
+```sh
+WF_LONG_PAIRS_ONLY=1 WF_DROPOUT=0.4 WF_WEIGHT_DECAY=1e-3 WF_HIDDEN=48 \
+  ./scripts/gcp_walkforward.sh
+./scripts/gcp_walkforward.sh --fetch
+```
+Verdict rule (unchanged): book-ON − book-OFF Wilson-LB gap > ~0.05 on **ALL** folds →
+book edge is robust → escalate microstructure. Any fold with gap ≤0 or overlapping LBs →
+stop tuning book, keep collecting, re-check at ~60d (~2026-09-16).
+Safe to run concurrently with F4 (separate VM, separate tmux, separate marker).
+
+**F4 — P1 RUN: E6-horizon — attack the cost barrier (highest EV of any run in this doc).**
+**Prereqs ✅ ALL DONE 2026-08-17 — the run is ready to launch as-is:**
+- `eval_m2.py`: `BAR_SECONDS = 60` was **hardcoded**, silently assuming 1m candles. At
+  `CANDLE_INTERVAL=15m` a 4h horizon (16 bars) would have used a **16-minute** hold, so
+  `simulate_pnl`'s serial-position logic would have re-entered ~15× too often and every
+  reported `net_ret` / trade count would have been garbage. Now derived from
+  `CANDLE_INTERVAL` via `bar_seconds()`, which **raises** on an unknown interval instead
+  of falling back. Verified: at 15m, holds print as `4 / 16 / 96 bars` = **1h / 4h / 24h**.
+- `dataset.horizon_bars()` had the same silent `.get(interval, 1)` fallback → now raises
+  on an unknown interval and warns when a horizon isn't a whole number of bars.
+- `scripts/gcp_train.sh`: `CANDLE_INTERVAL` + the three `NORM_*` knobs added to
+  `FLUX_TRAIN_ENV_KEYS` (`CANDLE_INTERVAL` was a real `config.py` knob honored
+  everywhere in the code but was **not** forwarded to the GPU VM, so setting it would
+  have silently trained on 1m).
+- `FLAT_THRESHOLD_PER_HORIZON` already had 240 → 0.006, 1440 → 0.015. Smoke-tested at
+  15m: class balance came out `down .23 / flat .54 / up .23` @4h — **flat-heavy but not
+  degenerate**. Worth a look in the real run; if flat dominates, lower `FLAT_TH_4H`.
+Then:
+```sh
+CANDLE_INTERVAL=15m PAIR_EMBED_DIM=8 \
+  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+  ./scripts/gcp_train.sh --gpu 60 128        # seq 128 × 15m = 32h context
+```
+15m bars keep the context/horizon ratio sane (32h of context for a 4h target) and cut
+sample count ~15×, so this is a *cheap* run. **Read it against the break-even table
+above, not against E2b's 0.566** — the question is "does cov05 dir_acc at 4h/24h clear
+its break-even row", not "is accuracy higher".
+Also re-report the same checkpoint at maker-cost assumptions:
+`FEE_RATE_BPS=2 SLIPPAGE_BPS=0.5` (reporting-only knobs, no re-train).
+
+**F5 — P1 RUN: re-baseline on the current dataset (do together with F1's verification).**
+After F1, one run of the **exact E2b recipe** (fixed labels, `PAIR_EMBED_DIM=8`, 8 pairs)
+on the current (ETH-backfilled) data. This becomes the new reference; the old 0.566 is
+retired. Cheap and mandatory — without it nothing downstream is attributable.
+Consider a second arm with `--ablate-book` to quantify how much the cliff was costing.
+
+**F6 — P2: L2 ladder feature audit (cheap, read-only, no train).** `orderbook_levels` now
+has 12d × 100 levels × 8 pairs with zero integrity errors. Two gaps in the current 5
+book features, both fixable from data already on disk:
+1. **They are all instantaneous levels, no dynamics.** No order-flow imbalance (OFI), no
+   book delta over the last N snapshots, no queue-depletion rate, no depth slope /
+   ladder shape, no microprice drift. Microstructure predictive power at 30m+ comes
+   mostly from OFI and its persistence, not from a snapshot's static imbalance.
+2. **~5 of every 6 snapshots are thrown away.** `_align_with_age` takes the *last*
+   snapshot at/before each 1m bar and discards the rest. Per-bar aggregates (mean/std/
+   range of imbalance within the minute, summed OFI, max spread) are free information.
+Run `audit_microstructure.py` on candidate L2 features first (it already reports
+Spearman ρ, monotonicity, sign-acc, and a vol-proxy vs directional split). The
+2026-08-04 audit on 9d found `spread_bps` STABLE+DIRECTIONAL at ρ up to +0.165 (DOGE
+60m) — the strongest single signal found anywhere in this project. Re-run it on 12d of
+L2 + the new candidates before spending a `FEATURE_DIM` bump.
+
+**F7 — P2: re-run E3-triple-barrier properly.** Blocked on: barrier-aware `simulate_pnl`
+(see above), `PAIR_EMBED_DIM=8`, wider barriers (target ~30–40% flat), and a pinned
+dataset. Not before F1/F5.
+
+**F8 — P3: data hygiene.** Backfill 1m to a common 2022-08-25 start for all 8 pairs
+(or trim ETH); fix or formally drop `liquidations`.
+
+**Explicitly DROPPED:** encoder capacity / dim / layer sweeps (F4-GBT says architecture
+is not the bottleneck), confidence calibration / temperature / focal loss (the
+"under-confident head" was a saturated head), and raising `GATE_THRESHOLD` (the gate
+sweep was run through the cliff — re-derive after F1 if it still matters).
+
+### 📋 HANDOFF — START A FRESH SESSION HERE (state as of 2026-08-17)
+
+**Status board.**
+
+| id | what | state |
+|---|---|---|
+| F1 | normalization fix + degenerate-column guards + diagnostics | ✅ **code done, uncommitted, no run** |
+| F2 | serve-path sanitize + `/health` field | ✅ **code done, uncommitted** |
+| F4-prereq | `BAR_SECONDS`/`horizon_bars` from `CANDLE_INTERVAL`, env passthrough | ✅ **code done, uncommitted** |
+| — | `PAIR_EMBED_DIM` default `0 → 8` | ✅ **code done, uncommitted** |
+| F3 | walk-forward book ON/OFF | ▶️ **user launched 2026-08-17** — fetch results |
+| F5 | re-baseline E2b recipe on current data | ⬜ not started (needs F1 committed) |
+| F4 | E6-horizon run (15m bars, 4h primary) | ⬜ not started, **prereqs all landed** |
+| F6 | L2 ladder feature audit + fix `oi` conditioning | ⬜ not started |
+| F7 | triple-barrier redo (needs barrier-aware `simulate_pnl`) | ⬜ not started |
+| F8 | 1m backfill to a common start; `liquidations` fix-or-drop | ⬜ not started |
+
+**Uncommitted diff** (6 files): `ml/train/config.py`, `ml/train/data/dataset.py`,
+`ml/train/serve.py`, `ml/train/eval_m2.py`, `scripts/gcp_train.sh`, this doc. All
+syntax-checked; F1/F2/F4-prereq each verified end-to-end in the `ml_trainer` container
+(tables above). **Nothing is committed and no training run was launched by the
+implementing session.**
+
+**Do this, in order:**
+
+1. **Fetch F3.** `./scripts/gcp_walkforward.sh --status` then `--fetch`. Verdict rule:
+   book-ON − book-OFF Wilson-LB gap > ~0.05 on **ALL** folds → book edge is real →
+   escalate microstructure (F6 becomes P0). Any fold with gap ≤0 or overlapping LBs →
+   stop tuning book, keep collecting, re-check at ~60d (≈2026-09-16).
+   ⚠️ F3 was launched with the **pre-F1** code. That is fine and does not invalidate it —
+   `--require-book` puts book features inside the train window, so their std was already
+   sane there (this is the one path the bug never touched, see the § above). Two caveats
+   when reading it: (a) it ran with `PAIR_EMBED_DIM=0`, so if F5/F4 later run at dim=8 the
+   comparison to them is not clean — but the ON-vs-OFF gap *within* F3 is internally
+   valid, which is the whole question; (b) the `oi` column is at 500–860σ there and was
+   **not** winsorized pre-F1, so both arms carry that noise equally.
+2. **Commit F1/F2/F4-prereq** as one reviewable change before launching anything that
+   writes a checkpoint. F1 changes trained numerics by design, so every run after it is a
+   new lineage — the commit is the lineage boundary and must exist first.
+3. **Launch F5 (re-baseline) and F4 (E6-horizon) together.** They use separate throwaway
+   VMs and don't collide. F5 gives the new reference number; F4 tests the cost/horizon
+   thesis. Read F4 against the **break-even table**, not against E2b's 0.566.
+4. **Then F6**, scoped by what F3 said.
+
+**Verify in every future log before trusting a run** (each line is here because its
+absence voided a real run):
+- `=== resolved knobs: … ===` and the `knob K=V` echoes — env actually forwarded.
+- `Pair embedding: ON dim=8` — not `off`. (Voided E3a **and** E3-tb.)
+- `Training pairs: [...]` — the intended set.
+- `primary=…` matches intent — the R3 silent-fallback lesson.
+- `Split global_time … train [..] val [..]` — **record it.** The dataset moves under you
+  when a backfill lands; that is what broke E2b comparability.
+- `WARNING [norm] …` — how many columns are degenerate, and which. On the main track
+  expect ~12–13 of 19 until the train window reaches the book era; under
+  `--require-book` expect only the 3 presence masks.
+- `[norm] <pair>: max|z|=…` — must NOT say `BROKEN SCALE`. A `heavy tail, winsorized`
+  note is fine; check which column it names.
+- `P&L sim: … hold=N bars` — N must equal `horizon_minutes / bar_minutes`.
+
+**Standing traps in this repo** (all have burned a run):
+1. Data lives on the always-on VM, never the local dev DB (see the top of this file).
+2. Env knobs default to something other than the incumbent → an omission silently
+   changes the experiment. Echo every knob; prefer defaults that equal the incumbent.
+3. Silent fallbacks (`.get(x, default)`) on horizons/intervals/primary. Make them raise.
+4. A backfill landing mid-experiment moves the train/val split. Pin and re-record it.
+5. Additive epsilons are not floors. (This session's bug.)
+
+---
+
+## ▶️▶️▶️▶️▶️ (2026-08-16) — E3 BATCH ANALYZED; TUNING CEILING CONFIRMED; NEXT = WALK-FORWARD BOOK ON/OFF (data-gated ~08-17)
+
+> ⚠️ **SUPERSEDED 2026-08-17.** Its verdicts on tail-30d edge, gate viability, head
+> calibration and newest-fold WF decay were all measured through the normalization bug
+> documented above. Kept for history; do not act on it.
 
 **Supersedes the 2026-08-13 PM section below.** The E3 dim-sweep + the E-gate/cost eval
 returned and are analyzed. Bottom line: **pair/dim tuning has hit its ceiling and E4

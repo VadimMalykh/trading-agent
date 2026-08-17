@@ -136,7 +136,13 @@ DROPOUT = float(os.environ.get("DROPOUT", "0.2"))
 # whose ungated dir_acc spans ~0.39–0.66. Checkpoints record the ordered pair
 # vocab + this dim so eval/serve rebuild the same symbol→index map (unknown
 # symbol → OOV bucket). Old checkpoints (no vocab) load unchanged at dim 0.
-PAIR_EMBED_DIM = int(os.environ.get("PAIR_EMBED_DIM", "0"))
+# Default flipped 0 -> 8 on 2026-08-17. dim=8 is the incumbent/promoted setting
+# (E2b), yet the old default of 0 meant "forgot to pass PAIR_EMBED_DIM" silently
+# trained a DIFFERENT architecture than the baseline. That voided E3a and then
+# voided E3-tb one session later (both ran pair-agnostic by accident). Defaulting
+# to the incumbent makes an omission degrade to "same as baseline" instead of to a
+# silent confound. Set PAIR_EMBED_DIM=0 explicitly for a pair-agnostic arm.
+PAIR_EMBED_DIM = int(os.environ.get("PAIR_EMBED_DIM", "8"))
 VAL_FRACTION = float(os.environ.get("VAL_FRACTION", "0.2"))
 # Patience raised: directional coverage kept climbing when the old run stopped.
 EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "10"))
@@ -203,6 +209,55 @@ SLIPPAGE_BPS = float(os.environ.get("SLIPPAGE_BPS", "3"))
 ROUND_TRIP_COST = 2.0 * (FEE_RATE_BPS + SLIPPAGE_BPS) / 1e4
 # Number of disjoint time windows for walk-forward edge/P&L reporting in eval.
 WF_WINDOWS = int(os.environ.get("WF_WINDOWS", "4"))
+
+# --- Feature normalization safety (P0 fix, 2026-08-17) ---------------------------
+# BUG BEING FIXED: per-pair z-score stats are fit on TRAIN bars only, as
+#   std = sqrt(mean_sq_dev) + 1e-6
+# The 1e-6 was an ADDITIVE epsilon, not a floor. Any feature that is identically
+# zero across the whole train window therefore got mean=0, std=1e-6 — and the same
+# stats are then applied to VAL and to LIVE serving. Because order-book / trade /
+# OI collection only started 2026-07-17 while train windows end months earlier,
+# 13 of 19 features were constant-0 in train, so the moment val/live crossed into
+# the book era those inputs were multiplied by 1e6 (trade_count reached ~1e8).
+# The LSTM saturated and emitted a near-constant, which is what produced the
+# "recent book-era edge is ~0 / the head has no confidence spread / tail-30d
+# dir_acc 0.477" readings that misdirected five sessions of work. Verified in
+# m2_multi_20260816T023427Z (E3-tb) and the older 16-feature snapshot.
+#
+# Two independent guards, both cheap:
+#   1. DEGENERATE: if a column's train std is below NORM_DEGENERATE_STD it carries
+#      no train information. Set std=1.0 so the column passes through UNSCALED
+#      (still centered) instead of being blown up by 1/std. Columns above the
+#      threshold keep the legacy `+1e-6` arithmetic exactly, so this is a no-op for
+#      every feature that was already normalized sanely (the smallest real std
+#      observed is funding ~9.6e-5, three orders of magnitude above the threshold).
+#   2. CLIP: hard-clip normalized values to +/-NORM_CLIP. Catches the NEAR-constant
+#      case that guard 1 cannot (e.g. a 0/1 mask with 3 nonzero bars in 9M has a
+#      small-but-nonzero std -> z up to ~1700). 50 sigma is far outside anything a
+#      real feature reaches, so this too is inert on healthy columns. 0 disables.
+# Degenerate columns are ALWAYS logged loudly (train, eval and serve) — a silent
+# feature-scaling failure must never happen again (cf. the R3 silent-fallback lesson).
+NORM_DEGENERATE_STD = float(os.environ.get("NORM_DEGENERATE_STD", "1e-8"))
+NORM_CLIP = float(os.environ.get("NORM_CLIP", "50.0"))
+# What to feed the model for a column that was CONSTANT in train:
+#   "zero"        (default) -> force the column to 0 in train, val AND serve. This is
+#                 the only train/val-consistent choice: the model was trained with that
+#                 input pinned at one value, so showing it a real value at val/serve time
+#                 is out-of-distribution for an input it demonstrably learned nothing
+#                 from. Zero = "this feature does not exist for this model".
+#   "passthrough" -> keep the raw (centered, unscaled) value. Bounded by NORM_CLIP, but
+#                 still a distribution shift, and raw scales differ wildly (trade_count
+#                 ~1e2, oi ~20, imbalance ~1) so it feeds the encoder junk of assorted
+#                 magnitudes. Kept for diagnosing how much the shift was costing.
+# Either way the fix is 1e6x safer than the old divide-by-1e-6. To actually LEARN from
+# book features you need a train window that contains them (--require-book), not a
+# normalization tweak.
+NORM_DEGENERATE_MODE = os.environ.get("NORM_DEGENERATE_MODE", "zero").strip().lower()
+# Legacy checkpoints (every one produced before 2026-08-17) have the broken
+# std=1e-6 baked into meta.norm_stats. serve.py / eval sanitize on load: a stored
+# std at or below this value is treated as degenerate and rewritten to 1.0. Set
+# just above 1e-6 so the exact broken value is caught.
+NORM_LEGACY_BROKEN_STD = float(os.environ.get("NORM_LEGACY_BROKEN_STD", "1.1e-6"))
 
 # Feature vector size per timestep (must match features.py)
 # 16 signal features + 3 presence-mask flags (has_book/has_trades/has_funding_oi)
