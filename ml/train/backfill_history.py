@@ -23,8 +23,8 @@ from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config import DATABASE_URL, PAIRS
-from data.db import engine
+from config import DATABASE_URL
+from data.db import engine, load_whitelist_pairs
 
 FAPI = "https://fapi.binance.com"
 MAX_LIMIT = 1500
@@ -339,7 +339,7 @@ def backfill_funding(symbol: str, days: int) -> int:
 
 def parse_args():
     p = argparse.ArgumentParser(description="Backfill Binance Futures history → Postgres")
-    p.add_argument("--symbols", default=",".join(PAIRS))
+    p.add_argument("--symbols", default=None)
     p.add_argument("--intervals", default="1m,15m,1h")
     p.add_argument("--days", type=int, default=90)
     p.add_argument("--funding", action="store_true", help="Also backfill funding rates")
@@ -349,7 +349,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    default_pairs = args.symbols or ",".join(load_whitelist_pairs())
+    symbols = [s.strip().upper() for s in default_pairs.split(",") if s.strip()]
     intervals = [i.strip() for i in args.intervals.split(",") if i.strip()]
 
     print("FluxTrader historic backfill")
