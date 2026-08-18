@@ -92,7 +92,10 @@ services:
       SEQ_LEN: ${SEQ_LEN:-128}
       LR: ${LR:-5e-4}
       WEIGHT_DECAY: ${WEIGHT_DECAY:-1e-4}
-      EARLY_STOP_PATIENCE: ${EARLY_STOP_PATIENCE:-5}
+      # Must match config.py's default. It used to be 5 while config.py said 10, so
+      # an unset EARLY_STOP_PATIENCE gave the CPU (compose) path half the patience of
+      # the GPU path — the same knob producing two different experiments.
+      EARLY_STOP_PATIENCE: ${EARLY_STOP_PATIENCE:-10}
       CKPT_GATE_THRESHOLD: ${CKPT_GATE_THRESHOLD:-0.40}
       # Throughput: larger batch = better BLAS utilization; threads = use all vCPUs.
       BATCH_SIZE: ${BATCH_SIZE:-128}

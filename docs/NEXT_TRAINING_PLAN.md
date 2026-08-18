@@ -79,7 +79,8 @@ chasing. Consequences, all binding:
   ~+0.025 of apparent edge out of nothing.
 - **Report mean ± sd of the per-epoch LB series alongside the selected epoch.** With 20+
   epochs the standard error of the mean is ~0.004, which *can* resolve a 0.01 effect.
-  That is code task **C10** and it costs zero compute.
+  **Every training log now ends with this summary** (C10, done) — read
+  `selected - mean = ±… (… sd)` before believing any single-run improvement.
 
 Compute it from any log with:
 
@@ -117,9 +118,10 @@ Each line is here because its absence voided a real run.
 6. **A knob that is only applied `if [[ -z "$OTHER" ]]` is dead** if `$OTHER` has a
    default. That is how `WF_LONG_PAIRS_ONLY` silently did nothing in F3. Fixed in C4a.
 7. **A knob that exists in `config.py` but not in `FLUX_TRAIN_ENV_KEYS` cannot be set from
-   the launcher at all.** `EARLY_STOP_PATIENCE` is one such knob and it is what truncated
-   N3 at 11 epochs. There is also **no `SEED` knob anywhere** — runs are not reproducible
-   and multi-seed error bars are currently impossible. Both are code task **C8**.
+   the launcher at all.** `EARLY_STOP_PATIENCE` was one such knob and it is what truncated
+   N3 at 11 epochs; there was also no `SEED` knob anywhere, so no run was reproducible.
+   Both are fixed (C8) and are now in the allowlist. The trap itself stands: check §7's
+   allowlist before assuming a knob you set actually reached the VM.
 8. **A blended selection score is only "50/50" if both terms have the same dynamic range.**
    N3's nominal 50/50 blend was ~88% cost term because `net_score` swung 0.378 while
    `edge_lb` swung 0.050.
@@ -302,27 +304,23 @@ everything after it, then two GPU runs that are launchable in parallel.
 **None of the three N-wave commands should be re-launched as written.** N1's design is
 retired (§5), N2 answered its question, N3's lever is closed (§1.5).
 
-### C-batch — do this first (no VM, no GPU, ~1 session)
+### C-batch — DONE (2026-08-18). The queue is unblocked; start at O0.
 
-Four code tasks, all reporting/infra. Full specs in §6. Nothing after this point works
-properly without them:
+C7, C8, C9 and C10 are implemented (details in §6). What this changed for the runs below:
 
-- **C7** — `gcp_train.sh --eval-only <ckpt-key>`: re-score any historical checkpoint on
-  today's eval code, without training and without overwriting `latest.pt`. **Blocks O0.**
-- **C8** — add `EARLY_STOP_PATIENCE` to `FLUX_TRAIN_ENV_KEYS`, and add a real `SEED` knob
-  (config + `train_m2` + allowlist). **Blocks O2/O3** — without patience control they will
-  truncate the way N3 did, and without a seed there is no way to put an error bar on
-  anything.
-- **C9** — `eval_m2 --dump-preds`: per-bar `(ts, pair, side, conf, fwd_ret, y3)` parquet
-  to the bucket. **Blocks O1.**
-- **C10** — print `mean / sd / max / selected` of the per-epoch cov05-LB series at the end
-  of training, so §0.3's order-statistic bias is visible in every future log for free.
+- `--eval-only` exists, defaults to CPU, and never writes `checkpoints/latest.pt`.
+- `EARLY_STOP_PATIENCE` and `SEED` are forwarded from the launcher, so O2/O3 can control
+  patience and produce multi-seed error bars.
+- Every eval now writes a per-bar dump, and **every eval run uploads its artifacts** to
+  `gs://…/eval/<run_id>/` (`eval_m2.json`, `eval_preds.parquet`, `history_m2.json`), which
+  previously died with the VM.
+- Every training log ends with the epoch-LB order-statistic summary.
 
-### O0 — re-score F4 on today's eval code (CPU, ~25 min). Needs C7 + C9.
+### O0 — re-score F4 on today's eval code (CPU, ~25 min). Runnable now.
 
 The N3-vs-F4 comparison the queue pre-registered ("compare gross bps/trade at matched
-coverage") is currently unexecutable, because F4's log predates C2 and has no
-`Fixed-coverage P&L` table. This costs no training.
+coverage") was unexecutable, because F4's log predates C2 and has no `Fixed-coverage P&L`
+table. This costs no training.
 
 ```sh
 ./scripts/gcp_train.sh --eval-only checkpoints/m2_multi_20260817T221811Z_94614795.pt
@@ -330,8 +328,19 @@ coverage") is currently unexecutable, because F4's log predates C2 and has no
 ./scripts/gcp_logs.sh <run_id> --save          # → logs/O0-f4-rescore.log
 ```
 
-**Verify:** `Fixed-coverage P&L` present for 240m; the gate sweep runs 0.50–0.75; the
-per-bar dump lands in the bucket.
+No other flags are needed. `--eval-only` implies `--cpu`, and `eval_m2.py` takes
+`seq_len`, `horizons` **and `candle_interval`** from the checkpoint's own meta — which
+matters here: **F4 was trained on 15m candles** while `CANDLE_INTERVAL` defaults to `1m`,
+so re-scoring it under today's ambient config would otherwise have rebuilt a different bar
+grid, a different val window, and a `hold_bars` 15x off, printing a complete and plausible
+table of wrong numbers.
+
+**Bring back:** `logs/O0-f4-rescore.log`, plus the path
+`gs://fluxtrader-train-artifacts/eval/<run_id>/eval_preds.parquet`.
+
+**Verify in the log:** the line `Checkpoint primary=… candles=15m`; a `Fixed-coverage P&L`
+block for 240m; the gate sweep running 0.50–0.75; and a final
+`Wrote …/eval_preds.parquet — N rows`.
 
 **Delivers:** F4's gross bps/trade at cov 0.01/0.02/0.05/0.10/0.20, closing the N3
 question with numbers instead of the gate-row arithmetic in §1.3 — and F4's per-bar
@@ -371,7 +380,7 @@ Then ask two things:
 
 Bring back the AUC table and the per-quintile gross-bps table.
 
-### O2 — 5m bars: 3× the training data (GPU, ~4–6h). Needs C8.
+### O2 — 5m bars: 3× the training data (GPU, ~4–6h). Runnable now.
 
 The visible failure in both F4 and N3 is that **training does nothing**: `loss_tr` moved
 1.7318 → 1.7101 over 11 epochs, `loss_va` is flat, and the per-epoch LB series is flat
@@ -402,7 +411,7 @@ hold=48 bars` for the 240m head; `Early stop at epoch N` with N well above 21.
 still flat at 3× the data, the model is not data-starved and the bottleneck is entirely
 features (O4).
 
-### O3 — context length at 15m (GPU, ~3–5h). Needs C8.
+### O3 — context length at 15m (GPU, ~3–5h). Runnable now.
 
 The direct, cheap test of what N2 actually showed (§1.4). One variable vs F4: `seq_len`
 128 → 256, i.e. 32h → 64h of context, which is the context E4-GBT had when it tied the
@@ -549,27 +558,43 @@ warning fired on N3, C2's fixed-coverage P&L table printed, C4a's decidability f
 correctly marked four N1 folds undecidable. **C6 is DONE** — a backfill landed and 1m/5m
 now start 2022-08-18 for all nine long pairs (§1.7).
 
-### The C-batch — blocks the queue, all reporting/infra
+### The C-batch — DONE 2026-08-18
 
-- ⬜ **C7 — `gcp_train.sh --eval-only <ckpt-key>`.** Restore the DB dump as usual, pull the
-  named checkpoint from `gs://…/checkpoints/`, run `eval_m2.py` against it, skip
-  `train_m2.py` entirely, and **skip the `latest.pt` overwrite**. Lets any historical
-  checkpoint be re-scored on current eval code — which is the general fix for the class of
-  problem that makes F4-vs-N3 unexecutable today. **Blocks O0.**
-- ⬜ **C8 — launcher control over `EARLY_STOP_PATIENCE`, and a real `SEED`.** Two parts:
-  1. Add `EARLY_STOP_PATIENCE` to `FLUX_TRAIN_ENV_KEYS`. It exists in `config.py:148` but
-     is not forwarded, so it cannot be set from the launcher — trap §0.5.7, and the direct
-     cause of N3 stopping at epoch 11.
-  2. Add a `SEED` knob (`config.py`, seeded into `torch`/`numpy`/`random` at the top of
-     `train_m2.main`, and into the allowlist). **There is currently no seed control
-     anywhere**, so runs are not reproducible and the multi-seed error bars that §0.3 calls
-     for are impossible. **Blocks O2/O3.**
-- ⬜ **C9 — `eval_m2 --dump-preds`.** Write per-bar `(ts, pair, side, conf, fwd_ret, y3,
-  horizon)` for the val window to parquet and upload alongside `eval_m2.json`. Everything
-  in O1 is offline analysis that needs exactly this and nothing else. **Blocks O1.**
-- ⬜ **C10 — epoch-distribution summary.** At the end of training print
-  `epoch LB series: n=… mean=… sd=… max=… selected=epoch N (lb=…)`. Makes §0.3's
-  order-statistic bias visible in every future log instead of requiring a grep. Free.
+- ✅ **C7 — `gcp_train.sh --eval-only <ckpt-key>`.** Takes a bare filename, a
+  `checkpoints/<name>.pt` key or a full `gs://` URL; verifies it exists **before** creating
+  a VM (and lists the available keys if not). Restores the DB dump as usual, skips
+  `train_m2.py`, evals the named checkpoint, and **never writes `checkpoints/latest.pt`**,
+  so a re-score cannot be promoted by mistake. Implies `--cpu` unless `--gpu` is passed.
+  Unlike a training run it does **not** swallow an eval failure — eval is the whole job, so
+  a failure stops the VM for debugging instead of reporting DONE.
+  - **Bundled fix:** `eval_m2.py` now takes `candle_interval` from the checkpoint meta
+    instead of ambient config, and says so in the log. This is what makes re-scoring an old
+    checkpoint meaningful at all — F4 is a 15m model and the config default is 1m.
+  - **Bundled fix:** `--cpu` now forces `TRAIN_DEVICE=cpu`. It previously only chose the
+    machine type, so a `TRAIN_DEVICE=cuda` in `scripts/gcp_env` would have run the GPU
+    docker path on a CPU VM.
+- ✅ **C8 — launcher control over `EARLY_STOP_PATIENCE`, and a real `SEED`.**
+  1. `EARLY_STOP_PATIENCE` is in `FLUX_TRAIN_ENV_KEYS`.
+  2. `SEED` (`config.py`, default 42) seeds `random`/`numpy`/`torch`/CUDA at the top of
+     `train_m2.main`, is exposed as `--seed`, is forwarded via the allowlist, and is echoed
+     in the log. Sweep `SEED=1,2,3` for the §0.3 error bars.
+  - **Bundled fix:** `docker-compose.yml` defaulted `EARLY_STOP_PATIENCE` to 5 while
+    `config.py` said 10, so with the knob unset the CPU path ran half the patience of the
+    GPU path. Now both are 10.
+  - ⚠️ **Still divergent, deliberately left alone:** compose defaults `BATCH_SIZE` to 128
+    vs `config.py`'s 256. Set `BATCH_SIZE` explicitly on any CPU-vs-GPU comparison.
+- ✅ **C9 — `eval_m2 --dump-preds`.** Writes `OUTPUT_DIR/eval_preds.parquet` with
+  `(ts, pair, horizon, side, conf, p_up, fwd_ret, y3, has_book)` for every val bar and
+  every horizon. `ts` is epoch **nanoseconds** UTC; `side` is -1/+1; `y3` is 0/1/2.
+  `side`/`conf` come from the same directional signal the gate uses, so re-aggregating this
+  table reproduces the printed fixed-coverage rows exactly. Falls back to `eval_preds.csv.gz`
+  (same columns) if the image lacks a parquet engine — `pyarrow` was added to both
+  requirements files, but a reused VM image may predate it. The eval runner is now on by
+  default, so **every** run produces the dump, not just eval-only ones.
+- ✅ **C10 — epoch-distribution summary.** Training ends with
+  `epoch LB series @cov0.05: n=… mean=… sd=… max=… selected=epoch N (lb=…)` followed by
+  `selected - mean = ±… (… sd)`. Read the second line first: a gap within ~1 sd is the
+  order statistic, not a result.
 
 ### Later
 
@@ -603,7 +628,7 @@ now start 2022-08-18 for all nine long pairs (§1.7).
 | Job | Launch | Status | Fetch | VM |
 |---|---|---|---|---|
 | Train (GPU) | `./scripts/gcp_train.sh --gpu 60 128` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> --save` | `fluxtrader-train` |
-| Eval only *(after C7)* | `./scripts/gcp_train.sh --eval-only <ckpt-key>` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> --save` | `fluxtrader-train` |
+| Eval only (no training) | `./scripts/gcp_train.sh --eval-only <ckpt-key>` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> --save` + `gs://…/eval/<run_id>/` | `fluxtrader-train` |
 | Walk-forward | `./scripts/gcp_walkforward.sh` | `--status` | `--fetch` | `fluxtrader-walkforward` |
 | GBT diagnostic | `./scripts/gcp_gbt.sh` | `--status` | `--fetch` / `--log` | `fluxtrader-gbt` |
 | Single-window ablate | `./scripts/gcp_ablate.sh` | — | — | own VM |
@@ -629,6 +654,7 @@ via the script.
 ```
 SEL_NET_WEIGHT SEL_COST_BPS SEL_NET_SCALE SEL_COVERAGE
 NUM_LAYERS HIDDEN_SIZE DROPOUT LR WEIGHT_DECAY BATCH_SIZE
+EARLY_STOP_PATIENCE SEED
 PAIR_EMBED_DIM NUM_WORKERS PREFETCH_FACTOR
 CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT
 LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER
@@ -637,7 +663,7 @@ BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN
 GATE_THRESHOLD FEE_RATE_BPS SLIPPAGE_BPS MAKER_FEE_RATE_BPS MAKER_SLIPPAGE_BPS
 ```
 
-**`EARLY_STOP_PATIENCE` is missing and `SEED` does not exist** — that is C8.
+`EARLY_STOP_PATIENCE` and `SEED` were added to this list by C8 (2026-08-18).
 
 **Add every new config knob to this list when you create it** — an unforwarded knob is a
 silent no-op on the GPU VM (trap §0.5.2/§0.5.7). Note `TRAIN_PRIMARY` / `TRAIN_HORIZONS` /

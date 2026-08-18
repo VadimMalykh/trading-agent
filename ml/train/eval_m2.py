@@ -81,6 +81,86 @@ def collate_mh(batch):
     return xs, ys
 
 
+def pred_rows(
+    horizon: str,
+    logits: torch.Tensor,
+    dir_logits: torch.Tensor | None,
+    y_true: torch.Tensor,
+    fwd_ret: torch.Tensor | None,
+    times: np.ndarray,
+    pair_ids: np.ndarray,
+    book_of_sample: np.ndarray,
+) -> dict:
+    """
+    Per-bar decision record for one horizon (`--dump-preds`).
+
+    Everything the offline regime analysis needs and nothing else: WHEN the bar was
+    (`ts`), WHAT the model would have done (`side`, `conf`, `p_up`), and WHAT
+    happened (`fwd_ret`, `y3`). Aggregate eval tables can only say the edge is
+    concentrated in some windows; answering whether that is *predictable at decision
+    time* requires the per-bar rows.
+
+    `side`/`conf` come from the same directional signal the gate and every P&L
+    number in this file use, so a re-aggregation of this table reproduces the
+    printed fixed-coverage rows exactly.
+    """
+    gate_logits = dir_logits_to_three_class(dir_logits) if dir_logits is not None else logits
+    side, conf = directional_signal(gate_logits)
+    p_up = torch.softmax(gate_logits, dim=-1)[:, 2]
+    n = int(y_true.numel())
+    return {
+        # epoch nanoseconds, UTC — the bar the decision is made ON (not the exit).
+        "ts": np.asarray(times, dtype=np.int64),
+        "pair": np.asarray(pair_ids),
+        "horizon": np.full(n, int(horizon), dtype=np.int32),
+        # -1 = short, +1 = long (gate.directional_signal's 0/2 remapped).
+        "side": np.where(side.numpy() == 2, 1, -1).astype(np.int8),
+        "conf": conf.numpy().astype(np.float32),
+        "p_up": p_up.numpy().astype(np.float32),
+        "fwd_ret": (
+            fwd_ret.numpy().astype(np.float32)
+            if fwd_ret is not None
+            else np.full(n, np.nan, dtype=np.float32)
+        ),
+        "y3": y_true.numpy().astype(np.int8),  # 0=down 1=flat 2=up
+        "has_book": book_of_sample.astype(np.int8),
+    }
+
+
+def write_pred_dump(rows: list, out_dir: str) -> Path | None:
+    """
+    Concatenate per-horizon `pred_rows` and write one table to OUTPUT_DIR.
+
+    Parquet when the image has an engine, gzipped CSV otherwise — a missing
+    pyarrow must not cost a whole eval run, and the columns are identical either
+    way. The chosen path is printed so the log always says which one landed.
+    """
+    if not rows:
+        return None
+    import pandas as pd
+
+    df = pd.DataFrame({k: np.concatenate([r[k] for r in rows]) for k in rows[0]})
+    # `pair` is one Python str per row otherwise — at O2 scale (millions of val bars x
+    # 3 horizons) that object column dominates both RAM and file size. Categorical
+    # stores one code per row and dictionary-encodes in parquet.
+    df["pair"] = df["pair"].astype("category")
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "eval_preds.parquet"
+    try:
+        df.to_parquet(path, index=False)
+    except Exception as e:  # no pyarrow/fastparquet in the image
+        path.unlink(missing_ok=True)  # don't leave a truncated parquet to be uploaded
+        path = out / "eval_preds.csv.gz"
+        df.to_csv(path, index=False, compression="gzip")
+        print(f"  (parquet engine unavailable: {e} → wrote gzipped CSV instead)")
+    print(
+        f"Wrote {path} — {len(df):,} rows x {len(df.columns)} cols "
+        f"({path.stat().st_size / 1e6:.1f} MB); ts is epoch ns UTC, side is -1/+1"
+    )
+    return path
+
+
 def _ns_to_iso(ns: int) -> str:
     return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -572,6 +652,12 @@ def main():
         help="Only the last N days of 1m candles per pair (bounds RAM on small "
         "hosts like the 2GB always-on VM). Default: full history.",
     )
+    p.add_argument(
+        "--dump-preds",
+        action="store_true",
+        help="Write per-bar (ts, pair, horizon, side, conf, p_up, fwd_ret, y3, "
+        "has_book) for the val window to OUTPUT_DIR/eval_preds.parquet.",
+    )
     args = p.parse_args()
 
     device = torch.device(args.device)
@@ -599,6 +685,33 @@ def main():
     pair_to_id = {p: i for i, p in enumerate(pair_vocab)}
     oov_id = len(pair_vocab)
 
+    # --- Candle interval comes from the CHECKPOINT, not the ambient env ----------
+    # Re-scoring a historical checkpoint (gcp_train.sh --eval-only) runs with today's
+    # config, and CANDLE_INTERVAL defaults to 1m. A checkpoint trained on 15m bars
+    # rebuilt at 1m would silently be a different experiment: a different bar grid, a
+    # different val window, and hold_bars/BAR_SECONDS off by 15x — so its P&L and
+    # trade counts would be meaningless while still printing a full, plausible table.
+    # The bundle records candle_interval in meta, so trust the checkpoint and say so.
+    global BAR_SECONDS
+    ckpt_interval = meta.get("candle_interval")
+    if ckpt_interval:
+        eval_interval = str(ckpt_interval)
+        if eval_interval != CANDLE_INTERVAL:
+            print(
+                f"NOTE: checkpoint was trained on {eval_interval} candles but "
+                f"CANDLE_INTERVAL={CANDLE_INTERVAL} — using the CHECKPOINT's "
+                f"{eval_interval} so this eval reproduces the trained recipe."
+            )
+    else:
+        eval_interval = CANDLE_INTERVAL
+        print(
+            f"WARNING: checkpoint records no candle_interval (pre-2026 checkpoint) — "
+            f"falling back to CANDLE_INTERVAL={eval_interval}. If it was trained on a "
+            f"different bar size, every P&L number below is wrong; pass the right "
+            f"CANDLE_INTERVAL explicitly."
+        )
+    BAR_SECONDS = bar_seconds(eval_interval)
+
     model = SharedEncoderMultiHead(
         input_size=feature_dim,
         hidden_size=hidden,
@@ -619,7 +732,10 @@ def main():
     else:
         pairs = meta.get("pairs") or load_whitelist_pairs(fallback=PAIRS)
     print(f"Eval pairs: {pairs}")
-    print(f"Checkpoint primary={primary}m seq_len={seq_len} norm={meta.get('norm', 'legacy')}")
+    print(
+        f"Checkpoint primary={primary}m seq_len={seq_len} "
+        f"candles={eval_interval} norm={meta.get('norm', 'legacy')}"
+    )
 
     # Tail window bounds peak RAM on small hosts: the always-on VM has 2GB and
     # already runs postgres + app + ml_inference, so a full ~180d multi-pair
@@ -627,11 +743,17 @@ def main():
     # norm fix). 1m candles -> 1440 rows/day.
     max_rows = None
     if args.tail_days and args.tail_days > 0:
-        max_rows = args.tail_days * 1440
-        print(f"Tail window: last {args.tail_days}d (~{max_rows:,} 1m candles/pair)")
+        # Rows/day follows the bar size — hardcoding 1440 would ask for 15x too much
+        # history on a 15m checkpoint, which is exactly the OOM this flag prevents.
+        max_rows = int(args.tail_days * 86400 / BAR_SECONDS)
+        print(f"Tail window: last {args.tail_days}d (~{max_rows:,} {eval_interval} candles/pair)")
 
     bundle = build_m2_index_bundle(
-        pairs=pairs, seq_len=seq_len, horizons_minutes=horizons, max_rows=max_rows
+        pairs=pairs,
+        seq_len=seq_len,
+        horizons_minutes=horizons,
+        max_rows=max_rows,
+        candle_interval=eval_interval,
     )
     tr_idx, va_idx = time_split_indices(bundle.times, VAL_FRACTION)
 
@@ -725,12 +847,17 @@ def main():
     print(f"M2 Eval | val samples={va_idx.shape[0]} | horizons={horizons}")
     print("=" * 60)
 
+    dump_rows = []
     for h in horizon_keys:
         logits = torch.cat(all_logits[h], dim=0)
         y_true = torch.cat(all_y[h], dim=0)
         dir_logits = torch.cat(all_dir[h], dim=0) if all_dir[h] else None
         fwd_ret = torch.cat(all_ret[h], dim=0) if all_ret[h] else None
-        hold_bars = horizon_bars(CANDLE_INTERVAL, int(h))
+        hold_bars = horizon_bars(eval_interval, int(h))
+        if args.dump_preds:
+            dump_rows.append(
+                pred_rows(h, logits, dir_logits, y_true, fwd_ret, t_va, p_va, book_of_sample)
+            )
         result = run_horizon_report(
             logits,
             y_true,
@@ -968,7 +1095,7 @@ def main():
             wf_gate = dir_logits_to_three_class(torch.cat(all_dir[pk], dim=0))
         else:
             wf_gate = torch.cat(all_logits[pk], dim=0)
-        hb = horizon_bars(CANDLE_INTERVAL, int(pk))
+        hb = horizon_bars(eval_interval, int(pk))
 
         print(
             f"\n--- Walk-forward edge on val window (primary {pk}m, split into "
@@ -1036,6 +1163,9 @@ def main():
     with open(out_path, "w") as f:
         json.dump(report, f, indent=2)
     print(f"\nWrote {out_path}")
+
+    if args.dump_preds:
+        write_pred_dump(dump_rows, OUTPUT_DIR)
 
     print("\nInterpretation tips:")
     print("  dir_acc         → among gated trades with true up/down, fraction correct")

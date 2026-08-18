@@ -19,6 +19,7 @@
 #   ./scripts/gcp_train.sh --gpu 120 256      # GPU (default) + custom epochs/seq-len
 #   ./scripts/gcp_train.sh --ref my-branch    # train an arbitrary branch/commit
 #   ./scripts/gcp_train.sh --quantile-head 1 --quantile-weight 0.2   # quant A/B
+#   ./scripts/gcp_train.sh --eval-only checkpoints/m2_multi_<run>_<sha>.pt   # re-score
 #
 # Flags (order-independent; the first two bare numbers are epochs then seq_len):
 #   --cpu                     CPU mode (overrides GPU default)
@@ -26,6 +27,16 @@
 #   --ref|--branch <name>     git ref to train (default: $GIT_REF, usually main)
 #   --quantile-head <0|1>     override TRAIN_QUANTILE_HEAD
 #   --quantile-weight <f>     override TRAIN_QUANTILE_LOSS_WEIGHT
+#   --eval-only <ckpt-key>    re-score an EXISTING checkpoint on today's eval code:
+#                             no training, and checkpoints/latest.pt is NOT touched,
+#                             so a re-score can never be mistaken for a new model by
+#                             gcp_promote.sh. Accepts a bare filename, a
+#                             checkpoints/<name>.pt key, or a full gs:// URL, and
+#                             implies --cpu unless --gpu is passed explicitly (eval
+#                             is a single forward pass; a GPU buys little).
+#                             eval_m2.py takes seq_len/horizons/candle interval from
+#                             the checkpoint's own meta, so an old checkpoint is
+#                             re-scored on its trained recipe, not today's defaults.
 # Unknown --flags are rejected (previously they were silently misread as epochs).
 #
 # One-time bucket setup (run once):
@@ -49,16 +60,21 @@ require_gcloud
 # --flags are a hard error so a typo can no longer be misread as a positional.
 # GPU is the default; --cpu opts out.
 _GPU_MODE=1
+_GPU_EXPLICIT=0
 _REF_OVERRIDE=""
 _QHEAD_OVERRIDE=""
 _QWEIGHT_OVERRIDE=""
+_EVAL_ONLY_ARG=""
 _ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --gpu)
-      _GPU_MODE=1; shift ;;
+      _GPU_MODE=1; _GPU_EXPLICIT=1; shift ;;
     --cpu)
-      _GPU_MODE=0; shift ;;
+      _GPU_MODE=0; _GPU_EXPLICIT=1; shift ;;
+    --eval-only)
+      [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a checkpoint key"; exit 1; }
+      _EVAL_ONLY_ARG="$2"; shift 2 ;;
     --ref|--branch)
       [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value"; exit 1; }
       _REF_OVERRIDE="$2"; shift 2 ;;
@@ -81,6 +97,21 @@ if [[ -n "$_REF_OVERRIDE" ]]; then
   GIT_REF="$_REF_OVERRIDE"
 fi
 
+# --- eval-only: resolve the checkpoint key to a full bucket URL ------------------
+# Accept the three spellings a checkpoint gets referred to in the plan and in
+# gcp_status.sh output, so no one has to remember which one this script wants.
+EVAL_ONLY_CKPT=""
+if [[ -n "$_EVAL_ONLY_ARG" ]]; then
+  case "$_EVAL_ONLY_ARG" in
+    gs://*)         EVAL_ONLY_CKPT="$_EVAL_ONLY_ARG" ;;
+    checkpoints/*)  EVAL_ONLY_CKPT="$GCS_BUCKET/$_EVAL_ONLY_ARG" ;;
+    *)              EVAL_ONLY_CKPT="$GCS_BUCKET/checkpoints/$_EVAL_ONLY_ARG" ;;
+  esac
+  # Eval is one forward pass over the val window; a GPU VM would spend more time
+  # installing drivers than evaluating. Default to CPU, but honor an explicit --gpu.
+  if [[ "$_GPU_EXPLICIT" != "1" ]]; then _GPU_MODE=0; fi
+fi
+
 _GCP_ZONE_ORIGINAL="$GCP_ZONE"
 if [[ "$_GPU_MODE" == "1" ]]; then
   TRAIN_DEVICE=cuda
@@ -88,6 +119,12 @@ if [[ "$_GPU_MODE" == "1" ]]; then
   GCP_ZONE="$GCP_TRAIN_ZONE"
   GCP_REGION="${GCP_ZONE%-*}"
   export GCP_REGION
+else
+  # A CPU VM must run the CPU path. TRAIN_DEVICE can be preset to cuda in
+  # scripts/gcp_env, and the remote job branches on TRAIN_DEVICE, not on the
+  # machine type — so without this, --cpu would build a CPU VM and then try the
+  # GPU docker runner on it.
+  TRAIN_DEVICE=cpu
 fi
 echo_cfg
 
@@ -119,6 +156,7 @@ if [[ -n "$PAIRS_ARG" ]]; then PAIRS_FLAG="--pairs ${PAIRS_ARG}"; fi
 FLUX_TRAIN_ENV_KEYS="${FLUX_TRAIN_ENV_KEYS:-\
 SEL_NET_WEIGHT SEL_COST_BPS SEL_NET_SCALE SEL_COVERAGE \
 NUM_LAYERS HIDDEN_SIZE DROPOUT LR WEIGHT_DECAY BATCH_SIZE \
+EARLY_STOP_PATIENCE SEED \
 PAIR_EMBED_DIM \
 NUM_WORKERS PREFETCH_FACTOR \
 CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT \
@@ -139,7 +177,12 @@ for _k in $FLUX_TRAIN_ENV_KEYS; do
 done
 
 echo ""
-echo "==> run_id=$RUN_ID  ref=$GIT_REF epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} device=$TRAIN_DEVICE quantile_head=$QUANTILE_HEAD quantile_weight=$QUANTILE_LOSS_WEIGHT"
+if [[ -n "$EVAL_ONLY_CKPT" ]]; then
+  echo "==> run_id=$RUN_ID  EVAL-ONLY ref=$GIT_REF device=$TRAIN_DEVICE ckpt=$EVAL_ONLY_CKPT"
+  echo "    (no training; seq_len/horizons/candles come from the checkpoint meta; latest.pt untouched)"
+else
+  echo "==> run_id=$RUN_ID  ref=$GIT_REF epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} device=$TRAIN_DEVICE quantile_head=$QUANTILE_HEAD quantile_weight=$QUANTILE_LOSS_WEIGHT"
+fi
 
 # --- 0. sanity: bucket reachable -------------------------------------------------
 if ! gcloud storage ls "$GCS_BUCKET" >/dev/null 2>&1; then
@@ -147,6 +190,18 @@ if ! gcloud storage ls "$GCS_BUCKET" >/dev/null 2>&1; then
   echo "Create it once (same region as VMs):"
   echo "  gcloud storage buckets create $GCS_BUCKET --location=$GCP_REGION --uniform-bucket-level-access"
   exit 1
+fi
+
+# Resolve the eval-only checkpoint BEFORE spending a VM on it: a typo'd key would
+# otherwise fail 15 minutes in, after the VM, the dump and the DB restore.
+if [[ -n "$EVAL_ONLY_CKPT" ]]; then
+  if ! gcloud storage ls "$EVAL_ONLY_CKPT" >/dev/null 2>&1; then
+    echo "ERROR: --eval-only checkpoint not found: $EVAL_ONLY_CKPT"
+    echo "Available checkpoints:"
+    gcloud storage ls "$GCS_BUCKET/checkpoints/" 2>/dev/null | tail -20 || true
+    exit 1
+  fi
+  echo "==> eval-only checkpoint OK: $EVAL_ONLY_CKPT"
 fi
 
 # --- 1. ensure train VM exists (create w/ cloud-platform scope) ------------------
@@ -564,6 +619,7 @@ export QUANTILE_LOSS_WEIGHT='$QUANTILE_LOSS_WEIGHT'
 export TRAIN_DEVICE='$TRAIN_DEVICE'
 export PAIRS_FLAG='$PAIRS_FLAG'
 export KEEP_VM='$KEEP_VM'
+export EVAL_ONLY_CKPT='$EVAL_ONLY_CKPT'
 export MODEL_VOLUME_NAME='$MODEL_VOLUME_NAME'
 export GCP_ZONE='$GCP_ZONE'
 export GCP_TRAIN_ACCELERATOR='$GCP_TRAIN_ACCELERATOR'
@@ -697,44 +753,92 @@ for _k in \$FLUX_TRAIN_ENV_KEYS; do
   if [[ -n \"\$_v\" ]]; then _CPU_ENV_OPTS=\"\$_CPU_ENV_OPTS -e \$_k=\$_v\"; fi
 done
 
-echo \"=== resolved knobs: EPOCHS=\$EPOCHS SEQ_LEN=\$SEQ_LEN HORIZONS=\$HORIZONS PRIMARY=\$PRIMARY QUANTILE_HEAD=\$QUANTILE_HEAD PAIRS_FLAG='\$PAIRS_FLAG' ===\"
+if [[ -n \"\${EVAL_ONLY_CKPT:-}\" ]]; then
+  echo \"=== resolved knobs: EVAL-ONLY ckpt=\$EVAL_ONLY_CKPT device=\$TRAIN_DEVICE (seq_len/horizons/candles come from the checkpoint) ===\"
+else
+  echo \"=== resolved knobs: EPOCHS=\$EPOCHS SEQ_LEN=\$SEQ_LEN HORIZONS=\$HORIZONS PRIMARY=\$PRIMARY QUANTILE_HEAD=\$QUANTILE_HEAD PAIRS_FLAG='\$PAIRS_FLAG' ===\"
+fi
 # Echo every forwarded tuning knob so a silently-dropped env var (e.g. the R3
 # TRAIN_PRIMARY that never took effect) is visible in the remote log, not just
 # the launcher stdout we don't keep.
 for _k in \$FLUX_TRAIN_ENV_KEYS; do
   _v=\"\${!_k:-}\"; if [[ -n \"\$_v\" ]]; then echo \"    knob \$_k=\$_v\"; fi
 done
-echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY quantile_head=\$QUANTILE_HEAD device=\$TRAIN_DEVICE ===\"
-if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
-  \$_DOCKER_GPU_RUN ml_trainer_gpu python train_m2.py --device cuda --epochs \$EPOCHS --seq-len \$SEQ_LEN \
-    --horizons \$HORIZONS --primary \$PRIMARY \$PAIRS_FLAG
+if [[ -n \"\${EVAL_ONLY_CKPT:-}\" ]]; then
+  # --- EVAL-ONLY: re-score an existing checkpoint on today's eval code ---------
+  # No training, and no write to checkpoints/latest.pt, so a re-score can never be
+  # promoted by mistake. eval_m2.py reads seq_len / horizons / candle_interval from
+  # the checkpoint's own meta, so today's config defaults cannot silently change
+  # which experiment is being measured.
+  echo \"=== EVAL-ONLY \$EVAL_ONLY_CKPT (skipping train_m2; latest.pt will NOT be touched) ===\"
+  gcloud storage cp \"\$EVAL_ONLY_CKPT\" \$HOME/eval_target.pt
+  docker run --rm -v \$MODEL_VOLUME_NAME:/models -v \$HOME:/in alpine \
+    sh -c 'cp /in/eval_target.pt /models/eval_target.pt'
+  EVAL_CKPT=/models/eval_target.pt
 else
-  docker compose --profile ml run --rm \
-    -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
-    -e QUANTILE_HEAD=\$QUANTILE_HEAD -e QUANTILE_LEVELS=\$QUANTILE_LEVELS -e QUANTILE_LOSS_WEIGHT=\$QUANTILE_LOSS_WEIGHT \
-    -e FLUX_GIT_SHA=\$GIT_SHA \$_CPU_ENV_OPTS \
-    ml_trainer python train_m2.py --device cpu --epochs \$EPOCHS --seq-len \$SEQ_LEN \
+  echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY quantile_head=\$QUANTILE_HEAD device=\$TRAIN_DEVICE ===\"
+  if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
+    \$_DOCKER_GPU_RUN ml_trainer_gpu python train_m2.py --device cuda --epochs \$EPOCHS --seq-len \$SEQ_LEN \
       --horizons \$HORIZONS --primary \$PRIMARY \$PAIRS_FLAG
+  else
+    docker compose --profile ml run --rm \
+      -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \
+      -e QUANTILE_HEAD=\$QUANTILE_HEAD -e QUANTILE_LEVELS=\$QUANTILE_LEVELS -e QUANTILE_LOSS_WEIGHT=\$QUANTILE_LOSS_WEIGHT \
+      -e FLUX_GIT_SHA=\$GIT_SHA \$_CPU_ENV_OPTS \
+      ml_trainer python train_m2.py --device cpu --epochs \$EPOCHS --seq-len \$SEQ_LEN \
+        --horizons \$HORIZONS --primary \$PRIMARY \$PAIRS_FLAG
+  fi
+  EVAL_CKPT=/models/m2_multi.pt
 fi
 
-echo \"=== eval_m2 ===\"
+echo \"=== eval_m2 (\$EVAL_CKPT) ===\"
+_EVAL_RC=0
 if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
-  \$_DOCKER_GPU_RUN ml_trainer_gpu python eval_m2.py --checkpoint /models/m2_multi.pt --device cuda \
-    --gate 0.50,0.55,0.58,0.62,0.68,0.75 || true
+  \$_DOCKER_GPU_RUN ml_trainer_gpu python eval_m2.py --checkpoint \$EVAL_CKPT --device cuda \
+    --gate 0.50,0.55,0.58,0.62,0.68,0.75 --dump-preds || _EVAL_RC=\$?
 else
   docker compose --profile ml run --rm \
     -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \$_CPU_ENV_OPTS \
-    ml_trainer python eval_m2.py --checkpoint /models/m2_multi.pt --device cpu \
-      --gate 0.50,0.55,0.58,0.62,0.68,0.75 || true
+    ml_trainer python eval_m2.py --checkpoint \$EVAL_CKPT --device cpu \
+      --gate 0.50,0.55,0.58,0.62,0.68,0.75 --dump-preds || _EVAL_RC=\$?
+fi
+# A training run tolerates a failed eval (the checkpoint is still worth keeping and
+# can be re-scored later). An eval-only run cannot: eval IS the job, so swallowing
+# the failure would report DONE and delete the VM with nothing produced.
+if [[ \"\$_EVAL_RC\" != \"0\" ]]; then
+  if [[ -n \"\${EVAL_ONLY_CKPT:-}\" ]]; then
+    echo \"ERROR: eval_m2 failed (rc=\$_EVAL_RC) — eval-only run has no other output\"
+    exit 1
+  fi
+  echo \"WARNING: eval_m2 failed (rc=\$_EVAL_RC); pushing the trained checkpoint anyway\"
 fi
 
-echo \"=== push checkpoint to bucket ===\"
-docker run --rm -v \$MODEL_VOLUME_NAME:/models -v \$HOME:/out alpine \
-  sh -c 'cp /models/m2_multi.pt /out/m2_multi.pt'
-CKPT_KEY=\"checkpoints/m2_multi_\${RUN_ID}_\${GIT_SHA:0:8}.pt\"
-gcloud storage cp \$HOME/m2_multi.pt \"\$GCS_BUCKET/\$CKPT_KEY\"
-gcloud storage cp \"\$GCS_BUCKET/\$CKPT_KEY\" \"\$GCS_BUCKET/checkpoints/latest.pt\"
-echo \"checkpoint → \$GCS_BUCKET/\$CKPT_KEY\"
+# --- push eval artifacts (both modes) ------------------------------------------
+# OUTPUT_DIR is /workspace/train/output in the container, which is the bind-mounted
+# ml/train/output on the host for BOTH the GPU (docker run -v) and CPU (compose)
+# runners. Uploading it means eval_m2.json and the per-bar dump survive the VM's
+# self-delete, so offline analysis never needs the run to be re-done.
+echo \"=== push eval artifacts to bucket ===\"
+_OUT_DIR=\$HOME/\$REMOTE_REPO_NAME/ml/train/output
+for _f in eval_m2.json eval_preds.parquet eval_preds.csv.gz history_m2.json; do
+  if [[ -f \"\$_OUT_DIR/\$_f\" ]]; then
+    if gcloud storage cp \"\$_OUT_DIR/\$_f\" \"\$GCS_BUCKET/eval/\$RUN_ID/\$_f\"; then
+      echo \"    eval artifact → \$GCS_BUCKET/eval/\$RUN_ID/\$_f\"
+    fi
+  fi
+done
+
+if [[ -n \"\${EVAL_ONLY_CKPT:-}\" ]]; then
+  echo \"=== eval-only: NOT pushing a checkpoint (latest.pt left untouched) ===\"
+else
+  echo \"=== push checkpoint to bucket ===\"
+  docker run --rm -v \$MODEL_VOLUME_NAME:/models -v \$HOME:/out alpine \
+    sh -c 'cp /models/m2_multi.pt /out/m2_multi.pt'
+  CKPT_KEY=\"checkpoints/m2_multi_\${RUN_ID}_\${GIT_SHA:0:8}.pt\"
+  gcloud storage cp \$HOME/m2_multi.pt \"\$GCS_BUCKET/\$CKPT_KEY\"
+  gcloud storage cp \"\$GCS_BUCKET/\$CKPT_KEY\" \"\$GCS_BUCKET/checkpoints/latest.pt\"
+  echo \"checkpoint → \$GCS_BUCKET/\$CKPT_KEY\"
+fi
 
 echo \"=== train finished \$(date -u) ===\"
 # trap → finish DONE → uploads log+status, deletes VM
@@ -750,11 +854,19 @@ tail -n 30 \$HOME/train_m2.log 2>/dev/null || echo '(starting...)'
 " "$GCP_ZONE"
 
 echo ""
-if [[ "$_GPU_MODE" == "1" ]]; then
+if [[ -n "$EVAL_ONLY_CKPT" ]]; then
+  echo "OK — eval-only re-score started on $GCP_TRAIN_INSTANCE (run=$RUN_ID, device=$TRAIN_DEVICE)."
+elif [[ "$_GPU_MODE" == "1" ]]; then
   echo "OK — GPU training started on $GCP_TRAIN_INSTANCE ($GCP_TRAIN_MACHINE + $GCP_TRAIN_ACCELERATOR) (run=$RUN_ID, device=cuda)."
 else
   echo "OK — training started on $GCP_TRAIN_INSTANCE (run=$RUN_ID)."
 fi
 echo "The VM will DELETE itself on success, STOP itself on failure (KEEP_VM=$KEEP_VM)."
 echo "Mac may sleep now. Monitor:  ./scripts/gcp_status.sh"
-echo "When DONE:                   ./scripts/gcp_promote.sh"
+if [[ -n "$EVAL_ONLY_CKPT" ]]; then
+  echo "When DONE, fetch the log:    ./scripts/gcp_logs.sh $RUN_ID --save"
+  echo "Eval artifacts:              $GCS_BUCKET/eval/$RUN_ID/"
+  echo "(no checkpoint is produced; checkpoints/latest.pt is untouched, so do NOT promote)"
+else
+  echo "When DONE:                   ./scripts/gcp_promote.sh"
+fi

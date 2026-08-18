@@ -115,6 +115,19 @@ NUM_WORKERS = int(os.environ.get("NUM_WORKERS", "4"))
 # pipeline jitter. Override with env PREFETCH_FACTOR.
 PREFETCH_FACTOR = int(os.environ.get("PREFETCH_FACTOR", "4"))
 EPOCHS = int(os.environ.get("EPOCHS", "60"))
+# --- Reproducibility -------------------------------------------------------------
+# Until 2026-08-18 NOTHING in the training path was seeded, so two runs with an
+# identical config could differ by more than most of the levers we were trying to
+# measure (see docs/NEXT_TRAINING_PLAN.md §0.3: a single run cannot resolve effects
+# below ~0.04 LB). That made "did this lever help?" unanswerable, and the multi-seed
+# error bars §0.3 asks for were impossible to produce at all.
+# SEED seeds random/numpy/torch (+CUDA) at the top of train_m2.main, so a repeat of
+# the same config reproduces, and a DELIBERATE sweep (SEED=1,2,3,...) gives the
+# run-to-run spread needed to put an error bar on any single-run result.
+# Seeding fixes weight init, dropout masks and shuffle order. GPU kernel
+# nondeterminism (atomics in cuDNN reductions) can still perturb the low bits, so
+# expect same-seed runs to agree closely, not bitwise.
+SEED = int(os.environ.get("SEED", "42"))
 LR = float(os.environ.get("LR", "5e-4"))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", "1e-4"))
 HIDDEN_SIZE = int(os.environ.get("HIDDEN_SIZE", "64"))

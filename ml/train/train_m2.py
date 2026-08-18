@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import os
+import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,6 +64,7 @@ from config import (
     SEL_COST_BPS,
     SEL_NET_SCALE,
     SEL_NET_WEIGHT,
+    SEED,
     SEQ_LEN,
     VAL_FRACTION,
     WEIGHT_DECAY,
@@ -117,6 +119,12 @@ def parse_args():
     p.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY)
     p.add_argument("--patience", type=int, default=EARLY_STOP_PATIENCE)
     p.add_argument(
+        "--seed",
+        type=int,
+        default=SEED,
+        help="RNG seed for init/dropout/shuffle (config.SEED). Sweep it for error bars.",
+    )
+    p.add_argument(
         "--ckpt-gate",
         type=float,
         default=CKPT_GATE_THRESHOLD,
@@ -162,6 +170,19 @@ def parse_args():
         ),
     )
     return p.parse_args()
+
+
+def seed_everything(seed: int) -> None:
+    """
+    Seed every RNG the training path draws from: python `random`, numpy, torch CPU
+    and all CUDA devices. DataLoader workers derive their seeds from the torch base
+    seed, so shuffle order is fixed too. See config.SEED for why this exists.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def multi_loss(logits_dict, y_dict, crits, horizon_keys):
@@ -324,6 +345,7 @@ def checkpoint_score(
 
 def main():
     args = parse_args()
+    seed_everything(args.seed)
     device = torch.device(
         args.device if args.device != "cuda" or torch.cuda.is_available() else "cpu"
     )
@@ -350,6 +372,7 @@ def main():
     print(f"PyTorch {torch.__version__} | device={device}")
     print(f"Horizons (min): {horizons} | primary={primary_key}m | seq_len={args.seq_len}")
     print(f"lr={args.lr} wd={args.weight_decay} patience={args.patience} ckpt_gate={args.ckpt_gate}")
+    print(f"seed={args.seed} (init/dropout/shuffle; sweep SEED for run-to-run error bars)")
     print(f"hidden_size={HIDDEN_SIZE} num_layers={NUM_LAYERS} dropout={DROPOUT}")
     if SEL_NET_WEIGHT > 0:
         print(
@@ -528,6 +551,13 @@ def main():
     best_early_score = -1.0
     bad_epochs = 0
     history = []
+    # Per-epoch fixed-coverage Wilson-LB series, summarized at the end of the run.
+    # The SELECTED checkpoint is the max of this series, i.e. an order statistic —
+    # so it is biased upward by roughly the series' own spread even when no epoch is
+    # genuinely better. Keeping the series lets every log state that bias directly.
+    lb_series = []
+    best_epoch = 0
+    best_epoch_lb = 0.0
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -680,6 +710,7 @@ def main():
         fc_dir = float(fc.get("dir_acc") or 0.0)
         fc_lb = float(fc.get("dir_acc_wilson_lb") or 0.0)
         fc_n = int(fc.get("n_true_directional_gated") or 0)
+        lb_series.append(fc_lb)
         if SEL_NET_WEIGHT > 0.0:
             fcn = gate_m.get("fixed_coverage_net") or {}
             net_pt_bps = float(fcn.get("net_per_trade") or 0.0) * 1e4
@@ -705,6 +736,8 @@ def main():
 
         if sel_score > best_score + 1e-6:
             best_score = sel_score
+            best_epoch = epoch
+            best_epoch_lb = fc_lb
             Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
             Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
             ckpt = {
@@ -773,6 +806,29 @@ def main():
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(OUTPUT_DIR, "history_m2.json"), "w") as f:
         json.dump(history, f, indent=2)
+
+    # Order-statistic summary of the epoch LB series. `selected` is the MAXIMUM of
+    # `n` draws, so it sits above `mean` by construction; `sd` is the scale of the
+    # noise that maximum was picked out of. If selected - mean is within about one
+    # sd, this run produced no evidence of a real improvement over its own baseline
+    # (docs/NEXT_TRAINING_PLAN.md §0.3). Printed every run so the bias never has to
+    # be reconstructed by grepping epoch lines.
+    if lb_series:
+        _lb = np.asarray(lb_series, dtype=np.float64)
+        _sd = float(_lb.std(ddof=1)) if _lb.size > 1 else 0.0
+        print(
+            f"\nepoch LB series @cov{SEL_COVERAGE:.2f}: n={_lb.size} "
+            f"mean={_lb.mean():.4f} sd={_sd:.4f} max={_lb.max():.4f} "
+            f"selected=epoch {best_epoch} (lb={best_epoch_lb:.4f})"
+        )
+        _gap = best_epoch_lb - float(_lb.mean())
+        if _sd > 0:
+            print(
+                f"  selected - mean = {_gap:+.4f} ({_gap / _sd:.2f} sd) — max-over-epochs "
+                "is an order statistic; treat a gap within ~1 sd as noise, not a result"
+            )
+        else:
+            print("  (single epoch — no spread to compare the selection against)")
 
     print(f"\nDone. Best primary ({primary_key}m) gate score={best_score:.4f}")
     print(f"Checkpoint: {MODEL_DIR}/m2_multi.pt")
