@@ -64,18 +64,50 @@ else
   echo "train VM $GCP_TRAIN_INSTANCE: gone (self-deleted or never created)"
 fi
 
-# --- reconcile marker vs VM (the VM is the source of truth for "is it running") --
+# --- reconcile marker vs VM + live job ------------------------------------------
 # The status marker is only rewritten by the job (RUNNING at start, DONE/FAILED at
-# finish). If the VM is up, a run is in progress no matter what the marker says —
-# don't let a stale DONE from a previous run mislead.
+# finish), so a stale DONE/FAILED from a previous run must not mislead. But the VM
+# alone is not the source of truth either: a RUNNING VM does NOT mean a job is
+# running: gcp_train.sh can leave a
+# fully provisioned VM behind if the launcher dies (Ctrl-C, dropped SSH, laptop
+# sleep) after creating it but before writing ~/run_flux_train.sh. That VM then
+# idles — billing, with no tmux session — while this script used to report
+# "RUNNING, do not launch another run". So probe the VM for the actual job.
 EFFECTIVE="$STATE"
 if [[ "$VM_STATE" == "RUNNING" ]]; then
-  EFFECTIVE="RUNNING"
-  if [[ "$STATE" == "DONE" || "$STATE" == "FAILED" ]]; then
-    echo ""
-    echo "NOTE: marker says '$STATE' but the VM is RUNNING → that marker is from a"
-    echo "      PREVIOUS run; a new run is in progress. Trust the VM state."
+  JOB=""
+  if gcloud compute ssh "$GCP_TRAIN_INSTANCE" --project="$GCP_PROJECT" --zone="$TRAIN_ZONE" \
+       --command="tmux has-session -t fluxtrain 2>/dev/null && echo JOB_UP || echo JOB_DOWN" \
+       >/tmp/.flux_job_probe 2>/dev/null; then
+    JOB="$(grep -o 'JOB_UP\|JOB_DOWN' /tmp/.flux_job_probe | head -1 || true)"
   fi
+  rm -f /tmp/.flux_job_probe
+
+  case "$JOB" in
+    JOB_UP)
+      EFFECTIVE="RUNNING"
+      if [[ "$STATE" == "DONE" || "$STATE" == "FAILED" ]]; then
+        echo ""
+        echo "NOTE: marker says '$STATE' but tmux 'fluxtrain' is alive on the VM → that"
+        echo "      marker is from a PREVIOUS run; a new run is in progress."
+      fi
+      ;;
+    JOB_DOWN)
+      EFFECTIVE="IDLE_VM"
+      echo ""
+      echo "WARNING: VM is RUNNING but there is NO tmux 'fluxtrain' session — no job is"
+      echo "         running. The launcher most likely died after creating the VM but"
+      echo "         before starting the job. The VM is idling and still billing."
+      echo "         The marker above ('$STATE') is from the last run that actually ran."
+      ;;
+    *)
+      echo ""
+      echo "NOTE: VM is RUNNING but the SSH probe for tmux 'fluxtrain' failed, so whether"
+      echo "      a job is running is UNKNOWN. Check by hand before launching:"
+      echo "        gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux ls"
+      EFFECTIVE="UNKNOWN_VM_UP"
+      ;;
+  esac
 fi
 
 # --- log tail from bucket -------------------------------------------------------
@@ -93,5 +125,10 @@ case "$EFFECTIVE" in
   RUNNING) echo "→ RUNNING. Do NOT launch another run (one VM + shared bucket keys). Poll with this script; watch live via the log tail / tmux above." ;;
   DONE)    echo "→ DONE. Promote:  ./scripts/gcp_promote.sh" ;;
   FAILED)  echo "→ FAILED. VM stopped for debug (see above). Fix + re-run ./scripts/gcp_train.sh" ;;
+  IDLE_VM) echo "→ IDLE VM. Nothing is training. Re-run ./scripts/gcp_train.sh — it REUSES a"
+           echo "  RUNNING VM instead of recreating it, which matters during a GPU stockout."
+           echo "  If you are done, stop it:  gcloud compute instances delete $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT" ;;
+  UNKNOWN_VM_UP)
+           echo "→ VM is up, job state UNKNOWN (SSH probe failed). Verify with 'tmux ls' above before launching." ;;
   *)       echo "→ no marker yet. If the VM is RUNNING a run just started; otherwise nothing is running." ;;
 esac
