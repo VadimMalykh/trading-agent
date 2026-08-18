@@ -28,6 +28,72 @@ number from it:**
 Sections below are in reverse-chronological order, newest first, exactly as written at
 the time.
 
+⚠️ **A third thing invalidates numbers throughout this archive (found 2026-08-18, from
+the N-wave).** Every headline `cov05 wilson_lb` in this file — and in the live plan's
+ledger above the N-wave — is `max over epochs` of a per-epoch series whose epoch-to-epoch
+standard deviation is ≈ **0.016** and whose mean is flat. Measured on the two runs that
+share a training configuration:
+
+| run | epochs | mean LB | sd | max LB | max in sd above mean |
+|---|---:|---:|---:|---:|---:|
+| F4 | 18 | 0.5058 | 0.0162 | 0.5310 (ep 8) | +1.56 |
+| N3 | 11 | 0.4987 | 0.0155 | 0.5230 (ep 1) | +1.57 |
+
+Paired per-epoch difference F4 − N3 over epochs 1–11: mean **+0.010**, sd **0.018** — two
+runs of the *same* configuration differ by more than most of the "effects" this archive
+argues about. **Any comparison in this file that turns on a cov05-LB difference below
+~0.04 is not supported by its evidence.** That includes the E2a′ 0.568 / E2b 0.566 /
+E3b1 0.559 / E3b2 0.554 pair-set-and-embed-dim rankings, and R0–R6's "tuning ceiling".
+
+---
+
+## Retired 2026-08-18 — the book ON/OFF walk-forward, and cost-aware checkpoint selection
+
+Both were live questions in the 2026-08-18 plan's first N-wave. Both are now closed;
+kept here for the reasoning.
+
+**Book ON/OFF walk-forward (`gcp_walkforward.sh`) — retired as a *design*, not as a
+question.** Three attempts: the 2026-08-04 single dense window (ON 0.691 / OFF 0.494), F3
+(`wf-20260817T030350Z`, 8 pairs, min gap −0.161), and N1 (`wf-20260818T063858Z`, corrected
+to the 4 long-book pairs, with the C4a `n_dir ≥ 500` decidability floor active). N1's
+result: **2 of 6 folds decidable, so INCONCLUSIVE by its own pre-registered rule**; the two
+decidable folds gave gaps `+0.073` and `−0.122`. Book-OFF `n_dir` across the six folds was
+`64, 88, 87, 24, 556, 655` against book-ON's `454, 627, 901, 765, 619, 751`.
+
+The design cannot answer the question, and this is structural rather than fixable by a
+re-launch: the book-OFF arm's characteristic failure is collapsing to an all-flat predictor
+(`3cls_pred f=0.87–0.97` in the four undecidable folds), which spends its top-5% confidence
+on truly-flat bars and leaves too few directional trades to score. Collapse is the modal
+book-OFF outcome, and collapse is exactly what makes a fold undecidable — so the more the
+book actually helps, the less measurable that help becomes. Replaced by within-model
+attribution (feature audit / permutation importance on one dense-window model), which has
+no cross-arm comparability problem.
+
+**Cost-aware checkpoint selection (`SEL_NET_WEIGHT`) — closed as a lever.** N3
+(`20260818T031002Z`) ran it at 4h/15m with `SEL_NET_WEIGHT=0.5 SEL_COST_BPS=5`, the
+horizon where the R5 objection ("at 30m nothing clears cost so the term has nothing to
+rank") no longer applies. The term was alive — `net_sc` moved 0.505 → 0.127 across epochs,
+so the R1 dead-floor failure did not recur — but it selected epoch 1 and early stopping
+ended the run at epoch 11. Two reasons, both fatal to the lever as specified:
+
+1. **Dynamic-range mismatch.** Over the run, `edge_lb` spanned 0.473–0.523 (0.050) while
+   `net_score` spanned 0.127–0.505 (0.378). At `net_weight=0.5` the blend is effectively
+   ~88% net term. `SEL_NET_SCALE=0.002` is the culprit: the logistic squash
+   `sigmoid(2·net/scale)` moves ~0.19 per 19bps of `net/trade`. Matching the two ranges
+   needs `SEL_NET_SCALE≈0.04`, or `net_weight≈0.1` at the current scale.
+2. **The term ranks noise.** `net_per_trade` is the mean of `side·fwd_ret` over ~9,650
+   gated bars, but 4h forward returns on 15m bars overlap 16-fold, so there are ~600
+   independent observations behind it. At a 4h return σ of ~100–150bps that is a standard
+   error of ~4–6bps, against a total observed epoch-to-epoch range of 19bps. Epoch 1
+   (+0.2bps) versus epoch 2 (−4.4bps) is well inside one standard error.
+
+And it did not achieve its goal. At matched trade counts the epoch it chose is no more
+profitable than F4's LB-chosen epoch: F4 @ gate 0.60 = 592 trades at **+6.2** gross
+bps/trade; N3 @ gate 0.55 = 716 trades at **+6.0**; N3 @ cov 0.05 = 855 trades at **+4.2**.
+Collateral: the epoch-1 checkpoint has a compressed confidence scale (gates zero bars at
+the served 0.58 on the 1h head — the new C1 warning fired correctly) and its 4h side split
+is 9,487 up / 161 down.
+
 ---
 
 ## ▶️▶️▶️▶️▶️▶️ START HERE (2026-08-17) — 🔴 NORMALIZATION BUG FOUND; MOST E-SERIES CONCLUSIONS ARE ARTIFACTS; BOOK NOW ≥30d
