@@ -100,6 +100,11 @@ services:
       # Throughput: larger batch = better BLAS utilization; threads = use all vCPUs.
       BATCH_SIZE: ${BATCH_SIZE:-128}
       OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
+    # train_m2.py uses torch's 'file_system' sharing strategy, so DataLoader
+    # workers pass tensors as named files in /dev/shm. Docker's 64MB default
+    # is far too small and the workers die with SIGBUS ("Bus error ... out of
+    # shared memory"). Mirrors --shm-size on the GPU path in scripts/gcp_train.sh.
+    shm_size: "4gb"
     volumes:
       - ./ml/train:/workspace/train
       - model_weights:/models

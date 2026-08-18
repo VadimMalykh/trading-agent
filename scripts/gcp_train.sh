@@ -727,7 +727,12 @@ if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
   fi
 
   # compose run lacks GPU passthrough — plain docker run + bind-mount train code
-  _DOCKER_GPU_RUN=\"docker run \$_GPU_OPTS --rm --network trading_agent_default\"
+  # --shm-size: train_m2.py sets torch multiprocessing sharing_strategy='file_system',
+  # so every tensor handed from a DataLoader worker to the main process becomes a
+  # named file in /dev/shm. Docker's default /dev/shm is 64MB, which the workers
+  # exhaust ("No space left on device" -> worker killed by SIGBUS/Bus error).
+  # 4g is tmpfs, so only the pages actually used cost RAM (VM has 15-16GB).
+  _DOCKER_GPU_RUN=\"docker run \$_GPU_OPTS --rm --shm-size=4g --network trading_agent_default\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -v \$HOME/\$REMOTE_REPO_NAME/ml/train:/workspace/train\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -v \$MODEL_VOLUME_NAME:/models\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e MODEL_DIR=/models\"
