@@ -53,8 +53,10 @@ VM_STATE="$(gcloud compute instances describe "$GCP_TRAIN_INSTANCE" \
 if [[ -n "$VM_STATE" ]]; then
   echo "train VM $GCP_TRAIN_INSTANCE: $VM_STATE (zone=$TRAIN_ZONE${ACCELERATOR:+, gpu=$ACCELERATOR})"
   if [[ "$VM_STATE" == "RUNNING" ]]; then
-    echo "live view:  gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxtrain"
-    echo "            (detach without stopping: Ctrl-b then d)"
+    # The 'tmux attach' hint is printed by the job probe below instead — only when
+    # a fluxtrain session actually exists. Printing it here told you to attach to
+    # a session that wasn't there.
+    :
   elif [[ "$VM_STATE" == "TERMINATED" ]]; then
     echo "VM is STOPPED (likely a FAILED run kept for debug). Start + inspect:"
     echo "  gcloud compute instances start $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT"
@@ -86,6 +88,8 @@ if [[ "$VM_STATE" == "RUNNING" ]]; then
   case "$JOB" in
     JOB_UP)
       EFFECTIVE="RUNNING"
+      echo "live view:  gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxtrain"
+      echo "            (detach without stopping: Ctrl-b then d)"
       if [[ "$STATE" == "DONE" || "$STATE" == "FAILED" ]]; then
         echo ""
         echo "NOTE: marker says '$STATE' but tmux 'fluxtrain' is alive on the VM → that"
@@ -105,6 +109,8 @@ if [[ "$VM_STATE" == "RUNNING" ]]; then
       echo "NOTE: VM is RUNNING but the SSH probe for tmux 'fluxtrain' failed, so whether"
       echo "      a job is running is UNKNOWN. Check by hand before launching:"
       echo "        gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux ls"
+      echo "      If a job IS running, attach with:"
+      echo "        gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxtrain"
       EFFECTIVE="UNKNOWN_VM_UP"
       ;;
   esac

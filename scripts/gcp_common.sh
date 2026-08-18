@@ -58,6 +58,19 @@ unset _k _FLUX_OVERRIDE_KEYS
 # Cross-region GCS transfer for the dump (~1-2GB) costs ~$0.08/GB = pennies.
 : "${GCP_TRAIN_ZONE:=${GCP_ZONE}}"
 : "${REMOTE_REPO_NAME:=trading_agent}"
+
+# Shared memory for any container that runs train_m2.py / eval_m2.py.
+# train_m2.py sets torch's 'file_system' sharing strategy, so DataLoader workers
+# hand batches to the main process as files in /dev/shm. Docker's 64MB default is
+# not enough and the workers die with SIGBUS ("Bus error ... out of shared
+# memory") on the first batch. Required size scales as
+#   BATCH_SIZE x SEQ_LEN x n_features x 4 bytes x NUM_WORKERS x PREFETCH_FACTOR
+# e.g. 256 x 384 x 19 x 4B x 4 x 4 = ~120MB. 4g leaves ~35x headroom and costs
+# nothing until used (tmpfs). Raise it if you raise batch size or seq_len a lot.
+# Consumed by scripts/gcp_train.sh (GPU: docker run --shm-size) and
+# docker-compose.yml (CPU: ml_trainer shm_size).
+: "${FLUX_SHM_SIZE:=4g}"
+export FLUX_SHM_SIZE
 : "${TRAIN_EPOCHS:=60}"
 : "${TRAIN_SEQ_LEN:=128}"
 : "${TRAIN_DEVICE:=cpu}"

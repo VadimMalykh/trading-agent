@@ -104,7 +104,7 @@ services:
     # workers pass tensors as named files in /dev/shm. Docker's 64MB default
     # is far too small and the workers die with SIGBUS ("Bus error ... out of
     # shared memory"). Mirrors --shm-size on the GPU path in scripts/gcp_train.sh.
-    shm_size: "4gb"
+    shm_size: ${FLUX_SHM_SIZE:-4g}
     volumes:
       - ./ml/train:/workspace/train
       - model_weights:/models

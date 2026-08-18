@@ -612,6 +612,7 @@ export PAIRS_FLAG='$PAIRS_FLAG'
 export KEEP_VM='$KEEP_VM'
 export EVAL_ONLY_CKPT='$EVAL_ONLY_CKPT'
 export MODEL_VOLUME_NAME='$MODEL_VOLUME_NAME'
+export FLUX_SHM_SIZE='$FLUX_SHM_SIZE'
 export GCP_ZONE='$GCP_ZONE'
 export GCP_TRAIN_ACCELERATOR='$GCP_TRAIN_ACCELERATOR'
 export FLUX_TRAIN_ENV_KEYS='$FLUX_TRAIN_ENV_KEYS'
@@ -727,12 +728,9 @@ if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
   fi
 
   # compose run lacks GPU passthrough — plain docker run + bind-mount train code
-  # --shm-size: train_m2.py sets torch multiprocessing sharing_strategy='file_system',
-  # so every tensor handed from a DataLoader worker to the main process becomes a
-  # named file in /dev/shm. Docker's default /dev/shm is 64MB, which the workers
-  # exhaust ("No space left on device" -> worker killed by SIGBUS/Bus error).
-  # 4g is tmpfs, so only the pages actually used cost RAM (VM has 15-16GB).
-  _DOCKER_GPU_RUN=\"docker run \$_GPU_OPTS --rm --shm-size=4g --network trading_agent_default\"
+  # --shm-size: see FLUX_SHM_SIZE in gcp_common.sh for why this is required and
+  # how to size it. Docker's 64MB default kills the DataLoader workers with SIGBUS.
+  _DOCKER_GPU_RUN=\"docker run \$_GPU_OPTS --rm --shm-size=\$FLUX_SHM_SIZE --network trading_agent_default\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -v \$HOME/\$REMOTE_REPO_NAME/ml/train:/workspace/train\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -v \$MODEL_VOLUME_NAME:/models\"
   _DOCKER_GPU_RUN=\"\$_DOCKER_GPU_RUN -e MODEL_DIR=/models\"
