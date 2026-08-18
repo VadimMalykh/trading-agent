@@ -22,6 +22,7 @@ from config import (
     GATE_THRESHOLD,
     HIDDEN_SIZE,
     HORIZONS_MINUTES,
+    MAKER_ROUND_TRIP_COST,
     MODEL_DIR,
     OUTPUT_DIR,
     PAIRS,
@@ -202,6 +203,73 @@ def _add_pnl_rows(sweep, dir_logits, y_true, fwd_ret, times, pair_ids, hold_bars
         row["daily_sharpe"] = pnl["daily_sharpe"]
         row["max_dd"] = pnl["max_dd"]
     return sweep
+
+
+def fixed_coverage_pnl(
+    dir_logits,
+    fwd_ret,
+    times,
+    pair_ids,
+    coverage: float,
+    hold_bars: int,
+    costs=None,
+) -> dict | None:
+    """
+    Serial-sim P&L at a FIXED coverage (top-`coverage` fraction of bars by
+    directional confidence) — the same slice every other verdict metric in this
+    file is computed on.
+
+    Why this exists: the gate sweep reports P&L only at absolute confidence
+    thresholds, which are (a) not comparable across models as the confidence
+    scale drifts and (b) mostly unusable below 0.50, since conf >= 0.5 by
+    construction. So the fixed-coverage table carried dir_acc/Wilson-LB but no
+    P&L, and the "is this operating point cost-viable" question could not be
+    answered from the log at all.
+
+    Cost handling: the sim is run ONCE at cost=0 to get the gross result, then
+    every cost model is derived exactly as `gross - n_trades * cost`. That
+    identity is exact because trade selection does not depend on cost and
+    simulate_pnl subtracts a flat `cost` per booked trade. `gross_bps_per_trade`
+    is the durable, cost-independent number — rank arms on it.
+    """
+    if dir_logits is None or fwd_ret is None or times is None or hold_bars is None:
+        return None
+    costs = costs or {"taker": ROUND_TRIP_COST, "maker": MAKER_ROUND_TRIP_COST}
+    gate_logits = dir_logits_to_three_class(dir_logits)
+    side, conf = directional_signal(gate_logits)
+
+    n = int(conf.numel())
+    k = int(round(n * float(min(max(coverage, 0.0), 1.0))))
+    if n == 0 or k <= 0:
+        return None
+    topk = torch.topk(conf, k=min(k, n)).indices
+    mask = torch.zeros(n, dtype=torch.bool)
+    mask[topk] = True
+
+    gross = simulate_pnl(
+        side, conf, mask, fwd_ret, times, pair_ids, hold_bars, cost=0.0
+    )
+    n_trades = int(gross["n_trades"])
+    gross_total = float(gross["total_net_ret"])
+    out = {
+        "coverage": float(coverage),
+        "n_gated": int(mask.sum().item()),
+        "n_trades": n_trades,
+        "gross_ret": gross_total,
+        "gross_bps_per_trade": (gross_total / n_trades * 1e4) if n_trades else 0.0,
+        "win_rate": float(gross["win_rate"]),
+        "daily_sharpe": gross["daily_sharpe"],
+        "max_dd": float(gross["max_dd"]),
+        "net": {},
+    }
+    for name, c in costs.items():
+        net = gross_total - n_trades * float(c)
+        out["net"][name] = {
+            "cost_bps": float(c) * 1e4,
+            "net_ret": net,
+            "net_bps_per_trade": (net / n_trades * 1e4) if n_trades else 0.0,
+        }
+    return out
 
 
 def long_short_pnl_split(
@@ -419,6 +487,12 @@ def run_horizon_report(
     if fwd_ret is not None and times is not None and hold_bars is not None:
         _add_pnl_rows(sweep, dir_logits, y_true, fwd_ret, times, pair_ids, hold_bars, cost)
     fixed_cov = [fixed_coverage_metrics(gate_logits, y_true, c) for c in FIXED_COVERAGES]
+    # P&L on the SAME slices the fixed-coverage edge is measured on, at both cost
+    # models. This is where "is this operating point cost-viable" gets answered.
+    fixed_cov_pnl = [
+        fixed_coverage_pnl(dir_logits, fwd_ret, times, pair_ids, c, hold_bars)
+        for c in FIXED_COVERAGES
+    ]
 
     # Directional-symmetry diagnostics ("one-mode" test): per-side accuracy at
     # fixed cov 0.05, and per-side serial P&L at the serve gate.
@@ -462,6 +536,7 @@ def run_horizon_report(
         "confusion": conf_matrix.tolist(),
         "gate_sweep": sweep,
         "fixed_coverage": fixed_cov,
+        "fixed_coverage_pnl": fixed_cov_pnl,
         "side_split_cov05": side_split,
         "long_short_pnl": ls_pnl,
         "serve_gate": GATE_THRESHOLD,
@@ -478,8 +553,12 @@ def main():
     p.add_argument("--device", default="cpu")
     p.add_argument(
         "--gate",
-        default="0.35,0.40,0.45,0.50,0.55,0.60",
-        help="Comma-separated confidence thresholds",
+        # conf = max(p_down, p_up) over a 2-way softmax, so conf >= 0.5 ALWAYS and
+        # every threshold <= 0.50 trades 100% of bars. The old default swept
+        # 0.35/0.40/0.45/0.50 — four identical, uninformative rows. Sweep above the
+        # floor instead, bracketing the served 0.58.
+        default="0.50,0.55,0.58,0.62,0.68,0.75",
+        help="Comma-separated confidence thresholds (must be >= 0.50; see config.GATE_THRESHOLD)",
     )
     p.add_argument(
         "--pairs",
@@ -695,6 +774,29 @@ def main():
                 f"{row.get('mean_conf_gated', 0):9.3f}{marker}"
             )
 
+        # The served gate is an ABSOLUTE confidence threshold, but the confidence
+        # scale drifts between checkpoints — so a model can be perfectly good and
+        # still never reach it, in which case serving it trades nothing at all.
+        # That used to be invisible: GATE_THRESHOLD defaulted to 0.40, below the
+        # conf>=0.5 floor, so the serve row always showed coverage 1.0. Say it out
+        # loud now, because it is a promote-blocking fact about the checkpoint.
+        serve_r = next(
+            (r for r in result["sweep_rows"] if abs(r["threshold"] - GATE_THRESHOLD) < 1e-9),
+            None,
+        )
+        if serve_r is not None and int(serve_r.get("n_gated", 0)) == 0:
+            top_conf = max(
+                (r["threshold"] for r in result["sweep_rows"] if r.get("n_gated", 0) > 0),
+                default=None,
+            )
+            print(
+                f"  ⚠️  WARNING: at the SERVED gate {GATE_THRESHOLD} this checkpoint gates "
+                f"ZERO bars — serving it would never trade. Highest swept threshold with "
+                f"any coverage: {top_conf if top_conf is not None else 'none'}. Re-tune "
+                f"GATE_THRESHOLD / ML_GATE_THRESHOLD from the fixed-coverage P&L below "
+                f"before promoting."
+            )
+
         print(
             "Fixed-coverage directional edge "
             "(top-x% by confidence; stable across models):"
@@ -709,6 +811,35 @@ def main():
                 f"{fc['dir_acc']:8.3f}  {fc['edge']:6.3f}  {fc['dir_acc_wilson_lb']:9.3f}  "
                 f"{fc['n_true_directional_gated']:7d}"
             )
+
+        # P&L on the same fixed-coverage slices, at both cost models. `gross` is
+        # the durable number: it is what the model actually earns before any fee
+        # assumption, so it is what arms should be ranked on. A cost model only
+        # decides whether that gross clears the toll.
+        fcp = [p for p in (result.get("fixed_coverage_pnl") or []) if p]
+        if fcp:
+            taker_bps = ROUND_TRIP_COST * 1e4
+            maker_bps = MAKER_ROUND_TRIP_COST * 1e4
+            print(
+                "Fixed-coverage P&L (same slices; net is exactly "
+                "gross - trades x cost, so no re-run is needed to change fees):"
+            )
+            print(
+                f"{'cov':>6}  {'trades':>7}  {'gross':>9}  {'gross_bps':>9}  "
+                f"{'net@' + format(taker_bps, '.0f') + 'bps':>12}  "
+                f"{'bps/trade':>9}  "
+                f"{'net@' + format(maker_bps, '.0f') + 'bps':>12}  "
+                f"{'bps/trade':>9}  {'win':>5}"
+            )
+            for p in fcp:
+                tk = p["net"]["taker"]
+                mk = p["net"]["maker"]
+                print(
+                    f"{p['coverage']:6.3f}  {p['n_trades']:7d}  {p['gross_ret']:+9.4f}  "
+                    f"{p['gross_bps_per_trade']:+9.2f}  {tk['net_ret']:+12.4f}  "
+                    f"{tk['net_bps_per_trade']:+9.2f}  {mk['net_ret']:+12.4f}  "
+                    f"{mk['net_bps_per_trade']:+9.2f}  {p['win_rate']:5.3f}"
+                )
 
         # Directional symmetry ("one-mode" test): is the edge/P&L two-sided, or
         # does the model only really trade/win on one side?
@@ -915,6 +1046,12 @@ def main():
     print("  fixed-coverage  → edge at top-x% confidence; comparable across models")
     print("  wilson_lb       → conservative lower bound on dir_acc (small n → low)")
     print("  net_ret/sharpe  → serial per-pair P&L sim at round-trip cost (reporting only)")
+    print("  gross_bps       → pre-cost bps per trade. THE durable number — rank arms on")
+    print("                    this, not on a dir_acc-derived break-even (dir_acc assumes")
+    print("                    right and wrong trades have the same |return|; they don't)")
+    print(f"  net@Nbps        → gross - trades x cost. Exactly linear in cost, so a new fee")
+    print("                    assumption never needs a re-run — just recompute it")
+    print("  gate floor      → conf >= 0.50 by construction; any gate <= 0.50 trades all bars")
     print("  book-era split  → if edge lives only in 'book', it's a calendar confound")
     print("  walk-forward    → edge across disjoint time windows (is it stable?)")
     print("  momentum/BnH    → trivial baselines the model must beat")

@@ -94,9 +94,20 @@ WF_DROPOUT="${WF_DROPOUT:-0.2}"
 WF_WEIGHT_DECAY="${WF_WEIGHT_DECAY:-1e-4}"
 WF_HIDDEN="${WF_HIDDEN:-64}"
 # WF_LONG_PAIRS_ONLY=1 restricts to the 4 pairs with the longest book history
-# (BTC/ETH/SOL/DOGE), dropping ZEC/PEPE/HYPE/WLD whose short coverage injects
-# noisier has_book windows. Only applied when TRAIN_PAIRS is not already set.
-if [[ "${WF_LONG_PAIRS_ONLY:-0}" == "1" && -z "$PAIRS_ARG" ]]; then
+# (BTC/ETH/SOL/DOGE), dropping ZEC/PEPE/HYPE/WLD whose book coverage is SHORTER
+# than the dense window and therefore injects ragged has_book into the book-ON arm
+# only — which is precisely the comparison this script exists to make.
+#
+# BUG (found 2026-08-18, after it silently voided run wf-20260817T030350Z): this
+# used to be gated on `-z "$PAIRS_ARG"`, but PAIRS_ARG comes from TRAIN_PAIRS,
+# which gcp_env / gcp_common.sh ALWAYS default to the 8-pair set. So the guard was
+# never satisfied and the flag was dead code — the run silently used 8 pairs while
+# the launch command said "long pairs only". An explicit opt-in flag must beat a
+# defaulted variable, so it is now unconditional and echoes what it did.
+if [[ "${WF_LONG_PAIRS_ONLY:-0}" == "1" ]]; then
+  if [[ -n "$PAIRS_ARG" && "$PAIRS_ARG" != "BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT" ]]; then
+    echo "==> WF_LONG_PAIRS_ONLY=1 overrides TRAIN_PAIRS='$PAIRS_ARG'"
+  fi
   PAIRS_ARG="BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT"
 fi
 
@@ -335,6 +346,19 @@ best_line() {
 }
 # lb_of: extract the 'lb=' number from a best_line
 lb_of() { echo \"\$1\" | sed -n 's/.*lb=\\([0-9.]*\\).*/\\1/p'; }
+# n_dir_of: extract 'n_dir=' — how many bars inside the top-5% slice have a TRUE
+# directional label. This is the sample the Wilson LB is computed on.
+#
+# WHY IT GATES THE VERDICT (learned from wf-20260817T030350Z): train_m2's own
+# MIN_GATED_FOR_CKPT floor is 500 — below that, checkpoint_score multiplies the LB
+# by n_dir/500 because it does not trust it. This compare file printed the RAW,
+# unpenalized LB regardless, so a fold could be 'decided' on a number the harness
+# itself rejects. In that run ALL SIX book-OFF arms were under the floor (184-464)
+# against book-ON's 487-1844: the OFF arm collapses to flat and spends its
+# confidence on true-flat bars, leaving ~200 directional leftovers to score on. The
+# two arms were not measuring the same population, and the run was undecidable.
+n_dir_of() { echo \"\$1\" | sed -n 's/.*n_dir=\\([0-9]*\\).*/\\1/p'; }
+WF_MIN_DIR=\${WF_MIN_DIR:-500}
 {
   echo \"Walk-forward 30m book-ON vs book-OFF — run=\$RUN_ID git=\${GIT_SHA:0:8}\"
   echo \"epochs=\$EPOCHS seq=\$SEQ_LEN val_frac=\$VAL_FRAC folds(offset)=\$OFFSETS\"
@@ -343,30 +367,62 @@ lb_of() { echo \"\$1\" | sed -n 's/.*lb=\\([0-9.]*\\).*/\\1/p'; }
   echo \"Metric = train_m2 dense-window val, fixed top-5% coverage, primary 30m, Wilson LB.\"
   echo \"================================================================\"
   min_gap=\"\"
+  n_decidable=0
+  n_undecidable=0
   for off in \$OFFSETS; do
     ftag=\"\${off//./_}\"
     on_line=\"\$(best_line \$HOME/wf_on.f\$ftag.log)\"
     off_line=\"\$(best_line \$HOME/wf_off.f\$ftag.log)\"
     on_lb=\"\$(lb_of \"\$on_line\")\"; off_lb=\"\$(lb_of \"\$off_line\")\"
+    on_n=\"\$(n_dir_of \"\$on_line\")\"; off_n=\"\$(n_dir_of \"\$off_line\")\"
+    # A fold is DECIDABLE only if BOTH arms cleared the n_dir floor. Undecidable
+    # folds still print their numbers (for diagnosis) but are excluded from the
+    # min-gap verdict rather than silently dragging it.
+    why=\"\"
+    if [[ -z \"\$on_lb\" || -z \"\$off_lb\" ]]; then
+      why=\"missing lb\"
+    elif [[ -z \"\$on_n\" || -z \"\$off_n\" ]]; then
+      why=\"missing n_dir\"
+    elif (( on_n < WF_MIN_DIR || off_n < WF_MIN_DIR )); then
+      why=\"n_dir below floor \$WF_MIN_DIR (ON=\$on_n OFF=\$off_n)\"
+    fi
     gap=\"\"
     if [[ -n \"\$on_lb\" && -n \"\$off_lb\" ]]; then
       gap=\$(awk -v a=\"\$on_lb\" -v b=\"\$off_lb\" 'BEGIN{printf \"%.3f\", a-b}')
+    fi
+    if [[ -z \"\$why\" ]]; then
+      n_decidable=\$((n_decidable + 1))
       if [[ -z \"\$min_gap\" ]] || awk -v g=\"\$gap\" -v m=\"\$min_gap\" 'BEGIN{exit !(g<m)}'; then min_gap=\"\$gap\"; fi
+    else
+      n_undecidable=\$((n_undecidable + 1))
     fi
     echo \"\"
     echo \"--- fold val_offset=\$off (val_frac=\$VAL_FRAC) ---\"
     echo \"  book-ON  : \$on_line\"
     echo \"  book-OFF : \$off_line\"
-    echo \"  LB gap (on-off) = \${gap:-n/a}\"
+    if [[ -z \"\$why\" ]]; then
+      echo \"  LB gap (on-off) = \${gap:-n/a}   [decidable: n_dir ON=\$on_n OFF=\$off_n]\"
+    else
+      echo \"  LB gap (on-off) = \${gap:-n/a}   [UNDECIDABLE — \$why; EXCLUDED from verdict]\"
+    fi
   done
   echo \"\"
   echo \"================================================================\"
-  echo \"MIN LB gap across folds = \${min_gap:-n/a}\"
-  echo \"ROBUSTNESS RULE: if the book-ON minus book-OFF Wilson-LB gap stays\"
-  echo \"clearly POSITIVE across ALL folds (min gap > ~0.05), the 30m edge is\"
-  echo \"robust, not a single-window artifact -> proceed to microstructure-rich\"
-  echo \"run / collection. If any fold's gap collapses (<=0 or LBs overlap), the\"
-  echo \"single-window ablation was optimistic -> do NOT over-invest yet.\"
+  echo \"DECIDABLE folds = \$n_decidable   UNDECIDABLE (n_dir < \$WF_MIN_DIR) = \$n_undecidable\"
+  echo \"MIN LB gap across DECIDABLE folds = \${min_gap:-n/a}\"
+  echo \"\"
+  echo \"VERDICT RULE (revised 2026-08-18 — see docs/NEXT_TRAINING_PLAN.md N1):\"
+  echo \"  0. A fold counts only if BOTH arms have n_dir >= \$WF_MIN_DIR. Below that\"
+  echo \"     floor train_m2's own checkpoint_score down-weights the LB as untrusted,\"
+  echo \"     so a raw LB from such an arm cannot decide anything.\"
+  echo \"  1. Fewer than 3 decidable folds -> INCONCLUSIVE. Do not read the min gap.\"
+  echo \"     The usual cause is the book-OFF arm collapsing to flat and spending its\"
+  echo \"     top-5% confidence on true-flat bars. Needs more book history (or a\"
+  echo \"     matched-n_dir comparison), NOT another launch of this same command.\"
+  echo \"  2. Otherwise: min gap > ~0.05 across ALL decidable folds -> the 30m book\"
+  echo \"     edge is robust, not a single-window artifact -> escalate microstructure.\"
+  echo \"  3. Any decidable fold with gap <=0 or overlapping LBs -> the single-window\"
+  echo \"     ablation was optimistic -> keep collecting, re-check at ~60d.\"
 } > \"\$COMPARE\"
 cat \"\$COMPARE\"
 gcloud storage cp \"\$COMPARE\" \"\$GCS_BUCKET/walkforward/\$RUN_ID.compare.txt\"

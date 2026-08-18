@@ -126,7 +126,8 @@ LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER \
 CANDLE_INTERVAL \
 NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD \
 BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN \
-FEE_RATE_BPS SLIPPAGE_BPS}"
+GATE_THRESHOLD \
+FEE_RATE_BPS SLIPPAGE_BPS MAKER_FEE_RATE_BPS MAKER_SLIPPAGE_BPS}"
 # Build literal `export K='v'` lines for the keys that are actually set, so the
 # remote prelude re-exports them verbatim (survives the quoted-heredoc boundary).
 FLUX_TRAIN_ENV_EXPORTS=""
@@ -719,12 +720,12 @@ fi
 echo \"=== eval_m2 ===\"
 if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then
   \$_DOCKER_GPU_RUN ml_trainer_gpu python eval_m2.py --checkpoint /models/m2_multi.pt --device cuda \
-    --gate 0.35,0.4,0.45,0.5,0.55,0.6 || true
+    --gate 0.50,0.55,0.58,0.62,0.68,0.75 || true
 else
   docker compose --profile ml run --rm \
     -e HORIZONS_MINUTES=\$HORIZONS -e PRIMARY_HORIZON=\$PRIMARY -e SEQ_LEN=\$SEQ_LEN \$_CPU_ENV_OPTS \
     ml_trainer python eval_m2.py --checkpoint /models/m2_multi.pt --device cpu \
-      --gate 0.35,0.4,0.45,0.5,0.55,0.6 || true
+      --gate 0.50,0.55,0.58,0.62,0.68,0.75 || true
 fi
 
 echo \"=== push checkpoint to bucket ===\"

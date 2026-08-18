@@ -148,7 +148,10 @@ def gate_sweep(
     thresholds: Optional[List[float]] = None,
     mode: str = "directional",
 ) -> List[Dict[str, float]]:
-    thresholds = thresholds or [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7]
+    # conf = max(p_down, p_up) with p_down + p_up == 1 (see directional_signal), so
+    # conf >= 0.5 always and any threshold <= 0.50 gates nothing. The old default
+    # started at 0.35, producing four identical rows at the bottom of every sweep.
+    thresholds = thresholds or [0.5, 0.55, 0.58, 0.62, 0.68, 0.75]
     return [gate_metrics(logits, y_true, t, mode=mode) for t in thresholds]
 
 

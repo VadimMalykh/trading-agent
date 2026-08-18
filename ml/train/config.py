@@ -196,9 +196,25 @@ CLS_WEIGHT_CLIP = float(os.environ.get("CLS_WEIGHT_CLIP", "2.0"))
 # a hard collapse to a single class. Directional CE is left unsmoothed.
 CLS_LABEL_SMOOTHING = float(os.environ.get("CLS_LABEL_SMOOTHING", "0.05"))
 
-# Confidence gate default (product / serve)
-CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.40"))
-GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.40"))
+# --- Confidence gate default (product / serve) -----------------------------------
+# IMPORTANT — the gate statistic has a HARD FLOOR of 0.5. `gate.directional_signal`
+# defines conf = max(p_down, p_up) over a 2-way softmax (the 'flat' column is -inf,
+# see gate.dir_logits_to_three_class), so p_down + p_up == 1 and conf >= 0.5 always.
+# ANY threshold <= 0.50 therefore trades every bar and is indistinguishable from
+# every other threshold <= 0.50.
+#
+# This default used to be 0.40 — below the floor — while docker-compose.yml serves
+# 0.58 (ML_GATE_THRESHOLD, raised deliberately 2026-07-23). Serving was fine, but
+# eval on the train VM ran at 0.40, so every "P&L at the serve gate" line and every
+# `*` marker we have ever printed pointed at a row that cannot fire and is NOT the
+# operating point. It also produced the false reading "gates 0.35-0.50 are identical
+# => the head emits no confidence spread". Default now matches what we serve, so the
+# label tells the truth. (Trap: an env default that differs from the incumbent
+# silently changes the experiment — see docs/NEXT_TRAINING_PLAN.md §0.4.2.)
+GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.58"))
+# Currently unreferenced (the Elixir app gates via ML_GATE_THRESHOLD and serve.py
+# reads GATE_THRESHOLD). Kept in sync so it cannot become a stale trap if wired up.
+CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.58"))
 
 # --- Cost model (eval P&L only) --------------------------------------------------
 # Round-trip trading cost used by the eval P&L simulator and cost-sweep. Purely a
@@ -207,6 +223,15 @@ GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.40"))
 FEE_RATE_BPS = float(os.environ.get("FEE_RATE_BPS", "4"))
 SLIPPAGE_BPS = float(os.environ.get("SLIPPAGE_BPS", "3"))
 ROUND_TRIP_COST = 2.0 * (FEE_RATE_BPS + SLIPPAGE_BPS) / 1e4
+
+# Second (optimistic / maker-execution) cost model, reported ALONGSIDE the primary
+# one in the fixed-coverage P&L table. Because simulate_pnl books `side*r - cost`
+# per trade and trade SELECTION is cost-independent, net P&L is exactly linear in
+# cost: net(c) = gross - n_trades * c. So a second cost model costs nothing to
+# report and removes the need to ever re-run eval just to change a fee assumption.
+MAKER_FEE_RATE_BPS = float(os.environ.get("MAKER_FEE_RATE_BPS", "2"))
+MAKER_SLIPPAGE_BPS = float(os.environ.get("MAKER_SLIPPAGE_BPS", "0.5"))
+MAKER_ROUND_TRIP_COST = 2.0 * (MAKER_FEE_RATE_BPS + MAKER_SLIPPAGE_BPS) / 1e4
 # Number of disjoint time windows for walk-forward edge/P&L reporting in eval.
 WF_WINDOWS = int(os.environ.get("WF_WINDOWS", "4"))
 
