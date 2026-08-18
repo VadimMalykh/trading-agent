@@ -192,21 +192,13 @@ gssh "$GCP_WF_INSTANCE" \
   "sudo usermod -aG docker \$USER; sudo chmod 666 /var/run/docker.sock 2>/dev/null || true; command -v git >/dev/null || sudo apt-get install -y git; command -v tmux >/dev/null || sudo apt-get install -y tmux" \
   "$GCP_ZONE"
 
-# --- 2. fresh dump: always-on -> bucket -----------------------------------------
+# --- 2. shared async dump: always-on -> bucket ---------------------------------
+# ensure_dump (gcp_common.sh) reuses the always-on VM's cached dump when fresh
+# (≤ DUMP_MAX_AGE_MIN) and otherwise regenerates it in a detached tmux session
+# 'fluxtdump', so the launcher never blocks on pg_dump+gzip. The remote job
+# polls for dumps/latest.sql.gz and snapshots it as dumps/$RUN_ID.sql.gz.
 echo ""
-echo "==> fresh dump from $GCP_ALWAYS_ON -> $GCS_BUCKET/dumps/$RUN_ID.sql.gz"
-gssh "$GCP_ALWAYS_ON" "set -e
-  cd \$HOME/$REMOTE_REPO_NAME
-  docker compose exec -T postgres pg_isready -U fluxtrader
-  TFLAGS=''
-  for t in $DUMP_TABLES; do TFLAGS=\"\$TFLAGS -t \$t\"; done
-  docker compose exec -T postgres bash -c \"pg_dump -U fluxtrader -d fluxtrader --format=plain --no-owner --no-acl \$TFLAGS\" \
-    | gzip > /var/tmp/fluxtrader_wf.sql.gz
-  ls -lh /var/tmp/fluxtrader_wf.sql.gz
-  gcloud storage cp /var/tmp/fluxtrader_wf.sql.gz $GCS_BUCKET/dumps/$RUN_ID.sql.gz
-  gcloud storage cp $GCS_BUCKET/dumps/$RUN_ID.sql.gz $GCS_BUCKET/dumps/wf_latest.sql.gz
-  rm -f /var/tmp/fluxtrader_wf.sql.gz
-" "$GCP_ZONE"
+ensure_dump
 
 # --- 3. write remote self-cleaning walk-forward job and launch in tmux -----------
 echo ""
@@ -280,9 +272,20 @@ git checkout \"\$GIT_REF\"
 GIT_SHA=\"\$(git rev-parse HEAD)\"
 echo \"git_sha=\$GIT_SHA\"
 
-echo \"=== pull dump from bucket ===\"
+echo \"=== wait for dump (async refresh on $GCP_ALWAYS_ON, cache ≤ ${DUMP_MAX_AGE_MIN}m) ===\"
 mkdir -p \$HOME/fluxtrader-train-export
-gcloud storage cp \"\$GCS_BUCKET/dumps/wf_latest.sql.gz\" \$HOME/fluxtrader-train-export/fluxtrader_wf.sql.gz
+for i in \$(seq 1 ${DUMP_POLL_TRIES}); do
+  if gcloud storage ls \"\$GCS_BUCKET/dumps/latest.sql.gz\" >/dev/null 2>&1; then break; fi
+  if [[ \"\$i\" -eq ${DUMP_POLL_TRIES} ]]; then
+    echo 'ERROR: dump not ready after polling — check async job:'
+    echo \"  tmux attach -t fluxtdump on $GCP_ALWAYS_ON\"
+    exit 1
+  fi
+  sleep ${DUMP_POLL_SLEEP}
+done
+gcloud storage cp \"\$GCS_BUCKET/dumps/latest.sql.gz\" \$HOME/fluxtrader-train-export/fluxtrader_wf.sql.gz
+echo \"    dump ready → \$HOME/fluxtrader-train-export/fluxtrader_wf.sql.gz\"
+gcloud storage cp \"\$GCS_BUCKET/dumps/latest.sql.gz\" \"\$GCS_BUCKET/dumps/\$RUN_ID.sql.gz\"
 
 echo \"=== reset + restore postgres ===\"
 docker compose down -v || true

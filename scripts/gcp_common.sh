@@ -128,3 +128,68 @@ echo_cfg() {
     echo "       GPU: accelerator=$GCP_TRAIN_ACCELERATOR machine=$GCP_TRAIN_MACHINE_GPU"
   fi
 }
+
+# --- async shared dump ---------------------------------------------------------
+# Every gcp_* script restores the same app tables into its throwaway Postgres, so
+# there is ONE shared dump object (dumps/latest.sql.gz). It is refreshed on the
+# always-on VM in a detached tmux session 'fluxtdump' and cached on the VM as
+# /var/tmp/fluxtrader_dump_cache.sql.gz; a fresh-enough cache is reused, so
+# back-to-back runs skip the dump entirely. The launcher returns in ~2s (dump is
+# NOT in its critical path); each script's remote job waits for the artifact via
+# an inline poll loop (see the "wait for dump" blocks in gcp_*.sh).
+#
+# Knobs (launcher env):
+#   DUMP_MAX_AGE_MIN  cache reuse window (default 30; dump regen below this age)
+#   DUMP_POLL_TRIES   remote-job wait iterations (default 240)
+#   DUMP_POLL_SLEEP   remote-job poll interval in seconds (default 10)
+#                     → default budget = 240 × 10s = 40 min, which covers the
+#                       e2-small cold-dump time once VM provisioning overlaps it.
+# NOTE: on a cache miss the OLD dumps/latest.sql.gz is deleted before the async
+# job starts, so the remote poll can't mistake a stale object for a fresh dump.
+# Run gcp_* scripts sequentially — a concurrent in-flight download would break.
+: "${DUMP_MAX_AGE_MIN:=30}"
+: "${DUMP_POLL_TRIES:=240}"
+: "${DUMP_POLL_SLEEP:=10}"
+
+ensure_dump() {
+  # Call from the launcher after VM provisioning (gcp_train/audit/walkforward/
+  # gbt/ablate). Uses _GCP_ZONE_ORIGINAL so a GPU-zone override on the train
+  # script can't point the SSH at the wrong zone for the always-on VM.
+  local zone="${_GCP_ZONE_ORIGINAL:-$GCP_ZONE}"
+  echo "==> ensure shared dump from $GCP_ALWAYS_ON (cache ≤ ${DUMP_MAX_AGE_MIN}m) → $GCS_BUCKET/dumps/latest.sql.gz"
+  gssh "$GCP_ALWAYS_ON" "set -e
+    cd \$HOME/$REMOTE_REPO_NAME
+    CACHE=/var/tmp/fluxtrader_dump_cache.sql.gz
+    AGE=999999
+    if [[ -f \$CACHE ]]; then AGE=\$(( \$(date +%s) - \$(stat -c %Y \$CACHE) )); fi
+    if [[ \$AGE -lt $((DUMP_MAX_AGE_MIN * 60)) ]]; then
+      echo \"    cache hit (\$(( AGE / 60 ))m old) → reuse\"
+      if ! gcloud storage ls $GCS_BUCKET/dumps/latest.sql.gz >/dev/null 2>&1; then
+        echo '    uploading cached dump to bucket'
+        gcloud storage cp \$CACHE $GCS_BUCKET/dumps/latest.sql.gz
+      fi
+    else
+      echo '    cache miss → async dump in tmux fluxtdump on $GCP_ALWAYS_ON'
+      echo '    (launcher returns now; remote job polls for dumps/latest.sql.gz)'
+      gcloud storage rm $GCS_BUCKET/dumps/latest.sql.gz 2>/dev/null || true
+      cat > /var/tmp/fluxtdump.sh <<'FLUXDUMP'
+#!/bin/bash
+set -euo pipefail
+cd \$HOME/$REMOTE_REPO_NAME
+CACHE=/var/tmp/fluxtrader_dump_cache.sql.gz
+echo \"=== async dump start \$(date -u) ===\"
+docker compose exec -T postgres pg_isready -U fluxtrader
+TFLAGS=''
+for t in $DUMP_TABLES; do TFLAGS=\"\$TFLAGS -t \$t\"; done
+docker compose exec -T postgres bash -c \"pg_dump -U fluxtrader -d fluxtrader --format=plain --no-owner --no-acl \$TFLAGS\" | gzip -1 > \$CACHE
+ls -lh \$CACHE
+gcloud storage cp \$CACHE $GCS_BUCKET/dumps/latest.sql.gz.new
+gcloud storage mv $GCS_BUCKET/dumps/latest.sql.gz.new $GCS_BUCKET/dumps/latest.sql.gz
+echo \"=== async dump done \$(date -u) ===\"
+FLUXDUMP
+      chmod +x /var/tmp/fluxtdump.sh
+      tmux kill-session -t fluxtdump 2>/dev/null || true
+      tmux new-session -d -s fluxtdump 'bash /var/tmp/fluxtdump.sh'
+    fi
+  " "$zone"
+}
