@@ -173,6 +173,10 @@ Each line is here because its absence voided a real run.
 8. **A blended selection score is only "50/50" if both terms have the same dynamic range.**
    N3's nominal 50/50 blend was ~88% cost term because `net_score` swung 0.378 while
    `edge_lb` swung 0.050.
+9. **Training runs are serial, and a concurrent launch is destructive, not just futile.**
+   `gcp_train.sh` adopts a single fixed instance name and will delete/recreate it on a
+   machine-type mismatch, so launching a second run can kill the one already in flight
+   (§7). Plan queues in summed wall clock.
 
 ### 0.6 🔴 When two arms have different bar counts, rank on `dir_acc`, not Wilson-LB
 
@@ -412,7 +416,8 @@ the audit has not been exercised at by a training run.
 
 The O-wave produced one real result (O2) that rests on one seed, and closed one lever
 (O3). The P-wave is therefore ordered: **bank O2 first, then exploit it.** P0 and P1 come
-before anything new, and P0's two runs are launchable in parallel right now.
+before anything new. P0 is two GPU runs that must go **one at a time** (§7 — training runs
+are strictly serial), but P1 is local and free, so run it while P0's first seed trains.
 
 **None of the O-wave commands should be re-launched as written.** O0 is done, O2 is the
 new baseline, O3's lever is closed (§5).
@@ -425,26 +430,43 @@ new baseline, O3's lever is closed (§5).
 `checkpoints/m2_multi_20260818T185438Z_8c4b2a03.pt`** and that is the only reachable copy.
 Do not run `gcp_promote.sh` at all until C13 (§6) lets it take an explicit key.
 
-### P0 — 🔴 seed replicate of O2 (2 × GPU, ~4–6h each, parallel). Runnable now.
+### P0 — 🔴 seed replicate of O2 (2 × GPU, ~4–6h each, **run serially**). Runnable now.
 
 **This is the highest-priority item and it is not optional.** §0.3 exists because this
 project has repeatedly banked single-run results that did not replicate. O2 is the best
 result the project has produced and every number in §1.3 comes from one seed and one
 order-statistic epoch. Two replicates turn "promising" into "measured".
 
-Identical to O2 except `SEED`. Launch both; they are independent VMs and safe concurrently.
+⚠️ **These are two separate sessions, not a parallel launch** — see §7: only one
+`gcp_train.sh` job can exist at a time, and starting a second while the first runs can
+delete the VM doing the first. Budget **~8–12h of wall clock total**, not 4–6.
+
+Identical to O2 except `SEED`. Run the first, wait for `gcp_status.sh` to report DONE and
+save its log, **then** run the second.
 
 ```sh
-for SEED_VAL in 2 3; do
+# --- run 1 ---
 CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=$SEED_VAL \
+  EARLY_STOP_PATIENCE=20 SEED=2 \
   TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
   TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
   ./scripts/gcp_train.sh --gpu 60 384
-done
+./scripts/gcp_status.sh                        # wait for DONE before the next launch
+./scripts/gcp_logs.sh <run_id> > logs/P0-seed2.log
+
+# --- run 2, only after run 1 has finished ---
+CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
+  EARLY_STOP_PATIENCE=20 SEED=3 \
+  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+  ./scripts/gcp_train.sh --gpu 60 384
 ./scripts/gcp_status.sh
-./scripts/gcp_logs.sh <run_id> --save          # → logs/P0-seed2.log , logs/P0-seed3.log
+./scripts/gcp_logs.sh <run_id> > logs/P0-seed3.log
 ```
+
+**If only one replicate is affordable, run `SEED=2` and stop there.** One replicate already
+decides the reject branch below — two runs 4 SEM apart is exactly the §0.3 comparison — and
+the third seed only tightens the banked estimate.
 
 **Verify:** `knob SEED=2` / `knob SEED=3`; `knob CANDLE_INTERVAL=5m`; `Samples:` ≈ 2.9M;
 `P&L sim: … hold=48 bars` for 240m; `Early stop at epoch N` with N ≫ 21; split re-recorded
@@ -587,13 +609,20 @@ queued behind them, unchanged:
 
 ## §3 — WHAT TO BRING BACK (for the next session)
 
-Save each run's full log under `logs/` with the queue name, then open a **fresh session**
-and paste the paths. Do not summarize the logs yourself — the numbers that matter are
-often not the headline ones.
+Save each run's full log under `logs/` **named after the queue item** (`P0-seed2.log`, not
+the run id), then open a **fresh session** and paste the paths. Do not summarize the logs
+yourself — the numbers that matter are often not the headline ones.
 
 ```sh
-./scripts/gcp_logs.sh <run_id> --save          # writes logs/<run_id>.log → rename O2.log / O3.log
+./scripts/gcp_logs.sh <run_id> > logs/<queue-name>.log     # e.g. logs/P0-seed2.log
+./scripts/gcp_logs.sh          > logs/<queue-name>.log     # omit the id for the latest run
 ```
+
+⚠️ **Do not use `--save`.** It copies to `$EXPORT_DIR/<run_id>.log`, and `EXPORT_DIR`
+defaults to `$HOME/fluxtrader-train-export` (`scripts/gcp_common.sh:102`) with no override
+in `scripts/gcp_env` — so the file lands in the home directory under its raw run id, not in
+`logs/` and not under the queue name a later session is told to look for. Redirect stdout
+instead; that is how every log currently in `logs/` was produced.
 
 **Self-check before you hand them over** — if any of these fails, the run is void and
 should be relaunched rather than analyzed:
@@ -776,8 +805,8 @@ now start 2022-08-18 for all nine long pairs (§1.7).
 
 | Job | Launch | Status | Fetch | VM |
 |---|---|---|---|---|
-| Train (GPU) | `./scripts/gcp_train.sh --gpu 60 128` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> --save` | `fluxtrader-train` |
-| Eval only (no training) | `./scripts/gcp_train.sh --eval-only <ckpt-key>` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> --save` + `gs://…/eval/<run_id>/` | `fluxtrader-train` |
+| Train (GPU) | `./scripts/gcp_train.sh --gpu 60 128` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> > logs/X.log` | `fluxtrader-train` |
+| Eval only (no training) | `./scripts/gcp_train.sh --eval-only <ckpt-key>` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> > logs/X.log` + `gs://…/eval/<run_id>/` | `fluxtrader-train` |
 | Walk-forward | `./scripts/gcp_walkforward.sh` | `--status` | `--fetch` | `fluxtrader-walkforward` |
 | GBT diagnostic | `./scripts/gcp_gbt.sh` | `--status` | `--fetch` / `--log` | `fluxtrader-gbt` |
 | Single-window ablate | `./scripts/gcp_ablate.sh` | — | — | own VM |
@@ -785,10 +814,23 @@ now start 2022-08-18 for all nine long pairs (§1.7).
 | Data stats | `./scripts/gcp_data_collection_stats.sh` | — | — | always-on |
 | Promote | `./scripts/gcp_promote.sh --local-copy` | — | — | always-on |
 
-Each creates its own throwaway VM with its own tmux session and status marker, so **they
-are safe to run concurrently**. They self-DELETE on success and self-STOP on failure.
-`KEEP_VM=1` keeps the VM for debugging. Never run a training-sized job on the always-on
-VM — it has 2GB and the kernel OOM-kills it silently.
+Each *job type* has its own VM, so a walk-forward, a GBT diagnostic and a training run can
+overlap. They self-DELETE on success and self-STOP on failure. `KEEP_VM=1` keeps the VM for
+debugging. Never run a training-sized job on the always-on VM — it has 2GB and the kernel
+OOM-kills it silently.
+
+🔴 **Two runs of the SAME job type cannot overlap — training runs are strictly serial.**
+`gcp_train.sh` targets one fixed instance name (`$GCP_TRAIN_INSTANCE`) and *adopts*
+whatever it finds there: it starts a stopped VM, reuses a running one, or **deletes and
+recreates it** when the requested machine type or accelerator does not match
+(`scripts/gcp_train.sh:239,251,297`). A second launch during a live job can therefore
+destroy the run already in flight. The shared `gs://…/status/latest.json` marker and the
+fixed on-VM paths (`$HOME/run_flux_train.sh`, `m2_multi.pt`) collide the same way.
+
+**Consequence for planning:** a queue of N training runs costs the *sum* of their wall
+clocks, not the max. Write multi-run items in this doc as an ordered serial list, never as
+a loop or a "launch both" instruction, and state the total wall clock when proposing
+replicates.
 
 ⚠️ `gcp_promote.sh` only ever promotes `checkpoints/latest.pt`, and every new training run
 overwrites that key. **`latest.pt` is currently O3's checkpoint — the worst run of the
