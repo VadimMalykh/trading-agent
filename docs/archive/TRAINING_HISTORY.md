@@ -1,4 +1,4 @@
-# Training history archive (2026-07-23 → 2026-08-17)
+# Training history archive (2026-07-23 → 2026-08-19)
 
 **This file is HISTORY. Do not act on anything in it.** It is the verbatim
 session-by-session narrative that used to live at the top of
@@ -27,6 +27,91 @@ number from it:**
 
 Sections below are in reverse-chronological order, newest first, exactly as written at
 the time.
+
+---
+
+## 2026-08-19 — the O-wave, and what it retired from the N-wave
+
+Runs: **O0** (eval-only re-score of F4, `logs/O0-f4-rescore.log`), **O2** (5m bars,
+seq 384, `logs/O2.log`, run `20260818T185438Z`), **O3** (15m bars, seq 256,
+`logs/O3.log`, run `20260819T021020Z`). All three passed the §0.4 validity checks.
+
+### What the O-wave overturned
+
+**1. "The edge is regime-locked and three models agree on where" (old §1.2) is now a
+four-model disagreement.** F4, N3 and N2 all put window 2 highest and window 1/3 low.
+O2 does not:
+
+| window | F4 (15m LSTM) | N3 (15m LSTM) | N2 (GBT) | **O2 (5m LSTM)** |
+|---|---:|---:|---:|---:|
+| 1 | 0.486 | 0.499 | 0.492 | **0.573** |
+| 2 | 0.617 | 0.621 | 0.574 | 0.535 |
+| 3 | 0.457 | 0.419 | 0.415 | 0.500 |
+| 4 | 0.584 | 0.613 | 0.397 | 0.596 |
+
+Only two facts survive all four models: **window 3 is the worst window, and window 4 is
+a good one**. Windows 1 and 2 are model-dependent, and the three-model agreement that
+looked so convincing was agreement among three models that shared the same 15m bar grid
+and the same 771k training samples — i.e. it was partly a shared-blind-spot artifact, not
+purely a property of the market. O2's window spread is 0.096 against F4's 0.160, so the
+finer-resolution model is *less* regime-locked, not differently regime-locked.
+
+The regime-analysis item (old O1) is not cancelled by this — but its framing changes from
+"find the observable that flags the good regime" to "find out how much of the window
+structure is model capacity rather than market state", and it must now be run on O2's
+prediction dump rather than F4's.
+
+**2. "N2 reopens architecture" (old §1.4) is retired.** N2's pre-registered reading was
+that a GBT losing at 4h meant the LSTM's temporal modelling was contributing, and that the
+cheap test was more context (O3). O3 ran it: seq 128 → 256 at 15m, one variable, and the
+result is **worse** — mean-of-epochs LB 0.4925 ± 0.0227 (n=24) against F4's 0.5058 ±
+0.0162 (n=18), with the per-epoch series drifting monotonically down (0.52 early → 0.47
+late) rather than plateauing. The pre-registered verdict fires the other way: the LSTM
+already has all the context it can use at 15m, N2's gap is about the GBT's 114-column
+static summary rather than about recurrence, and architecture goes back in the closed pile.
+
+O3 also degraded in ways worth recording because they are the signature of a model that
+is being given more window than it can use: the confidence distribution collapsed
+(coverage at the served 0.58 gate fell from F4's 4.9% to 0.8%), the side split went
+lopsided (6,266 down-gated vs 3,379 up-gated at cov 0.05, with the up side at 0.499 —
+coin flip), and the selected epoch was 4 of 24.
+
+**3. "The model is not data-starved; flat `loss_tr` proves the bottleneck is features."**
+This diagnostic is falsified and should not be used again. O2's `loss_tr` was just as flat
+as F4's for its first 22 epochs (1.7284 → 1.7184) and only descended once memorization
+started at epoch 23, with `loss_va` diverging in lockstep (1.0404 → 1.3031 by epoch 34).
+By that indicator O2 looked exactly like F4. Yet O2's mean-of-epochs LB is +0.019 over F4
+and its `dir_acc` at cov 0.05 is 0.563 against F4's 0.542. **A flat training loss on a
+near-noise-floor task says nothing about whether more data helps.** Judge the data lever
+on the validation-selection metric, never on the loss curve.
+
+### O0 — F4's re-score, for the record
+
+The re-score reproduced F4's headline exactly (cov05 dir_acc 0.542 / LB 0.531) and finally
+produced the `Fixed-coverage P&L` table F4's own log predated. F4 at 4h:
+
+| cov | trades | gross bps/trade | net @5bps maker | net @14bps taker |
+|---|---:|---:|---:|---:|
+| 0.01 | 226 | +2.61 | −2.39 | −11.39 |
+| 0.02 | 466 | +6.53 | +1.53 | −7.47 |
+| 0.05 | 1104 | +6.50 | +1.50 | −7.50 |
+| 0.10 | 2010 | −2.96 | −7.96 | −16.96 |
+| 0.20 | 3721 | −4.38 | −9.38 | −18.38 |
+
+This closes the N3-vs-F4 question with numbers: N3's +4.24 bps at cov 0.05 against F4's
++6.50 — well inside noise, as §1.5 already concluded on other grounds. Cost-aware
+selection stays closed.
+
+### O2's 1440m head — why it is not the new operating horizon
+
+O2's 24h head has the highest cov05 LB in the run (0.575 vs the 4h head's 0.557) and a
+striking +15.46 gross bps/trade at cov 0.05. Do not act on it. Its P&L is **non-monotone
+in confidence** — cov 0.01 is −24.13 bps/trade and cov 0.02 is −11.58, i.e. the most
+confident 1% of 24h calls lose money while the next 4% make it. That is the classic
+"right about direction on small moves, wrong on large ones" pathology, and it is also
+only 396 trades over the whole 8-month window. The 4h head's table is monotone in the
+right direction (+24.5 → +22.1 → +3.5 → −5.2 → −3.1) and that ordering is what makes it
+usable. 240m remains the primary.
 
 ⚠️ **A third thing invalidates numbers throughout this archive (found 2026-08-18, from
 the N-wave).** Every headline `cov05 wilson_lb` in this file — and in the live plan's
