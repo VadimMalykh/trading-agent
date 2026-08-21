@@ -28,6 +28,116 @@ number from it:**
 Sections below are in reverse-chronological order, newest first, exactly as written at
 the time.
 
+## P-wave detail, as written 2026-08-21 — conclusions carried forward, narrative archived 2026-08-22
+
+Moved here from the live plan on 2026-08-22. All three of its conclusions survive; only the
+supporting detail was archived to keep the live plan short. The surviving statements are:
+the 5m/seq384 3-seed baseline (live plan §1.3), "the resolution ladder is closed at 5m"
+(§5), and "an absolute confidence gate is not a well-defined operating point" (which C13
+shipped as a coverage target, and Q0 exercised).
+
+### P2 — 1m bars, the full negative result
+
+`logs/P2.log`, run `20260820T100042Z`, ckpt `m2_multi_20260820T100042Z_a186182b.pt`.
+Valid: `knob CANDLE_INTERVAL=1m`, `seq 768` (12.8h), `PAIR_EMBED_DIM=8`, `SEED=1`, embed ON,
+**14,507,307 samples** (11.6M / 2.9M — the plan predicted 8–9M and was low), `hold=240 bars`,
+split re-recorded, early stop at epoch 38. Launched as a direction probe, not an attribution.
+
+| | 5m family (3 seeds) | P2 (1m) |
+|---|---|---|
+| mean-of-epochs cov05 LB | 0.5219 ± 0.0014 | 0.5256 (n=38) — *inflated, 5× val rows* |
+| **cov05 `dir_acc`** (the honest comparison) | 0.563 / 0.564 / 0.549 → **0.559** | **0.561** |
+| gross bps/trade @cov 0.01 / 0.02 | **+19.4 / +22.0** | **+2.6 / +8.5** |
+| brier (240m, moved bars) | 0.250 | **0.323** |
+| ungated 3-class accuracy | 0.472 / 0.473 | 0.443 |
+| wall clock | 2h36m / 3h17m | **20h16m** |
+
+The calibration failure was the decisive finding: P2's probability output spread across the
+entire [0,1] range — 160k bars in `[0.00,0.10)`, 162k in `[0.90,1.00]` — with `emp_up`
+between **0.448 and 0.505 in every single bin**. The serial sim was meaningless at any gate
+(80% coverage at `GATE_THRESHOLD=0.58`, net_ret −18). The strict caveat — that 1m *with* a
+32h window (seq 1920) is untested — was noted and dismissed as unaffordable at 5× P2's
+already-20h run.
+
+### The serial-gate seed instability that produced C13
+
+Serial-position sim (`hold=48 bars`, 1 position/pair, 14bps taker):
+
+| seed | gate 0.58 (served) cov / net_ret / Sharpe | gate 0.62 cov / trades / net_ret / Sharpe |
+|---|---|---|
+| 1 (O2) | 4.8% / **−1.31** / −1.22 | 1.2% / 548 / **+0.99** / **+1.41** |
+| 2 | 6.1% / **−0.91** / −0.85 | 2.5% / 595 / **+0.10** / +0.15 |
+| 3 | 5.4% / **−0.34** / −0.31 | 1.7% / 497 / **+0.23** / +0.41 |
+
+What replicated: the served gate of 0.58 loses money in 3 of 3 seeds and 0.62 is profitable
+in 3 of 3. What did not: the magnitude — O2's +0.99 / Sharpe 1.41 was an epoch-selection
+artifact, and the honest expectation was ≈ +0.4 net_ret, Sharpe ≈ 0.6. The reason the two
+tables disagreed (fixed-coverage replicated, serial did not) is that a fixed *confidence
+threshold* compares whatever fraction of each seed's confidence distribution sits above it —
+1.2% / 2.5% / 1.7% here, 0.8% for O3 and 80% for P2. That is what made the gate a coverage
+target in C13.
+
+## Q-wave, as written 2026-08-22 — the feature expansion came back negative
+
+The full narrative of the four Q items. The live plan carries the conclusions; this is the
+reasoning and the raw numbers.
+
+**Q0** (`logs/Q0.log`, run `20260821T083737Z`) re-scored seed 2 alone under C13 and derived
+its coverage-targeted gate: `conf >= 0.6311` at target coverage 0.02, realizing dir_acc
+0.578 / +18.68 gross bps/trade / +4.68 net at taker. Because `--eval-only` never pushes a
+checkpoint, the gate was written only into the VM's local copy — the bucket checkpoint still
+carries none, so the promote needs `ML_GATE_THRESHOLD=0.6311` passed explicitly.
+
+**Q2** (`logs/Q2.log`) averaged the three seeds' probabilities. Matched against Q0 — the same
+eval code on the same val split, which is the only fair comparison — the ensemble won on
+ranking by an amount inside noise and lost on economics at four of five coverages:
+
+| metric (240m, same split) | seed 2 alone (Q0) | 3-seed ensemble (Q2) |
+|---|---:|---:|
+| cov05 dir_acc / LB | 0.566 / 0.559 | 0.568 / 0.561 |
+| cov02 dir_acc / LB | 0.578 / 0.568 | 0.581 / 0.570 |
+| brier (240m, moved) | 0.2503 | 0.2498 |
+| gross bps @cov 0.01 | +17.03 | +23.18 |
+| gross bps @cov 0.02 | **+18.68** | +10.61 |
+| gross bps @cov 0.05 | **+15.13** | +11.87 |
+| gross bps @cov 0.10 | **+6.73** | +0.63 |
+| gross bps @cov 0.20 | **+3.17** | −0.24 |
+| net@taker at its own served gate | **+4.68** | −3.39 |
+
+The pre-registered rule was "no better than the best member → drop the idea, promote seed 2".
+brier moved by 0.0005 and dir_acc by 0.002; both are noise, and the P&L is worse. The one
+real improvement is that averaging removed seed 2's misbehaving `[0.70,0.80)` calibration bin
+(1,967 bars at mean_pred 0.728 vs emp_up 0.569), which is worth remembering if calibration
+ever becomes the binding constraint. The mechanism behind the P&L loss is worth recording:
+averaging probabilities pulls every bar toward the consensus, which preserves the *order* of the
+directional signal but compresses exactly the outlier-confident bars where the large moves
+are — the ensemble ranks direction slightly better and ranks economics distinctly worse.
+
+**Q3** (`logs/Q3.log`, run `20260821T…`) — the 30-column feature run. Valid on every §0.4
+check: `Feature columns: 30`, `[market] cross-pair context filled for 8/8 pairs` with
+`mean has_market=1.000`, `Samples: 2,902,214`, `hold=48 bars`, `SEED=1`, embed ON dim=8,
+split recorded (train → 2025-12-11 15:20, val → 2026-08-20 13:35), no new column in the
+CONSTANT list beyond the two documented ones. It came back clearly negative: mean-of-epochs
+cov05 LB **0.5003 ± 0.0176 (n=28)** against the family's 0.5219 ± 0.0014, and the calibration
+bin table is inverted (`emp_up` falls from 0.495 to 0.465 as `mean_pred` rises from 0.35 to
+0.75; brier 0.2897 vs 0.250) — which by the §3 rule rejects the run on its own.
+
+The diagnostic that matters is the training trajectory, and it is what the live plan carries
+forward. Baseline runs sit on a long flat plateau — `loss_tr` ≈ 1.72 and `loss_va` ≈ 1.041
+for 21–26 epochs — and every good epoch lives inside it. Q3 left that plateau at epoch 5:
+
+| run | cols | plateau epochs | `loss_tr` first → last | mean LB, plateau | mean LB, all epochs |
+|---|---:|---:|---|---:|---:|
+| O2 (s1) | 19 | 24 | 1.7284 → 1.2625 | 0.5235 | 0.5248 |
+| P0-seed2 | 19 | 21 | 1.7288 → 1.4043 | 0.5273 | 0.5206 |
+| P0-seed3 | 19 | 26 | 1.7286 → 1.2070 | 0.5209 | 0.5203 |
+| **Q3** | **30** | **5** | **1.7210 → 1.0971** | **0.5000** | **0.5003** |
+
+(plateau = epochs whose `loss_va` is within 0.02 of the run's minimum.) Q3's selected epoch 8
+is already outside its own plateau, which is why its probabilities are garbage while its
+top-5% ranking still holds up. Restricting to plateau epochs does not rescue it — 0.5000 on
+n=5 — so the negative result is real and not an artifact of averaging in degraded epochs.
+
 ## O-wave, as written 2026-08-19 — superseded by the P-wave (2026-08-21)
 
 Moved here from the live plan on 2026-08-21. **Three of its four claims did not survive

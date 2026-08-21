@@ -1,6 +1,7 @@
 # Training plan — what is true, what to run next
 
-**Last updated: 2026-08-21** (after the P-wave: P0 seed replicates of O2, P2 1m bars).
+**Last updated: 2026-08-22** (after the Q-wave: Q0 gate derivation, Q1 regime analysis,
+Q2 ensemble, Q3 feature expansion).
 
 This document is the project's session-to-session memory. It contains only what is
 **currently true and actionable**. The session-by-session narrative from 2026-07-23 →
@@ -42,7 +43,8 @@ first-class acceptance criterion: M3 consumes probabilities, so a model that ran
 while emitting meaningless probabilities (P2, §1.4) has not improved.
 
 **How to use this doc:** if you are picking this up cold, the fastest path is
-§1.1 (one paragraph on where we are) → §2's Q0/Q1 (what to do, neither needs a GPU) →
+§1.1 (one paragraph on where we are) → §2's R0 (a 5-minute promote) → §2's R1 (the
+next experiment) →
 §0.3 and §0.6 (why the numbers are read the way they are).
 
 - §0 — standing rules. Read before touching anything. Every rule cost us a real run.
@@ -124,6 +126,27 @@ grep -oE 'epoch [0-9]+.*lb=[0-9.]+' logs/X.log | grep -oE 'lb=[0-9.]+' | cut -d=
   awk '{n++;s+=$1;q+=$1*$1;if($1>m)m=$1}END{printf "n=%d mean=%.4f sd=%.4f max=%.4f\n",n,s/n,sqrt(q/n-(s/n)^2),m}'
 ```
 
+🔴 **Refinement, new 2026-08-22 (Q3): the all-epoch mean is only comparable between runs
+whose overfitting starts at the same time.** Every 19-column run sits on a long plateau
+(`loss_tr` ≈ 1.72, `loss_va` ≈ 1.041) for 21–26 epochs and *all* of its edge lives there;
+Q3's 30-column run left that plateau at epoch 5, so its 28-epoch mean averages 5 plateau
+epochs against 23 degraded ones while the baseline's averages ~24 against ~10. **Report the
+mean restricted to plateau epochs** — those whose `loss_va` is within 0.02 of the run's
+minimum — alongside the all-epoch mean, and treat a plateau shorter than ~15 epochs as a
+sign the arms are not comparable at all (§1.6). Compute both from any log with:
+
+```sh
+grep -oE 'epoch [0-9]+  loss_tr=[0-9.]+ loss_va=[0-9.]+.*lb=[0-9.]+' logs/X.log | \
+  sed -E 's/epoch 0*([0-9]+)  loss_tr=([0-9.]+) loss_va=([0-9.]+).*lb=([0-9.]+).*/\1 \2 \3 \4/' | \
+  awk '{e[NR]=$1;va[NR]=$3;lb[NR]=$4;n=NR}
+  END{m=99;for(i=1;i<=n;i++)if(va[i]<m)m=va[i];t=m+0.02;
+      for(i=1;i<=n;i++){s+=lb[i]; if(va[i]<=t){np++;sp+=lb[i];last=e[i]}}
+      printf "all: n=%d mean=%.4f | plateau: n=%d lastEp=%d mean=%.4f\n",n,s/n,np,last,sp/np}'
+```
+
+The plateau means for the baseline family are **0.5235 / 0.5273 / 0.5209 (pooled 0.5239)**
+— that is the number R1 must beat, not 0.5219.
+
 **The mean-of-epochs series to date** (C10 prints this at the end of every training log):
 
 | run | n | mean LB | sd | max | selected − mean |
@@ -176,7 +199,12 @@ history — unlike `has_book`, there is no era where it is missing, so the mask 
 correctly zeroed by the degenerate handler and costs one dead column. And
 `btc_rel_ret_1h` is identically zero **for BTCUSDT only**, since BTC's return relative
 to itself is zero; it is live for every other pair. Expect
-`13/30 CONSTANT` for BTC and `12/30` for the others, not the old 12/19.
+`13/30 CONSTANT` for BTC and `12/30` for the others, not the old 12/19. **Q3 measured
+`13/30` for BTC *and* for every other pair, and `14/30` for 1000PEPE** — `has_market` is
+constant for the non-BTC pairs while `btc_rel_ret_1h` is constant for BTC, so each pair
+loses one column, just not the same one. That is expected. What is *not* expected, and is a
+defect, is `beta_btc_1d` escaping this list on the BTC row despite being identically 1
+there (§6 C15).
 
 ### 0.5 Standing traps
 
@@ -225,27 +253,29 @@ LB is not a ranking metric at all.**
 
 ---
 
-## §1 — WHERE WE ARE (2026-08-21)
+## §1 — WHERE WE ARE (2026-08-22)
 
 ### 1.1 The one-paragraph summary
 
-**The 5m-bar result is banked, and the resolution ladder is closed at 5m.** P0 replicated
-O2 at `SEED=2` and `SEED=3` and the pre-registered "bank it" branch fires on both clauses:
-three-seed mean-of-epochs cov05 LB **0.5219 ± 0.0014** (between-seed SEM, n=101 epochs)
-against F4's 0.5058 — a **+0.016** gap at roughly 4σ — and all three seeds clear +12 gross
-bps/trade at cov 0.01–0.02, pooling to **+19.4 / +22.0 gross bps/trade** on 1,081 / 1,783
-trades, i.e. **+5.4 / +8.0 net at full 14bps taker cost**. `5m bars, seq 384, PAIR_EMBED_DIM=8`
-is now the permanent baseline and the model is a usable M3 input once C13 ships. P2 tested
-the next rung and it is not there: 1m bars at seq 768 land at mean LB 0.5256 (inside seed
-noise, and inflated by 5× the val rows — §0.6), `dir_acc` at cov05 **0.561 vs the 5m
-family's 0.559**, materially *worse* fixed-coverage P&L (+2.6 / +8.5 at cov 0.01/0.02),
-**destroyed calibration** (every probability bin from 0.05 to 0.95 has `emp_up ≈ 0.48`;
-brier 0.323 vs 0.250), and 20h of wall clock against 2.5–3h. Two things the replicates
-*corrected*: the serial-P&L headline did not survive (§1.5 — an absolute confidence gate
-is not seed-stable, which changes what C13 must do), and the O-wave's regime story was
-half seed noise (§1.2). With resolution, context length, and architecture all now closed,
-**§1.6 — the model sees six real numbers per bar — is the only large lever left**, and the
-next GPU run is the feature expansion.
+**The 5m/seq384 3-seed baseline is still the model, the feature expansion failed, and the
+one thing the Q-wave found worth building on belongs to M3, not M2.** Q3 gave the model 30
+columns instead of 19 and came back at mean-of-epochs cov05 LB **0.5003** against the
+family's **0.5219 ± 0.0014**, with an *inverted* calibration table — a rejection on two
+independent pre-registered criteria. But the diagnostic (§1.6) says the run was
+mis-specified rather than that the lever is dead: the extra columns did not add signal,
+they added *fitting speed*. The baseline sits on a 21–26 epoch plateau where all of its
+edge lives; Q3 left that plateau at **epoch 5** and its selected checkpoint is already
+outside it. Q2 tested the 3-seed ensemble against seed 2 on a matched split and it is not
+better — +0.002 dir_acc and −0.0005 brier are noise, and it is worse on gross bps at four
+of five coverages — so the pre-registered verdict fires: **drop the ensemble, promote seed
+2** (§2 R0; Q0 measured its gate at 0.6311). Q1 is the wave's positive result: of nine
+candidate regime observables, exactly one separates consistently across all three seeds —
+**BTC's trailing-24h absolute return**. Its top quintile (|ret| ≥ 4.31%, 5.2% of bars)
+holds trades worth **+35.5 gross bps/trade at cov 0.05 and +54.9 at cov 0.02**, against
++8.8 / +22.0 overall, with close per-seed agreement (+34.8 / +32.5 / +38.7). That is a
+*when to be in the market* observable, which M3 owns — M2's job is to emit it, not to act
+on it (§1.8). The next GPU run (R1) retests the well-conditioned half of the feature set;
+two of C12's eleven columns are numerically defective and must be fixed first (§6 C15).
 
 ### 1.2 The regime structure, re-read on six models
 
@@ -334,107 +364,93 @@ Health checks across the three seeds:
 - **Per-pair `dir_acc` at cov05 is not stable either** (ZEC 0.498 / 0.602 / 0.565 across
   seeds). There is no per-pair story in this data.
 
-### 1.4 P2 — 1m bars are worse; the resolution ladder is closed at 5m
+### 1.4 Resolution is closed at 5m — the surviving statement
 
-`logs/P2.log`, run `20260820T100042Z`, ckpt `m2_multi_20260820T100042Z_a186182b.pt`.
-Valid: `knob CANDLE_INTERVAL=1m`, `seq 768` (12.8h), `PAIR_EMBED_DIM=8`, `SEED=1`, embed ON,
-**14,507,307 samples** (11.6M / 2.9M — the plan predicted 8–9M and was low), `hold=240 bars`,
-split re-recorded, early stop at epoch 38. As pre-registered, it moves two variables
-(interval *and* context hours) and was launched as a direction probe, not an attribution.
+P2 ran 1m/seq768 as the next rung and came back flat-to-worse on every axis that matters:
+`dir_acc` at cov05 **0.561 against the 5m family's 0.559**, gross bps/trade at cov 0.01 /
+0.02 of **+2.6 / +8.5** against **+19.4 / +22.0**, **brier 0.323 vs 0.250** with
+`emp_up ≈ 0.48` in every probability bin, and 20h16m of wall clock against 2.5–3h. Its
+headline LB (0.5256, the highest in the ledger) is the §0.6 trap: 2.9M val rows narrow the
+Wilson interval without adding independent observations.
 
-The probe comes back negative on every axis that matters:
+**Verdict, per the pre-registered rule: 5m is the resolution sweet spot. Frozen (§5).**
+The full P2 tables and the untested-variant argument are in
+`docs/archive/TRAINING_HISTORY.md`. Read O2 / O3 / P2 together and the shape is settled:
+**finer observations helped once, from 15m to 5m, and then stopped; more window never
+helped.**
 
-| | 5m family (3 seeds) | P2 (1m) |
-|---|---|---|
-| mean-of-epochs cov05 LB | 0.5219 ± 0.0014 | 0.5256 (n=38) — *inflated, 5× val rows* |
-| **cov05 `dir_acc`** (§0.6, the honest comparison) | 0.563 / 0.564 / 0.549 → **0.559** | **0.561** |
-| gross bps/trade @cov 0.01 / 0.02 | **+19.4 / +22.0** | **+2.6 / +8.5** |
-| brier (240m, moved bars) | 0.250 | **0.323** |
-| ungated 3-class accuracy | 0.472 / 0.473 | 0.443 |
-| wall clock | 2h36m / 3h17m | **20h16m** |
+### 1.5 The served gate is a coverage target — shipped, and seed 2's is 0.6311
 
-`dir_acc` is flat and the economics are two to eight times worse at the coverages that pay.
-The LB looks best-in-class purely because 2.9M val rows narrow the Wilson interval — the
-exact trap §0.6 was written for, now demonstrated a second time.
+C13 shipped this and Q0 exercised it. The finding that forced it: the same absolute
+confidence threshold is 1.2% / 2.5% / 1.7% coverage across three seeds of one
+configuration, 0.8% on O3 and 80% on P2, so **a global `GATE_THRESHOLD` constant is not a
+well-defined operating point across checkpoints and never was** (§5). `eval_m2.py` now
+measures the threshold realizing `SERVE_TARGET_COVERAGE` (default 0.02) and writes it into
+the checkpoint; `serve.py` reads it and reports `gate_source`.
 
-**The calibration failure is the decisive finding.** P2's probability output spreads across
-the entire \[0,1\] range — 160k bars in `[0.00,0.10)`, 162k in `[0.90,1.00]` — and
-`emp_up` is **0.448 … 0.505 in every single bin**. The head emits confident probabilities
-that carry no calibration whatsoever. Two consequences: the serial sim is meaningless at
-any gate (80% coverage at `GATE_THRESHOLD=0.58`, net_ret −18), and **an uncalibrated
-probability is worthless to M3**, which consumes these as observations. That the ranking
-still yields 0.561 `dir_acc` at the top 5% only means the *order* survived what the *scale*
-did not.
+**Seed 2's measured gate is `conf >= 0.6311`**, realizing dir_acc 0.578, +18.68 gross
+bps/trade, **+4.68 net at 14bps taker** (`logs/Q0.log`). ⚠️ `--eval-only` never pushes a
+checkpoint, so that gate lives only in the log — the bucket copy still carries none, and
+the promote must pass it explicitly (§2 R0).
 
-**Verdict, per the pre-registered rule: flat-to-worse ⇒ 5m is the resolution sweet spot.
-Freeze it and close the lever.** The strict caveat — that 1m *with* a 32h window (seq 1920)
-is untested — is noted and dismissed: it is unaffordable at 5× P2's already-20h run, and
-§5's context-length entry says window is not the binding constraint anyway.
+### 1.6 🔴 The feature expansion failed, and the reason is fitting speed, not signal
 
-Read O2/O3/P2 together and the shape is settled: **finer observations helped once, from 15m
-to 5m, and then stopped. More window never helped.** The model is limited by *what each
-timestep tells it* — which is §1.6.
+Q3 was the one-variable test of §1.6-as-it-stood (the model sees six live columns per bar).
+It added eleven candle-derived columns — `ret_1h/4h/1d`, `vol_1h/4h/1d`, `btc_rel_ret_1h`,
+`beta_btc_1d`, `xs_rank_1h`, `xs_disp_1h`, `has_market` — and lost:
 
-### 1.5 🔴 An absolute confidence gate is not seed-stable — the gate must target coverage
+| | 5m family (3 seeds, 19 cols) | Q3 (30 cols) |
+|---|---:|---:|
+| mean-of-epochs cov05 LB | **0.5219 ± 0.0014** | **0.5003** (n=28) |
+| brier (240m, moved bars) | 0.250 | **0.2897** |
+| calibration bin table | monotone in `emp_up` | **inverted** (0.495 → 0.465 as `mean_pred` 0.35 → 0.75) |
+| ungated 3-class accuracy | 0.472 / 0.473 | 0.4553 |
+| gross bps/trade @cov 0.01 / 0.02 | +19.4 / +22.0 | +19.7 / +17.6 |
 
-This is the P-wave's most actionable new finding and it rewrites what C13 has to build.
+Two independent pre-registered criteria reject it: LB ≤ 0.525 (§2's Q3 rule) and a
+non-monotone `emp_up` (§3 item 3c).
 
-Serial-position sim (`hold=48 bars`, 1 position/pair, 14bps taker) at the two gates that matter:
+🔴 **But the training trajectory says the run was mis-specified, not that the lever is
+dead.** Every baseline run sits on a long plateau — `loss_tr` ≈ 1.72, `loss_va` ≈ 1.041 —
+and *every good epoch lives inside it*. Q3 left the plateau at epoch 5:
 
-| seed | gate 0.58 (served) cov / net_ret / Sharpe | gate 0.62 cov / trades / net_ret / Sharpe |
-|---|---|---|
-| 1 (O2) | 4.8% / **−1.31** / −1.22 | 1.2% / 548 / **+0.99** / **+1.41** |
-| 2 | 6.1% / **−0.91** / −0.85 | 2.5% / 595 / **+0.10** / +0.15 |
-| 3 | 5.4% / **−0.34** / −0.31 | 1.7% / 497 / **+0.23** / +0.41 |
+| run | cols | plateau epochs | `loss_tr` first → last | mean LB, plateau | mean LB, all |
+|---|---:|---:|---|---:|---:|
+| O2 (s1) | 19 | 24 | 1.7284 → 1.2625 | 0.5235 | 0.5248 |
+| P0-seed2 | 19 | 21 | 1.7288 → 1.4043 | 0.5273 | 0.5206 |
+| P0-seed3 | 19 | 26 | 1.7286 → 1.2070 | 0.5209 | 0.5203 |
+| **Q3** | **30** | **5** | **1.7210 → 1.0971** | **0.5000** | **0.5003** |
 
-**What replicated:** the served gate of 0.58 loses money in 3 of 3 seeds, and 0.62 is
-profitable in 3 of 3. Moving the gate is confirmed and is not optional.
+(plateau = epochs whose `loss_va` is within 0.02 of that run's minimum.) With 19 columns
+the model *cannot* fit the train set — 1.72 flat for 25 epochs. With 30 it fits it, down to
+1.10, while `loss_va` climbs monotonically from epoch 5 onward. Q3's selected epoch 8 is
+already outside its own plateau, which is exactly why its ranking survives (top-5% dir_acc
+0.551) while its probabilities do not. **Nothing in the run's configuration was changed to
+absorb a 58% wider input** — same `DROPOUT`, `WEIGHT_DECAY`, `LR`, `HIDDEN_SIZE`.
 
-**What did not replicate:** the magnitude. O2's +0.99 / Sharpe 1.41 headline is 4–10× the
-other two seeds and was an epoch-selection artifact. The honest expectation for a 5m
-checkpoint at its profitable gate is **≈ +0.4 net_ret, Sharpe ≈ 0.6**, not 1.4.
+Note this cuts both ways and neither reading is free: extra columns enable memorization
+whether they carry signal or not, so the fast overfit is *not* evidence that the features
+are informative — it is only evidence that the test did not measure what it intended to.
 
-**Why the two tables disagree** — the fixed-coverage P&L replicated cleanly (§1.3) while
-the serial sim did not — is the useful part. A fixed *coverage* compares the same fraction
-of each model's bars; a fixed *confidence threshold* compares whatever fraction each seed's
-confidence distribution happens to put above 0.62, and that is 1.2% / 2.5% / 1.7% here.
-The same absolute number is three different operating points. O3 showed the extreme version
-(0.8% coverage at 0.58) and P2 the opposite extreme (80%).
+🔴 **Two of the eleven columns are numerically defective** (§6 C15), and both are in the
+market-context group:
 
-**Therefore C13's gate must be stored as a coverage target, not a probability.** Pick the
-operating coverage from the fixed-coverage P&L table at eval time (the family says 1–2%),
-have eval write the per-checkpoint confidence threshold that realizes it into the checkpoint
-meta, and have `serve.py` read that. A global `GATE_THRESHOLD` constant is not a
-well-defined operating point across checkpoints and never was.
+- **`beta_btc_1d` is degenerate for BTCUSDT.** Beta of BTC against itself is identically
+  1.0. The column is 1.0 everywhere except a handful of warm-up / sub-floor-variance bars
+  set to 0.0, which makes its raw std ~1e-3 — above the `1e-8` CONSTANT detector, so it is
+  *not* zeroed — and the per-pair normalizer then turns those few bars into a **590σ**
+  spike, winsorized at ±50. BTC's worst tail was 66σ (`hl_range`) before C12. The
+  `ok_var = b_var > 1e-12` guard at `ml/train/data/features.py:436` is ~6 orders of
+  magnitude below a real `var(ret_1)` (~2.3e-6 at 5m), so it floors nothing in practice.
+- **`xs_disp_1h` carries a 122σ tail** and is identical for every pair at a given bar, so
+  the same spike enters all eight pairs at once. It became the worst column for ETH, SOL
+  and ZEC (was 75 / 81 / 85σ on `hl_range`). Q1 independently ranks cross-sectional
+  dispersion the *least* informative of nine observables tested (§1.8) — C12 added the
+  dispersion family, which is noise, and omitted the market-move-magnitude family, which
+  is the one thing that separates.
 
-### 1.6 🔴 The model still sees six real numbers per bar — the last large lever
-
-Unchanged by the O- and P-waves, and now the *only* remaining suspect: resolution (§1.4),
-context length and architecture (§5) are all closed. `FEATURE_COLS` has 19 entries, but
-every recent log's `WARNING [norm] train fit[...]` block says **12 of 19 are CONSTANT in
-the train window** and are correctly zeroed (13 for 1000PEPE, which also loses
-`has_funding_oi`). What actually carries signal in every run of both waves — F4, O2, O3, both P0 seeds and P2:
-
-| live | dead in the train window |
-|---|---|
-| `ret_1`, `hl_range`, `oc_range`, `log_vol`, `ret_std_15`, `funding` (+ `has_funding_oi` mask) | `spread_bps`, `imbalance`, `micro_mid`, `bid_ask_vol_ratio`, `depth_near_imb`, `trade_count`, `buy_sell_imb`, `trade_vol`, `oi`, `oi_chg`, `has_book`, `has_trades` |
-
-Six signal columns — four single-bar OHLCV derivatives, one 15-bar rolling vol, and the
-funding rate. No multi-timescale returns, no multi-scale volatility, no cross-pair or
-market-wide context, no trend. `funding` is correctly aligned
-(`FUNDING_OI_MAX_AGE_MIN=480` = 8h matches the funding interval), so it is not silently
-zeroed.
-
-§1.4 sharpens this from both ends: the model is starved **per timestep**, not per window
-*and* not per bar-interval. It converted 15m→5m into real edge and then saturated, which is
-what an input-limited model looks like.
-
-🔴 **The 12 dead columns are dead for a structural reason, and it constrains what can be
-added.** They are not broken — they are constant because the train window opens 2022-08-19
-while the book / trade / OI feeds open 2026-07. Any new microstructure column would be
-constant in the train window too, and `NORM_DEGENERATE_MODE=zero` would zero it. **Every
-column added in Q3 must be candle-derived**, and no book-feature work is worth doing until
-the book history is months long (§2, O5 demoted).
+The legacy columns are byte-identical between O2 and Q3 (`hl_range` tails 212.8 → 212.9,
+363.5 → 363.8), confirming the change is isolated to the new columns.
 
 ### 1.7 Data status (verified on the VM, 2026-08-18; exercised at 1m/5m by the P-wave)
 
@@ -481,226 +497,213 @@ now been validated by a training run.** Re-verify only if a backfill lands.
 
 ---
 
+### 1.8 🟢 Q1 — one regime observable separates, and it belongs to M3
+
+Q1 ran locally on the three 5m seed dumps (`eval_preds.parquet` for runs
+`20260818T185438Z` / `20260819T142759Z` / `20260820T025723Z`). All observables were built
+from the dumps themselves: `fwd_ret` at horizon *h* shifted back *h* minutes is a
+lookahead-free trailing return, and the three horizons compound exactly (verified,
+max abs diff 3.2e-7), so no DB round-trip was needed. The harness reproduces the published
+fixed-coverage tables exactly — O2's cov 0.01/0.02/0.05 gross came back +24.50 / +22.11 /
++3.50 against the logged +24.5 / +22.1 / +3.5 — so these numbers are on the same footing as
+§1.3's.
+
+**Test 1 — AUC against "this gated trade was correct", per seed. Nothing passes.** The
+pre-registered bar was ≥0.60 in all three seeds; the largest deviation from 0.50 anywhere in
+the table is 0.06.
+
+| observable | seed 1 | seed 2 | seed 3 |
+|---|---:|---:|---:|
+| `btc_absret_1d` | 0.538 | 0.549 | 0.557 |
+| `xs_corr_7d` | 0.525 | 0.511 | 0.564 |
+| `xs_corr_1d` | 0.523 | 0.525 | 0.563 |
+| `rv_30d` | 0.521 | 0.507 | 0.559 |
+| `btc_ret_7d` | 0.501 | 0.530 | 0.510 |
+| `btc_sign_1d` | 0.492 | 0.502 | 0.489 |
+| `xs_disp_4h` | 0.488 | 0.489 | 0.491 |
+| `mean_conf_1d` | 0.480 | 0.471 | 0.499 |
+| `rv_7d` / `rv_1d` | 0.481 / 0.472 | 0.462 / 0.460 | 0.486 / 0.495 |
+| `btc_ret_1d` | 0.469 | 0.469 | 0.449 |
+
+Worth noting in passing: `mean_conf_1d` — the model's own trailing-1d confidence — is
+*anti*-predictive in all three seeds. A confident recent stretch is not a good stretch.
+
+**Test 2 — conditional lift, which is the test that matters.** Pooled cov05 trades across
+the three seeds (n=3,717; per-trade sd 259bps, so a quintile's SEM is ≈9.5bps), bucketed
+into quintiles by each observable, reported as gross bps/trade:
+
+| observable | Q1 | Q2 | Q3 | Q4 | Q5 | per-seed Q5 |
+|---|---:|---:|---:|---:|---:|---|
+| **`btc_absret_1d`** | −3.4 | −15.3 | +10.1 | +17.4 | **+35.5** | **+35 / +33 / +39** |
+| `xs_corr_1d` | −8.6 | −3.7 | +12.5 | +12.7 | +31.5 | +16 / +36 / +46 |
+| `xs_corr_7d` | +20.1 | −7.5 | −1.8 | +11.4 | +26.1 | +10 / +36 / +34 |
+| `rv_30d` | +26.2 | +15.7 | −11.6 | +4.2 | +25.4 | +11 / +32 / +36 |
+| `rv_7d` | +21.9 | +9.3 | +28.6 | −29.0 | +17.5 | +10 / +21 / +21 |
+| `btc_ret_1d` | +33.9 | +17.2 | −4.7 | −3.7 | +1.5 | −10 / +21 / −5 |
+| `rv_1d` | +7.2 | −4.5 | +38.3 | +1.8 | +1.6 | −7 / +1 / +11 |
+| `btc_ret_7d` | −10.7 | +14.4 | +18.1 | +25.7 | +0.4 | +1 / +3 / −2 |
+| `xs_disp_4h` | +17.0 | +8.2 | +3.2 | +6.8 | +9.1 | −6 / +22 / +11 |
+
+**`btc_absret_1d` is the only one with a monotone ladder in both bps and `dir_acc`**
+(0.517 / 0.494 / 0.545 / 0.579 / **0.618**) *and* close agreement across three independently
+seeded models. The others are U-shaped (`xs_corr_7d`, `rv_30d`), seed-unstable
+(`xs_corr_1d`: +16/+36/+46), or flat (`xs_disp_4h`, spread 13.9bps — the least informative
+of the nine, and the family C12 chose to add).
+
+**The rule, and what it is worth.** BTC trailing-24h |return| ≥ **4.31%**, which is **5.2%
+of val bars**:
+
+| slice | trades | gross bps/trade | net @14bps taker | dir_acc |
+|---|---:|---:|---:|---:|
+| cov 0.05, in-state | 742 | **+35.5** (SEM 10.5) | **+21.5** | 0.618 |
+| cov 0.05, all | 3,710 | +8.8 | −5.2 | 0.559 |
+| cov 0.02, in-state | 493 | **+54.9** | **+40.9** | — |
+| cov 0.02, out-of-state | 1,288 | +9.1 | −4.9 | — |
+| cov 0.01, in-state | 339 | **+45.9** | **+31.9** | — |
+| cov 0.01, out-of-state | 741 | +7.2 | −6.8 | — |
+
+The lift at cov05 is +26.6bps, ≈2.5σ on the pooled SEM — but the per-seed agreement
+(+34.8 / +32.5 / +38.7 on three independent models) is the stronger evidence, and it is the
+kind §0.3 asks for. It is direction-free: Q5 on BTC-up days is +36.9 (n=109), on BTC-down
+days +35.2 (n=633), so this is about the *magnitude* of the market move, not its sign.
+
+⚠️ **Two honest caveats, both binding.**
+1. **It is partly a calendar effect.** 47% of the Q5 trades fall in window 2 and only 2% in
+   window 3. Computed *within* calendar windows the ladder holds in three of four — w1 Q5
+   +74, w4 Q5 +74, w3 Q5 +103 (n=13, ignore) — but **fails in window 2 (Q5 = −10)**, which
+   is where nearly half its trades live. So the rule is not uniformly good; it is very good
+   in three windows and bad in the one where it fires most often.
+2. **Sharpening past the quintile does not help.** The top *decile* is +27.1bps with
+   per-seed +19 / +16 / +45 — worse and less stable than the quintile.
+
+🔴 **Verdict: it is an M3 observable, not an M2 feature, and the distinction is the whole
+point of this document's preamble.** "BTC has moved 4%+ in the last day, so trade more
+here" is a statement about *when to be in the market and how large* — M3's job. M2 should
+**emit** trailing market-move magnitude as an observation and let the policy condition on
+it. Do not add a gate to M2 for it; that is the cost-aware-selection mistake (§5) in a new
+costume. As an M2 *input* column it is a reasonable candidate for a later feature wave, but
+it is not what R1 tests, because R1 has one variable already.
+
+---
+
 ## §2 — THE RUN QUEUE
 
-The P-wave banked the 5m result (P0) and closed the resolution ladder (P2). **All of the
-Q-wave's code shipped on 2026-08-21** (C12, C13, C14 — §6), so every item below is
-runnable now. Suggested order, given training runs are strictly serial (§7):
+The Q-wave is complete: Q0 and Q2 ran, Q3 came back negative, Q1 is done (§1.8). **Do not
+re-launch any Q item.** The R-wave below is what follows. Training runs are strictly serial
+(§7), so this is an ordered list and the wall clock is the sum.
 
 | item | what | cost | needs a GPU? |
 |---|---|---|---|
-| **Q0** | derive seed 2's gate, then promote it | ~1h CPU + a promote | no |
-| **Q3** | the 30-column feature run — **the experiment** | ~3h GPU | **yes** |
-| **Q2** | 3-seed ensemble eval | ~1h CPU | no |
-| **Q1** | regime analysis on the three dumps | local, free | no |
+| **R0** | promote seed 2 with its measured gate — **do this first, it is 5 minutes** | promote only | no |
+| **C15/C18** | fix the defective columns + add the `FEATURE_GROUPS` knob (§6) — **blocks R1** | local, free | no |
+| **C16** | `max_dd` is sorted by value, not by date — every logged drawdown is an artifact (§6) | local, free | no |
+| **R1** | feature retest, well-conditioned half only — **the experiment** | ~3h GPU | **yes** |
+| **R2** | O6 — magnitude-weighted directional loss (needs C3) | ~3h GPU | **yes** |
 
-Q3 is the only GPU job, so start it first and do Q0 / Q2 / Q1 while it runs — but note
-Q0 and Q2 are both `gcp_train.sh` jobs and therefore **cannot overlap Q3 or each other**
-(§7: one training VM, and a second launch can delete the first). Q1 is the only item that
-is genuinely parallel.
+R0 is unblocked and independent — do it first. C15 and C18 block R1; C16 blocks nothing but
+is a two-line fix. R2 is unchanged from the P-wave queue and stays behind R1.
 
-**None of the P-wave commands should be re-launched.** P0 is banked, P2's lever is closed
-(§5). Do not run any further seed of the 5m baseline — three is enough, and a fourth buys
-0.0006 of SEM.
+### R0 — promote seed 2. Unblocked, do it now.
 
-### The promote hazard — ✅ fixed by C13, but read this once
-
-`checkpoints/latest.pt` is still **P2's checkpoint** — the broken-calibration 1m model
-(§1.4) — because P2 finished last, and every training run still overwrites that key.
-What changed is that `gcp_promote.sh` can no longer ship it by accident: `--checkpoint`
-is required and the bare form refuses. Two things to keep in mind anyway:
-
-- **Naming `latest` is still naming P2** until a newer run lands. Use an explicit key.
-- **Every existing checkpoint predates C13**, so none carries a `served_gate` and each
-  will serve at the config fallback unless you pass one. Q0 covers this.
-
-### Q0 — ✅ C13 SHIPPED (2026-08-21). Promotion is now safe; do the promote.
-
-The code is in (§6). What remains is the operational step, and it needs one eval first:
-**the three P0/O2 checkpoints predate C13, so none of them carries a `served_gate`.**
-Serving one today logs `gate_source=config-fallback` and trades at 0.58 — the operating
-point §1.5 shows loses money in 3 of 3 seeds. So:
-
-```sh
-# 1. give the chosen checkpoint its own measured gate (CPU, ~1h, writes nothing to latest.pt)
-./scripts/gcp_train.sh --eval-only m2_multi_20260819T142759Z_a186182b.pt
-./scripts/gcp_status.sh
-./scripts/gcp_logs.sh > logs/Q0-seed2-gate.log
-```
-
-⚠️ `--eval-only` **never writes a checkpoint back to the bucket** (C7's guarantee), so this
-run derives and *prints* the gate but does not persist it. Read `SERVED GATE` from the log
-and promote with the gate set explicitly until a post-C13 training run produces a
-checkpoint that carries its own:
+Q2 settled which checkpoint: the ensemble is **not** better than its best member (§1.1,
+archive), so the pre-registered "drop the idea, promote seed 2" branch fires. Q0 already
+measured seed 2's gate, and because `--eval-only` never pushes a checkpoint that gate is
+**not** in the bucket copy — it must be passed explicitly.
 
 ```sh
 ./scripts/gcp_promote.sh --list
-ML_GATE_THRESHOLD=<the conf_threshold from the log> \
+ML_GATE_THRESHOLD=0.6311 \
   ./scripts/gcp_promote.sh --checkpoint m2_multi_20260819T142759Z_a186182b.pt
 ```
 
-Check the `/health` line the promote prints: `gate_source` must be `env-override` (with the
-threshold you set) or `checkpoint` — **never `config-fallback`**.
+**Verify on the `/health` line the promote prints:** `gate_source` must be `env-override`
+with threshold 0.6311 — **never `config-fallback`**, which serves 0.58 and loses money in
+3 of 3 seeds (§1.5). ⚠️ `checkpoints/latest.pt` is still **Q3's** checkpoint now (it
+finished last) — the 30-column model with inverted calibration. Never promote `latest`.
 
-**Which checkpoint:** promote **seed 2**
-(`m2_multi_20260819T142759Z_a186182b.pt`). It is the most internally consistent of the
-three — balanced side split (0.567 / 0.561), monotone fixed-coverage P&L that is positive
-at taker down to cov 0.05, and a profitable serial gate. Seed 1 has the prettiest headline
-and a cov-0.05 hole; seed 3's short side is a coin flip. If Q2 lands first, promote the
-ensemble instead.
+### R1 — feature retest, own-pair multi-scale columns only. **The main event.**
 
-### Q1 — regime analysis on the three 5m dumps (local, free, no VM). Runnable now.
+**Why this and not "the feature lever is closed".** Q3's pre-registered verdict was
+"≤0.525 ⇒ the per-timestep story is wrong too", and taken literally that closes M2. It
+should not be taken literally, for three reasons that are all measurements, not opinions:
+Q3 left its training plateau at epoch 5 against the baseline's 21–26 and selected a
+post-overfit checkpoint (§1.6); two of its eleven columns are numerically defective and one
+of those injects a 590σ spike (§6 C15); and Q1 independently shows the column family C12
+*did* add (cross-sectional dispersion) is the least informative observable of nine tested,
+while the family it *omitted* (market-move magnitude) is the only one that separates
+(§1.8). Q3 tested one particular 11-column set at unchanged regularization and it lost.
+That is a real result about that set. It is not a result about per-timestep features.
 
-Carried over from P1, which never ran, and **its inputs changed**: use all three 5m seed
-dumps, not O2's alone, because §1.2 is precisely where one seed misled us.
+**The one variable: `FEATURE_DIM` 19 → 25, own-pair multi-scale only.** Keep `ret_1h`,
+`ret_4h`, `ret_1d`, `vol_1h`, `vol_4h`, `vol_1d`. **Drop all five market-context columns** —
+that group contains both defects, `has_market` is a dead constant by construction (§0.4),
+and Q1 gives no reason to want dispersion or rank. This is the well-conditioned half and it
+is a genuine one-variable test against §1.3.
 
-```
-gs://fluxtrader-train-artifacts/eval/20260818T185438Z/eval_preds.parquet   # seed 1 (O2)
-gs://fluxtrader-train-artifacts/eval/20260819T142759Z/eval_preds.parquet   # seed 2
-gs://fluxtrader-train-artifacts/eval/20260820T025723Z/eval_preds.parquet   # seed 3
-```
-
-For each val bar compute candidate regime observables from candles already in the DB, all
-lookahead-free:
-
-- realized vol of the pooled universe over trailing 1d / 7d / 30d
-- BTC trailing return over 1d / 7d, and its sign
-- cross-sectional dispersion of trailing 4h returns across the 8 pairs
-- cross-pair correlation of trailing 1d returns (one "everything moves together" scalar)
-- funding level and funding sign, pooled and per pair
-- the model's own mean confidence over a trailing 1d window
-
-Three questions, in order:
-
-1. **Separation.** AUC of each observable against "bar is in a high-edge window", computed
-   **per seed**. Report the three AUCs side by side; an observable that separates for one
-   seed and not the other two is noise and must be discarded.
-2. **Conditional lift.** Bucket val bars into quintiles by each observable; report cov05 LB
-   *and* gross bps/trade per bucket, **pooled across the three seeds** (pool the trades, do
-   not average the bps). The number that matters is the top bucket's gross bps/trade against
-   5bps maker and 14bps taker.
-3. **Window 1 specifically.** §1.2's one sharp finding is that all three 5m models find edge
-   in 2025-12 → 2026-02 where every 15m model is at coin flip. Ask what is different about
-   that window — if an observable flags it, that observable is a feature.
-
-**Verdict:**
-- An observable with ≥0.60 AUC **in all three seeds** whose top bucket shows gross ≫ 5bps →
-  it is both a Q3 feature column and an M3 regime observable. (The *gating* decision is
-  M3's; M2's job is to emit the observable, not act on it.)
-- Nothing separates consistently → the window structure is capacity, not state. Skip regime
-  features entirely and give Q3's whole column budget to §1.6's per-timestep features.
-
-**Bring back:** the three-seed AUC table, the pooled per-quintile gross-bps table, and the
-window-1 finding.
-
-### Q2 — ✅ code shipped. 3-seed ensemble eval (one CPU eval-only run, ~1h). Cheap, high EV.
-
-New, and it falls directly out of §0.3 being the project's dominant problem. Three
-checkpoints of one configuration exist and their disagreement *is* the noise we keep
-fighting. Averaging their per-bar `p_up` costs one CPU eval and typically buys both a
-tighter estimate and better calibration — and M2's deliverable to M3 is exactly a
-calibrated probability.
-
-**C14 is shipped** (§6) — `--eval-only` takes a comma-separated list and averages the
-members' probabilities. Run:
+Blocked on **C15 and C18** (§6) — C18 is what makes the column set selectable at all;
+without it there is no way to run a subset except by editing source. Then, everything else
+identical to §1.3:
 
 ```sh
-./scripts/gcp_train.sh --eval-only \
-  m2_multi_20260818T185438Z_8c4b2a03.pt,m2_multi_20260819T142759Z_a186182b.pt,m2_multi_20260820T025723Z_a186182b.pt
-./scripts/gcp_status.sh
-./scripts/gcp_logs.sh > logs/Q2-ensemble.log
-```
-
-Note the three training runs each derived a slightly different val split (data keeps
-landing: val starts 2025-12-09 09:45 / 12-10 01:40 / 12-10 11:35). That does **not** affect
-this run — a single eval-only job scores all three checkpoints on one current split.
-
-**Verdict:** compare the ensemble's fixed-coverage P&L and brier against §1.3's pooled
-table and against each member. Better on both → the ensemble is what gets promoted and what
-M3 consumes. Better on brier but not P&L → still promote it; calibration is the deliverable.
-No better than the best member → drop the idea, promote seed 2, and note it in §5.
-
-### Q3 — ✅ code shipped (C12). Per-timestep feature expansion. **The main event — launch it.**
-
-**This is the only large lever left.** §1.6 (six live columns per bar), §1.4-of-the-O-wave
-(context length is closed) and §1.4 here (resolution is closed) all converge on it: the
-model is starved *per timestep*, and the one time we gave it more input per unit time it
-converted that into edge.
-
-🔴 **Every new column must be candle-derived.** This is not a preference, it is forced by
-the same mechanism that kills 12 of the current 19 columns: the train window starts
-2022-08-19 and the book/trade/OI feeds start 2026-07, so **any microstructure column is
-CONSTANT in the train window and gets zeroed** (`NORM_DEGENERATE_MODE=zero`). Adding book
-features to this run would add zeros. That is also why O5 is demoted below.
-
-Candidate columns, all computable from candles that span the full history for every pair:
-
-- trailing returns at 1h / 4h / 1d — multi-timescale return is currently absent entirely
-- rolling volatility at 2–3 scales beyond the single `ret_std_15`
-- BTC-relative return and rolling beta per pair
-- cross-sectional return rank and dispersion across the universe
-- whichever observables Q1 finds separate **in all three seeds**
-
-**Shipped as `FEATURE_DIM` 19 → 30** (C12, §6). The column list was frozen without waiting
-for Q1: the four groups above were decided by §1.6 regardless of what Q1 finds, and Q1's
-contribution was only ever *additional* columns. If Q1 turns up an observable that
-separates in all three seeds, it is a second, later bump — not a reason to hold this run.
-
-One variable — the feature set — against the §1.3 baseline: `CANDLE_INTERVAL=5m`,
-`seq 384`, `PAIR_EMBED_DIM=8`, `EARLY_STOP_PATIENCE=20`, same 8 pairs, horizons
-60/240/1440, primary 240, **`SEED=1`**.
-
-```sh
-CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
+FEATURE_GROUPS=legacy,multiscale \
+  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
   EARLY_STOP_PATIENCE=20 SEED=1 \
   TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
   TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
   ./scripts/gcp_train.sh --gpu 60 384
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh > logs/R1.log
 ```
 
-**Verify** (§0.4 has the full list; these are the C12-specific ones):
-`Feature columns: 30`; `[market] cross-pair context filled for 8/8 pairs` with
-`mean has_market` ≈ 1.0; the `WARNING [norm]` block reports **13/30 CONSTANT for BTC and
-12/30 for the rest** — if a *new* column beyond `has_market` (and `btc_rel_ret_1h` on BTC
-alone) lands in that list, the run tested less than it looks; `knob CANDLE_INTERVAL=5m`;
-`Samples:` ≈ 2.9M; `P&L sim: … hold=48 bars`; split re-recorded. This run's checkpoint
-will be the **first one carrying its own `served_gate`**, so it is also the first that is
-promotable without an override.
+**Verify** (§0.4 plus these): `Feature columns: 25`; the `WARNING [norm]` block reports
+**12/30 → 12/25 CONSTANT** with *no new column* in it (if `vol_1d` or any `ret_*` appears
+there, the run tested less than it looks); `max|z|` back under ~100 for BTC/ETH/SOL/ZEC —
+if `beta_btc_1d` or `xs_disp_1h` still appears, C15 did not land; `Samples:` ≈ 2.9M;
+`hold=48 bars`; split recorded.
 
-**Verdict, pre-registered.** Rank on mean-of-epochs cov05 LB against the family's
-**0.5219 ± 0.0014** (same bar interval, so LB is fine here — §0.6 does not bite) and on
-pooled gross bps/trade at cov 0.01–0.02 against **+19.4 / +22.0**:
+**Verdict, pre-registered — and note the metric has changed (§0.3).** Rank on
+**mean-of-epochs cov05 LB restricted to plateau epochs** against the family's plateau means
+(0.5235 / 0.5273 / 0.5209, pooling to **0.5239**), and report the all-epoch mean alongside
+it. Also required: a **monotone `emp_up`** bin table (§3 item 3c) and a **plateau of at
+least ~15 epochs** — a run that leaves the plateau before epoch 10 has not been compared
+fairly to the baseline, whatever its LB says.
 
-- **≥ 0.535 mean LB** (≈ +0.013, comparable to the 15m→5m gain) → features are the live
-  lever; replicate at two more seeds and expand the column set again.
-- **0.525–0.535** → real but small; bank it and go once more with a wider column set.
-- **≤ 0.525** → the per-timestep story is wrong too, and M2's supervised ceiling on candle
-  data is roughly where it is. That is a genuine milestone conclusion: stop tuning M2, ship
-  the ensemble to M3, and let the policy do the work M2 cannot.
+- **≥ 0.537 plateau mean LB, plateau ≥15 epochs, calibration monotone** → features are the
+  live lever. Replicate at two more seeds, then add the market-context group back (fixed).
+- **0.527–0.537** → real but small; bank it and widen the column set once more.
+- **≤ 0.527 with a healthy ≥15-epoch plateau** → this is the clean negative Q3 was supposed
+  to be. **Per-timestep candle features are closed**, and the milestone conclusion stands:
+  stop tuning M2, ship seed 2 to M3, and let the policy do the work M2 cannot.
+- **Plateau still collapses (<10 epochs)** → the result is again uninterpretable and the
+  next run is a regularization arm (`DROPOUT` 0.1→0.3 at 25 columns), not another feature
+  set. Say so explicitly rather than reading the LB.
 
-### After this wave
+### R2 — O6, magnitude-weighted directional loss. Unchanged, still next after R1.
 
-Read Q1 + Q2 + Q3 together in a **fresh session**. Still queued, re-prioritized by the
-P-wave:
+Blocked on **C3** (§6). It attacks the failure §7's cost arithmetic describes — the model is
+systematically right on smaller-than-average moves — and it does so with per-sample weights
+over 2.3M training bars rather than over a ~600-effective-sample validation statistic, which
+is why N3's selection-time cousin failed. Cheap, one variable, one run.
 
-- **O6 — magnitude-weighted directional loss** (code task C3). Promoted to *next after Q3*.
-  It is the one remaining idea that attacks the failure §7's cost arithmetic describes — the
-  model is systematically right on smaller-than-average moves — and it does so at train time
-  with per-sample weights over 2.3M bars, not over a ~600-effective-sample validation
-  statistic (which is why N3's selection-time cousin failed). Cheap, one variable, one run.
+### Still queued behind that
+
 - **O8 — 12 pairs.** Cheap (§1.7): ADA/AVAX/LINK/XRP have full 4-year history at 5m. One
-  variable, one run. Worth doing after Q3 so it tests the *final* feature set.
-- **O7 — triple-barrier redo.** Blocked on C4b (barrier-aware `simulate_pnl`), wider
-  barriers (target ~30–40% flat), and a pinned dataset.
-- **O5 — L2 ladder feature audit (read-only, NO training). Demoted.** The analysis is still
-  correct — `orderbook_levels` has ~14d × 100 levels with no integrity errors, the five book
-  features are static snapshot levels with no OFI/flow dynamics, and `_align_with_age`
-  discards ~5 of every 6 snapshots at 5m bars. But Q3's constraint applies to it with full
-  force: **book-derived columns are constant across 99% of the train window and get zeroed**,
-  so no amount of feature cleverness helps until either the book history is measured in
-  months or the training window is deliberately shortened to the book era (which throws away
-  the 3+ years that make the model work). Revisit when book coverage passes ~6 months —
-  the 60-day milestone for BTC/ETH/SOL is ≈2026-09-15, so this is a 2027 item, not a now item.
+  variable, one run. Do it after R1 so it tests the *final* feature set.
+- **O7 — triple-barrier redo.** Blocked on C4b, wider barriers (target ~30–40% flat), and a
+  pinned dataset.
+- **O5 — L2 ladder feature audit. Still demoted.** Book-derived columns are constant across
+  99% of the train window and get zeroed. Revisit when book coverage passes ~6 months; the
+  60-day milestone for BTC/ETH/SOL is ≈2026-09-15, so this is a 2027 item.
+
+### For M3, not for M2
+
+§1.8's `btc_absret_1d` finding is an **input to the policy milestone**, not a run in this
+queue. When M3 starts, its observation vector should carry trailing market-move magnitude
+(BTC |ret| over 24h, or the pooled-universe equivalent) alongside M2's per-horizon
+probabilities, because conditioning on it moves the top-2% slice from +22.0 to +54.9 gross
+bps/trade. Do **not** implement it as an M2 gate (§1.8, §5).
+
+---
 
 ## §3 — WHAT TO BRING BACK (for the next session)
 
@@ -730,6 +733,20 @@ grep -n  'P&L sim:' $L                     # hold must be horizon_min / bar_min 
 grep -n  'Early stop at epoch' $L           # must NOT be 1 + patience
 grep -n  'Samples:' $L                      # 5m/8 pairs ⇒ ~2.90M
 grep -n  'epoch LB series' $L               # the §0.3 verdict metric, printed by C10
+grep -n  'Feature columns:' $L              # the count you intended (25 for R1)
+grep -nE 'max\|z\|' $L                     # no new column above ~100 sigma (C15)
+```
+
+**Also compute the plateau-restricted mean (§0.3)** — with C17 unshipped this is manual, and
+since Q3 it is the metric that decides the run:
+
+```sh
+grep -oE 'epoch [0-9]+  loss_tr=[0-9.]+ loss_va=[0-9.]+.*lb=[0-9.]+' $L | \
+  sed -E 's/epoch 0*([0-9]+)  loss_tr=([0-9.]+) loss_va=([0-9.]+).*lb=([0-9.]+).*/\1 \2 \3 \4/' | \
+  awk '{e[NR]=$1;va[NR]=$3;lb[NR]=$4;n=NR}
+  END{m=99;for(i=1;i<=n;i++)if(va[i]<m)m=va[i];t=m+0.02;
+      for(i=1;i<=n;i++){s+=lb[i]; if(va[i]<=t){np++;sp+=lb[i];last=e[i]}}
+      printf "all: n=%d mean=%.4f | plateau: n=%d lastEp=%d mean=%.4f\n",n,s/n,np,last,sp/np}'
 ```
 
 If a log predates C10 and has no `epoch LB series` line, compute it:
@@ -741,8 +758,10 @@ grep -oE 'epoch [0-9]+.*lb=[0-9.]+' $L | grep -oE 'lb=[0-9.]+' | cut -d= -f2 | \
 
 **What the next session will read, in order:**
 1. The §0.4 verification lines — is the run valid at all.
-2. **The per-epoch LB mean ± sd (§0.3)** — this is the verdict metric now, not the max.
-   Pool it across seeds when a wave has replicates.
+2. **The per-epoch LB mean ± sd (§0.3), plateau-restricted AND all-epoch** — this is the
+   verdict metric now, not the max. **Read the plateau length first:** under ~15 epochs and
+   the run is not comparable to the baseline at all, whatever its LB says (§1.6, Q3). Pool
+   across seeds when a wave has replicates.
 3. `Fixed-coverage P&L` → **gross bps/trade** at cov 0.01–0.20, against 5bps maker **and**
    14bps taker. Since O2 the taker column is no longer automatically negative, so read it.
 3b. `dir_acc` alongside every Wilson-LB whenever the arms differ in bar interval (§0.6).
@@ -773,6 +792,10 @@ line.**
 | Run | What | Primary | cov05 LB | Valid? | Verdict |
 |---|---|---:|---:|---|---|
 | **5m/seq384 family** — **O2** `20260818T185438Z` (s1) · **P0-seed2** `20260819T142759Z` · **P0-seed3** `20260820T025723Z` | **5m bars, seq 384 (32h), ~2.90M samples, 3 seeds** | 240m | **pooled mean-of-epochs 0.5219 (between-seed SEM 0.0014)** | ✅ **BANKED — the baseline** | The project's first replicated result. +0.016 ≈ 4σ over F4. Pooled fixed-coverage P&L **+19.4 / +22.0 gross bps/trade at cov 0.01 / 0.02** (1,081 / 1,783 trades) = +5.4 / +8.0 net at 14bps taker. Per-seed max LB 0.5565 / 0.5576 / 0.5425 — all order statistics, do not quote. Did **not** replicate: serial-sim magnitude (§1.5), side balance, book-era split, per-pair numbers. Served gate must become a coverage target (C13). §1.3 |
+| **Q3** `20260821T…` | **30 candle-derived columns** (C12) vs the 19-col baseline — the feature expansion | 240m | mean 0.5003±0.018 (n=28); **plateau mean 0.5000, n=5** | ✅ valid, **decisive negative for THIS column set** | −0.022 against the family. **Calibration inverted** (`emp_up` 0.495→0.465 as `mean_pred` 0.35→0.75; brier 0.2897 vs 0.250) ⇒ rejected by §3.3c independently. Left its training plateau at **epoch 5** vs the baseline's 21–26 and selected a post-overfit epoch, so it is not a fair test of the lever — see §1.6. Two columns numerically defective (C15). Retest = R1. |
+| **Q2** `20260821T…` | **3-seed probability ensemble** (C14) | 240m | cov05 LB 0.561 | ✅ valid, **lever closed** | Matched against Q0 on the same split: dir_acc +0.002, brier −0.0005 (both noise), gross bps **worse at 4 of 5 coverages** (cov02 +10.6 vs +18.7; cov05 +11.9 vs +15.1; cov10 +0.6 vs +6.7). Pre-registered "no better than the best member" ⇒ dropped. §5 |
+| **Q0** `20260821T083737Z` | eval-only re-score of seed 2 under C13 | 240m | cov05 LB 0.559 | ✅ | Derived seed 2's coverage-targeted gate: **`conf >= 0.6311`**, dir_acc 0.578, +18.68 gross bps/trade, **+4.68 net at taker**. Gate written to the VM's local copy only — pass it explicitly on promote (§2 R0). |
+| **Q1** *(local, no run)* | regime analysis on the three 5m dumps | 240m | — | ✅ **positive** | 9 observables × 3 seeds. Nothing clears the 0.60-AUC bar (max deviation 0.06), but **`btc_absret_1d`** has a monotone quintile ladder in bps *and* dir_acc with three-seed agreement: top quintile (BTC 24h \|ret\| ≥ 4.31%, 5.2% of bars) = **+35.5 gross bps/trade at cov05, +54.9 at cov02** vs +8.8 / +22.0 overall. Direction-free. **An M3 observable, not an M2 feature.** §1.8 |
 | **P2** `20260820T100042Z` | **1m bars, seq 768 (12.8h)** — the next resolution rung | 240m | 0.5579 (mean 0.5256±0.015, n=38) — **LB is inflated, do not rank on it** | ✅ **decisive, negative** | Highest LB in the ledger on 5× the val rows, and flat where it counts: `dir_acc` cov05 **0.561 vs the 5m family's 0.559**; gross bps/trade +2.6/+8.5 at cov 0.01/0.02 vs +19.4/+22.0; **brier 0.323 vs 0.250 with `emp_up ≈ 0.48` in every probability bin** — calibration destroyed; 20h wall clock vs 2.5–3h. **Resolution ladder closed at 5m.** §1.4 |
 | **O3** `20260819T021020Z` | 15m bars, **seq 256 (64h)** — context length | 240m | 0.531 (mean 0.4925±0.023, n=24) | ✅ **decisive, negative** | Worse than F4 on mean-of-epochs; per-epoch series drifts monotonically down; served-gate coverage collapsed 4.9%→0.8%; up side at 0.499. Longer context is dead and **architecture is closed again**. §1.4 |
 | **O0** `eval-only re-score of F4` | F4 on today's eval code, CPU | 240m | 0.531 (reproduced exactly) | ✅ | Delivered F4's missing `Fixed-coverage P&L`: +2.61 / +6.53 / +6.50 / −2.96 / −4.38 gross bps at cov .01/.02/.05/.10/.20. Closes N3-vs-F4 — N3's +4.24 @cov05 is inside noise of F4's +6.50. |
@@ -810,6 +833,8 @@ line.**
 | More candle *history* | **Closed** | Adds more of the pre-book regime we already fit. Note this is about *history*, not *resolution*. |
 | **Bar resolution — 15m → 5m** | **🟢 BANKED and frozen (2026-08-21)** | Replicated across three seeds: pooled mean-of-epochs 0.5219 ± 0.0014 vs F4's 0.5058, and pooled +22 gross bps/trade at the top 2% (§1.3). `5m / seq 384` is the permanent baseline. Nothing further to test here — do not run a fourth seed. |
 | **Bar resolution — finer than 5m** | **Closed (new, 2026-08-21)** | P2 ran 1m/seq768 as a direction probe: flat `dir_acc` (0.561 vs 0.559), materially worse economics, **destroyed calibration** (`emp_up ≈ 0.48` in every bin, brier 0.323 vs 0.250), 20h wall clock. The ladder has one rung and we are standing on it. The untested variant (1m at a 32h window, seq 1920) is unaffordable and context length is separately closed. §1.4 |
+| **Multi-checkpoint ensembling (probability averaging)** | **Closed (new, 2026-08-22)** | Q2 averaged three seeds of one configuration and compared against the best member on a matched split (Q0). Ranking improved by noise (+0.002 dir_acc), calibration by noise (−0.0005 brier), and **gross bps/trade got worse at four of five coverages**. The mechanism: averaging pulls every bar toward the consensus, which preserves the directional *order* but compresses exactly the outlier-confident bars where the large moves are. Reopen only if calibration — not P&L — becomes the binding constraint on M3. §1.1 |
+| **Gating M2 on a regime observable** | **Barred (new, 2026-08-22)** | Q1's `btc_absret_1d` finding is real and worth +26bps/trade of conditioning (§1.8), and it still must not be built into M2. Deciding *when to be in the market* is M3's job by the design in this document's preamble; building it into the signal model is the cost-aware-selection mistake in a new costume. M2 emits the observable, the policy acts on it. |
 | **Absolute `GATE_THRESHOLD` as a serving constant** | **Closed (new, 2026-08-21)** | Not a lever, a defect. The same probability is 1.2% / 2.5% / 1.7% coverage across three seeds of one configuration and 80% on P2 (§1.5). The gate must be a per-checkpoint coverage target chosen from the fixed-coverage P&L table. C13. |
 | **"Flat training loss proves nothing" — and now "one seed proves nothing"** | **Reinforced (2026-08-21)** | Of the four claims the O-wave made from one seed, three did not survive replication (§1.2, §1.5). Any result quoted from a single run is provisional until a second seed agrees. |
 | **"Flat `loss_tr` proves the model is not data-starved"** | **Falsified (new, 2026-08-19)** | O2's loss was as flat as F4's through the region its selected epoch lives in, and it still improved materially. On a near-noise-floor task the training loss is dominated by the irreducible term. Judge data levers on the validation-selection metric only. §1.5 |
@@ -919,6 +944,57 @@ now start 2022-08-18 for all nine long pairs (§1.7).
     (max |train − serve| = 0 on all five columns), and a failed context degrades to
     zeros with `has_market=0` rather than refusing to serve.
 
+### The C-batch — OPEN, blocking the R-wave
+
+- 🔴 **C15 — fix the two defective C12 columns. BLOCKS R1.** Both are in the market-context
+  group, and R1's chosen fix is simply to drop that group (`FEATURE_DIM` 19 → 25, own-pair
+  multi-scale only), which sidesteps both. The underlying defects still need fixing before
+  the market-context columns are ever reintroduced:
+  1. **`beta_btc_1d` is degenerate for the BTC row.** `cov(r_btc, r_btc)/var(r_btc)` is
+     identically 1.0, so the column is constant-by-construction for BTCUSDT and carries no
+     information. It escapes the degenerate handler because the warm-up and
+     sub-floor-variance bars are set to `0.0`, lifting its raw std to ~1e-3, above the
+     `1e-8` CONSTANT threshold — and the normalizer then renders those few bars as a
+     **590σ** spike (winsorized at ±50; BTC's worst tail was 66σ before C12). Fix: skip the
+     self-beta (emit 0 with `has_market` semantics for the BTC row).
+  2. **The variance floor floors nothing.** `ok_var = b_var > 1e-12` at
+     `ml/train/data/features.py:436` sits ~6 orders of magnitude below a real `var(ret_1)`
+     (≈2.3e-6 at 5m). Make it relative — a fraction of the column's own rolling median
+     variance — not an absolute constant. This is trap §0.5.5 again: an absolute threshold
+     is not a floor when it is not on the data's scale.
+  3. **The CONSTANT detector is absolute where it should be relative.** `raw std <= 1e-8`
+     misses any column that is constant-in-meaning but takes two distinct values (the case
+     above). Flag a column when it takes ≤2 distinct values, or when `std/|mean|` is below
+     a tolerance, in addition to the current absolute test.
+  4. **`xs_disp_1h` carries a 122σ tail** and is identical across all eight pairs at a bar,
+     so one spike enters every pair at once. Winsorize or log-scale it before normalizing —
+     and note Q1 ranks dispersion the least informative of nine observables (§1.8), so
+     "drop it" is also a defensible fix.
+- 🔴 **C16 — `max_dd` is computed on daily returns sorted by VALUE, not by date.**
+  `ml/train/eval_m2.py:266` does `day_list = np.array(sorted(day_net.values()))` and then
+  `eq = np.cumsum(day_list)`. Sorting the values puts every losing day first, so the
+  reported `maxdd` is just "the sum of all negative days" — a deterministic artifact, not a
+  drawdown, in **every table in every log to date**. Should be
+  `[day_net[k] for k in sorted(day_net)]`. `daily_sharpe` is unaffected (mean and std are
+  order-invariant); every `maxdd` printed so far should be ignored, not re-interpreted.
+- 🔴 **C18 — a `FEATURE_GROUPS` knob. ALSO BLOCKS R1.** The column groups are already
+  cleanly separated in `ml/train/data/features.py` — `LEGACY_FEATURE_COLS` (19),
+  `OWN_PAIR_MULTISCALE_COLS` (6), `MARKET_CONTEXT_COLS` (5) — but `FEATURE_COLS` is their
+  unconditional concatenation and `FEATURE_DIM` is asserted equal to `len(FEATURE_COLS)`, so
+  **there is no way to run a subset without editing source.** Add
+  `FEATURE_GROUPS` (default `legacy,multiscale,market`, i.e. today's behaviour) that
+  composes `FEATURE_COLS` from the named groups and derives `FEATURE_DIM` from it rather
+  than asserting against a separate env var. R1 then runs
+  `FEATURE_GROUPS=legacy,multiscale`.
+  ⚠️ **Add it to `FLUX_TRAIN_ENV_KEYS` in the same commit** (§7) — trap §0.5.7 is exactly
+  this: a knob that exists in `config.py` but not in the allowlist is a silent no-op on the
+  GPU VM, and R1 would then quietly re-run Q3 while its log claims otherwise. The §0.4 check
+  for R1 (`Feature columns: 25`) is what catches it if this is forgotten.
+- ⬜ **C17 — print the plateau-restricted epoch-LB mean.** C10 prints the all-epoch mean,
+  which §0.3 now shows is not comparable between runs whose overfitting onset differs. Add
+  `plateau: n=… lastEp=… mean=…` (epochs whose `loss_va` is within 0.02 of the run's
+  minimum) to the same summary line, and warn when the plateau is under ~15 epochs.
+
 ### Later
 
 - ⬜ **C3 — magnitude-weighted directional loss.** Weight the aux up/down CE by `|r_T|`.
@@ -974,10 +1050,10 @@ clocks, not the max. Write multi-run items in this doc as an ordered serial list
 a loop or a "launch both" instruction, and state the total wall clock when proposing
 replicates.
 
-⚠️ `gcp_promote.sh` only ever promotes `checkpoints/latest.pt`, and every new training run
-overwrites that key. **`latest.pt` is currently P2's checkpoint — the 1m model whose
-probability output is uncalibrated noise (§1.4) — and must not be promoted.** The
-checkpoints you may actually want:
+⚠️ Every new training run overwrites `checkpoints/latest.pt`. **`latest.pt` is currently
+Q3's checkpoint — the 30-column model whose calibration is inverted (§1.6) — and must not be
+promoted.** C13 made `--checkpoint <key>` required, so naming a key explicitly is now the
+only way to promote at all. The checkpoints you may actually want:
 
 | run | key |
 |---|---|
@@ -986,14 +1062,15 @@ checkpoints you may actually want:
 | seed 3 | `checkpoints/m2_multi_20260820T025723Z_a186182b.pt` |
 | F4 (prior baseline) | `checkpoints/m2_multi_20260817T221811Z_94614795.pt` |
 | O3 (do not promote) | `checkpoints/m2_multi_20260819T021020Z_8c4b2a03.pt` |
-| **P2 (do not promote)** | `checkpoints/m2_multi_20260820T100042Z_a186182b.pt` = `latest.pt` |
+| P2 (do not promote — uncalibrated 1m model) | `checkpoints/m2_multi_20260820T100042Z_a186182b.pt` |
+| **Q3 (do not promote — inverted calibration) = `latest.pt` now** | the 30-column run; it finished last and overwrote the key |
 
 **C13 shipped (2026-08-21)**, so `gcp_promote.sh` now requires `--checkpoint <key>` and
 refuses the bare form; `--list` prints the table above from the bucket. It also pins serve
 code to the sha in the checkpoint's filename. Remember that every key listed here predates
 C13 and therefore carries no `served_gate`: promoting one without an override serves it at
-the config fallback of 0.58, which §1.5 shows loses money in all three seeds. Q0 in §2 is
-the two-step fix.
+the config fallback of 0.58, which §1.5 shows loses money in all three seeds. Q0 measured
+seed 2's gate (**0.6311**) and §2's R0 is the one-line promote that uses it.
 
 ### Env knob passthrough
 
