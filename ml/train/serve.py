@@ -45,6 +45,7 @@ from data.dataset import (
     zero_degenerate,
 )
 from data.features import (
+    ALL_FEATURE_COLS,
     FEATURE_COLS,
     MARKET_CONTEXT_COLS,
     apply_market_context,
@@ -202,7 +203,7 @@ def load_model():
     # held a different feature.
     feature_cols = list(meta.get("feature_cols") or [])
     if not feature_cols:
-        feature_cols = list(FEATURE_COLS[:feature_dim])
+        feature_cols = list(ALL_FEATURE_COLS[:feature_dim])
         print(
             f"  NOTE: checkpoint records no feature_cols (pre-C12) — serving its "
             f"{feature_dim} columns from the frozen legacy list."
@@ -234,7 +235,7 @@ def load_model():
     )
     if n_degen:
         print(
-            f"  WARNING: up to {n_degen}/{FEATURE_DIM} feature columns had NO variance in "
+            f"  WARNING: up to {n_degen}/{len(feature_cols)} feature columns had NO variance in "
             "this checkpoint's train window (pre-2026-08-17 norm bug). They are now "
             f"neutralized at load ({NORM_DEGENERATE_MODE}) instead of being multiplied by "
             "~1e6, so serving is no longer degenerate — but the model never LEARNED from "

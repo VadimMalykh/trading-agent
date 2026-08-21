@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 
 from config import (
-    FEATURE_DIM,
+    FEATURE_GROUPS,
     BOOK_MAX_AGE_MIN,
     TRADES_MAX_AGE_MIN,
     FUNDING_OI_MAX_AGE_MIN,
@@ -18,7 +20,7 @@ from config import (
 )
 from data import db
 
-# Canonical feature-column order (must match FEATURE_DIM). Exposed at module level
+# Canonical feature-column order. Exposed at module level
 # so callers (dataset ablation, audit) can map feature name -> matrix column index
 # without hardcoding.
 #
@@ -83,14 +85,75 @@ MARKET_CONTEXT_COLS = [
     "has_market",      # presence mask: 1 where the market context is real, else 0
 ]
 
-FEATURE_COLS = LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS
-assert len(FEATURE_COLS) == FEATURE_DIM, (
-    f"FEATURE_COLS has {len(FEATURE_COLS)} entries but FEATURE_DIM={FEATURE_DIM}; "
-    "update FEATURE_DIM in config.py when you add a column."
+# --- C18 (2026-08-22): selectable feature groups ---------------------------------
+# The groups above were already separated, but FEATURE_COLS was their unconditional
+# concatenation and FEATURE_DIM was asserted equal to its length, so running a subset
+# meant editing this file. FEATURE_GROUPS (config) now composes the list, and the
+# dimension is DERIVED from it rather than asserted against a second env var.
+#
+# Order is fixed by _GROUP_ORDER, never by the order the caller types them, because
+# LEGACY_FEATURE_COLS == FEATURE_COLS[:19] is a serving contract (see the note above
+# LEGACY_FEATURE_COLS) and the C12 columns must keep their positions relative to it.
+_FEATURE_GROUPS = {
+    "legacy": LEGACY_FEATURE_COLS,
+    "multiscale": OWN_PAIR_MULTISCALE_COLS,
+    "market": MARKET_CONTEXT_COLS,
+}
+_GROUP_ORDER = ["legacy", "multiscale", "market"]
+
+
+def resolve_feature_groups(spec: str):
+    """Parse a FEATURE_GROUPS spec into (group names, column list).
+
+    Raises on an unknown group and on dropping 'legacy' rather than silently
+    falling back. A silent fallback on a feature-set knob would make the run
+    un-attributable, which is the whole reason this knob exists (trap 0.5.3).
+    """
+    names = [g.strip().lower() for g in spec.split(",") if g.strip()]
+    if not names:
+        raise ValueError("FEATURE_GROUPS is empty; expected e.g. 'legacy,multiscale'")
+    unknown = [g for g in names if g not in _FEATURE_GROUPS]
+    if unknown:
+        raise ValueError(
+            f"FEATURE_GROUPS has unknown group(s) {unknown}; "
+            f"valid groups are {_GROUP_ORDER}"
+        )
+    if "legacy" not in names:
+        raise ValueError(
+            "FEATURE_GROUPS must include 'legacy' - the 19 frozen columns are a "
+            "serving contract (LEGACY_FEATURE_COLS == FEATURE_COLS[:19])."
+        )
+    ordered = [g for g in _GROUP_ORDER if g in names]
+    cols = []
+    for g in ordered:
+        cols.extend(_FEATURE_GROUPS[g])
+    return ordered, cols
+
+
+# The full canonical list, independent of FEATURE_GROUPS. Reconstructing the columns
+# of a checkpoint that recorded none (pre-C12) is POSITIONAL, so it must index the
+# canonical order — not whatever subset this process happens to be configured for, or
+# a 30-column checkpoint would be rebuilt from a 25-column list.
+ALL_FEATURE_COLS = (
+    LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS
 )
+
+ACTIVE_FEATURE_GROUPS, FEATURE_COLS = resolve_feature_groups(FEATURE_GROUPS)
+
+# The dimension the model is actually built with. FEATURE_DIM in config.py remains
+# the documented default (30); this is the number everything downstream must use.
+FEATURE_DIM_EFFECTIVE = len(FEATURE_COLS)
 
 # Trailing windows, in minutes, for the multi-scale columns above.
 _SCALE_MINUTES = {"1h": 60, "4h": 240, "1d": 1440}
+
+# C15 (2026-08-22): the beta denominator is masked when BTC's rolling variance falls
+# below this FRACTION of its own median variance. The previous guard was an absolute
+# 1e-12, roughly six orders of magnitude below a real var(ret_1) (~2.3e-6 at 5m), so
+# it never fired -- an absolute constant is not a floor unless it is on the data's
+# scale. A relative floor means the same thing at 1m, 5m and 15m and for a quiet pair
+# as for a loud one.
+BETA_VAR_FLOOR_FRAC = float(os.environ.get("BETA_VAR_FLOOR_FRAC", "0.01"))
 BAR_MINUTES_BY_INTERVAL = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
 
 
@@ -408,8 +471,22 @@ def apply_market_context(
         btc_ret1 = btc["ret_1"]
         btc_ret1h = btc["ret_1h"]
         btc_var = btc_ret1.rolling(beta_bars, min_periods=2).var()
+        # C15 (2026-08-22): a RELATIVE floor for the beta denominator. The old guard
+        # was `btc_var > 1e-12`, roughly six orders of magnitude below a real
+        # var(ret_1) (~2.3e-6 at 5m), so it floored nothing in practice — it is trap
+        # §0.5.5 (an absolute constant is not a floor unless it is on the data's
+        # scale). Scale it to the series' own typical variance instead, so the guard
+        # means the same thing at 1m, 5m and 15m and for a quiet pair as for a loud
+        # one. Windows below the floor are masked, not divided.
+        _typ_var = float(np.nanmedian(btc_var.to_numpy()))
+        btc_var_floor = (
+            _typ_var * BETA_VAR_FLOOR_FRAC
+            if np.isfinite(_typ_var) and _typ_var > 0.0
+            else 1e-12
+        )
     else:
         btc_ret1 = btc_ret1h = btc_var = None
+        btc_var_floor = 1e-12
 
     for s in symbols:
         idx = per_pair[s].index
@@ -426,16 +503,30 @@ def apply_market_context(
             b_1 = btc_ret1.reindex(idx)
             b_var = btc_var.reindex(idx)
             df["btc_rel_ret_1h"] = (per_pair[s]["ret_1h"] - b_1h).fillna(0.0)
-            cov = (
-                per_pair[s]["ret_1"]
-                .rolling(beta_bars, min_periods=2)
-                .cov(b_1)
-            )
-            # A near-zero BTC variance makes beta explode; treat it as no information
-            # rather than dividing by ~0 (the 2026-08-17 additive-epsilon lesson —
-            # this is a floor with a mask, not an epsilon).
-            ok_var = b_var > 1e-12
-            df["beta_btc_1d"] = np.where(ok_var, cov / b_var.where(ok_var), 0.0)
+            if s == btc_symbol:
+                # C15 (2026-08-22): BTC's beta against itself is cov(r,r)/var(r) = 1
+                # identically, so the column carries no information for this row. It
+                # used to be *computed*, which produced 1.0 everywhere except the
+                # warm-up and sub-floor bars that fell through to 0.0 — a raw std of
+                # ~1e-3, comfortably above the 1e-8 CONSTANT detector, so it was not
+                # zeroed and the per-pair normalizer rendered those few bars as a
+                # 590-sigma spike (Q3; BTC's worst tail before C12 was 66 sigma on
+                # hl_range). Emit a clean constant instead and let the degenerate
+                # handler zero it, exactly as it does for btc_rel_ret_1h on this row.
+                df["beta_btc_1d"] = 0.0
+            else:
+                cov = (
+                    per_pair[s]["ret_1"]
+                    .rolling(beta_bars, min_periods=2)
+                    .cov(b_1)
+                )
+                # A near-zero BTC variance makes beta explode; treat it as no
+                # information rather than dividing by ~0 (the 2026-08-17
+                # additive-epsilon lesson — this is a floor with a mask, not an
+                # epsilon). The floor is relative to BTC's own typical variance;
+                # see where btc_var_floor is computed.
+                ok_var = b_var > btc_var_floor
+                df["beta_btc_1d"] = np.where(ok_var, cov / b_var.where(ok_var), 0.0)
             has = has.where(b_1h.notna(), 0.0)
 
         df["xs_rank_1h"] = scaled_rank[s].reindex(idx).fillna(0.0)

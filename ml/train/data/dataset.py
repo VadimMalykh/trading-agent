@@ -28,6 +28,7 @@ from config import (
 from data.features import (
     BOOK_FEATURES,
     FEATURE_COLS,
+    FEATURE_DIM_EFFECTIVE,
     MARKET_CONTEXT_COLS,
     apply_market_context,
     build_feature_frame,
@@ -227,6 +228,15 @@ def zero_degenerate(arr: np.ndarray, cols: Sequence[int] | None) -> np.ndarray:
 # 1m/15m returns and is not a defect.
 _NORM_BROKEN_Z = 1000.0
 
+# C15 (2026-08-22): a max|z| alone cannot tell a genuine fat tail from a degenerate
+# column. `hl_range` legitimately reaches 212-364 sigma with HUNDREDS of rows out
+# there (real volatility events, spread over whole crash days). `beta_btc_1d` on the
+# BTC row reached 590 sigma with about SEVEN rows out there, because the column was
+# 1.0 everywhere except a handful of warm-up bars — constant in meaning, but with a
+# raw std just above the 1e-8 CONSTANT threshold, so it was never zeroed. The
+# distinguishing signal is how POPULATED the tail is, not how far it reaches.
+_NORM_SPIKE_TAIL_FRAC = 1e-5
+
 
 def norm_range_report(
     arr: np.ndarray, label: str, feature_names: Sequence[str] | None = None
@@ -240,20 +250,35 @@ def norm_range_report(
     if arr.size == 0:
         return 0.0
     f = arr.shape[-1]
+    limit = NORM_CLIP if NORM_CLIP and NORM_CLIP > 0 else 50.0
     col_max = np.zeros(f, dtype=np.float32)
+    col_tail = np.zeros(f, dtype=np.int64)
     flat = arr.reshape(-1, f)
+    n_rows = int(flat.shape[0])
     for lo in range(0, flat.shape[0], _NORM_STREAM_ROWS):
-        chunk = flat[lo : lo + _NORM_STREAM_ROWS]
-        np.maximum(col_max, np.nanmax(np.abs(chunk), axis=0), out=col_max)
+        chunk = np.abs(flat[lo : lo + _NORM_STREAM_ROWS])
+        np.maximum(col_max, np.nanmax(chunk, axis=0), out=col_max)
+        col_tail += (chunk > limit).sum(axis=0)
     j = int(np.argmax(col_max))
     mx = float(col_max[j])
     names = feature_names if feature_names is not None else FEATURE_COLS
     worst = names[j] if j < len(names) else f"col{j}"
-    limit = NORM_CLIP if NORM_CLIP and NORM_CLIP > 0 else 50.0
+    tail_n = int(col_tail[j])
+    tail_frac = tail_n / n_rows if n_rows else 0.0
     if mx > _NORM_BROKEN_Z:
         flag = "  <== BROKEN SCALE (not a fat tail — check norm stats)"
+    elif mx > limit and tail_frac < _NORM_SPIKE_TAIL_FRAC:
+        flag = (
+            f"  <== DEGENERATE SPIKE ({tail_n} of {n_rows} rows beyond {limit:g} sd). "
+            "A near-constant column whose few odd rows became a huge z. The CONSTANT "
+            "detector missed it because its raw std is above NORM_DEGENERATE_STD. "
+            "Check whether this column is constant BY CONSTRUCTION for this pair."
+        )
     elif mx > limit:
-        flag = f"  (heavy tail, winsorized at +/-{limit:g})"
+        flag = (
+            f"  (heavy tail, winsorized at +/-{limit:g}; "
+            f"{tail_n} rows beyond — a populated tail, not a spike)"
+        )
     else:
         flag = ""
     print(f"  [norm] {label}: max|z|={mx:.4g} on '{worst}'{flag}")
@@ -350,7 +375,7 @@ def build_arrays(
 
     if not xs:
         return (
-            np.zeros((0, seq_len, FEATURE_DIM), dtype=np.float32),
+            np.zeros((0, seq_len, FEATURE_DIM_EFFECTIVE), dtype=np.float32),
             np.zeros((0,), dtype=np.int64),
             meta,
         )
@@ -834,7 +859,7 @@ def build_multi_horizon_arrays(*args, **kwargs):
     if n == 0:
         empty_y = {k: np.zeros((0,), dtype=np.int64) for k in bundle.horizon_keys}
         return (
-            np.zeros((0, bundle.seq_len, FEATURE_DIM), dtype=np.float32),
+            np.zeros((0, bundle.seq_len, FEATURE_DIM_EFFECTIVE), dtype=np.float32),
             empty_y,
             bundle.times,
             np.zeros((0,), dtype=object),

@@ -192,6 +192,8 @@ Each line is here because its absence voided a real run.
 | `Feature columns:` | the count and list you intended (30 after C12; 19 for a pre-C12 checkpoint) | — |
 | `[market] cross-pair context filled for N/N pairs` | **N/N**, and `mean has_market` ≈ 1.0. Anything less means the cross-pair columns are zeros for some pair and Q3 tested less than it looks | — |
 | `SERVED GATE (C13, coverage-targeted)` | present, and the realized coverage is the one you asked for | — |
+| `Feature groups:` | the groups **and** the column count you intended — a knob that did not reach the VM shows up here and nowhere else (C18) | — |
+| `DEGENERATE SPIKE` | **absent.** A column flagged here is near-constant with a few odd rows rendered as a huge z; the CONSTANT detector missed it because its raw std clears `NORM_DEGENERATE_STD`. `heavy tail … N rows beyond — a populated tail` is fine (C15) | would have caught Q3's `beta_btc_1d` |
 
 **Two CONSTANT-column warnings are EXPECTED after C12 and are not defects.**
 `has_market` is constant (always 1) because the market context spans the whole
@@ -432,8 +434,8 @@ Note this cuts both ways and neither reading is free: extra columns enable memor
 whether they carry signal or not, so the fast overfit is *not* evidence that the features
 are informative — it is only evidence that the test did not measure what it intended to.
 
-🔴 **Two of the eleven columns are numerically defective** (§6 C15), and both are in the
-market-context group:
+🔴 **One of the eleven columns is numerically defective and a second is merely fat-tailed**
+(§6 C15) — both in the market-context group:
 
 - **`beta_btc_1d` is degenerate for BTCUSDT.** Beta of BTC against itself is identically
   1.0. The column is 1.0 everywhere except a handful of warm-up / sub-floor-variance bars
@@ -442,12 +444,15 @@ market-context group:
   spike, winsorized at ±50. BTC's worst tail was 66σ (`hl_range`) before C12. The
   `ok_var = b_var > 1e-12` guard at `ml/train/data/features.py:436` is ~6 orders of
   magnitude below a real `var(ret_1)` (~2.3e-6 at 5m), so it floors nothing in practice.
-- **`xs_disp_1h` carries a 122σ tail** and is identical for every pair at a given bar, so
-  the same spike enters all eight pairs at once. It became the worst column for ETH, SOL
-  and ZEC (was 75 / 81 / 85σ on `hl_range`). Q1 independently ranks cross-sectional
-  dispersion the *least* informative of nine observables tested (§1.8) — C12 added the
-  dispersion family, which is noise, and omitted the market-move-magnitude family, which
-  is the one thing that separates.
+- **`xs_disp_1h` carries a 122σ tail**, identical for every pair at a given bar, and became
+  the worst column for ETH, SOL and ZEC (was 75 / 81 / 85σ on `hl_range`). 🔵 **On
+  measurement this is a genuine fat tail, not a defect** — the tail is *populated* (347 rows
+  beyond 5σ, 44 beyond 10σ on the val window), which is what a real market-wide volatility
+  event looks like and is the same class as `hl_range`'s long-accepted 212–364σ. It is
+  correctly winsorized at ±50 and no change was made to it (§6 C15.4). The reason to drop it
+  is instead that Q1 ranks cross-sectional dispersion the *least* informative of nine
+  observables tested (§1.8): C12 added the dispersion family, which is noise, and omitted
+  the market-move-magnitude family, which is the one thing that separates.
 
 The legacy columns are byte-identical between O2 and Q3 (`hl_range` tails 212.8 → 212.9,
 363.5 → 363.8), confirming the change is isolated to the new columns.
@@ -595,13 +600,12 @@ re-launch any Q item.** The R-wave below is what follows. Training runs are stri
 | item | what | cost | needs a GPU? |
 |---|---|---|---|
 | **R0** | promote seed 2 with its measured gate — **do this first, it is 5 minutes** | promote only | no |
-| **C15/C18** | fix the defective columns + add the `FEATURE_GROUPS` knob (§6) — **blocks R1** | local, free | no |
-| **C16** | `max_dd` is sorted by value, not by date — every logged drawdown is an artifact (§6) | local, free | no |
+| ~~C15/C16/C18~~ | ✅ **shipped 2026-08-22** (§6) — R1 is unblocked | — | — |
 | **R1** | feature retest, well-conditioned half only — **the experiment** | ~3h GPU | **yes** |
 | **R2** | O6 — magnitude-weighted directional loss (needs C3) | ~3h GPU | **yes** |
 
-R0 is unblocked and independent — do it first. C15 and C18 block R1; C16 blocks nothing but
-is a two-line fix. R2 is unchanged from the P-wave queue and stays behind R1.
+R0 is unblocked and independent — do it first. C15, C16 and C18 shipped on 2026-08-22, so
+**R1 is ready to launch**. R2 is unchanged from the P-wave queue and stays behind R1.
 
 ### R0 — promote seed 2. Unblocked, do it now.
 
@@ -640,9 +644,9 @@ that group contains both defects, `has_market` is a dead constant by constructio
 and Q1 gives no reason to want dispersion or rank. This is the well-conditioned half and it
 is a genuine one-variable test against §1.3.
 
-Blocked on **C15 and C18** (§6) — C18 is what makes the column set selectable at all;
-without it there is no way to run a subset except by editing source. Then, everything else
-identical to §1.3:
+✅ **Unblocked** — C15 and C18 shipped (§6). `FEATURE_GROUPS` is what makes the column set
+selectable, and it is in the launcher allowlist, so the line below actually reaches the VM.
+Everything else is identical to §1.3:
 
 ```sh
 FEATURE_GROUPS=legacy,multiscale \
@@ -655,11 +659,13 @@ FEATURE_GROUPS=legacy,multiscale \
 ./scripts/gcp_logs.sh > logs/R1.log
 ```
 
-**Verify** (§0.4 plus these): `Feature columns: 25`; the `WARNING [norm]` block reports
-**12/30 → 12/25 CONSTANT** with *no new column* in it (if `vol_1d` or any `ret_*` appears
-there, the run tested less than it looks); `max|z|` back under ~100 for BTC/ETH/SOL/ZEC —
-if `beta_btc_1d` or `xs_disp_1h` still appears, C15 did not land; `Samples:` ≈ 2.9M;
-`hold=48 bars`; split recorded.
+**Verify** (§0.4 plus these):
+`Feature groups: legacy,multiscale -> 25 columns` — **if this line says 30, `FEATURE_GROUPS`
+did not reach the VM and the run is a repeat of Q3**; `Feature columns: 25` in the eval
+block; the `WARNING [norm]` block reports **12/25 CONSTANT** with *no new column* in it (if
+`vol_1d` or any `ret_*` appears there, the run tested less than it looks); no
+`DEGENERATE SPIKE` flag on any `[norm] normalized[…]` line, and `max|z|` back to `hl_range`
+for every pair; `Samples:` ≈ 2.9M; `hold=48 bars`; split recorded.
 
 **Verdict, pre-registered — and note the metric has changed (§0.3).** Rank on
 **mean-of-epochs cov05 LB restricted to plateau epochs** against the family's plateau means
@@ -944,58 +950,80 @@ now start 2022-08-18 for all nine long pairs (§1.7).
     (max |train − serve| = 0 on all five columns), and a failed context degrades to
     zeros with `has_market=0` rather than refusing to serve.
 
-### The C-batch — OPEN, blocking the R-wave
+### The C-batch — DONE 2026-08-22 (unblocks R1)
 
-- 🔴 **C15 — fix the two defective C12 columns. BLOCKS R1.** Both are in the market-context
-  group, and R1's chosen fix is simply to drop that group (`FEATURE_DIM` 19 → 25, own-pair
-  multi-scale only), which sidesteps both. The underlying defects still need fixing before
-  the market-context columns are ever reintroduced:
-  1. **`beta_btc_1d` is degenerate for the BTC row.** `cov(r_btc, r_btc)/var(r_btc)` is
-     identically 1.0, so the column is constant-by-construction for BTCUSDT and carries no
-     information. It escapes the degenerate handler because the warm-up and
-     sub-floor-variance bars are set to `0.0`, lifting its raw std to ~1e-3, above the
-     `1e-8` CONSTANT threshold — and the normalizer then renders those few bars as a
-     **590σ** spike (winsorized at ±50; BTC's worst tail was 66σ before C12). Fix: skip the
-     self-beta (emit 0 with `has_market` semantics for the BTC row).
-  2. **The variance floor floors nothing.** `ok_var = b_var > 1e-12` at
-     `ml/train/data/features.py:436` sits ~6 orders of magnitude below a real `var(ret_1)`
-     (≈2.3e-6 at 5m). Make it relative — a fraction of the column's own rolling median
-     variance — not an absolute constant. This is trap §0.5.5 again: an absolute threshold
-     is not a floor when it is not on the data's scale.
-  3. **The CONSTANT detector is absolute where it should be relative.** `raw std <= 1e-8`
-     misses any column that is constant-in-meaning but takes two distinct values (the case
-     above). Flag a column when it takes ≤2 distinct values, or when `std/|mean|` is below
-     a tolerance, in addition to the current absolute test.
-  4. **`xs_disp_1h` carries a 122σ tail** and is identical across all eight pairs at a bar,
-     so one spike enters every pair at once. Winsorize or log-scale it before normalizing —
-     and note Q1 ranks dispersion the least informative of nine observables (§1.8), so
-     "drop it" is also a defensible fix.
-- 🔴 **C16 — `max_dd` is computed on daily returns sorted by VALUE, not by date.**
-  `ml/train/eval_m2.py:266` does `day_list = np.array(sorted(day_net.values()))` and then
-  `eq = np.cumsum(day_list)`. Sorting the values puts every losing day first, so the
-  reported `maxdd` is just "the sum of all negative days" — a deterministic artifact, not a
-  drawdown, in **every table in every log to date**. Should be
-  `[day_net[k] for k in sorted(day_net)]`. `daily_sharpe` is unaffected (mean and std are
-  order-invariant); every `maxdd` printed so far should be ignored, not re-interpreted.
-- 🔴 **C18 — a `FEATURE_GROUPS` knob. ALSO BLOCKS R1.** The column groups are already
-  cleanly separated in `ml/train/data/features.py` — `LEGACY_FEATURE_COLS` (19),
-  `OWN_PAIR_MULTISCALE_COLS` (6), `MARKET_CONTEXT_COLS` (5) — but `FEATURE_COLS` is their
-  unconditional concatenation and `FEATURE_DIM` is asserted equal to `len(FEATURE_COLS)`, so
-  **there is no way to run a subset without editing source.** Add
-  `FEATURE_GROUPS` (default `legacy,multiscale,market`, i.e. today's behaviour) that
-  composes `FEATURE_COLS` from the named groups and derives `FEATURE_DIM` from it rather
-  than asserting against a separate env var. R1 then runs
-  `FEATURE_GROUPS=legacy,multiscale`.
-  ⚠️ **Add it to `FLUX_TRAIN_ENV_KEYS` in the same commit** (§7) — trap §0.5.7 is exactly
-  this: a knob that exists in `config.py` but not in the allowlist is a silent no-op on the
-  GPU VM, and R1 would then quietly re-run Q3 while its log claims otherwise. The §0.4 check
-  for R1 (`Feature columns: 25`) is what catches it if this is forgotten.
+- ✅ **C15 — the two Q3 conditioning defects.** Three changes, all in the market-context
+  path, plus a detector that would have caught the first one:
+  1. **`beta_btc_1d` no longer computes BTC's beta against itself.** It is `cov(r,r)/var(r)`
+     = 1 identically, so it carried no information for that row; it was emitted as 1.0
+     everywhere except a handful of warm-up / sub-floor bars at 0.0, giving a raw std of
+     ~1e-3 — above the `1e-8` CONSTANT threshold, so it was never zeroed, and the
+     normalizer rendered those few bars as a **590σ** spike. The BTC row now emits a clean
+     constant and the existing degenerate handler zeroes it, exactly as it already did for
+     `btc_rel_ret_1h` on that row. Verified: BTC's column is now single-valued and
+     `std <= 1e-8`; other pairs' betas are unchanged and still computed.
+  2. **The beta variance floor is relative, not absolute.** `b_var > 1e-12` sat ~6 orders
+     of magnitude below a real `var(ret_1)` (≈2.3e-6 at 5m), so it floored nothing — trap
+     §0.5.5 in yet another costume. It is now a fraction of BTC's own median rolling
+     variance (`BETA_VAR_FLOOR_FRAC`, default 0.01), so it means the same thing at 1m, 5m
+     and 15m and for a quiet pair as for a loud one. Verified: on normal data it masks
+     exactly the one warm-up row, and on a deliberately dead 24h stretch it masks that
+     stretch instead of dividing by ~1e-14.
+  3. **`norm_range_report` now distinguishes a degenerate spike from a fat tail.** `max|z|`
+     alone cannot: in test, a genuine heavy-tailed column reached **694σ** and a degenerate
+     one only **573σ**. The discriminating signal is how *populated* the tail is. The report
+     now counts rows beyond the clip and prints either
+     `<== DEGENERATE SPIKE (7 of 2300000 rows beyond 50 sd)` or
+     `(heavy tail … 69 rows beyond — a populated tail, not a spike)`. Add this to the §0.4
+     scan; it is the check that would have caught `beta_btc_1d` from Q3's log alone.
+  4. 🔵 **`xs_disp_1h` is NOT a defect — that claim in the first Q-wave writeup was wrong
+     and is withdrawn.** Measured on the val window, cross-sectional dispersion has a
+     genuinely *populated* tail (347 rows beyond 5σ, 44 beyond 10σ), which is the same class
+     as `hl_range`'s long-accepted 212–364σ and is what a real market-wide volatility event
+     looks like. Its 122σ is a fat tail, correctly winsorized at ±50. **No change made.**
+     Q1 separately shows dispersion carries no economic signal (§1.8), so the reason to drop
+     it is uselessness, not breakage — and R1 drops the whole group anyway.
+- ✅ **C16 — `max_dd` is a drawdown again.** `eval_m2.py` built its equity curve from
+  `sorted(day_net.values())` — the daily P&L sorted by **value**, so every losing day came
+  first and `max_dd` was simply "the sum of all negative days", a deterministic artifact in
+  **every log written before 2026-08-22**. Now `[day_net[d] for d in sorted(day_net)]`,
+  which is chronological (`_ns_to_day` emits `YYYY-MM-DD`). **Bundled fix:** the running
+  peak started at day 1's equity rather than at 0, so a strategy that lost from the first
+  day was measured against its own first loss; the curve is now prepended with 0.
+  `daily_sharpe` was never affected (mean and std are order-invariant). Verified against
+  four hand-computed sequences. ⚠️ **Every `maxdd` printed before this fix should be
+  ignored, not re-interpreted** — including those in §4's ledger and in the archive.
+- ✅ **C18 — the `FEATURE_GROUPS` knob.** `FEATURE_COLS` was the unconditional
+  concatenation of the three groups and `FEATURE_DIM` was asserted equal to its length, so
+  running a subset meant editing source. `FEATURE_GROUPS` (default
+  `legacy,multiscale,market`) now composes the list and `features.FEATURE_DIM_EFFECTIVE` is
+  derived from it; the model, the checkpoint meta and the empty-bundle placeholders all
+  follow the derived value. Details that matter:
+  - **The default is byte-identical to the 30-column set** — verified — so this is a no-op
+    unless set.
+  - **Group order is canonical, never the order typed.** `market,legacy` resolves to
+    `legacy,market`, because `LEGACY_FEATURE_COLS == FEATURE_COLS[:19]` is a serving
+    contract.
+  - **It raises rather than falling back** on an unknown group, on an empty spec, and on
+    dropping `legacy` — a silent fallback on a feature-set knob would make a run
+    un-attributable, which is the whole reason the knob exists (trap §0.5.3).
+  - **`ALL_FEATURE_COLS` is new and is what reconstructs old checkpoints.** Rebuilding the
+    columns of a checkpoint that recorded none is *positional*, so it must index the
+    canonical 30, not whatever subset this process is configured for — otherwise a
+    30-column checkpoint re-scored under `FEATURE_GROUPS=legacy,multiscale` would be
+    rebuilt from a 25-entry list. `eval_m2.py` and `serve.py` both use it now.
+  - **`FEATURE_GROUPS` is in `FLUX_TRAIN_ENV_KEYS`** (§7) — without that it would be a
+    silent no-op on the GPU VM and R1 would quietly re-run Q3 (trap §0.5.7).
+  - Training logs now echo `Feature groups: legacy,multiscale -> 25 columns (…)` next to
+    `Training pairs:`.
+
+### Later
+
 - ⬜ **C17 — print the plateau-restricted epoch-LB mean.** C10 prints the all-epoch mean,
   which §0.3 now shows is not comparable between runs whose overfitting onset differs. Add
   `plateau: n=… lastEp=… mean=…` (epochs whose `loss_va` is within 0.02 of the run's
-  minimum) to the same summary line, and warn when the plateau is under ~15 epochs.
-
-### Later
+  minimum) to the same summary line, and warn when the plateau is under ~15 epochs. Until
+  it ships, §3 has the one-liner that computes it.
 
 - ⬜ **C3 — magnitude-weighted directional loss.** Weight the aux up/down CE by `|r_T|`.
   Gate behind a config flag defaulting to off. Feeds **O6**, which the P-wave promoted to
@@ -1083,13 +1111,14 @@ EARLY_STOP_PATIENCE SEED
 PAIR_EMBED_DIM NUM_WORKERS PREFETCH_FACTOR
 CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT
 LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER
-CANDLE_INTERVAL NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD
+CANDLE_INTERVAL FEATURE_GROUPS NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD
 BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN
 GATE_THRESHOLD SERVE_TARGET_COVERAGE
 FEE_RATE_BPS SLIPPAGE_BPS MAKER_FEE_RATE_BPS MAKER_SLIPPAGE_BPS
 ```
 
-`EARLY_STOP_PATIENCE` and `SEED` were added by C8 (2026-08-18); `SERVE_TARGET_COVERAGE` by C13 (2026-08-21).
+`EARLY_STOP_PATIENCE` and `SEED` were added by C8 (2026-08-18); `SERVE_TARGET_COVERAGE` by
+C13 (2026-08-21); `FEATURE_GROUPS` by C18 (2026-08-22).
 
 **Add every new config knob to this list when you create it** — an unforwarded knob is a
 silent no-op on the GPU VM (trap §0.5.2/§0.5.7). Note `TRAIN_PRIMARY` / `TRAIN_HORIZONS` /

@@ -81,7 +81,12 @@ from data.dataset import (
     time_split_indices_window,
 )
 from data.db import load_whitelist_pairs, table_counts
-from data.features import BOOK_FEATURES, FEATURE_COLS
+from data.features import (
+    ACTIVE_FEATURE_GROUPS,
+    BOOK_FEATURES,
+    FEATURE_COLS,
+    FEATURE_DIM_EFFECTIVE,
+)
 from gate import (
     dir_logits_to_three_class,
     fixed_coverage_metrics,
@@ -397,6 +402,10 @@ def main():
         if not pairs:
             pairs = list(PAIRS)
     print(f"Training pairs: {pairs}")
+    print(
+        f"Feature groups: {','.join(ACTIVE_FEATURE_GROUPS)} "
+        f"-> {FEATURE_DIM_EFFECTIVE} columns ({', '.join(FEATURE_COLS)})"
+    )
 
     ablate = list(BOOK_FEATURES) if args.ablate_book else None
     if args.require_book or args.ablate_book:
@@ -492,7 +501,7 @@ def main():
         print("Pair embedding: off (pair-agnostic encoder)")
 
     model = SharedEncoderMultiHead(
-        input_size=FEATURE_DIM,
+        input_size=FEATURE_DIM_EFFECTIVE,
         hidden_size=HIDDEN_SIZE,
         horizons_minutes=horizons,
         directional_head=DIRECTIONAL_HEAD,
@@ -748,7 +757,7 @@ def main():
                     "horizon_keys": horizon_keys,
                     "primary_horizon": int(primary_key),
                     "seq_len": args.seq_len,
-                    "feature_dim": FEATURE_DIM,
+                    "feature_dim": FEATURE_DIM_EFFECTIVE,
                     # The exact column list, in order. eval/serve rebuild features
                     # from THIS, so re-scoring or serving a checkpoint always feeds
                     # it the columns it was trained on even after FEATURE_COLS grows.

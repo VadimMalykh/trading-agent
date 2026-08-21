@@ -333,5 +333,22 @@ NORM_LEGACY_BROKEN_STD = float(os.environ.get("NORM_LEGACY_BROKEN_STD", "1.1e-6"
 # the column list recorded in the checkpoint's own meta.
 FEATURE_DIM = int(os.environ.get("FEATURE_DIM", "30"))
 
+# Which feature groups to build (C18, 2026-08-22). Comma-separated:
+#
+#   legacy      the 19 frozen columns (LEGACY_FEATURE_COLS) - always required
+#   multiscale  own-pair ret_1h/4h/1d + vol_1h/4h/1d         (6)
+#   market      cross-pair context, incl. has_market         (5)
+#
+# The default reproduces the 30-column set exactly, so this knob is a no-op unless
+# it is set. features.FEATURE_DIM_EFFECTIVE is DERIVED from the selected groups;
+# FEATURE_DIM above stays as the documented default and is no longer asserted
+# against the column list - that assert is what made a subset impossible to run
+# without editing source.
+#
+# This knob must also be in FLUX_TRAIN_ENV_KEYS in scripts/gcp_train.sh, or it is a
+# silent no-op on the GPU VM and the run quietly trains the default column set while
+# the launcher claims otherwise (trap 0.5.7). It is; keep it that way.
+FEATURE_GROUPS = os.environ.get("FEATURE_GROUPS", "legacy,multiscale,market")
+
 # Class names for logging
 CLASS_NAMES = ["down", "flat", "up"]

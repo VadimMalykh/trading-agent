@@ -42,7 +42,7 @@ from data.dataset import (
     time_split_indices,
 )
 from data.db import load_whitelist_pairs
-from data.features import FEATURE_COLS
+from data.features import ALL_FEATURE_COLS, FEATURE_COLS
 from gate import (
     dir_logits_to_three_class,
     directional_signal,
@@ -260,14 +260,24 @@ def simulate_pnl(
     pf = float(gross_w / gross_l) if gross_l > 0 else float("inf")
 
     # Daily equity from trade net returns grouped by entry day.
+    #
+    # C16 (2026-08-22): this used to be `sorted(day_net.values())`, which sorts the
+    # daily P&L by VALUE. The equity curve was then built from every losing day first,
+    # so `max_dd` was not a drawdown at all — it was the sum of all negative days, a
+    # deterministic artifact, in every log written before this fix. `daily_sharpe` was
+    # unaffected (mean and std do not depend on order). `_ns_to_day` emits YYYY-MM-DD,
+    # so sorting the KEYS is chronological.
     day_net: Dict[str, float] = {}
     for d, n in booked:
         day_net[d] = day_net.get(d, 0.0) + n
-    day_list = np.array(sorted(day_net.values()), dtype=np.float64)
+    day_list = np.array([day_net[d] for d in sorted(day_net)], dtype=np.float64)
     daily_sharpe = None
     max_dd = 0.0
     if day_list.size >= 2:
-        eq = np.cumsum(day_list)
+        # Equity starts at 0 BEFORE the first trading day, so the running peak must
+        # too — otherwise a strategy that loses from day one is measured against its
+        # own first loss and its drawdown is understated (bundled with C16).
+        eq = np.concatenate(([0.0], np.cumsum(day_list)))
         peak = np.maximum.accumulate(eq)
         max_dd = float((eq - peak).min())
         std = day_list.std()
@@ -906,7 +916,7 @@ def main():
     ckpt_feature_dim = int(meta.get("feature_dim", FEATURE_DIM))
     eval_feature_cols = list(meta.get("feature_cols") or [])
     if not eval_feature_cols:
-        eval_feature_cols = list(FEATURE_COLS[:ckpt_feature_dim])
+        eval_feature_cols = list(ALL_FEATURE_COLS[:ckpt_feature_dim])
         print(
             f"NOTE: checkpoint records no feature_cols (pre-C12) — rebuilding its "
             f"{ckpt_feature_dim} columns from the frozen legacy list."
