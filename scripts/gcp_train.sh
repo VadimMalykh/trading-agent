@@ -340,16 +340,17 @@ if [[ "${_VM_CREATED:-0}" == "0" ]]; then
   _STARTUP_CPU='#!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y ca-certificates curl git tmux
+rm -f /var/tmp/fluxtrader-docker-ready
+apt-get -o DPkg::Lock::Timeout=300 update -y
+apt-get -o DPkg::Lock::Timeout=300 install -y ca-certificates curl git tmux
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 chmod a+r /etc/apt/keyrings/docker.asc
 . /etc/os-release
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
   > /etc/apt/sources.list.d/docker.list
-apt-get update -y
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+apt-get -o DPkg::Lock::Timeout=300 update -y
+apt-get -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 for u in $(ls /home 2>/dev/null); do usermod -aG docker "$u" || true; done
 touch /var/tmp/fluxtrader-docker-ready
 '
@@ -357,27 +358,28 @@ touch /var/tmp/fluxtrader-docker-ready
   _STARTUP_GPU='#!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
+rm -f /var/tmp/fluxtrader-docker-ready
 
 # --- Phase 1: Docker (runs every boot) ---
 if ! command -v docker &>/dev/null; then
-  apt-get update -y
-  apt-get install -y ca-certificates curl git tmux
+  apt-get -o DPkg::Lock::Timeout=300 update -y
+  apt-get -o DPkg::Lock::Timeout=300 install -y ca-certificates curl git tmux
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   chmod a+r /etc/apt/keyrings/docker.asc
   . /etc/os-release
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
     > /etc/apt/sources.list.d/docker.list
-  apt-get update -y
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  apt-get -o DPkg::Lock::Timeout=300 update -y
+  apt-get -o DPkg::Lock::Timeout=300 install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 fi
 
 # --- Phase 2: NVIDIA driver (skip if already working) ---
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
   touch /var/tmp/nvidia-driver-installed
 elif [ ! -f /var/tmp/nvidia-driver-installed ]; then
-  apt-get update -y
-  apt-get install -y ubuntu-drivers-common
+  apt-get -o DPkg::Lock::Timeout=300 update -y
+  apt-get -o DPkg::Lock::Timeout=300 install -y ubuntu-drivers-common
   DEBIAN_FRONTEND=noninteractive ubuntu-drivers install --no-oem
   touch /var/tmp/nvidia-driver-installed
   reboot
@@ -391,8 +393,8 @@ if ! nvidia-container-toolkit --version &>/dev/null 2>&1; then
   curl -fsSL "https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list" \
     | sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" \
     > /etc/apt/sources.list.d/nvidia-container-toolkit.list
-  apt-get update -y
-  apt-get install -y nvidia-container-toolkit
+  apt-get -o DPkg::Lock::Timeout=300 update -y
+  apt-get -o DPkg::Lock::Timeout=300 install -y nvidia-container-toolkit
 fi
 # Reconfigure every boot once the driver is up. Docker 25+ --gpus uses CDI;
 # missing /etc/cdi/nvidia.yaml → "no known GPU vendor found".
@@ -551,8 +553,18 @@ for i in $(seq 1 $_DOCKER_TRIES); do
   if [[ "$i" -eq $_DOCKER_TRIES ]]; then echo "ERROR: Docker not ready."; exit 1; fi
   sleep 5
 done
+# The first-boot startup script may still be running (driver/toolkit installs
+# hold the dpkg lock). Wait for its completion marker before any apt work.
+echo "==> waiting for first-boot setup to finish ..."
+for i in $(seq 1 120); do
+  if gssh "$GCP_TRAIN_INSTANCE" "test -f /var/tmp/fluxtrader-docker-ready" "$GCP_ZONE" >/dev/null 2>&1; then
+    echo "    first-boot setup done"; break
+  fi
+  if [[ "$i" -eq 120 ]]; then echo "    WARN: setup marker missing after 600s; continuing"; fi
+  sleep 5
+done
 gssh "$GCP_TRAIN_INSTANCE" \
-  "sudo usermod -aG docker \$USER; sudo chmod 666 /var/run/docker.sock 2>/dev/null || true; command -v git >/dev/null || sudo apt-get install -y git; command -v tmux >/dev/null || sudo apt-get install -y tmux" \
+  "sudo usermod -aG docker \$USER; sudo chmod 666 /var/run/docker.sock 2>/dev/null || true; command -v git >/dev/null || sudo apt-get -o DPkg::Lock::Timeout=300 install -y git; command -v tmux >/dev/null || sudo apt-get -o DPkg::Lock::Timeout=300 install -y tmux" \
   "$GCP_ZONE"
 
 if [[ "$_GPU_MODE" == "1" ]]; then
@@ -585,8 +597,8 @@ if [[ "$_GPU_MODE" == "1" ]]; then
       curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
         | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
         | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
-      sudo apt-get update -y
-      sudo apt-get install -y nvidia-container-toolkit
+      sudo apt-get -o DPkg::Lock::Timeout=300 update -y
+      sudo apt-get -o DPkg::Lock::Timeout=300 install -y nvidia-container-toolkit
     fi
     sudo nvidia-ctk runtime configure --runtime=docker
     sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
