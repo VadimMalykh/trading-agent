@@ -20,9 +20,16 @@ from data import db
 
 # Canonical feature-column order (must match FEATURE_DIM). Exposed at module level
 # so callers (dataset ablation, audit) can map feature name -> matrix column index
-# without hardcoding. The 16 signal features come first (stable indices), then the
-# 3 presence masks.
-FEATURE_COLS = [
+# without hardcoding.
+#
+# 🔴 NEW COLUMNS GO AT THE END, after the masks. The 19 columns below the marker are
+# frozen in that order because every checkpoint written before 2026-08-21 encodes
+# them positionally in `meta.norm_stats`, and eval/serve must still be able to
+# re-score those checkpoints (that is the whole point of --eval-only). Appending
+# keeps LEGACY_FEATURE_COLS == FEATURE_COLS[:19] exactly, so an old checkpoint is
+# served the same 19 columns it was trained on; inserting mid-list would silently
+# feed it a different feature in every position from the insert onward.
+LEGACY_FEATURE_COLS = [
     "ret_1",
     "hl_range",
     "oc_range",
@@ -43,7 +50,64 @@ FEATURE_COLS = [
     "has_trades",
     "has_funding_oi",
 ]
-assert len(FEATURE_COLS) == FEATURE_DIM
+
+# --- C12 additions (2026-08-21) --------------------------------------------------
+# Why these and not more microstructure: 12 of the 19 legacy columns are CONSTANT in
+# the train window and get zeroed, because the train window opens 2022-08 while the
+# book/trade/OI feeds open 2026-07. Any new microstructure column would be zeroed the
+# same way. So the model has effectively been reading six numbers per bar — four
+# single-bar OHLCV derivatives, one 15-bar vol, and funding — with no multi-timescale
+# return, no multi-scale volatility, and no market-wide context at all.
+#
+# Everything here is derived from candles, which span the full history for every pair.
+# Windows are expressed in MINUTES and converted to bars per candle interval, so
+# `ret_1h` is one hour at 1m, 5m or 15m rather than a different horizon at each.
+OWN_PAIR_MULTISCALE_COLS = [
+    "ret_1h",   # trailing return over 1h  — the model had no multi-timescale return
+    "ret_4h",   # trailing return over 4h    at all, only the single-bar ret_1
+    "ret_1d",   # trailing return over 1d
+    "vol_1h",   # rolling std of 1-bar returns over 1h
+    "vol_4h",   # ... 4h
+    "vol_1d",   # ... 1d  (ret_std_15 was the only volatility scale before this)
+]
+
+# Cross-pair / market-wide context. These CANNOT be computed from one symbol's
+# candles, which is exactly why they are worth adding: they are the only information
+# in this list that the encoder could not in principle have extracted from its own
+# 32h window. Filled by `apply_market_context` after every pair's frame exists.
+MARKET_CONTEXT_COLS = [
+    "btc_rel_ret_1h",  # pair's 1h return minus BTC's — "is this idiosyncratic?"
+    "beta_btc_1d",     # rolling 1d beta of the pair's bar returns to BTC's
+    "xs_rank_1h",      # cross-sectional rank of the 1h return in the universe, [-1,1]
+    "xs_disp_1h",      # cross-sectional dispersion (std) of 1h returns, universe-wide
+    "has_market",      # presence mask: 1 where the market context is real, else 0
+]
+
+FEATURE_COLS = LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS
+assert len(FEATURE_COLS) == FEATURE_DIM, (
+    f"FEATURE_COLS has {len(FEATURE_COLS)} entries but FEATURE_DIM={FEATURE_DIM}; "
+    "update FEATURE_DIM in config.py when you add a column."
+)
+
+# Trailing windows, in minutes, for the multi-scale columns above.
+_SCALE_MINUTES = {"1h": 60, "4h": 240, "1d": 1440}
+BAR_MINUTES_BY_INTERVAL = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
+
+
+def bars_for_minutes(candle_interval: str, minutes: int) -> int:
+    """Bars spanning `minutes` at `candle_interval`; raises on an unknown interval.
+
+    Deliberately not a silent fallback to 1m: that would make `ret_1d` mean one day
+    on some runs and 1/15th of a day on others while still producing a plausible
+    column (cf. the R3 silent-primary-fallback lesson).
+    """
+    bar = BAR_MINUTES_BY_INTERVAL.get(candle_interval)
+    if bar is None:
+        raise ValueError(
+            f"candle_interval={candle_interval!r} is not a known bar size "
+            f"(known: {sorted(BAR_MINUTES_BY_INTERVAL)})."
+        )
+    return max(1, minutes // bar)
 
 # The microstructure ("book") features — order-book + trade-flow + funding/OI —
 # i.e. everything except the 4 OHLCV-derived cols, rolling vol, and the masks.
@@ -106,11 +170,16 @@ def build_feature_frame(
     symbol: str,
     candle_interval: str = "1m",
     max_rows: int | None = None,
+    feature_cols: list | None = None,
 ) -> pd.DataFrame:
     """
     Align candles with nearest book/trade/funding/OI features.
-    Returns DataFrame indexed by open_time with FEATURE_DIM columns + close for labels.
+    Returns DataFrame indexed by open_time with the requested columns + close.
     When max_rows is set, only the last N candles are loaded (saves memory for inference).
+
+    `feature_cols` defaults to the current FEATURE_COLS. Pass a checkpoint's own
+    recorded column list to re-score or serve an older model: a 19-column checkpoint
+    must be fed exactly the 19 columns it was trained on, not today's 29.
     """
     if max_rows is not None:
         candles = db.load_candles_tail(symbol, candle_interval, n=max_rows)
@@ -221,7 +290,163 @@ def build_feature_frame(
     # Rolling vol (simple, not a classic indicator package)
     feat["ret_std_15"] = feat["ret_1"].rolling(15, min_periods=1).std().fillna(0.0)
 
-    out = feat[FEATURE_COLS + ["close"]].replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    # --- C12: own-pair multi-scale returns and volatility ------------------------
+    # Trailing (backward-looking) returns and vols: at bar t these use bars <= t only,
+    # so they are lookahead-free by construction. `min_periods=1` keeps the early bars
+    # usable rather than NaN-then-zero, which would otherwise put a long block of
+    # artificial zeros at the head of every pair's history.
+    close_s = feat["close"]
+    for name, minutes in _SCALE_MINUTES.items():
+        n = bars_for_minutes(candle_interval, minutes)
+        feat[f"ret_{name}"] = (close_s / close_s.shift(n) - 1.0).fillna(0.0)
+        feat[f"vol_{name}"] = (
+            feat["ret_1"].rolling(n, min_periods=2).std().fillna(0.0)
+        )
+
+    # Market-context columns are cross-pair and cannot be computed from one symbol.
+    # They are created here (as zeros, mask off) so the column set and its order are
+    # identical whether or not a caller runs the second pass — a frame is never
+    # silently short a column.
+    for c in MARKET_CONTEXT_COLS:
+        feat[c] = 0.0
+
+    cols = [c for c in (feature_cols or FEATURE_COLS)]
+    missing = [c for c in cols if c not in feat.columns]
+    if missing:
+        raise ValueError(f"build_feature_frame: unknown feature columns {missing}")
+    out = feat[cols + ["close"]].replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    return out
+
+
+def market_context_inputs(frame: pd.DataFrame) -> pd.DataFrame:
+    """The small per-pair slice `apply_market_context` needs, as a 2-column frame.
+
+    Kept deliberately narrow: the cross-pair pass runs after every pair's matrix
+    already exists, and holding 8-12 full feature frames at once to compute four
+    columns would roughly double peak memory on a 2.9M-sample bundle for no reason.
+    """
+    return frame[["ret_1", "ret_1h"]]
+
+
+def build_market_inputs(
+    symbol: str,
+    candle_interval: str = "1m",
+    max_rows: int | None = None,
+) -> pd.DataFrame:
+    """Candles-only version of `market_context_inputs`, for the serving path.
+
+    Training already has every pair's full feature frame in hand, so it slices the
+    two columns it needs. Serving does not: it predicts one symbol at a time, so the
+    other pairs' inputs must be loaded on purpose. Going through
+    `build_feature_frame` would run the book / trade / funding / OI joins for each of
+    them as well — four extra queries per pair per refresh, for two columns that are
+    derived from `close` alone.
+    """
+    if max_rows is not None:
+        candles = db.load_candles_tail(symbol, candle_interval, n=max_rows)
+    else:
+        candles = db.load_candles(symbol, candle_interval)
+    if candles.empty:
+        return pd.DataFrame(columns=["ret_1", "ret_1h"])
+    candles = candles.set_index("open_time").sort_index()
+    close = candles["close"].astype(float)
+    n1h = bars_for_minutes(candle_interval, _SCALE_MINUTES["1h"])
+    return pd.DataFrame(
+        {
+            "ret_1": close.pct_change().fillna(0.0),
+            "ret_1h": (close / close.shift(n1h) - 1.0).fillna(0.0),
+        },
+        index=candles.index,
+    ).replace([np.inf, -np.inf], 0.0)
+
+
+def apply_market_context(
+    per_pair: dict,
+    candle_interval: str = "1m",
+    btc_symbol: str = "BTCUSDT",
+) -> dict:
+    """
+    Compute the cross-pair columns for every pair, aligned to that pair's own bars.
+
+    `per_pair` maps symbol -> the 2-column frame from `market_context_inputs`, each
+    indexed by its own bar timestamps. Pairs list at different dates, so the bar
+    grids are ragged; everything below joins on the timestamp index rather than
+    assuming a shared length.
+
+    Returns symbol -> DataFrame of MARKET_CONTEXT_COLS on that symbol's index.
+
+    All four signals are backward-looking at each bar:
+      btc_rel_ret_1h  pair 1h return minus BTC's 1h return over the same bars
+      beta_btc_1d     rolling cov(pair ret_1, btc ret_1) / var(btc ret_1) over 1d
+      xs_rank_1h      rank of the pair's 1h return among the pairs that HAVE a bar
+                      at t, mapped to [-1, 1]; 0 when only one pair is present
+      xs_disp_1h      cross-sectional std of those same 1h returns (identical for
+                      every pair at a given bar — it describes the market, not the
+                      pair)
+      has_market      0 where BTC has no bar at t, or fewer than two pairs do, so a
+                      degenerate context reads as MISSING rather than as a real zero
+                      (the same reason the book/trade columns carry presence masks)
+    """
+    symbols = [s for s in per_pair if per_pair[s] is not None and len(per_pair[s])]
+    out = {}
+    if not symbols:
+        return out
+
+    # One union grid for the cross-sectional statistics.
+    ret1h = pd.DataFrame({s: per_pair[s]["ret_1h"] for s in symbols})
+    n_present = ret1h.notna().sum(axis=1)
+    # Rank within each bar, scaled to [-1, 1]; a single present pair has no
+    # cross-section, so it ranks 0 rather than an arbitrary extreme.
+    ranks = ret1h.rank(axis=1, method="average")
+    denom = (n_present - 1).replace(0, np.nan)
+    scaled_rank = (2.0 * (ranks.sub(1.0, axis=0)).div(denom, axis=0) - 1.0)
+    disp = ret1h.std(axis=1, ddof=0)
+
+    beta_bars = bars_for_minutes(candle_interval, _SCALE_MINUTES["1d"])
+    btc = per_pair.get(btc_symbol)
+    if btc is not None and len(btc):
+        btc_ret1 = btc["ret_1"]
+        btc_ret1h = btc["ret_1h"]
+        btc_var = btc_ret1.rolling(beta_bars, min_periods=2).var()
+    else:
+        btc_ret1 = btc_ret1h = btc_var = None
+
+    for s in symbols:
+        idx = per_pair[s].index
+        df = pd.DataFrame(index=idx)
+        has = pd.Series(1.0, index=idx)
+
+        if btc_ret1 is None:
+            # No BTC in the universe: the relative/beta columns have no meaning.
+            df["btc_rel_ret_1h"] = 0.0
+            df["beta_btc_1d"] = 0.0
+            has[:] = 0.0
+        else:
+            b_1h = btc_ret1h.reindex(idx)
+            b_1 = btc_ret1.reindex(idx)
+            b_var = btc_var.reindex(idx)
+            df["btc_rel_ret_1h"] = (per_pair[s]["ret_1h"] - b_1h).fillna(0.0)
+            cov = (
+                per_pair[s]["ret_1"]
+                .rolling(beta_bars, min_periods=2)
+                .cov(b_1)
+            )
+            # A near-zero BTC variance makes beta explode; treat it as no information
+            # rather than dividing by ~0 (the 2026-08-17 additive-epsilon lesson —
+            # this is a floor with a mask, not an epsilon).
+            ok_var = b_var > 1e-12
+            df["beta_btc_1d"] = np.where(ok_var, cov / b_var.where(ok_var), 0.0)
+            has = has.where(b_1h.notna(), 0.0)
+
+        df["xs_rank_1h"] = scaled_rank[s].reindex(idx).fillna(0.0)
+        df["xs_disp_1h"] = disp.reindex(idx).fillna(0.0)
+        # Fewer than two pairs at a bar means there is no cross-section to speak of.
+        df["has_market"] = (
+            has.where(n_present.reindex(idx).fillna(0) >= 2, 0.0).astype(float)
+        )
+        out[s] = (
+            df[MARKET_CONTEXT_COLS].replace([np.inf, -np.inf], 0.0).fillna(0.0)
+        )
     return out
 
 

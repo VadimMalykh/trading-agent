@@ -28,7 +28,10 @@ from config import (
 from data.features import (
     BOOK_FEATURES,
     FEATURE_COLS,
+    MARKET_CONTEXT_COLS,
+    apply_market_context,
     build_feature_frame,
+    market_context_inputs,
     make_labels,
     make_labels_and_returns,
 )
@@ -397,6 +400,7 @@ def build_m2_index_bundle(
     require_book: bool = False,
     ablate_features: List[str] | None = None,
     max_rows: int | None = None,
+    feature_cols: List[str] | None = None,
 ) -> M2IndexBundle:
     """
     Load per-pair feature matrices once; record (pair, t) for each valid sample.
@@ -420,11 +424,19 @@ def build_m2_index_bundle(
     max_h = max(h_bars_map.values()) if h_bars_map else 1
     horizon_keys = [str(h) for h in horizons_minutes]
 
+    # A checkpoint records the exact columns it was trained on; re-scoring one must
+    # rebuild THOSE columns, not today's list (see features.LEGACY_FEATURE_COLS).
+    cols = list(feature_cols) if feature_cols else list(FEATURE_COLS)
+    name_to_i = {n: i for i, n in enumerate(cols)}
     ablate_idx = []
     if ablate_features:
-        name_to_i = {n: i for i, n in enumerate(FEATURE_COLS)}
         ablate_idx = [name_to_i[n] for n in ablate_features if n in name_to_i]
-    has_book_col = FEATURE_COLS.index("has_book")
+    has_book_col = name_to_i["has_book"]
+    # Only run the cross-pair pass when the requested column set actually contains
+    # those columns — a 19-column legacy checkpoint has no market context and the
+    # per-pair inputs it would need (ret_1h) are not in its frames either.
+    want_market = all(c in name_to_i for c in MARKET_CONTEXT_COLS)
+    market_inputs: Dict[str, pd.DataFrame] = {}
 
     series_list: List[PairSeries] = []
     pair_i_list: List[int] = []
@@ -444,16 +456,23 @@ def build_m2_index_bundle(
         "require_book": bool(require_book),
         "ablated_features": list(ablate_features or []),
         "label_mode": LABEL_MODE,
+        "feature_cols": cols,
+        "market_context": bool(want_market),
     }
 
     for pair in pairs:
         pair = pair.strip().upper()
         if not pair:
             continue
-        frame = build_feature_frame(pair, candle_interval, max_rows=max_rows)
+        frame = build_feature_frame(
+            pair, candle_interval, max_rows=max_rows, feature_cols=cols
+        )
         if frame.empty or len(frame) < seq_len + max_h + 5:
             meta["n_per_pair"][pair] = 0
             continue
+
+        if want_market:
+            market_inputs[pair] = market_context_inputs(frame)
 
         feats = np.ascontiguousarray(
             frame.drop(columns=["close"]).to_numpy(dtype=np.float32)
@@ -524,6 +543,46 @@ def build_m2_index_bundle(
         pair_i_list.append(np.full(n, pi, dtype=np.int32))
         t_i_list.append(idx.astype(np.int32))
         times_list.append(times_bar[idx])
+
+    # --- C12 second pass: cross-pair / market-wide columns -----------------------
+    # Runs after every pair's matrix exists because these columns are defined ACROSS
+    # pairs (BTC-relative return, beta to BTC, cross-sectional rank and dispersion).
+    # Patching the existing float32 matrices in place keeps peak memory where it was:
+    # only the two-column `market_inputs` frames are held for the whole loop, not the
+    # full feature frames.
+    if want_market and market_inputs:
+        ctx = apply_market_context(market_inputs, candle_interval=candle_interval)
+        ctx_idx = [name_to_i[c] for c in MARKET_CONTEXT_COLS]
+        n_filled = 0
+        for ser in series_list:
+            block = ctx.get(ser.pair)
+            if block is None or len(block) != ser.feats.shape[0]:
+                # Length mismatch would mean the context was built on a different bar
+                # grid than the matrix; writing it would misalign every row. Leave the
+                # columns zero (has_market stays 0, so the model reads "missing").
+                if block is not None:
+                    print(
+                        f"  WARNING [market] {ser.pair}: context has {len(block)} rows "
+                        f"vs {ser.feats.shape[0]} bars — leaving market columns zeroed."
+                    )
+                continue
+            ser.feats[:, ctx_idx] = block.to_numpy(dtype=np.float32)
+            # Re-apply the ablation: it ran inside the per-pair loop, before these
+            # columns had values, so an ablated market column would otherwise come
+            # back to life here and quietly void the ablation arm.
+            for ci in ablate_idx:
+                if ci in ctx_idx:
+                    ser.feats[:, ci] = 0.0
+            n_filled += 1
+        live = float(
+            np.mean([ser.feats[:, name_to_i["has_market"]].mean() for ser in series_list])
+        ) if series_list else 0.0
+        print(
+            f"  [market] cross-pair context filled for {n_filled}/{len(series_list)} "
+            f"pairs; mean has_market={live:.3f} "
+            f"(cols: {', '.join(MARKET_CONTEXT_COLS)})"
+        )
+        market_inputs.clear()
 
     if not pair_i_list:
         meta["n_samples"] = 0

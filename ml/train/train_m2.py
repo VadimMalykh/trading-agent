@@ -81,7 +81,7 @@ from data.dataset import (
     time_split_indices_window,
 )
 from data.db import load_whitelist_pairs, table_counts
-from data.features import BOOK_FEATURES
+from data.features import BOOK_FEATURES, FEATURE_COLS
 from gate import (
     dir_logits_to_three_class,
     fixed_coverage_metrics,
@@ -749,6 +749,10 @@ def main():
                     "primary_horizon": int(primary_key),
                     "seq_len": args.seq_len,
                     "feature_dim": FEATURE_DIM,
+                    # The exact column list, in order. eval/serve rebuild features
+                    # from THIS, so re-scoring or serving a checkpoint always feeds
+                    # it the columns it was trained on even after FEATURE_COLS grows.
+                    "feature_cols": list(FEATURE_COLS),
                     "hidden_size": HIDDEN_SIZE,
                     "num_layers": NUM_LAYERS,
                     "dropout": DROPOUT,

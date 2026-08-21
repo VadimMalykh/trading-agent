@@ -229,6 +229,26 @@ GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.58"))
 # reads GATE_THRESHOLD). Kept in sync so it cannot become a stale trap if wired up.
 CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.58"))
 
+# --- The served gate is a COVERAGE target, not a probability (C13) ---------------
+# GATE_THRESHOLD above is an ABSOLUTE confidence. That is not a well-defined
+# operating point across checkpoints, and the 2026-08-21 seed replicate proved it
+# with three runs of ONE configuration: at conf >= 0.62 they gate 1.2% / 2.5% /
+# 1.7% of bars, and the 1m model P2 gates 80% at the served 0.58. The same number
+# is a different strategy on every checkpoint, so a global constant silently moves
+# the operating point every time a model is promoted.
+#
+# What IS stable across checkpoints is the fraction of bars traded: the
+# fixed-coverage P&L table is monotone in confidence for every healthy model, and
+# the 5m family earns +19 to +22 gross bps/trade in its top 1-2% against roughly
+# 0 at 20%. So the operator picks a COVERAGE; eval_m2.py measures the confidence
+# threshold that realizes it on the val window and writes BOTH into the
+# checkpoint's meta ("served_gate"); serve.py reads the threshold from there.
+#
+# 0.02 = trade the top 2% of bars by confidence. Chosen from the three-seed pooled
+# table (+22.0 gross bps/trade over 1,783 trades, +8.0 net at 14bps taker); see
+# docs/NEXT_TRAINING_PLAN.md 1.3 and 1.5.
+SERVE_TARGET_COVERAGE = float(os.environ.get("SERVE_TARGET_COVERAGE", "0.02"))
+
 # --- Cost model (eval P&L only) --------------------------------------------------
 # Round-trip trading cost used by the eval P&L simulator and cost-sweep. Purely a
 # reporting/analysis input at eval time; it does NOT affect training or serving.
@@ -297,12 +317,21 @@ NORM_DEGENERATE_MODE = os.environ.get("NORM_DEGENERATE_MODE", "zero").strip().lo
 # just above 1e-6 so the exact broken value is caught.
 NORM_LEGACY_BROKEN_STD = float(os.environ.get("NORM_LEGACY_BROKEN_STD", "1.1e-6"))
 
-# Feature vector size per timestep (must match features.py)
-# 16 signal features + 3 presence-mask flags (has_book/has_trades/has_funding_oi)
-# so the model distinguishes "genuinely zero" from "missing" microstructure. The
-# masks also protect per-pair z-score norm from near-constant (mostly-zero)
-# features when a source has little/no history.
-FEATURE_DIM = 19
+# Feature vector size per timestep (must match len(features.FEATURE_COLS)).
+#
+#   19 legacy = 16 signal + 3 presence masks (has_book/has_trades/has_funding_oi),
+#               so the model can tell "genuinely zero" from "missing" microstructure.
+#              The masks also protect per-pair z-score norm from near-constant
+#              (mostly-zero) columns when a source has little/no history.
+# +  6 (C12)  own-pair multi-scale: ret_1h/4h/1d, vol_1h/4h/1d
+# +  5 (C12)  market context: btc_rel_ret_1h, beta_btc_1d, xs_rank_1h, xs_disp_1h,
+#              has_market
+#   = 30
+#
+# Changing this changes the SERVING CONTRACT. Old checkpoints keep working because
+# features.FEATURE_COLS[:19] is frozen as LEGACY_FEATURE_COLS and eval/serve request
+# the column list recorded in the checkpoint's own meta.
+FEATURE_DIM = int(os.environ.get("FEATURE_DIM", "30"))
 
 # Class names for logging
 CLASS_NAMES = ["down", "flat", "up"]

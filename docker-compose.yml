@@ -62,7 +62,12 @@ services:
       DATABASE_URL: postgresql://fluxtrader:secret@postgres:5432/fluxtrader
       MODEL_PATH: /models/m2_multi.pt
       MODEL_DIR: /models
-      GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.58}
+      # DELIBERATELY has no default. serve.py treats a set GATE_THRESHOLD as an
+      # operator OVERRIDE that beats the checkpoint's own measured gate, so a
+      # default here would silently defeat C13 and serve every model at one
+      # constant again. Empty => serve.py uses meta.served_gate from the
+      # checkpoint. Set ML_GATE_THRESHOLD only to deliberately override it.
+      GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-}
       PRIMARY_HORIZON: ${PRIMARY_HORIZON:-30}
       HORIZONS_MINUTES: ${HORIZONS_MINUTES:-5,30,60}
       WHITELIST_PAIRS: ${WHITELIST_PAIRS:-BTCUSDT,ETHUSDT,SOLUSDT}

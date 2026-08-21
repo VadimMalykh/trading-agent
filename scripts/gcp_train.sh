@@ -37,6 +37,12 @@
 #                             eval_m2.py takes seq_len/horizons/candle interval from
 #                             the checkpoint's own meta, so an old checkpoint is
 #                             re-scored on its trained recipe, not today's defaults.
+#                             SEVERAL comma-separated keys = an ENSEMBLE eval: the
+#                             members' per-bar probabilities are averaged before any
+#                             gate or table (C14). Members must agree on candle
+#                             interval, seq_len, feature_dim, horizons and primary,
+#                             or eval_m2.py refuses rather than averaging two
+#                             different experiments.
 # Unknown --flags are rejected (previously they were silently misread as epochs).
 #
 # One-time bucket setup (run once):
@@ -100,15 +106,30 @@ fi
 # --- eval-only: resolve the checkpoint key to a full bucket URL ------------------
 # Accept the three spellings a checkpoint gets referred to in the plan and in
 # gcp_status.sh output, so no one has to remember which one this script wants.
+# Several comma-separated keys request an ENSEMBLE eval (C14): eval_m2.py loads all
+# of them and averages their per-bar probabilities before any gate or table. That is
+# the cheap way to spend seed-to-seed disagreement on a better estimate instead of
+# fighting it — see docs/NEXT_TRAINING_PLAN.md 0.3.
 EVAL_ONLY_CKPT=""
+EVAL_ONLY_N=0
 if [[ -n "$_EVAL_ONLY_ARG" ]]; then
-  case "$_EVAL_ONLY_ARG" in
-    gs://*)         EVAL_ONLY_CKPT="$_EVAL_ONLY_ARG" ;;
-    checkpoints/*)  EVAL_ONLY_CKPT="$GCS_BUCKET/$_EVAL_ONLY_ARG" ;;
-    *)              EVAL_ONLY_CKPT="$GCS_BUCKET/checkpoints/$_EVAL_ONLY_ARG" ;;
-  esac
-  # Eval is one forward pass over the val window; a GPU VM would spend more time
-  # installing drivers than evaluating. Default to CPU, but honor an explicit --gpu.
+  _IFS_SAVE="$IFS"; IFS=','
+  # shellcheck disable=SC2206
+  _EVAL_KEYS=($_EVAL_ONLY_ARG)
+  IFS="$_IFS_SAVE"
+  for _k in "${_EVAL_KEYS[@]}"; do
+    _k="${_k// /}"
+    [[ -z "$_k" ]] && continue
+    case "$_k" in
+      gs://*)         _u="$_k" ;;
+      checkpoints/*)  _u="$GCS_BUCKET/$_k" ;;
+      *)              _u="$GCS_BUCKET/checkpoints/$_k" ;;
+    esac
+    EVAL_ONLY_CKPT="${EVAL_ONLY_CKPT:+$EVAL_ONLY_CKPT,}$_u"
+    EVAL_ONLY_N=$((EVAL_ONLY_N + 1))
+  done
+  # Eval is one forward pass over the val window per member; a GPU VM would spend
+  # more time installing drivers than evaluating. Default to CPU, honor --gpu.
   if [[ "$_GPU_EXPLICIT" != "1" ]]; then _GPU_MODE=0; fi
 fi
 
@@ -163,7 +184,7 @@ LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER \
 CANDLE_INTERVAL \
 NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD \
 BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN \
-GATE_THRESHOLD \
+GATE_THRESHOLD SERVE_TARGET_COVERAGE \
 FEE_RATE_BPS SLIPPAGE_BPS MAKER_FEE_RATE_BPS MAKER_SLIPPAGE_BPS}"
 # Build literal `export K='v'` lines for the keys that are actually set, so the
 # remote prelude re-exports them verbatim (survives the quoted-heredoc boundary).
@@ -194,8 +215,16 @@ fi
 # Resolve the eval-only checkpoint BEFORE spending a VM on it: a typo'd key would
 # otherwise fail 15 minutes in, after the VM, the dump and the DB restore.
 if [[ -n "$EVAL_ONLY_CKPT" ]]; then
-  if ! gcloud storage ls "$EVAL_ONLY_CKPT" >/dev/null 2>&1; then
-    echo "ERROR: --eval-only checkpoint not found: $EVAL_ONLY_CKPT"
+  _MISSING=""
+  _IFS_SAVE="$IFS"; IFS=','
+  # shellcheck disable=SC2206
+  _EVAL_URLS=($EVAL_ONLY_CKPT)
+  IFS="$_IFS_SAVE"
+  for _u in "${_EVAL_URLS[@]}"; do
+    gcloud storage ls "$_u" >/dev/null 2>&1 || _MISSING="${_MISSING:+$_MISSING }$_u"
+  done
+  if [[ -n "$_MISSING" ]]; then
+    echo "ERROR: --eval-only checkpoint(s) not found: $_MISSING"
     echo "Available checkpoints:"
     gcloud storage ls "$GCS_BUCKET/checkpoints/" 2>/dev/null | tail -20 || true
     exit 1
@@ -776,10 +805,23 @@ if [[ -n \"\${EVAL_ONLY_CKPT:-}\" ]]; then
   # the checkpoint's own meta, so today's config defaults cannot silently change
   # which experiment is being measured.
   echo \"=== EVAL-ONLY \$EVAL_ONLY_CKPT (skipping train_m2; latest.pt will NOT be touched) ===\"
-  gcloud storage cp \"\$EVAL_ONLY_CKPT\" \$HOME/eval_target.pt
-  docker run --rm -v \$MODEL_VOLUME_NAME:/models -v \$HOME:/in alpine \
-    sh -c 'cp /in/eval_target.pt /models/eval_target.pt'
-  EVAL_CKPT=/models/eval_target.pt
+  # One or more comma-separated keys. Several = ensemble: eval_m2.py averages the
+  # members' per-bar probabilities. Each is staged under its own name so the log
+  # names which files were combined.
+  _IFS_SAVE=\"\$IFS\"; IFS=','
+  _EVAL_URLS=(\$EVAL_ONLY_CKPT)
+  IFS=\"\$_IFS_SAVE\"
+  EVAL_CKPT=\"\"
+  _i=0
+  for _u in \"\${_EVAL_URLS[@]}\"; do
+    _name=\"eval_target_\${_i}.pt\"
+    echo \"    member \$_i: \$_u\"
+    gcloud storage cp \"\$_u\" \$HOME/\$_name
+    docker run --rm -v \$MODEL_VOLUME_NAME:/models -v \$HOME:/in alpine \
+      sh -c \"cp /in/\$_name /models/\$_name\"
+    EVAL_CKPT=\"\${EVAL_CKPT:+\$EVAL_CKPT,}/models/\$_name\"
+    _i=\$((_i + 1))
+  done
 else
   echo \"=== train_m2 epochs=\$EPOCHS seq=\$SEQ_LEN horizons=\$HORIZONS primary=\$PRIMARY quantile_head=\$QUANTILE_HEAD device=\$TRAIN_DEVICE ===\"
   if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then

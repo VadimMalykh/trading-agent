@@ -1,11 +1,10 @@
 # Training plan — what is true, what to run next
 
-**Last updated: 2026-08-19** (after the O-wave: O0 F4 re-score, O2 5m bars, O3 context
-length).
+**Last updated: 2026-08-21** (after the P-wave: P0 seed replicates of O2, P2 1m bars).
 
 This document is the project's session-to-session memory. It contains only what is
 **currently true and actionable**. The session-by-session narrative from 2026-07-23 →
-2026-08-19 — every superseded plan, every rejected hypothesis, every raw results table —
+2026-08-21 — every superseded plan, every rejected hypothesis, every raw results table —
 lives in **`docs/archive/TRAINING_HISTORY.md`**. Go there for "why was X decided"; do not
 act on anything in it.
 
@@ -35,11 +34,16 @@ Two consequences that keep coming up and are worth stating plainly:
 
 The one place M2's economics genuinely matter is the **taker/maker line** (§7): a signal
 whose gross edge is under round-trip cost at *every* coverage gives M3 nothing to work
-with. §1.3 is the first run where that is no longer the case.
+with. §1.3 is where that stopped being the case, and as of the P-wave it is measured on
+three seeds rather than one.
+
+The second place they matter is **calibration**, which the P-wave promoted to a
+first-class acceptance criterion: M3 consumes probabilities, so a model that ranks well
+while emitting meaningless probabilities (P2, §1.4) has not improved.
 
 **How to use this doc:** if you are picking this up cold, the fastest path is
-§1.1 (one paragraph on where we are) → §2's P0 (what to launch) → §0.3 and §0.6 (why the
-numbers are read the way they are).
+§1.1 (one paragraph on where we are) → §2's Q0/Q1 (what to do, neither needs a GPU) →
+§0.3 and §0.6 (why the numbers are read the way they are).
 
 - §0 — standing rules. Read before touching anything. Every rule cost us a real run.
 - §1 — where we are, in numbers. The current reference points.
@@ -124,17 +128,25 @@ grep -oE 'epoch [0-9]+.*lb=[0-9.]+' logs/X.log | grep -oE 'lb=[0-9.]+' | cut -d=
 
 | run | n | mean LB | sd | max | selected − mean |
 |---|---:|---:|---:|---:|---|
-| **O2** (5m, seq 384) | 34 | **0.5248** | 0.0148 | 0.5565 | +2.15 sd |
+| **O2** (5m, seq 384, seed 1) | 34 | **0.5248** | 0.0148 | 0.5565 | +2.15 sd |
+| **P0-seed2** (5m, seq 384, seed 2) | 28 | **0.5207** | 0.0202 | 0.5576 | +1.83 sd |
+| **P0-seed3** (5m, seq 384, seed 3) | 39 | **0.5203** | 0.0123 | 0.5425 | +1.81 sd |
+| P2 (1m, seq 768) | 38 | 0.5256 | 0.0150 | 0.5579 | +2.15 sd — *LB inflated, see §0.6* |
 | F4 (15m, seq 128) | 18 | 0.5058 | 0.0162 | 0.5310 | +1.56 sd |
 | N3 (15m, cost-sel) | 11 | 0.4987 | 0.0155 | 0.5230 | +1.57 sd |
 | O3 (15m, seq 256) | 24 | 0.4925 | 0.0227 | 0.5313 | +1.71 sd |
 
-With n in the 20s the standard error of the mean is ~0.003–0.005, so the O2−F4 gap of
-**+0.019** is roughly 4 SEM and is the first effect in this project other than the GBT gap
-that the measurement can actually resolve. Note it does **not** rescue any of the max-based
-numbers: every run's selected epoch still sits 1.5–2.2 sd above its own mean, so every
-`Fixed-coverage P&L` table in this document is measured on an optimistically selected
-epoch. **Seed replication is the only way to bank a result** — hence P0 in §2.
+🟢 **The three 5m seeds are the first replicated result in the project.** Their means agree
+to within 0.0025 (SEM 0.0014), pooling to **0.5219**, and the gap to F4 is **+0.016 ≈ 4σ**.
+Note what replicated and what did not: the *mean-of-epochs level* and the *top-2%
+fixed-coverage P&L* both did; the *serial-sim P&L magnitude* did not (§1.5), and neither
+did side balance, the book-era split, or any per-pair number (§1.3). Between-seed sd of
+the mean is the error bar to quote — not one run's sd, which describes epochs.
+
+Every run's selected epoch still sits 1.5–2.2 sd above its own mean, so any *single* run's
+`Fixed-coverage P&L` table is measured on an optimistically selected epoch. **Seed
+replication is the only way to bank a result** — P0 did it, and §1.3 is what a banked
+result looks like: pool the trades across seeds, quote the between-seed SEM.
 
 ### 0.4 Verify these lines in EVERY log before trusting a run
 
@@ -154,6 +166,17 @@ Each line is here because its absence voided a real run.
 | `Fixed-coverage P&L` | present — if missing, the run predates C2 | resolved by O0 for F4 |
 | `Fixed-coverage P&L` ordering | gross bps/trade should **decrease** with coverage; a sign flip between cov 0.01 and 0.05 means confidence is not ranking economics and the head is not usable | O2's 1440m head (fails); O2's 240m head (passes) |
 | `Early stop at epoch N` | N should not be `1 + patience` — if it is, selection peaked at epoch 1 and the run never explored | N3 |
+| `Feature columns:` | the count and list you intended (30 after C12; 19 for a pre-C12 checkpoint) | — |
+| `[market] cross-pair context filled for N/N pairs` | **N/N**, and `mean has_market` ≈ 1.0. Anything less means the cross-pair columns are zeros for some pair and Q3 tested less than it looks | — |
+| `SERVED GATE (C13, coverage-targeted)` | present, and the realized coverage is the one you asked for | — |
+
+**Two CONSTANT-column warnings are EXPECTED after C12 and are not defects.**
+`has_market` is constant (always 1) because the market context spans the whole
+history — unlike `has_book`, there is no era where it is missing, so the mask is
+correctly zeroed by the degenerate handler and costs one dead column. And
+`btc_rel_ret_1h` is identically zero **for BTCUSDT only**, since BTC's return relative
+to itself is zero; it is live for every other pair. Expect
+`13/30 CONSTANT` for BTC and `12/30` for the others, not the old 12/19.
 
 ### 0.5 Standing traps
 
@@ -193,174 +216,204 @@ tightening. **The honest comparison is `dir_acc` 0.563 vs 0.542, i.e. +0.021** �
 real gain, but quote that number, not the LB delta, whenever the bar interval differs
 between arms. Within one bar interval, LB remains fine.
 
+**P2 demonstrated the trap a second time and more starkly** (§1.4). At 1m bars it has 2.9M
+val rows — 5× the 5m family's 0.58M — and posts the highest mean-of-epochs LB in the whole
+ledger (0.5256) while its `dir_acc` at cov05 is **0.561 against the family's 0.559**, i.e.
+dead flat, and its economics are two to eight times worse. Had this section not existed,
+P2 would have been read as the best run in the project. **When the bar interval differs,
+LB is not a ranking metric at all.**
+
 ---
 
-## §1 — WHERE WE ARE (2026-08-19)
+## §1 — WHERE WE ARE (2026-08-21)
 
 ### 1.1 The one-paragraph summary
 
-**Bar resolution was a real lever, and it is the first one that has been.** Moving from
-15m to 5m bars at a fixed 32h context window (O2) tripled the training set to 2.9M samples
-and produced the first improvement in this project that the measurement can resolve:
-mean-of-epochs cov05 LB **0.5248 ± 0.0148** against F4's **0.5058 ± 0.0162** (§0.3), and
-`dir_acc` at cov 0.05 of **0.563 vs 0.542** (§0.6 — quote this one, the intervals differ).
-More importantly it moved the economics: O2's top-2%-confidence slice is **+22 to +24
-gross bps/trade**, which is **positive after taker cost** (+8 to +10 net bps/trade over
-469–708 trades) where F4's best cell was +6.5 gross and only ever positive at maker. The
-serial-P&L sim agrees — at gate 0.62 O2 books **+0.99 net_ret at full 14bps taker cost
-over 548 trades, Sharpe 1.41**, the first positive serial P&L in the project's history.
-Three other things changed. **(a) Longer context is dead** — O3 (seq 128 → 256 at 15m) is
-*worse* on every measure, so the LSTM already uses all the window it can and architecture
-goes back in the closed pile (§1.4). **(b) The "regime-locked edge" story is weaker than
-it looked** — O2 disagrees with the three 15m models on two of four windows, and the
-apparent three-model agreement was partly a shared-bar-grid artifact (§1.2). **(c) The
-"flat `loss_tr` ⇒ not data-starved" diagnostic is falsified** — O2's loss was just as flat
-as F4's and it still improved (§1.5). Everything now rests on **one seed**, and the
-headline P&L is measured on an epoch selected 2.15 sd above its own mean, so the next
-run is a replicate, not a new idea.
+**The 5m-bar result is banked, and the resolution ladder is closed at 5m.** P0 replicated
+O2 at `SEED=2` and `SEED=3` and the pre-registered "bank it" branch fires on both clauses:
+three-seed mean-of-epochs cov05 LB **0.5219 ± 0.0014** (between-seed SEM, n=101 epochs)
+against F4's 0.5058 — a **+0.016** gap at roughly 4σ — and all three seeds clear +12 gross
+bps/trade at cov 0.01–0.02, pooling to **+19.4 / +22.0 gross bps/trade** on 1,081 / 1,783
+trades, i.e. **+5.4 / +8.0 net at full 14bps taker cost**. `5m bars, seq 384, PAIR_EMBED_DIM=8`
+is now the permanent baseline and the model is a usable M3 input once C13 ships. P2 tested
+the next rung and it is not there: 1m bars at seq 768 land at mean LB 0.5256 (inside seed
+noise, and inflated by 5× the val rows — §0.6), `dir_acc` at cov05 **0.561 vs the 5m
+family's 0.559**, materially *worse* fixed-coverage P&L (+2.6 / +8.5 at cov 0.01/0.02),
+**destroyed calibration** (every probability bin from 0.05 to 0.95 has `emp_up ≈ 0.48`;
+brier 0.323 vs 0.250), and 20h of wall clock against 2.5–3h. Two things the replicates
+*corrected*: the serial-P&L headline did not survive (§1.5 — an absolute confidence gate
+is not seed-stable, which changes what C13 must do), and the O-wave's regime story was
+half seed noise (§1.2). With resolution, context length, and architecture all now closed,
+**§1.6 — the model sees six real numbers per bar — is the only large lever left**, and the
+next GPU run is the feature expansion.
 
-### 1.2 The regime structure is real but softer, and partly a model artifact
+### 1.2 The regime structure, re-read on six models
 
 `cov05 wilson_lb` on the primary 240m head, val window split into four ~2-month blocks:
 
-| window | period | F4 (15m) | N3 (15m) | N2 (GBT, 15m) | **O2 (5m)** |
-|---|---|---:|---:|---:|---:|
-| 1 | 2025-12 → 2026-02 | 0.486 | 0.499 | 0.492 | **0.573** |
-| 2 | 2026-02 → 2026-04 | **0.617** | **0.621** | **0.574** | 0.535 |
-| 3 | 2026-04 → 2026-06 | 0.457 | 0.419 | 0.415 | 0.500 |
-| 4 | 2026-06 → 2026-08 | **0.584** | **0.613** | 0.397 | **0.596** |
+| window | period | F4 (15m) | N3 (15m) | N2 (GBT) | O2 (5m s1) | **P0 s2** | **P0 s3** | **P2 (1m)** |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 2025-12 → 2026-02 | 0.486 | 0.499 | 0.492 | 0.573 | **0.621** | **0.593** | 0.542 |
+| 2 | 2026-02 → 2026-04 | 0.617 | 0.621 | 0.574 | 0.535 | **0.618** | **0.592** | 0.506 |
+| 3 | 2026-04 → 2026-06 | 0.457 | 0.419 | 0.415 | 0.500 | **0.482** | **0.491** | **0.607** |
+| 4 | 2026-06 → 2026-08 | 0.584 | 0.613 | 0.397 | 0.596 | **0.596** | **0.621** | 0.623 |
+| spread | | 0.160 | 0.202 | 0.177 | 0.096 | 0.139 | 0.130 | 0.117 |
 
-The previous version of this section claimed three independent models agreed on where the
-edge lives, and treated that as the only unambiguously real effect in the dataset. O2
-breaks it. What actually survives all four models is narrower:
+Two of the O-wave's readings were single-seed artifacts and are withdrawn:
 
-- **Window 3 is the worst window** (all four), and **window 4 is a good one** (three of
-  four; N2 is the exception).
-- Windows 1 and 2 are **model-dependent**: they invert between the 15m models and the 5m
-  model.
+- **Window 2 does not invert between 15m and 5m.** O2's 0.535 was the outlier; seeds 2 and
+  3 score 0.618 / 0.592, right on top of F4's 0.617. Only **window 1** is genuinely
+  resolution-dependent: every 5m model finds edge there (0.573–0.621) where every 15m model
+  is at coin flip (0.486–0.499). That is the sharpest thing this table says, and it is
+  consistent with 5m simply being a better model rather than a differently-regime-locked one.
+- **The 5m model is not meaningfully less regime-locked.** O2's 0.096 spread was the low
+  draw; the 5m family averages ~0.12 against the 15m family's ~0.18. A real but small
+  narrowing, not a change of kind.
 
-The "agreement" was among three models that shared a 15m bar grid and the same 771k
-training samples — a shared blind spot reads as consensus. And O2's window spread is
-**0.096** against F4's **0.160**: the higher-resolution model is *less* regime-locked, not
-differently regime-locked, which is what you would expect if part of the window structure
-was capacity rather than market state.
+What survives across all six directional models: **window 3 is the worst window and window
+4 is a good one.** The single exception is P2, which inverts window 3 into its *best*
+(0.607) — but P2's confidence scale is broken (§1.4), so its top-5% slice is not selecting
+the same kind of bar as anyone else's and it should not be given a vote here.
 
-This does **not** kill the regime-analysis item — a 0.10 spread is still four to six times
-the run-to-run noise of §0.3, and the top window is still worth ~5× maker cost. It changes
-the question from "find the observable that flags the good regime" to "how much of this is
-market state and how much is the model", and it means the analysis must run on **O2's**
-prediction dump, not F4's. See **P1**.
+A ~0.13 spread is still 5–8× the run-to-run noise of §0.3 and the top window is worth
+several times maker cost. The regime analysis is still worth doing, and it is now **Q1** —
+but it must run on **all three 5m seed dumps**, because this table is exactly the place
+where one seed misled us. An observable that only separates windows for one seed is noise.
 
-### 1.3 🟢 Current reference numbers — O2 is the new baseline
+### 1.3 🟢 Current reference numbers — the 5m/seq384 family (3 seeds, banked)
 
-Run `20260818T185438Z` · ckpt `m2_multi_20260818T185438Z_8c4b2a03.pt` · `logs/O2.log`
-Config: `CANDLE_INTERVAL=5m`, seq 384 (= 32h context), `PAIR_EMBED_DIM=8`, `SEED=1`,
-`EARLY_STOP_PATIENCE=20`, fixed labels, 8 pairs, horizons 60/240/1440, primary 240.
-Split: `train [2022-08-19 21:45 → 2025-12-09 09:45]`, `val [2025-12-09 09:45 → 2026-08-17 18:35]`,
-2,895,782 samples (2,316,625 / 579,157). Early stop at epoch 34, **selected epoch 14**.
+Config, identical across all three: `CANDLE_INTERVAL=5m`, `seq 384` (= 32h context),
+`PAIR_EMBED_DIM=8`, `EARLY_STOP_PATIENCE=20`, fixed labels, 8 pairs, horizons 60/240/1440,
+primary 240. ~2.90M samples (~2.32M / ~0.58M).
 
-| | 1h | **4h (primary)** | 24h |
-|---|---:|---:|---:|
-| cov05 dir_acc / Wilson-LB (selected epoch) | 0.544 / 0.537 | **0.563 / 0.557** | 0.582 / 0.575 |
-| cov05 LB, mean ± sd over epochs (§0.3) | — | **0.525 ± 0.015** (n=34) | — |
+| seed | run | log | checkpoint key | epochs | mean LB ± sd | selected |
+|---|---|---|---|---:|---|---|
+| 1 (O2) | `20260818T185438Z` | `logs/O2.log` | `m2_multi_20260818T185438Z_8c4b2a03.pt` | 34 | 0.5248 ± 0.0148 | ep 14 (0.5565) |
+| 2 | `20260819T142759Z` | `logs/P0-seed2.log` | `m2_multi_20260819T142759Z_a186182b.pt` | 28 | 0.5207 ± 0.0202 | ep 8 (0.5576) |
+| 3 | `20260820T025723Z` | `logs/P0-seed3.log` | `m2_multi_20260820T025723Z_a186182b.pt` | 39 | 0.5203 ± 0.0123 | ep 19 (0.5425) |
 
-**4h fixed-coverage P&L — the table that matters** (`net` is exactly `gross − trades ×
-cost`, so no re-run changes fees):
+**Pooled mean-of-epochs cov05 LB = 0.5219**, between-seed sd 0.0025 (SEM 0.0014).
+Against F4's 0.5058 that is **+0.0161, ≈ 4σ**. This is the number to quote for the model's
+edge. Every seed's *selected* epoch still sits 1.5–2.2 sd above its own mean, so single-run
+`max` figures remain order statistics (§0.3) — but the family mean no longer depends on that.
 
-| cov | trades | gross bps/trade | net @5bps maker | net @14bps taker | F4 gross, same cov |
-|---|---:|---:|---:|---:|---:|
-| 0.01 | 469 | **+24.50** | **+19.50** | **+10.50** | +2.61 |
-| 0.02 | 708 | **+22.11** | **+17.11** | **+8.11** | +6.53 |
-| 0.05 | 1361 | +3.50 | −1.50 | −10.50 | +6.50 |
-| 0.10 | 2577 | −5.16 | −10.16 | −19.16 | −2.96 |
-| 0.20 | 4489 | −3.13 | −8.13 | −17.13 | −4.38 |
+**4h pooled fixed-coverage P&L — the table that matters.** Trade-weighted across the three
+seeds; `net` is exactly `gross − trades × cost`, so no re-run changes fees.
 
-The ordering is monotone-decreasing in confidence, which is what makes it usable — the
-model's confidence ranks its own economics correctly. The matched-trade-count comparison
-is the cleanest one available: **O2 at 469 trades earns +24.50 bps/trade where F4 at 466
-trades earned +6.53.**
+| cov | trades | gross bps/trade | net @5bps maker | net @14bps taker | per-seed gross (s1/s2/s3) |
+|---|---:|---:|---:|---:|---|
+| 0.01 | 1081 | **+19.38** | **+14.38** | **+5.38** | +24.5 / +16.6 / +14.5 |
+| 0.02 | 1783 | **+22.03** | **+17.03** | **+8.03** | +22.1 / +16.8 / +26.2 |
+| 0.05 | 3718 | +8.91 | +3.91 | −5.09 | +3.5 / +14.7 / +9.6 |
+| 0.10 | 7104 | +1.89 | −3.11 | −12.11 | −5.2 / +4.9 / +6.8 |
+| 0.20 | 13462 | −0.00 | −5.00 | −14.00 | −3.1 / +1.8 / +1.3 |
 
-Serial-position sim at the same checkpoint (`hold=48 bars`, 1 position/pair):
+Three things to read off it. **(a) The top-2% cell replicated almost exactly** — pooled
++22.0 against O2's own +22.11, with every seed above +16. **(b) The cov-0.05 collapse in
+O2 (+3.5) was seed noise**, not a decay curve; seeds 2 and 3 book +14.7 and +9.6 there, so
+the signal degrades more gently with coverage than O2 alone suggested. **(c) The ordering
+is monotone in confidence** at the family level, which is the §0.4 check that makes the
+head usable at all. With per-trade sd ≈ 150bps, the cov-0.02 pooled gross has a standard
+error near 3.5bps if trades were independent and ~5–6bps allowing for cross-pair
+correlation — so **+22 gross is a ~4σ result and +8 net at taker is ~1.5σ**. The signal is
+banked; that it clears *taker* cost is suggestive, not proven.
 
-| gate | coverage | trades | dir_acc | net_ret @14bps taker | win | Sharpe |
-|---|---:|---:|---:|---:|---:|---:|
-| 0.58 (served) | 4.8% | 1318 | 0.565 | −1.31 | 0.502 | −1.22 |
-| **0.62** | 1.2% | 548 | 0.556 | **+0.99** | 0.586 | **+1.41** |
+Health checks across the three seeds:
 
-⚠️ **The served gate is wrong for this model.** `GATE_THRESHOLD=0.58` is tuned to F4's
-confidence scale; on O2 the profitable operating point is **0.62**. Do not promote O2
-without moving the gate — see **C13** in §6.
+- **Beats both trivial baselines, every seed.** Momentum (sign of trailing 48 bars) cov05
+  `dir_acc` 0.469 in both replicates; pooled buy-and-hold ≈ −35 over the val window (only
+  HYPE and ZEC positive).
+- **Side balance is NOT seed-stable.** s1 up 0.563 / down 0.563; s2 up 0.567 / down 0.561;
+  **s3 up 0.563 / down 0.502** — one seed's short side is a coin flip. Do not treat
+  "balanced sides" as a property of the configuration; check it per checkpoint.
+- **Calibration is unchanged and still over-confident** — `[0.60,0.70)` bin `mean_pred`
+  0.640 / 0.626 vs `emp_up` 0.576 / 0.578 (s2 / s3). §5's entry stands: do not sharpen.
+- **The book-era split says nothing.** s1 0.545 vs 0.561, s2 **0.486 vs 0.569**, s3
+  **0.624 vs 0.552** — the sign flips between seeds because the book era is ~31 days and
+  ~1,300–1,900 directional bars. Stop reading this line until the window is months long.
+- **Per-pair `dir_acc` at cov05 is not stable either** (ZEC 0.498 / 0.602 / 0.565 across
+  seeds). There is no per-pair story in this data.
 
-Other health checks, all better than F4's:
+### 1.4 P2 — 1m bars are worse; the resolution ladder is closed at 5m
 
-- **Side split is balanced** — up 0.563 / down 0.563 at cov 0.05 (F4: 0.547 / 0.528). The
-  model is no longer meaningfully long-biased.
-- **Calibration improved but is still over-confident** — the `[0.60,0.70)` bin has
-  `mean_pred 0.624` vs `emp_up 0.574` (F4: 0.636 vs 0.547). Still the wrong direction for
-  sharpening; §5's entry stands.
-- **No calendar confound** — book-era cov05 LB 0.545 vs pre-book 0.561; the edge is not
-  concentrated in the 31-day book window.
-- **Beats both trivial baselines** — momentum (sign of trailing 48 bars) cov05 LB 0.460;
-  buy-and-hold pooled deeply negative (only HYPE and ZEC are positive over the window).
+`logs/P2.log`, run `20260820T100042Z`, ckpt `m2_multi_20260820T100042Z_a186182b.pt`.
+Valid: `knob CANDLE_INTERVAL=1m`, `seq 768` (12.8h), `PAIR_EMBED_DIM=8`, `SEED=1`, embed ON,
+**14,507,307 samples** (11.6M / 2.9M — the plan predicted 8–9M and was low), `hold=240 bars`,
+split re-recorded, early stop at epoch 38. As pre-registered, it moves two variables
+(interval *and* context hours) and was launched as a direction probe, not an attribution.
 
-**Caveats that bound how much of this to believe** — all three are addressed by P0:
+The probe comes back negative on every axis that matters:
 
-1. **n = 1 seed.** §0.3's own rule says a single run cannot resolve much; this run clears
-   the bar on mean-of-epochs, but the P&L table does not have an equivalent error bar.
-2. **The P&L is measured on an order-statistic epoch.** Epoch 14 was selected as max LB,
-   +2.15 sd above the run's own mean. A replicate's epoch-14-equivalent will be worse.
-3. **The +24.5 bps cell has ~470 trades across 8 correlated pairs.** With per-trade sd of
-   roughly 150bps at 4h, the standard error is ~7bps if trades were independent and more
-   like ~11bps once cross-pair correlation is accounted for. That is a ~2σ result, not a
-   4σ one. It is the most promising cell in the project and it is not yet banked.
+| | 5m family (3 seeds) | P2 (1m) |
+|---|---|---|
+| mean-of-epochs cov05 LB | 0.5219 ± 0.0014 | 0.5256 (n=38) — *inflated, 5× val rows* |
+| **cov05 `dir_acc`** (§0.6, the honest comparison) | 0.563 / 0.564 / 0.549 → **0.559** | **0.561** |
+| gross bps/trade @cov 0.01 / 0.02 | **+19.4 / +22.0** | **+2.6 / +8.5** |
+| brier (240m, moved bars) | 0.250 | **0.323** |
+| ungated 3-class accuracy | 0.472 / 0.473 | 0.443 |
+| wall clock | 2h36m / 3h17m | **20h16m** |
 
-F4 (`20260817T221811Z`, `logs/O0-f4-rescore.log` for its re-scored tables) remains the
-comparison point and is still reachable at
-`checkpoints/m2_multi_20260817T221811Z_94614795.pt`.
+`dir_acc` is flat and the economics are two to eight times worse at the coverages that pay.
+The LB looks best-in-class purely because 2.9M val rows narrow the Wilson interval — the
+exact trap §0.6 was written for, now demonstrated a second time.
 
-### 1.4 O3 — longer context is worse; architecture is closed again
+**The calibration failure is the decisive finding.** P2's probability output spreads across
+the entire \[0,1\] range — 160k bars in `[0.00,0.10)`, 162k in `[0.90,1.00]` — and
+`emp_up` is **0.448 … 0.505 in every single bin**. The head emits confident probabilities
+that carry no calibration whatsoever. Two consequences: the serial sim is meaningless at
+any gate (80% coverage at `GATE_THRESHOLD=0.58`, net_ret −18), and **an uncalibrated
+probability is worthless to M3**, which consumes these as observations. That the ranking
+still yields 0.561 `dir_acc` at the top 5% only means the *order* survived what the *scale*
+did not.
 
-`logs/O3.log`, run `20260819T021020Z`. Valid: `seq=256`, `CANDLE_INTERVAL=15m`,
-`PAIR_EMBED_DIM=8`, 964,483 samples, embed ON, split re-recorded. One variable vs F4.
+**Verdict, per the pre-registered rule: flat-to-worse ⇒ 5m is the resolution sweet spot.
+Freeze it and close the lever.** The strict caveat — that 1m *with* a 32h window (seq 1920)
+is untested — is noted and dismissed: it is unaffordable at 5× P2's already-20h run, and
+§5's context-length entry says window is not the binding constraint anyway.
 
-Mean-of-epochs cov05 LB **0.4925 ± 0.0227** (n=24) against F4's **0.5058 ± 0.0162**. Not
-merely flat — the per-epoch series drifts monotonically *down* (≈0.52 through epoch 5,
-≈0.47 from epoch 16 on) and the selected epoch is 4 of 24. The failure signature is
-consistent: coverage at the served 0.58 gate collapsed to **0.8%** (F4: 4.9%), and the side
-split went lopsided at cov 0.05 — 6,266 down-gated vs 3,379 up-gated, with the **up side at
-0.499, exactly coin flip**.
+Read O2/O3/P2 together and the shape is settled: **finer observations helped once, from 15m
+to 5m, and then stopped. More window never helped.** The model is limited by *what each
+timestep tells it* — which is §1.6.
 
-The pre-registered verdict fires the negative way: **the LSTM already has all the context
-it can use at 15m.** N2's GBT gap is therefore about the GBT's 114-column static summary
-throwing away information, not about recurrence being essential. Encoder capacity, context
-length, and full architecture swaps all go back in the closed pile (§5). **Do not write a
-transformer.**
+### 1.5 🔴 An absolute confidence gate is not seed-stable — the gate must target coverage
 
-Read O2 and O3 together and the shape is clear: **more, finer observations helped; more
-window did not.** The model is limited by what each timestep tells it, not by how many
-timesteps it sees.
+This is the P-wave's most actionable new finding and it rewrites what C13 has to build.
 
-### 1.5 The "flat training loss" diagnostic is falsified — stop using it
+Serial-position sim (`hold=48 bars`, 1 position/pair, 14bps taker) at the two gates that matter:
 
-The previous plan reasoned that `loss_tr` barely moving (1.7318 → 1.7101 over F4's 11
-epochs) proved the model was not data-starved and the bottleneck was entirely features.
-O2 ran that experiment and the reasoning does not hold. O2's `loss_tr` was **equally flat
-for its first 22 epochs** (1.7284 → 1.7184), then descended only because memorization
-started at epoch 23, with `loss_va` diverging in lockstep (1.0404 → 1.3031 by epoch 34).
-By the loss-curve indicator, O2 looked exactly like F4 in the region where its selected
-epoch lives — and it was materially better.
+| seed | gate 0.58 (served) cov / net_ret / Sharpe | gate 0.62 cov / trades / net_ret / Sharpe |
+|---|---|---|
+| 1 (O2) | 4.8% / **−1.31** / −1.22 | 1.2% / 548 / **+0.99** / **+1.41** |
+| 2 | 6.1% / **−0.91** / −0.85 | 2.5% / 595 / **+0.10** / +0.15 |
+| 3 | 5.4% / **−0.34** / −0.31 | 1.7% / 497 / **+0.23** / +0.41 |
 
-**On a near-noise-floor task the training loss is dominated by the irreducible term and
-carries no information about whether more data helps.** Judge the data lever on the
-validation-selection metric. This also means O2's own late-epoch descent is not a reason
-to add regularization: the selection metric already ignores those epochs.
+**What replicated:** the served gate of 0.58 loses money in 3 of 3 seeds, and 0.62 is
+profitable in 3 of 3. Moving the gate is confirmed and is not optional.
 
-### 1.6 The model still sees six real numbers per bar
+**What did not replicate:** the magnitude. O2's +0.99 / Sharpe 1.41 headline is 4–10× the
+other two seeds and was an epoch-selection artifact. The honest expectation for a 5m
+checkpoint at its profitable gate is **≈ +0.4 net_ret, Sharpe ≈ 0.6**, not 1.4.
 
-Unchanged by the O-wave, and now the leading suspect. `FEATURE_COLS` has 19 entries, but
+**Why the two tables disagree** — the fixed-coverage P&L replicated cleanly (§1.3) while
+the serial sim did not — is the useful part. A fixed *coverage* compares the same fraction
+of each model's bars; a fixed *confidence threshold* compares whatever fraction each seed's
+confidence distribution happens to put above 0.62, and that is 1.2% / 2.5% / 1.7% here.
+The same absolute number is three different operating points. O3 showed the extreme version
+(0.8% coverage at 0.58) and P2 the opposite extreme (80%).
+
+**Therefore C13's gate must be stored as a coverage target, not a probability.** Pick the
+operating coverage from the fixed-coverage P&L table at eval time (the family says 1–2%),
+have eval write the per-checkpoint confidence threshold that realizes it into the checkpoint
+meta, and have `serve.py` read that. A global `GATE_THRESHOLD` constant is not a
+well-defined operating point across checkpoints and never was.
+
+### 1.6 🔴 The model still sees six real numbers per bar — the last large lever
+
+Unchanged by the O- and P-waves, and now the *only* remaining suspect: resolution (§1.4),
+context length and architecture (§5) are all closed. `FEATURE_COLS` has 19 entries, but
 every recent log's `WARNING [norm] train fit[...]` block says **12 of 19 are CONSTANT in
 the train window** and are correctly zeroed (13 for 1000PEPE, which also loses
-`has_funding_oi`). What actually carries signal in F4 / O2 / O3:
+`has_funding_oi`). What actually carries signal in every run of both waves — F4, O2, O3, both P0 seeds and P2:
 
 | live | dead in the train window |
 |---|---|
@@ -372,10 +425,18 @@ market-wide context, no trend. `funding` is correctly aligned
 (`FUNDING_OI_MAX_AGE_MIN=480` = 8h matches the funding interval), so it is not silently
 zeroed.
 
-§1.4's conclusion sharpens this: the model is starved **per timestep**, not per window.
-That is exactly what **P3 / O4** adds, and it is now the highest-EV lever on the board.
+§1.4 sharpens this from both ends: the model is starved **per timestep**, not per window
+*and* not per bar-interval. It converted 15m→5m into real edge and then saturated, which is
+what an input-limited model looks like.
 
-### 1.7 Data status (verified on the VM, 2026-08-18; re-verify before P2)
+🔴 **The 12 dead columns are dead for a structural reason, and it constrains what can be
+added.** They are not broken — they are constant because the train window opens 2022-08-19
+while the book / trade / OI feeds open 2026-07. Any new microstructure column would be
+constant in the train window too, and `NORM_DEGENERATE_MODE=zero` would zero it. **Every
+column added in Q3 must be candle-derived**, and no book-feature work is worth doing until
+the book history is months long (§2, O5 demoted).
+
+### 1.7 Data status (verified on the VM, 2026-08-18; exercised at 1m/5m by the P-wave)
 
 **✅ The 1m/5m ragged-history problem is GONE.** A backfill has landed since the 2026-08-17
 audit. Candle coverage now, per interval:
@@ -390,9 +451,17 @@ audit. Candle coverage now, per interval:
 Row counts at 5m: 420,7xx for each of the nine long pairs, and the full stats report
 confirms **zero interior gaps for all 12 pairs × 1m/5m/15m/1h** (48/48 rows at
 `gaps=0, missing_hours=0`). **Code task C6's "1m backfill to a common start" is therefore
-DONE** and 5m-bar training is launchable now — which is what unblocks **O2**. It also makes
-the 12-pair run genuinely cheap: ADA/AVAX/LINK/XRP have full 4-year history at every
-interval.
+DONE.** It also makes the 12-pair run genuinely cheap: ADA/AVAX/LINK/XRP have full 4-year
+history at every interval.
+
+**The P-wave exercised every interval and found no data problems.** P2 loaded 14.5M samples
+at 1m (the 2026-08-19 plan predicted 8–9M and was low by ~60% — budget 1m runs accordingly
+if they ever come back). The 5m seeds loaded ~2.90M each. One thing to keep in view:
+**the val split moves between runs** because collection is continuous — the three 5m seeds
+start val at 2025-12-09 09:45, 12-10 01:40 and 12-10 11:35. It is a few hours on an
+8-month window and did not matter here, but any run intended as a *matched* comparison
+(Q3 against §1.3) should record its split and, if the drift ever exceeds a few days, pin
+the dataset instead.
 
 Microstructure, unchanged from 2026-08-17 (re-verify before any book run):
 
@@ -406,95 +475,93 @@ Microstructure, unchanged from 2026-08-17 (re-verify before any book run):
 
 **60-day book milestone for BTC/ETH/SOL: ≈2026-09-15.**
 
-O2 and O3 both loaded ~29.4M candles against the audit's counts, so nothing has moved
-since; **P2 needs 1m coverage re-confirmed** before launch, since it is the only interval
-the audit has not been exercised at by a training run.
+All O- and P-wave runs loaded candle counts consistent with the audit, and P2 exercised the
+1m interval end to end without a data complaint, so **every interval the audit covers has
+now been validated by a training run.** Re-verify only if a backfill lands.
 
 ---
 
 ## §2 — THE RUN QUEUE
 
-The O-wave produced one real result (O2) that rests on one seed, and closed one lever
-(O3). The P-wave is therefore ordered: **bank O2 first, then exploit it.** P0 and P1 come
-before anything new. P0 is two GPU runs that must go **one at a time** (§7 — training runs
-are strictly serial), but P1 is local and free, so run it while P0's first seed trains.
+The P-wave banked the 5m result (P0) and closed the resolution ladder (P2). **All of the
+Q-wave's code shipped on 2026-08-21** (C12, C13, C14 — §6), so every item below is
+runnable now. Suggested order, given training runs are strictly serial (§7):
 
-**None of the O-wave commands should be re-launched as written.** O0 is done, O2 is the
-new baseline, O3's lever is closed (§5).
+| item | what | cost | needs a GPU? |
+|---|---|---|---|
+| **Q0** | derive seed 2's gate, then promote it | ~1h CPU + a promote | no |
+| **Q3** | the 30-column feature run — **the experiment** | ~3h GPU | **yes** |
+| **Q2** | 3-seed ensemble eval | ~1h CPU | no |
+| **Q1** | regime analysis on the three dumps | local, free | no |
 
-### 🔴 Before you launch anything: the promote hazard
+Q3 is the only GPU job, so start it first and do Q0 / Q2 / Q1 while it runs — but note
+Q0 and Q2 are both `gcp_train.sh` jobs and therefore **cannot overlap Q3 or each other**
+(§7: one training VM, and a second launch can delete the first). Q1 is the only item that
+is genuinely parallel.
 
-`checkpoints/latest.pt` is currently **O3's checkpoint** — the worst run in the wave (§1.4)
-— because O3 finished after O2. Every training run overwrites that key and
-`gcp_promote.sh` only ever promotes `latest.pt`. **O2 lives at
-`checkpoints/m2_multi_20260818T185438Z_8c4b2a03.pt`** and that is the only reachable copy.
-Do not run `gcp_promote.sh` at all until C13 (§6) lets it take an explicit key.
+**None of the P-wave commands should be re-launched.** P0 is banked, P2's lever is closed
+(§5). Do not run any further seed of the 5m baseline — three is enough, and a fourth buys
+0.0006 of SEM.
 
-### P0 — 🔴 seed replicate of O2 (2 × GPU, ~4–6h each, **run serially**). Runnable now.
+### The promote hazard — ✅ fixed by C13, but read this once
 
-**This is the highest-priority item and it is not optional.** §0.3 exists because this
-project has repeatedly banked single-run results that did not replicate. O2 is the best
-result the project has produced and every number in §1.3 comes from one seed and one
-order-statistic epoch. Two replicates turn "promising" into "measured".
+`checkpoints/latest.pt` is still **P2's checkpoint** — the broken-calibration 1m model
+(§1.4) — because P2 finished last, and every training run still overwrites that key.
+What changed is that `gcp_promote.sh` can no longer ship it by accident: `--checkpoint`
+is required and the bare form refuses. Two things to keep in mind anyway:
 
-⚠️ **These are two separate sessions, not a parallel launch** — see §7: only one
-`gcp_train.sh` job can exist at a time, and starting a second while the first runs can
-delete the VM doing the first. Budget **~8–12h of wall clock total**, not 4–6.
+- **Naming `latest` is still naming P2** until a newer run lands. Use an explicit key.
+- **Every existing checkpoint predates C13**, so none carries a `served_gate` and each
+  will serve at the config fallback unless you pass one. Q0 covers this.
 
-Identical to O2 except `SEED`. Run the first, wait for `gcp_status.sh` to report DONE and
-save its log, **then** run the second.
+### Q0 — ✅ C13 SHIPPED (2026-08-21). Promotion is now safe; do the promote.
+
+The code is in (§6). What remains is the operational step, and it needs one eval first:
+**the three P0/O2 checkpoints predate C13, so none of them carries a `served_gate`.**
+Serving one today logs `gate_source=config-fallback` and trades at 0.58 — the operating
+point §1.5 shows loses money in 3 of 3 seeds. So:
 
 ```sh
-# --- run 1 ---
-CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=2 \
-  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
-  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-  ./scripts/gcp_train.sh --gpu 60 384
-./scripts/gcp_status.sh                        # wait for DONE before the next launch
-./scripts/gcp_logs.sh <run_id> > logs/P0-seed2.log
-
-# --- run 2, only after run 1 has finished ---
-CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=3 \
-  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
-  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-  ./scripts/gcp_train.sh --gpu 60 384
+# 1. give the chosen checkpoint its own measured gate (CPU, ~1h, writes nothing to latest.pt)
+./scripts/gcp_train.sh --eval-only m2_multi_20260819T142759Z_a186182b.pt
 ./scripts/gcp_status.sh
-./scripts/gcp_logs.sh <run_id> > logs/P0-seed3.log
+./scripts/gcp_logs.sh > logs/Q0-seed2-gate.log
 ```
 
-**If only one replicate is affordable, run `SEED=2` and stop there.** One replicate already
-decides the reject branch below — two runs 4 SEM apart is exactly the §0.3 comparison — and
-the third seed only tightens the banked estimate.
+⚠️ `--eval-only` **never writes a checkpoint back to the bucket** (C7's guarantee), so this
+run derives and *prints* the gate but does not persist it. Read `SERVED GATE` from the log
+and promote with the gate set explicitly until a post-C13 training run produces a
+checkpoint that carries its own:
 
-**Verify:** `knob SEED=2` / `knob SEED=3`; `knob CANDLE_INTERVAL=5m`; `Samples:` ≈ 2.9M;
-`P&L sim: … hold=48 bars` for 240m; `Early stop at epoch N` with N ≫ 21; split re-recorded
-(a backfill may have moved it — record the new one).
+```sh
+./scripts/gcp_promote.sh --list
+ML_GATE_THRESHOLD=<the conf_threshold from the log> \
+  ./scripts/gcp_promote.sh --checkpoint m2_multi_20260819T142759Z_a186182b.pt
+```
 
-**Verdict, pre-registered so it cannot be argued after the fact:**
+Check the `/health` line the promote prints: `gate_source` must be `env-override` (with the
+threshold you set) or `checkpoint` — **never `config-fallback`**.
 
-- **Bank it** if the three-seed mean-of-epochs LB is ≥ 0.515 (i.e. the O2 − F4 gap survives
-  at ≥ half strength) **and** at least two of three seeds show gross bps/trade > +12 at
-  cov 0.01–0.02. Then 5m/seq384 becomes the permanent baseline, C13 ships, and the model
-  is promotable as an M3 input.
-- **Half-bank it** if the LB gap survives but the P&L does not. Then the signal genuinely
-  improved but the +24 bps cell was epoch-selection luck, and the operating point must be
-  re-derived from the three-seed pooled fixed-coverage table rather than any one run's.
-- **Reject** if seeds 2 and 3 land near F4's 0.506. Then O2 was a lucky seed, 5m is
-  neutral, and the whole wave collapses back to §1.6 being the only lever.
+**Which checkpoint:** promote **seed 2**
+(`m2_multi_20260819T142759Z_a186182b.pt`). It is the most internally consistent of the
+three — balanced side split (0.567 / 0.561), monotone fixed-coverage P&L that is positive
+at taker down to cov 0.05, and a profitable serial gate. Seed 1 has the prettiest headline
+and a cov-0.05 hole; seed 3's short side is a coin flip. If Q2 lands first, promote the
+ensemble instead.
 
-**Bring back:** both logs, plus for each the `epoch LB series` line and the 240m
-`Fixed-coverage P&L` block.
+### Q1 — regime analysis on the three 5m dumps (local, free, no VM). Runnable now.
 
-### P1 — regime analysis on O2's dump (local, no VM, no training). Runnable now.
+Carried over from P1, which never ran, and **its inputs changed**: use all three 5m seed
+dumps, not O2's alone, because §1.2 is precisely where one seed misled us.
 
-Was O1; the O0 dump it was blocked on exists, and §1.2 changed what it should ask. Use
-**O2's** per-bar dump (`gs://fluxtrader-train-artifacts/eval/20260818T185438Z/eval_preds.parquet`),
-with F4's (`.../eval/<O0 run_id>/eval_preds.parquet`) as the contrast.
+```
+gs://fluxtrader-train-artifacts/eval/20260818T185438Z/eval_preds.parquet   # seed 1 (O2)
+gs://fluxtrader-train-artifacts/eval/20260819T142759Z/eval_preds.parquet   # seed 2
+gs://fluxtrader-train-artifacts/eval/20260820T025723Z/eval_preds.parquet   # seed 3
+```
 
-Costs nothing but a script. For each val bar compute candidate regime observables from
-candles already in the DB, all lookahead-free:
+For each val bar compute candidate regime observables from candles already in the DB, all
+lookahead-free:
 
 - realized vol of the pooled universe over trailing 1d / 7d / 30d
 - BTC trailing return over 1d / 7d, and its sign
@@ -505,111 +572,139 @@ candles already in the DB, all lookahead-free:
 
 Three questions, in order:
 
-1. **Separation.** AUC of each observable against "bar is in a high-edge window". Compute
-   it **separately for O2 and F4**, because §1.2 says they disagree about which windows
-   those are.
-2. **Conditional lift.** Bucket val bars by each observable into quintiles; report cov05
-   LB *and* gross bps/trade per bucket. The number that matters is the top bucket's gross
-   bps/trade against 5bps maker and 14bps taker.
-3. **New, and the reason this is worth doing at all now:** how much of the window structure
-   is *model* rather than *market*? Compare the O2 and F4 per-bar predictions directly —
-   agreement rate, and whether the bars where they disagree cluster in windows 1 and 2. If
-   the window structure is largely a model artifact, the observables will separate F4's
-   windows and not O2's, and the right conclusion is that finer bars fixed part of it and
-   P3 will fix more.
+1. **Separation.** AUC of each observable against "bar is in a high-edge window", computed
+   **per seed**. Report the three AUCs side by side; an observable that separates for one
+   seed and not the other two is noise and must be discarded.
+2. **Conditional lift.** Bucket val bars into quintiles by each observable; report cov05 LB
+   *and* gross bps/trade per bucket, **pooled across the three seeds** (pool the trades, do
+   not average the bps). The number that matters is the top bucket's gross bps/trade against
+   5bps maker and 14bps taker.
+3. **Window 1 specifically.** §1.2's one sharp finding is that all three 5m models find edge
+   in 2025-12 → 2026-02 where every 15m model is at coin flip. Ask what is different about
+   that window — if an observable flags it, that observable is a feature.
 
 **Verdict:**
-- An observable with ≥0.60 AUC whose top bucket shows gross ≫ 5bps → we have both a
-  feature (feed it in P3) and a regime gate. Note that a regime *gate* is an M3 policy
-  decision, not an M2 one — M2's job is to emit the observable, not to act on it.
-- Nothing separates, and O2/F4 disagree mostly in the model-dependent windows → the
-  structure is capacity, not state. Skip the regime feature work and put everything into
-  P3's per-timestep features.
+- An observable with ≥0.60 AUC **in all three seeds** whose top bucket shows gross ≫ 5bps →
+  it is both a Q3 feature column and an M3 regime observable. (The *gating* decision is
+  M3's; M2's job is to emit the observable, not act on it.)
+- Nothing separates consistently → the window structure is capacity, not state. Skip regime
+  features entirely and give Q3's whole column budget to §1.6's per-timestep features.
 
-Bring back the AUC table (both models), the per-quintile gross-bps table, and the
-O2-vs-F4 agreement analysis.
+**Bring back:** the three-seed AUC table, the pooled per-quintile gross-bps table, and the
+window-1 finding.
 
-### P2 — 1m bars: does the resolution ladder keep paying? (GPU, ~10–16h). After P0.
+### Q2 — ✅ code shipped. 3-seed ensemble eval (one CPU eval-only run, ~1h). Cheap, high EV.
 
-O2 established that finer bars at fixed context-hours is a real lever. The obvious question
-is whether it saturates. The clean single-variable version holds the 32h context: 1m bars
-need `seq 1920`, which is 5× O2's sequence length on 3× the samples and is not affordable.
+New, and it falls directly out of §0.3 being the project's dominant problem. Three
+checkpoints of one configuration exist and their disagreement *is* the noise we keep
+fighting. Averaging their per-bar `p_up` costs one CPU eval and typically buys both a
+tighter estimate and better calibration — and M2's deliverable to M3 is exactly a
+calibrated probability.
 
-**Do not launch this until P0 reports.** If P0 rejects, this lever does not exist. If P0
-banks, launch the affordable compromise and accept that it moves two variables at once —
-which is tolerable here only because we are probing a *direction*, not attributing an
-effect:
+**C14 is shipped** (§6) — `--eval-only` takes a comma-separated list and averages the
+members' probabilities. Run:
 
 ```sh
-CANDLE_INTERVAL=1m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=1 \
-  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
-  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-  ./scripts/gcp_train.sh --gpu 60 768
+./scripts/gcp_train.sh --eval-only \
+  m2_multi_20260818T185438Z_8c4b2a03.pt,m2_multi_20260819T142759Z_a186182b.pt,m2_multi_20260820T025723Z_a186182b.pt
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh > logs/Q2-ensemble.log
 ```
 
-`seq 768` at 1m is 12.8h of context — *less* window than O2, which §1.4 says the model was
-not using anyway. Expect ~8.7M samples and `hold=240 bars` for the 240m head.
+Note the three training runs each derived a slightly different val split (data keeps
+landing: val starts 2025-12-09 09:45 / 12-10 01:40 / 12-10 11:35). That does **not** affect
+this run — a single eval-only job scores all three checkpoints on one current split.
 
-**Verify:** `knob CANDLE_INTERVAL=1m`; `Samples:` ≈ 8–9M; `P&L sim: … hold=240 bars`;
-wall-clock — kill it and fall back to `--gpu 40 768` if it will not finish overnight.
+**Verdict:** compare the ensemble's fixed-coverage P&L and brier against §1.3's pooled
+table and against each member. Better on both → the ensemble is what gets promoted and what
+M3 consumes. Better on brier but not P&L → still promote it; calibration is the deliverable.
+No better than the best member → drop the idea, promote seed 2, and note it in §5.
 
-**Verdict:** rank on mean-of-epochs LB and on `dir_acc` (§0.6 — the bar counts differ
-again, so LB alone will flatter it). Better than O2 → the ladder has another rung and 1m
-becomes the baseline. Flat or worse → 5m is the resolution sweet spot, freeze it, and the
-lever is closed.
+### Q3 — ✅ code shipped (C12). Per-timestep feature expansion. **The main event — launch it.**
 
-### P3 — cross-pair / regime features (was O4). Blocked on C12. Highest EV after P0.
+**This is the only large lever left.** §1.6 (six live columns per bar), §1.4-of-the-O-wave
+(context length is closed) and §1.4 here (resolution is closed) all converge on it: the
+model is starved *per timestep*, and the one time we gave it more input per unit time it
+converted that into edge.
 
-§1.6 (six live features per bar) and §1.4 (the model is starved per timestep, not per
-window) both point here, and O2 raised the prior: the model demonstrably converts more
-input into more edge. Add, from candle data that already spans the full history for every
-pair and needs zero collection lead time:
+🔴 **Every new column must be candle-derived.** This is not a preference, it is forced by
+the same mechanism that kills 12 of the current 19 columns: the train window starts
+2022-08-19 and the book/trade/OI feeds start 2026-07, so **any microstructure column is
+CONSTANT in the train window and gets zeroed** (`NORM_DEGENERATE_MODE=zero`). Adding book
+features to this run would add zeros. That is also why O5 is demoted below.
 
-- trailing returns at 1h / 4h / 1d (multi-timescale, currently absent entirely)
+Candidate columns, all computable from candles that span the full history for every pair:
+
+- trailing returns at 1h / 4h / 1d — multi-timescale return is currently absent entirely
 - rolling volatility at 2–3 scales beyond the single `ret_std_15`
 - BTC-relative return and rolling beta per pair
 - cross-sectional return rank and dispersion across the universe
-- whichever observables P1 finds separate the windows
+- whichever observables Q1 finds separate **in all three seeds**
 
-Needs code task **C12** (a `FEATURE_DIM` bump, which changes the serving contract) and
-therefore its own attributable run. **Wait for P1** before fixing the feature list — P1
-tells you which regime observables are worth a column.
+**Shipped as `FEATURE_DIM` 19 → 30** (C12, §6). The column list was frozen without waiting
+for Q1: the four groups above were decided by §1.6 regardless of what Q1 finds, and Q1's
+contribution was only ever *additional* columns. If Q1 turns up an observable that
+separates in all three seeds, it is a second, later bump — not a reason to hold this run.
+
+One variable — the feature set — against the §1.3 baseline: `CANDLE_INTERVAL=5m`,
+`seq 384`, `PAIR_EMBED_DIM=8`, `EARLY_STOP_PATIENCE=20`, same 8 pairs, horizons
+60/240/1440, primary 240, **`SEED=1`**.
+
+```sh
+CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
+  EARLY_STOP_PATIENCE=20 SEED=1 \
+  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+  ./scripts/gcp_train.sh --gpu 60 384
+```
+
+**Verify** (§0.4 has the full list; these are the C12-specific ones):
+`Feature columns: 30`; `[market] cross-pair context filled for 8/8 pairs` with
+`mean has_market` ≈ 1.0; the `WARNING [norm]` block reports **13/30 CONSTANT for BTC and
+12/30 for the rest** — if a *new* column beyond `has_market` (and `btc_rel_ret_1h` on BTC
+alone) lands in that list, the run tested less than it looks; `knob CANDLE_INTERVAL=5m`;
+`Samples:` ≈ 2.9M; `P&L sim: … hold=48 bars`; split re-recorded. This run's checkpoint
+will be the **first one carrying its own `served_gate`**, so it is also the first that is
+promotable without an override.
+
+**Verdict, pre-registered.** Rank on mean-of-epochs cov05 LB against the family's
+**0.5219 ± 0.0014** (same bar interval, so LB is fine here — §0.6 does not bite) and on
+pooled gross bps/trade at cov 0.01–0.02 against **+19.4 / +22.0**:
+
+- **≥ 0.535 mean LB** (≈ +0.013, comparable to the 15m→5m gain) → features are the live
+  lever; replicate at two more seeds and expand the column set again.
+- **0.525–0.535** → real but small; bank it and go once more with a wider column set.
+- **≤ 0.525** → the per-timestep story is wrong too, and M2's supervised ceiling on candle
+  data is roughly where it is. That is a genuine milestone conclusion: stop tuning M2, ship
+  the ensemble to M3, and let the policy do the work M2 cannot.
 
 ### After this wave
 
-Read P0 + P1 together in a **fresh session**; P2 and P3 both branch off that reading. Still
-queued behind them, unchanged:
+Read Q1 + Q2 + Q3 together in a **fresh session**. Still queued, re-prioritized by the
+P-wave:
 
-- **O5 — L2 ladder feature audit (read-only, NO training).** `orderbook_levels` has ~14d ×
-  100 levels × 8 pairs with zero integrity errors, and the five book features are all
-  *instantaneous snapshot levels* with no dynamics. Two known gaps, both fixable from data
-  already on disk: (a) no order-flow imbalance, no book delta over the last N snapshots, no
-  queue-depletion rate, no depth slope, no microprice drift — at 30m+ horizons
-  microstructure predictive power comes mostly from OFI and its persistence, not from a
-  snapshot's static imbalance; (b) `_align_with_age` keeps only the *last* snapshot per bar
-  and discards ~5 of every 6, so per-bar aggregates (mean/std/range of imbalance within the
-  bar, summed OFI, max spread) are free information. Run `audit_microstructure.py` on the
-  candidates before spending a `FEATURE_DIM` bump. This replaces the retired book
-  walk-forward (§5) as the way the book question gets answered. **Note the 5m/1m move makes
-  this more attractive**: at 5m bars a 10s snapshot cadence gives ~30 snapshots per bar to
-  aggregate instead of ~90 thrown away.
-- **O6 — magnitude-weighted directional loss** (code task C3). The train-time twin of the
-  idea N3 tested at selection time, worth trying *because* the selection-time version failed
-  for a reason that does not apply at train time: a per-sample loss weight uses every
-  training bar rather than a ~600-effective-sample validation statistic. O2's 24h head
-  (§ archive) is a live example of the pathology it targets — right on small moves, wrong on
-  large ones.
+- **O6 — magnitude-weighted directional loss** (code task C3). Promoted to *next after Q3*.
+  It is the one remaining idea that attacks the failure §7's cost arithmetic describes — the
+  model is systematically right on smaller-than-average moves — and it does so at train time
+  with per-sample weights over 2.3M bars, not over a ~600-effective-sample validation
+  statistic (which is why N3's selection-time cousin failed). Cheap, one variable, one run.
+- **O8 — 12 pairs.** Cheap (§1.7): ADA/AVAX/LINK/XRP have full 4-year history at 5m. One
+  variable, one run. Worth doing after Q3 so it tests the *final* feature set.
 - **O7 — triple-barrier redo.** Blocked on C4b (barrier-aware `simulate_pnl`), wider
-  barriers (target ~30–40% flat), `PAIR_EMBED_DIM=8`, and a pinned dataset.
-- **O8 — 12 pairs.** Cheap (§1.7): ADA/AVAX/LINK/XRP have full 4-year history at every
-  interval. One variable, one run. Low priority, but no longer blocked.
-
----
+  barriers (target ~30–40% flat), and a pinned dataset.
+- **O5 — L2 ladder feature audit (read-only, NO training). Demoted.** The analysis is still
+  correct — `orderbook_levels` has ~14d × 100 levels with no integrity errors, the five book
+  features are static snapshot levels with no OFI/flow dynamics, and `_align_with_age`
+  discards ~5 of every 6 snapshots at 5m bars. But Q3's constraint applies to it with full
+  force: **book-derived columns are constant across 99% of the train window and get zeroed**,
+  so no amount of feature cleverness helps until either the book history is measured in
+  months or the training window is deliberately shortened to the book era (which throws away
+  the 3+ years that make the model work). Revisit when book coverage passes ~6 months —
+  the 60-day milestone for BTC/ETH/SOL is ≈2026-09-15, so this is a 2027 item, not a now item.
 
 ## §3 — WHAT TO BRING BACK (for the next session)
 
-Save each run's full log under `logs/` **named after the queue item** (`P0-seed2.log`, not
+Save each run's full log under `logs/` **named after the queue item** (`Q3.log`, not
 the run id), then open a **fresh session** and paste the paths. Do not summarize the logs
 yourself — the numbers that matter are often not the headline ones.
 
@@ -628,7 +723,7 @@ instead; that is how every log currently in `logs/` was produced.
 should be relaunched rather than analyzed:
 
 ```sh
-L=logs/P0-seed2.log                        # repeat for each run in the wave
+L=logs/Q3.log                              # repeat for each run in the wave
 grep -nE 'resolved knobs|knob |Pair embedding|Training pairs|primary=|Split global_time' $L
 grep -nE 'WARNING \[norm\]|max\|z\||BROKEN SCALE' $L
 grep -n  'P&L sim:' $L                     # hold must be horizon_min / bar_min (5m/240m ⇒ 48)
@@ -651,6 +746,12 @@ grep -oE 'epoch [0-9]+.*lb=[0-9.]+' $L | grep -oE 'lb=[0-9.]+' | cut -d= -f2 | \
 3. `Fixed-coverage P&L` → **gross bps/trade** at cov 0.01–0.20, against 5bps maker **and**
    14bps taker. Since O2 the taker column is no longer automatically negative, so read it.
 3b. `dir_acc` alongside every Wilson-LB whenever the arms differ in bar interval (§0.6).
+   P2 is the cautionary example: highest LB in the ledger, flat `dir_acc`, worse economics.
+3c. **`brier` on the 240m head, and the calibration bin table.** New with the P-wave — P2
+   posted respectable `dir_acc` with a probability output that was pure noise as a
+   probability (`emp_up ≈ 0.48` in every bin). M2's deliverable to M3 is a *calibrated*
+   probability, so a run that improves ranking while destroying calibration has not
+   improved. Reject any run whose bin table is flat in `emp_up`.
 4. `--- Walk-forward edge on val window ---` win 1–4 → does the §1.2 regime pattern hold,
    and did anything narrow the window-2-vs-window-3 spread.
 5. `Fixed-coverage directional edge` → is the ordering monotone in confidence.
@@ -671,10 +772,11 @@ line.**
 
 | Run | What | Primary | cov05 LB | Valid? | Verdict |
 |---|---|---:|---:|---|---|
-| **O2** `20260818T185438Z` | **5m bars, seq 384 (32h), 2.9M samples** | 240m | **0.557 (mean 0.525±0.015, n=34)** | ✅ **new baseline** | Resolution is a real lever — first effect other than the GBT gap that the measurement resolves. `dir_acc` 0.563 vs F4's 0.542 (§0.6). Gross **+24.5 bps/trade @469 trades**, positive at taker; serial P&L +0.99 @14bps at gate 0.62, Sharpe 1.41. WF spread narrowed to .573/.535/.500/.596. **One seed — P0 must replicate before this is banked.** Served gate must move 0.58→0.62 (C13). §1.3 |
+| **5m/seq384 family** — **O2** `20260818T185438Z` (s1) · **P0-seed2** `20260819T142759Z` · **P0-seed3** `20260820T025723Z` | **5m bars, seq 384 (32h), ~2.90M samples, 3 seeds** | 240m | **pooled mean-of-epochs 0.5219 (between-seed SEM 0.0014)** | ✅ **BANKED — the baseline** | The project's first replicated result. +0.016 ≈ 4σ over F4. Pooled fixed-coverage P&L **+19.4 / +22.0 gross bps/trade at cov 0.01 / 0.02** (1,081 / 1,783 trades) = +5.4 / +8.0 net at 14bps taker. Per-seed max LB 0.5565 / 0.5576 / 0.5425 — all order statistics, do not quote. Did **not** replicate: serial-sim magnitude (§1.5), side balance, book-era split, per-pair numbers. Served gate must become a coverage target (C13). §1.3 |
+| **P2** `20260820T100042Z` | **1m bars, seq 768 (12.8h)** — the next resolution rung | 240m | 0.5579 (mean 0.5256±0.015, n=38) — **LB is inflated, do not rank on it** | ✅ **decisive, negative** | Highest LB in the ledger on 5× the val rows, and flat where it counts: `dir_acc` cov05 **0.561 vs the 5m family's 0.559**; gross bps/trade +2.6/+8.5 at cov 0.01/0.02 vs +19.4/+22.0; **brier 0.323 vs 0.250 with `emp_up ≈ 0.48` in every probability bin** — calibration destroyed; 20h wall clock vs 2.5–3h. **Resolution ladder closed at 5m.** §1.4 |
 | **O3** `20260819T021020Z` | 15m bars, **seq 256 (64h)** — context length | 240m | 0.531 (mean 0.4925±0.023, n=24) | ✅ **decisive, negative** | Worse than F4 on mean-of-epochs; per-epoch series drifts monotonically down; served-gate coverage collapsed 4.9%→0.8%; up side at 0.499. Longer context is dead and **architecture is closed again**. §1.4 |
 | **O0** `eval-only re-score of F4` | F4 on today's eval code, CPU | 240m | 0.531 (reproduced exactly) | ✅ | Delivered F4's missing `Fixed-coverage P&L`: +2.61 / +6.53 / +6.50 / −2.96 / −4.38 gross bps at cov .01/.02/.05/.10/.20. Closes N3-vs-F4 — N3's +4.24 @cov05 is inside noise of F4's +6.50. |
-| **F4** `20260817T221811Z` | 15m bars, seq 128, horizon ladder | 240m | 0.531 (mean 0.506±0.016, n=18) | ✅ **prior baseline, superseded by O2** | 4h is the horizon peak. Best cell +6.5 gross bps/trade ≈ maker break-even, never positive at taker. WF .486/.617/.457/.584. C2 table now supplied by O0. |
+| **F4** `20260817T221811Z` | 15m bars, seq 128, horizon ladder | 240m | 0.531 (mean 0.506±0.016, n=18) | ✅ **prior baseline, superseded by the 5m family** | 4h is the horizon peak. Best cell +6.5 gross bps/trade ≈ maker break-even, never positive at taker. WF .486/.617/.457/.584. C2 table now supplied by O0. |
 | **N3** `20260818T031002Z` | cost-aware selection, `SEL_NET_WEIGHT=0.5 SEL_COST_BPS=5` | 240m | 0.523 (mean 0.499±0.016) | ✅ valid, **lever closed** | Selected epoch 1, stopped at 11. Score blend was ~88% cost term and the cost term ranks noise. Gross +4.2bps @cov05 — no better than F4. **Do not promote**; it overwrote `latest.pt`. §1.5 |
 | **N2** `gbt-20260818T070504Z` | LightGBM 114-col static summary at 15m/4h | 240m | **0.4692** | ✅ decisive, **re-read after O3** | Below coin flip at every coverage; 0.04–0.06 worse than the LSTM. Originally read as "recurrence matters, try more context". O3 tested that and refuted it, so the surviving reading is narrower: **the 114-column static summary throws information away**, and this says nothing about needing a bigger architecture. §1.4 |
 | **N1** `wf-20260818T063858Z` | book ON/OFF walk-forward, 4 long pairs, C4a floor active | 30m | — | ⚠️ **INCONCLUSIVE by its own rule** | 2 of 6 folds decidable; decidable gaps `+0.073`, `−0.122`. Book-OFF collapses to flat and cannot be scored. **Design retired**, see §5. |
@@ -700,13 +802,16 @@ line.**
 | **The book ON/OFF walk-forward *design*** | **Retired (new, 2026-08-18)** | Three attempts, zero decidable verdicts. The book-OFF arm's modal failure (collapse to an all-flat predictor) is exactly what pushes `n_dir` under the reliability floor, so the design is least able to decide precisely when the book helps most. The book question is not closed — it moves to within-model attribution (**O5**). Do not launch `gcp_walkforward.sh` for it again. |
 | **Context length / sequence window** | **Closed (new, 2026-08-19)** | O3 ran seq 128→256 at 15m as a clean one-variable test and it is *worse* on mean-of-epochs (0.4925±0.023 vs F4's 0.5058±0.016), with a collapsing confidence distribution and a coin-flip up side. The LSTM already uses all the window it can. Do not sweep seq 512. Note this is about *window*, not *resolution* — finer bars at the same window (O2) is a separate and live lever. §1.4 |
 | Encoder capacity / layers / hidden sweeps | **Closed again (2026-08-19)** | Was reopened on N2's GBT gap. O3 tested the cheap version of that hypothesis and refuted it: the gap is about the GBT's static summary discarding information, not about the LSTM needing more modelling power. Also barred by the last row of this table — a single-run capacity sweep cannot resolve what it would be measuring. |
-| Full architecture swap (transformer / TCN) | **Closed (2026-08-19)** | Was gated behind O3; O3 came back negative. **Do not write a transformer.** Reopen only if P3's richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit. |
+| Full architecture swap (transformer / TCN) | **Closed (2026-08-19)** | Was gated behind O3; O3 came back negative. **Do not write a transformer.** Reopen only if Q3's richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit. |
 | Confidence calibration / temperature / focal loss | **Closed** | F4's head is *over*-confident (`[0.60,0.70)` bin mean_pred 0.636 vs empirical 0.547; N3's is 0.609 vs 0.521). Sharpening an over-confident head is the wrong direction. |
 | Raising `GATE_THRESHOLD` as an experiment | **Superseded by C1+C2** | The served gate is 0.58 and eval now reports there. Derive the operating point from the fixed-coverage P&L table, not from another sweep. |
 | Quantile head | **Deferred** | Regressed direction ~0.014; band coverage unstable. Revisit at M3, detached. |
 | `liquidations` feed | **Dropped** | 0 rows; Binance gates WS market data from datacenter egress (verified from 3 hosts). |
 | More candle *history* | **Closed** | Adds more of the pre-book regime we already fit. Note this is about *history*, not *resolution*. |
-| **Bar resolution (15m → 5m)** | **🟢 OPEN and paying** | O2 is the project's first resolvable improvement (§1.3). Provisional pending P0's seed replicate; the next rung (1m) is P2. |
+| **Bar resolution — 15m → 5m** | **🟢 BANKED and frozen (2026-08-21)** | Replicated across three seeds: pooled mean-of-epochs 0.5219 ± 0.0014 vs F4's 0.5058, and pooled +22 gross bps/trade at the top 2% (§1.3). `5m / seq 384` is the permanent baseline. Nothing further to test here — do not run a fourth seed. |
+| **Bar resolution — finer than 5m** | **Closed (new, 2026-08-21)** | P2 ran 1m/seq768 as a direction probe: flat `dir_acc` (0.561 vs 0.559), materially worse economics, **destroyed calibration** (`emp_up ≈ 0.48` in every bin, brier 0.323 vs 0.250), 20h wall clock. The ladder has one rung and we are standing on it. The untested variant (1m at a 32h window, seq 1920) is unaffordable and context length is separately closed. §1.4 |
+| **Absolute `GATE_THRESHOLD` as a serving constant** | **Closed (new, 2026-08-21)** | Not a lever, a defect. The same probability is 1.2% / 2.5% / 1.7% coverage across three seeds of one configuration and 80% on P2 (§1.5). The gate must be a per-checkpoint coverage target chosen from the fixed-coverage P&L table. C13. |
+| **"Flat training loss proves nothing" — and now "one seed proves nothing"** | **Reinforced (2026-08-21)** | Of the four claims the O-wave made from one seed, three did not survive replication (§1.2, §1.5). Any result quoted from a single run is provisional until a second seed agrees. |
 | **"Flat `loss_tr` proves the model is not data-starved"** | **Falsified (new, 2026-08-19)** | O2's loss was as flat as F4's through the region its selected epoch lives in, and it still improved materially. On a near-noise-floor task the training loss is dominated by the irreducible term. Judge data levers on the validation-selection metric only. §1.5 |
 | Tuning any single hyperparameter on one run | **Closed by §0.3** | The measurement cannot resolve effects below ~0.04 LB from a single run. Any such sweep is reading noise. |
 
@@ -758,30 +863,67 @@ now start 2022-08-18 for all nine long pairs (§1.7).
   `selected - mean = ±… (… sd)`. Read the second line first: a gap within ~1 sd is the
   order statistic, not a result.
 
-### Next up
+### The C-batch — DONE 2026-08-21 (the Q-wave code, committed together)
 
-- 🔴 **C13 — make promotion safe and make the served gate a per-checkpoint property.**
-  Two coupled defects that O2 exposed and that block promoting it:
-  1. `gcp_promote.sh` only ever promotes `checkpoints/latest.pt`, and every training run
-     overwrites that key. `latest.pt` is currently **O3's** checkpoint (§1.4) and O2 is
-     reachable only at its named key. Give the script an explicit
-     `--checkpoint <key>` argument and make the bare form refuse to run when `latest.pt`
-     is not the checkpoint the operator names.
-  2. `GATE_THRESHOLD=0.58` is a global serving constant tuned to F4's confidence scale.
-     On O2 the profitable operating point is **0.62** (§1.3), and O3 showed the scale can
-     shift far enough to gate almost nothing. The gate belongs in the checkpoint meta,
-     chosen at eval time from the fixed-coverage P&L table and read by `serve.py` — with
-     the config value as a fallback only. Until this ships, promoting any new checkpoint
-     silently changes the operating point.
+- ✅ **C13 — safe promotion + a coverage-targeted served gate.** This was Q0.
+  1. `gcp_promote.sh --checkpoint <key>` is now **required**; the bare form refuses and
+     prints the promotable keys. Accepts a bare filename, `checkpoints/<name>.pt`, a
+     `gs://` URL, or the literal `latest`. It also pins serve code to the commit
+     encoded in the checkpoint's own filename (`m2_multi_<run>_<sha8>.pt`) rather than
+     the ambient `GIT_REF`, so a named historical checkpoint is served by the code
+     that wrote it. `--list` shows what is promotable.
+  2. **The gate is a coverage target, not a probability.** `SERVE_TARGET_COVERAGE`
+     (config, default **0.02**, in `FLUX_TRAIN_ENV_KEYS`) says what fraction of bars
+     should trade. `eval_m2.py` measures the confidence threshold that realizes it on
+     the val window, prints a `SERVED GATE (C13, coverage-targeted)` block with the
+     realized dir_acc and gross/net bps, and **writes `meta.served_gate` into the
+     checkpoint file**. Because the runner evals before uploading, a training run now
+     ships a checkpoint carrying its own operating point. Every `*` marker, serve-gate
+     row, long/short split and per-pair line in the log follows that derived gate
+     instead of the config constant.
+  3. `serve.py` reads `meta.served_gate`. Precedence: explicit env override >
+     checkpoint > config default, each logged, and `/health` + every prediction now
+     report `gate_source` (`checkpoint` / `config-fallback` / `env-override`) and
+     `gate_target_coverage`.
+  4. ⚠️ **`docker-compose.yml` no longer defaults `GATE_THRESHOLD`.** It was
+     `${ML_GATE_THRESHOLD:-0.58}`, which as an override would have defeated all of the
+     above on every deploy — trap §0.5.2 in a new costume. It is now
+     `${ML_GATE_THRESHOLD:-}`, and an empty value means "use the checkpoint".
+     The Elixir side already prefers serve's `gate_threshold` over its own env, so it
+     follows automatically.
+- ✅ **C14 — multi-checkpoint ensemble eval.** `--eval-only` (and `eval_m2.py
+  --checkpoint`) take a comma-separated list. Members are averaged on **probabilities**,
+  not logits — each member's softmax is averaged and stored back as log-probabilities,
+  so every downstream table sees exactly the mean probability and calibration means what
+  it says. Members must agree on candle interval, seq_len, feature_dim, the feature
+  column list, horizons and primary; a mismatch **exits 2** with a diff rather than
+  averaging two different experiments. Architecture differences only warn. The norm
+  range report runs for every member, so `BROKEN SCALE` still guards each one. An
+  ensemble's derived gate is reported but deliberately **not** written into any member.
+- ✅ **C12 — `FEATURE_DIM` 19 → 30.** Eleven new columns, all candle-derived (§1.6
+  explains why nothing microstructure-shaped can be added yet):
+  - own-pair multi-scale: `ret_1h`, `ret_4h`, `ret_1d`, `vol_1h`, `vol_4h`, `vol_1d`
+  - market context: `btc_rel_ret_1h`, `beta_btc_1d`, `xs_rank_1h`, `xs_disp_1h`,
+    `has_market`
+  - Windows are in **minutes** and converted per candle interval, so `ret_1d` is a day
+    at 1m, 5m and 15m rather than a different span at each.
+  - **Old checkpoints still work.** `FEATURE_COLS[:19]` is frozen as
+    `LEGACY_FEATURE_COLS`, new columns are appended after the masks, and train records
+    `meta.feature_cols`. eval/serve rebuild the checkpoint's own list, falling back to
+    the legacy prefix for pre-C12 checkpoints. Verified byte-identical.
+  - The cross-pair columns are computed in a **second pass** over all pairs (a ragged
+    timestamp join, since pairs list on different dates), then patched into the
+    existing float32 matrices, so peak memory is unchanged. Serving needs the same
+    context, so it loads the universe through a candles-only path cached for
+    `MARKET_CACHE_TTL_S` (default 30s). Train-vs-serve parity was verified exact
+    (max |train − serve| = 0 on all five columns), and a failed context degrades to
+    zeros with `has_market=0` rather than refusing to serve.
 
 ### Later
 
-- ⬜ **C12 — `FEATURE_DIM` bump for cross-pair / regime features.** Required by O4. Adding
-  columns changes the serving contract (`serve.py`, the checkpoint's feature list, and the
-  Elixir side's expectations), so scope it as its own change and confirm the eval-time
-  feature-name mapping in `dataset.py:425` still resolves.
 - ⬜ **C3 — magnitude-weighted directional loss.** Weight the aux up/down CE by `|r_T|`.
-  Gate behind a config flag defaulting to off. Feeds O6.
+  Gate behind a config flag defaulting to off. Feeds **O6**, which the P-wave promoted to
+  next-after-Q3 (§2).
 - ⬜ **C4b — barrier-aware `simulate_pnl`.** Under triple-barrier labels the model predicts
   a TP/SL outcome but `simulate_pnl` books `fwd_ret` at a fixed `hold_bars` — a policy
   mismatch. Walk forward to first TP/SL touch, else timeout. **Blocks O7.**
@@ -806,13 +948,13 @@ now start 2022-08-18 for all nine long pairs (§1.7).
 | Job | Launch | Status | Fetch | VM |
 |---|---|---|---|---|
 | Train (GPU) | `./scripts/gcp_train.sh --gpu 60 128` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> > logs/X.log` | `fluxtrader-train` |
-| Eval only (no training) | `./scripts/gcp_train.sh --eval-only <ckpt-key>` | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> > logs/X.log` + `gs://…/eval/<run_id>/` | `fluxtrader-train` |
+| Eval only (no training) | `./scripts/gcp_train.sh --eval-only <key>[,<key>,…]` (several = ensemble) | `./scripts/gcp_status.sh` | `./scripts/gcp_logs.sh <run_id> > logs/X.log` + `gs://…/eval/<run_id>/` | `fluxtrader-train` |
 | Walk-forward | `./scripts/gcp_walkforward.sh` | `--status` | `--fetch` | `fluxtrader-walkforward` |
 | GBT diagnostic | `./scripts/gcp_gbt.sh` | `--status` | `--fetch` / `--log` | `fluxtrader-gbt` |
 | Single-window ablate | `./scripts/gcp_ablate.sh` | — | — | own VM |
 | Feature audit | `./scripts/gcp_audit.sh` | — | — | own VM |
 | Data stats | `./scripts/gcp_data_collection_stats.sh` | — | — | always-on |
-| Promote | `./scripts/gcp_promote.sh --local-copy` | — | — | always-on |
+| Promote | `./scripts/gcp_promote.sh --checkpoint <key>` (`--list` to see keys) | — | — | always-on |
 
 Each *job type* has its own VM, so a walk-forward, a GBT diagnostic and a training run can
 overlap. They self-DELETE on success and self-STOP on failure. `KEEP_VM=1` keeps the VM for
@@ -833,18 +975,25 @@ a loop or a "launch both" instruction, and state the total wall clock when propo
 replicates.
 
 ⚠️ `gcp_promote.sh` only ever promotes `checkpoints/latest.pt`, and every new training run
-overwrites that key. **`latest.pt` is currently O3's checkpoint — the worst run of the
-O-wave (§1.4) — and must not be promoted.** The checkpoints you may actually want:
+overwrites that key. **`latest.pt` is currently P2's checkpoint — the 1m model whose
+probability output is uncalibrated noise (§1.4) — and must not be promoted.** The
+checkpoints you may actually want:
 
 | run | key |
 |---|---|
-| **O2** (current baseline) | `checkpoints/m2_multi_20260818T185438Z_8c4b2a03.pt` |
+| **seed 2 — promote this one** (§2, Q0) | `checkpoints/m2_multi_20260819T142759Z_a186182b.pt` |
+| seed 1 (O2) | `checkpoints/m2_multi_20260818T185438Z_8c4b2a03.pt` |
+| seed 3 | `checkpoints/m2_multi_20260820T025723Z_a186182b.pt` |
 | F4 (prior baseline) | `checkpoints/m2_multi_20260817T221811Z_94614795.pt` |
-| O3 (do not promote) | `checkpoints/m2_multi_20260819T021020Z_8c4b2a03.pt` = `latest.pt` |
+| O3 (do not promote) | `checkpoints/m2_multi_20260819T021020Z_8c4b2a03.pt` |
+| **P2 (do not promote)** | `checkpoints/m2_multi_20260820T100042Z_a186182b.pt` = `latest.pt` |
 
-**Do not run `gcp_promote.sh` until C13 ships** (§6) — and note that promoting O2 also
-requires moving the served gate from 0.58 to 0.62, or it will trade at a loss-making
-operating point.
+**C13 shipped (2026-08-21)**, so `gcp_promote.sh` now requires `--checkpoint <key>` and
+refuses the bare form; `--list` prints the table above from the bucket. It also pins serve
+code to the sha in the checkpoint's filename. Remember that every key listed here predates
+C13 and therefore carries no `served_gate`: promoting one without an override serves it at
+the config fallback of 0.58, which §1.5 shows loses money in all three seeds. Q0 in §2 is
+the two-step fix.
 
 ### Env knob passthrough
 
@@ -859,10 +1008,11 @@ CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT
 LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER
 CANDLE_INTERVAL NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD
 BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN
-GATE_THRESHOLD FEE_RATE_BPS SLIPPAGE_BPS MAKER_FEE_RATE_BPS MAKER_SLIPPAGE_BPS
+GATE_THRESHOLD SERVE_TARGET_COVERAGE
+FEE_RATE_BPS SLIPPAGE_BPS MAKER_FEE_RATE_BPS MAKER_SLIPPAGE_BPS
 ```
 
-`EARLY_STOP_PATIENCE` and `SEED` were added to this list by C8 (2026-08-18).
+`EARLY_STOP_PATIENCE` and `SEED` were added by C8 (2026-08-18); `SERVE_TARGET_COVERAGE` by C13 (2026-08-21).
 
 **Add every new config knob to this list when you create it** — an unforwarded knob is a
 silent no-op on the GPU VM (trap §0.5.2/§0.5.7). Note `TRAIN_PRIMARY` / `TRAIN_HORIZONS` /
@@ -886,14 +1036,16 @@ break-even computed from dir_acc assumes correct and incorrect trades have the s
 they do not — the model is systematically right on smaller-than-average moves. C2's
 `Fixed-coverage P&L` table prints the durable number directly.
 
-Worth keeping in view — **this paragraph changed with O2.** Through F4 the only positive
-cells in the project appeared at maker cost (F4's best: +6.5 gross, +1.5 net at maker,
-−7.5 at taker), which made execution work the single largest sign-flipping lever
-available. O2's top-2% slice is **+22 to +24 gross bps/trade, i.e. +8 to +10 net at full
-taker cost**, and its serial sim books +0.99 net_ret at 14bps. Execution work is still
-worth roughly +9 bps/trade and is still not an ML change — but it is no longer the
-difference between a signal that can and cannot be traded, and it is M3's problem
-regardless. Do not let it block the model queue.
+Worth keeping in view — **this paragraph was rewritten by the P-wave and is now measured on
+three seeds.** Through F4 the only positive cells in the project appeared at maker cost
+(F4's best: +6.5 gross, +1.5 net at maker, −7.5 at taker), which made execution work the
+single largest sign-flipping lever available. The 5m family's pooled top-2% slice is
+**+22.0 gross bps/trade over 1,783 trades — +17.0 net at maker, +8.0 net at taker** (§1.3),
+so the signal now clears full taker cost at ~1.5σ and maker cost comfortably. Execution work
+is still worth ~9 bps/trade and is still not an ML change, and it is M3's problem regardless.
+Do not let it block the model queue. What the replication also says: the *serial* P&L
+magnitude was seed luck (§1.5), so size any downstream expectation off the fixed-coverage
+table, never off a single run's `net_ret` line.
 
 ### Where things live
 
@@ -905,7 +1057,8 @@ regardless. Do not let it block the model queue.
 
 ### Related docs
 
-- `docs/archive/TRAINING_HISTORY.md` — the full session narrative, 2026-07-23 → 2026-08-18.
+- `docs/archive/TRAINING_HISTORY.md` — the full session narrative, 2026-07-23 → 2026-08-21,
+  including the O-wave as written before seed replication corrected three of its claims.
 - `docs/DATA_COLLECTION_AUDIT.md` — what the collector captures vs silently drops.
 - `docs/QUANT_AB_HANDOFF.md` — quantile-head A/B and its deferral.
 - `MODEL.md` — architecture contract; §4.3 labels, §4.4 architecture options.

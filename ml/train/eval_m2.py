@@ -28,6 +28,7 @@ from config import (
     PAIRS,
     ROUND_TRIP_COST,
     SEQ_LEN,
+    SERVE_TARGET_COVERAGE,
     VAL_FRACTION,
     WF_WINDOWS,
 )
@@ -41,6 +42,7 @@ from data.dataset import (
     time_split_indices,
 )
 from data.db import load_whitelist_pairs
+from data.features import FEATURE_COLS
 from gate import (
     dir_logits_to_three_class,
     directional_signal,
@@ -51,7 +53,23 @@ from gate import (
 from models.multi_horizon import SharedEncoderMultiHead
 
 # Coverages at which to report a stable, cross-model-comparable directional edge.
-FIXED_COVERAGES = [0.01, 0.02, 0.05, 0.10, 0.20]
+# SERVE_TARGET_COVERAGE is folded in so the row the served gate is derived FROM is
+# always present in the printed table, whatever the operator sets it to.
+FIXED_COVERAGES = sorted({0.01, 0.02, 0.05, 0.10, 0.20, round(SERVE_TARGET_COVERAGE, 6)})
+
+# The confidence threshold this eval treats as "the operating point". It starts at
+# the config constant and is REPLACED, once the primary horizon's predictions exist,
+# by the threshold that realizes SERVE_TARGET_COVERAGE on this val window (C13).
+#
+# Why a module global rather than a parameter: every table in this file marks and
+# measures "the served gate", and before C13 they all read the config constant. A
+# checkpoint whose confidence scale differs from the one that constant was tuned on
+# then gets every serve-gate row printed at the wrong operating point — which is
+# exactly how three seeds of one configuration came to be compared at 1.2% / 2.5% /
+# 1.7% coverage (docs/NEXT_TRAINING_PLAN.md 1.5). One global, set once, keeps them
+# consistent.
+SERVED_GATE = GATE_THRESHOLD
+SERVED_GATE_SOURCE = "config"
 
 # Bar duration in seconds — used by the serial P&L hold logic to decide when an open
 # position has been held long enough. Was hardcoded to 60, which silently assumed 1m
@@ -540,6 +558,193 @@ def quantile_calibration(quant: torch.Tensor, ret: torch.Tensor, levels):
     }
 
 
+def _member_fingerprint(meta: dict) -> dict:
+    """The meta fields that decide WHICH EXPERIMENT a checkpoint is.
+
+    Averaging predictions across checkpoints is only meaningful when the members
+    scored the same bars from the same inputs. These five fields are the ones that
+    change the bar grid, the window, or the label — differ on any of them and the
+    members are not measuring the same thing, so the ensemble is nonsense rather
+    than merely noisy.
+    """
+    horizons = meta.get("horizons_minutes") or HORIZONS_MINUTES
+    return {
+        "candle_interval": str(meta.get("candle_interval") or CANDLE_INTERVAL),
+        "seq_len": int(meta.get("seq_len", SEQ_LEN)),
+        "feature_dim": int(meta.get("feature_dim", FEATURE_DIM)),
+        # The names, not just the count: two 29-column checkpoints with different
+        # column ORDER would average two models reading different inputs.
+        "feature_cols": list(meta.get("feature_cols") or []),
+        "horizon_keys": list(meta.get("horizon_keys") or [str(h) for h in horizons]),
+        "primary_horizon": str(
+            meta.get("primary_horizon", horizons[min(1, len(horizons) - 1)])
+        ),
+    }
+
+
+def load_members(spec: str, device) -> list:
+    """
+    Resolve --checkpoint (one path, or a comma-separated list) into loaded members.
+
+    A single path behaves exactly as before. Several paths form an ENSEMBLE: their
+    per-bar probabilities are averaged before any gate or table is computed (C14).
+    That exists because run-to-run seed noise is this project's dominant measurement
+    problem — three checkpoints of one configuration disagree by more than most of
+    the effects being chased — and averaging is the cheapest way to spend that
+    disagreement on a better estimate instead of fighting it.
+
+    Members must agree on `_member_fingerprint`; a mismatch raises rather than
+    silently averaging two different experiments. Architecture differences
+    (hidden size, layers) only warn — a wider net is still a legitimate ensemble
+    member, it just is not what we currently do.
+    """
+    paths = [Path(x.strip()) for x in str(spec).split(",") if x.strip()]
+    if not paths:
+        print("No checkpoint given")
+        sys.exit(1)
+
+    members = []
+    for path in paths:
+        if not path.exists():
+            print(f"Checkpoint not found: {path}")
+            sys.exit(1)
+        ckpt = torch.load(path, map_location=device, weights_only=False)
+        members.append({"path": path, "ckpt": ckpt, "meta": ckpt.get("meta", {})})
+
+    ref = _member_fingerprint(members[0]["meta"])
+    for m in members[1:]:
+        got = _member_fingerprint(m["meta"])
+        if got != ref:
+            diff = {k: (ref[k], got[k]) for k in ref if ref[k] != got[k]}
+            print(
+                f"ERROR: ensemble members describe different experiments — refusing to "
+                f"average.\n  {members[0]['path'].name}: {ref}\n  {m['path'].name}: {got}"
+                f"\n  differing: {diff}"
+            )
+            sys.exit(2)
+        for k in ("hidden_size", "num_layers", "pair_embed_dim"):
+            a, b = members[0]["meta"].get(k), m["meta"].get(k)
+            if a != b:
+                print(
+                    f"  NOTE: member {m['path'].name} has {k}={b} vs "
+                    f"{members[0]['path'].name}'s {a} — averaging anyway (architecture "
+                    f"differences are legitimate in an ensemble)."
+                )
+
+    if len(members) > 1:
+        print(f"=== ENSEMBLE of {len(members)} checkpoints (probability-averaged) ===")
+        for i, m in enumerate(members):
+            print(f"    member {i}: {m['path'].name}")
+        print(
+            "    Averaging is on PROBABILITIES, not logits: each member's softmax is "
+            "averaged and the result is stored back as log-probabilities, so every "
+            "downstream table (which softmaxes again) sees exactly the mean probability."
+        )
+    return members
+
+
+def build_model_from_meta(meta: dict, device):
+    """Instantiate the encoder described by a checkpoint's meta (no weights loaded)."""
+    horizons = meta.get("horizons_minutes") or HORIZONS_MINUTES
+    pair_vocab = list(meta.get("pair_vocab") or [])
+    pair_embed_dim = int(meta.get("pair_embed_dim", 0))
+    return SharedEncoderMultiHead(
+        input_size=meta.get("feature_dim", FEATURE_DIM),
+        hidden_size=meta.get("hidden_size", HIDDEN_SIZE),
+        horizons_minutes=horizons,
+        directional_head=bool(meta.get("directional_head", False)),
+        quantile_head=bool(meta.get("quantile_head", False)),
+        quantile_levels=meta.get("quantile_levels") or [0.1, 0.5, 0.9],
+        num_layers=int(meta.get("num_layers", 2)),
+        n_pairs=len(pair_vocab) if pair_embed_dim > 0 else 0,
+        pair_embed_dim=pair_embed_dim,
+    ).to(device)
+
+
+def probs_to_logits(probs: torch.Tensor) -> torch.Tensor:
+    """Store a probability tensor as logits without changing what it means.
+
+    softmax(log p) == p, so writing log-probabilities back into the tensors the rest
+    of this file calls "logits" leaves every downstream metric reading the exact
+    averaged probability. Clamped because log(0) would poison an argmax.
+    """
+    return torch.log(probs.clamp_min(1e-12))
+
+
+def derive_served_gate(
+    gate_logits,
+    y_true,
+    dir_logits,
+    fwd_ret,
+    times,
+    pair_ids,
+    hold_bars,
+    target_coverage: float,
+) -> dict:
+    """
+    Turn a COVERAGE target into the confidence threshold that realizes it here.
+
+    This is C13's core. `GATE_THRESHOLD` is an absolute probability, and a
+    probability is not a portable operating point: three seeds of one configuration
+    gate 1.2% / 2.5% / 1.7% of bars at conf >= 0.62, and the 1m model P2 gates 80%
+    at 0.58. The fraction of bars traded, by contrast, is what the fixed-coverage
+    P&L table is monotone in for every healthy model — so the operator picks a
+    coverage, and the threshold that delivers it is a measured property OF THE
+    CHECKPOINT, recorded next to the economics it was chosen from.
+
+    Returns the threshold plus enough context to audit the choice later: the val
+    window it was measured on, and the realized edge and gross/net bps/trade there.
+    """
+    fc = fixed_coverage_metrics(gate_logits, y_true, target_coverage)
+    pnl = fixed_coverage_pnl(
+        dir_logits, fwd_ret, times, pair_ids, target_coverage, hold_bars
+    )
+    out = {
+        "target_coverage": float(target_coverage),
+        "conf_threshold": round(float(fc.get("conf_threshold") or 0.0), 6),
+        "measured": {
+            "n_gated": int(fc.get("n_gated") or 0),
+            "dir_acc": round(float(fc.get("dir_acc") or 0.0), 4),
+            "wilson_lb": round(float(fc.get("dir_acc_wilson_lb") or 0.0), 4),
+            "n_dir": int(fc.get("n_true_directional_gated") or 0),
+        },
+        "val_time_start": _ns_to_iso(int(np.min(times))) if times is not None else None,
+        "val_time_end": _ns_to_iso(int(np.max(times))) if times is not None else None,
+    }
+    if pnl:
+        out["measured"].update(
+            {
+                "n_trades": int(pnl["n_trades"]),
+                "gross_bps_per_trade": round(float(pnl["gross_bps_per_trade"]), 3),
+                "net_bps_per_trade": {
+                    k: round(float(v["net_bps_per_trade"]), 3)
+                    for k, v in pnl["net"].items()
+                },
+            }
+        )
+    return out
+
+
+def write_served_gate_meta(ckpt_path: Path, ckpt: dict, served_gate: dict) -> bool:
+    """
+    Persist the derived gate into the checkpoint so serving cannot get it wrong.
+
+    Written in place, and the training runner uploads the checkpoint AFTER eval, so
+    a normal training run ships a checkpoint that already carries its own operating
+    point. Without this the gate lives only in a log, and promoting a model means
+    a human transcribing a number — which is how a model tuned at one confidence
+    scale ended up served at another's.
+    """
+    try:
+        meta = ckpt.setdefault("meta", {})
+        meta["served_gate"] = served_gate
+        torch.save(ckpt, ckpt_path)
+        return True
+    except Exception as exc:  # noqa: BLE001 - a failed write must not void the eval
+        print(f"  WARNING: could not write served_gate into {ckpt_path}: {exc}")
+        return False
+
+
 def run_horizon_report(
     logits,
     y_true,
@@ -580,10 +785,10 @@ def run_horizon_report(
     ls_pnl = None
     if fwd_ret is not None and times is not None and hold_bars is not None:
         ls_pnl = long_short_pnl_split(
-            dir_logits, y_true, fwd_ret, times, pair_ids, hold_bars, GATE_THRESHOLD, cost
+            dir_logits, y_true, fwd_ret, times, pair_ids, hold_bars, SERVED_GATE, cost
         )
 
-    serve_row = next((r for r in sweep if abs(r["threshold"] - GATE_THRESHOLD) < 1e-9), None)
+    serve_row = next((r for r in sweep if abs(r["threshold"] - SERVED_GATE) < 1e-9), None)
     edge = None
     if serve_row and serve_row.get("n_gated", 0) > 0:
         edge = float(serve_row.get("gated_dir_acc") or 0.0) - 0.5
@@ -619,7 +824,8 @@ def run_horizon_report(
         "fixed_coverage_pnl": fixed_cov_pnl,
         "side_split_cov05": side_split,
         "long_short_pnl": ls_pnl,
-        "serve_gate": GATE_THRESHOLD,
+        "serve_gate": SERVED_GATE,
+        "serve_gate_source": SERVED_GATE_SOURCE,
         "serve_gate_dir_edge_vs_half": edge,
         "per_pair": per_pair,
         "conf_matrix_tensor": conf_matrix,
@@ -658,32 +864,60 @@ def main():
         help="Write per-bar (ts, pair, horizon, side, conf, p_up, fwd_ret, y3, "
         "has_book) for the val window to OUTPUT_DIR/eval_preds.parquet.",
     )
+    p.add_argument(
+        "--target-coverage",
+        type=float,
+        default=SERVE_TARGET_COVERAGE,
+        help="Fraction of bars the served gate should trade. The confidence "
+        "threshold that realizes it on this val window becomes the operating point "
+        "and is written into the checkpoint meta (C13).",
+    )
+    p.add_argument(
+        "--no-write-gate-meta",
+        action="store_true",
+        help="Derive and print the served gate but do NOT write it back into the "
+        "checkpoint file. Default is to write (the training runner uploads the "
+        "checkpoint after eval, so it ships carrying its own operating point).",
+    )
     args = p.parse_args()
 
     device = torch.device(args.device)
-    ckpt_path = Path(args.checkpoint)
-    if not ckpt_path.exists():
-        print(f"Checkpoint not found: {ckpt_path}")
-        sys.exit(1)
-
-    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-    meta = ckpt.get("meta", {})
+    # One path evaluates one checkpoint; several (comma-separated) evaluate their
+    # probability-averaged ensemble (C14). Everything after this point is identical
+    # for both cases — the ensemble is materialized as one set of averaged tensors.
+    members = load_members(args.checkpoint, device)
+    is_ensemble = len(members) > 1
+    ckpt_path = members[0]["path"]
+    ckpt = members[0]["ckpt"]
+    meta = members[0]["meta"]
     horizons = meta.get("horizons_minutes") or HORIZONS_MINUTES
     horizon_keys = meta.get("horizon_keys") or [str(h) for h in horizons]
     seq_len = meta.get("seq_len", SEQ_LEN)
-    feature_dim = meta.get("feature_dim", FEATURE_DIM)
-    hidden = meta.get("hidden_size", HIDDEN_SIZE)
-    num_layers = int(meta.get("num_layers", 2))  # pre-capacity ckpts had 2
-    norm_stats = meta.get("norm_stats") or {}
     primary = str(meta.get("primary_horizon", horizons[min(1, len(horizons) - 1)]))
     has_dir_head = bool(meta.get("directional_head", False))
-    has_quant_head = bool(meta.get("quantile_head", False))
     quant_levels = meta.get("quantile_levels") or [0.1, 0.5, 0.9]
-    pair_embed_dim = int(meta.get("pair_embed_dim", 0))
-    pair_vocab = list(meta.get("pair_vocab") or [])
-    # symbol -> trained embedding row; unknown symbols fall back to the OOV bucket.
-    pair_to_id = {p: i for i, p in enumerate(pair_vocab)}
-    oov_id = len(pair_vocab)
+
+    # --- Rebuild the checkpoint's OWN feature columns (C12) ----------------------
+    # FEATURE_COLS grows over time. A checkpoint trained on 19 columns must be fed
+    # those 19, in that order — feeding it today's 29 is a shape error at best and a
+    # silent feature-shuffle at worst. Checkpoints written before C12 carry no
+    # feature_cols, so fall back to the frozen legacy prefix, which is exactly what
+    # they were trained on.
+    ckpt_feature_dim = int(meta.get("feature_dim", FEATURE_DIM))
+    eval_feature_cols = list(meta.get("feature_cols") or [])
+    if not eval_feature_cols:
+        eval_feature_cols = list(FEATURE_COLS[:ckpt_feature_dim])
+        print(
+            f"NOTE: checkpoint records no feature_cols (pre-C12) — rebuilding its "
+            f"{ckpt_feature_dim} columns from the frozen legacy list."
+        )
+    if len(eval_feature_cols) != ckpt_feature_dim:
+        print(
+            f"ERROR: checkpoint feature_dim={ckpt_feature_dim} but feature_cols has "
+            f"{len(eval_feature_cols)} entries — refusing to guess."
+        )
+        sys.exit(2)
+    print(f"Feature columns: {len(eval_feature_cols)} ({', '.join(eval_feature_cols)})")
 
     # --- Candle interval comes from the CHECKPOINT, not the ambient env ----------
     # Re-scoring a historical checkpoint (gcp_train.sh --eval-only) runs with today's
@@ -692,7 +926,7 @@ def main():
     # different val window, and hold_bars/BAR_SECONDS off by 15x — so its P&L and
     # trade counts would be meaningless while still printing a full, plausible table.
     # The bundle records candle_interval in meta, so trust the checkpoint and say so.
-    global BAR_SECONDS
+    global BAR_SECONDS, SERVED_GATE, SERVED_GATE_SOURCE
     ckpt_interval = meta.get("candle_interval")
     if ckpt_interval:
         eval_interval = str(ckpt_interval)
@@ -712,19 +946,11 @@ def main():
         )
     BAR_SECONDS = bar_seconds(eval_interval)
 
-    model = SharedEncoderMultiHead(
-        input_size=feature_dim,
-        hidden_size=hidden,
-        horizons_minutes=horizons,
-        directional_head=has_dir_head,
-        quantile_head=has_quant_head,
-        quantile_levels=quant_levels,
-        num_layers=num_layers,
-        n_pairs=len(pair_vocab) if pair_embed_dim > 0 else 0,
-        pair_embed_dim=pair_embed_dim,
-    ).to(device)
-    model.load_state_dict(ckpt["model_state"])
-    model.eval()
+    for m in members:
+        mdl = build_model_from_meta(m["meta"], device)
+        mdl.load_state_dict(m["ckpt"]["model_state"])
+        mdl.eval()
+        m["model"] = mdl
     print(f"Directional head: {'ON — gating uses aux up/down signal' if has_dir_head else 'off'}")
 
     if args.pairs.strip():
@@ -754,15 +980,29 @@ def main():
         horizons_minutes=horizons,
         max_rows=max_rows,
         candle_interval=eval_interval,
+        feature_cols=eval_feature_cols,
     )
     tr_idx, va_idx = time_split_indices(bundle.times, VAL_FRACTION)
 
-    if norm_stats:
-        apply_norm_to_bundle(bundle, norm_stats)
-    else:
-        legacy = fit_norm_from_bundle(bundle, tr_idx)
-        apply_norm_to_bundle(bundle, legacy)
-        print("Warning: checkpoint has no norm_stats; fitted from current train split")
+    # Each member normalizes with ITS OWN train-fit statistics, and those differ
+    # between runs (the val split moves as collection continues, so no two runs fit
+    # norm on exactly the same bars). Normalization is in-place, so an ensemble has
+    # to restore the raw matrices between members — snapshot them first. One extra
+    # copy of [T, F] float32 per pair; for the 5m/8-pair bundle that is ~0.25GB.
+    raw_feats = (
+        [ser.feats.copy() for ser in bundle.series] if is_ensemble else None
+    )
+
+    def _normalize_for(member_meta: dict, report: bool) -> None:
+        st = member_meta.get("norm_stats") or {}
+        if st:
+            apply_norm_to_bundle(bundle, st, report=report)
+        else:
+            legacy = fit_norm_from_bundle(bundle, tr_idx)
+            apply_norm_to_bundle(bundle, legacy, report=report)
+            print("Warning: checkpoint has no norm_stats; fitted from current train split")
+
+    _normalize_for(meta, report=True)
 
     if va_idx.shape[0] == 0:
         print("No validation samples")
@@ -795,15 +1035,10 @@ def main():
         num_workers=0,
     )
 
-    # The dataset emits "__pair_idx" in THIS bundle's series order; the embedding
-    # is indexed by the TRAINED pair vocab. Build a translation LUT (eval-series id
-    # -> trained id, unknown symbols -> OOV) so ids match what the model learned.
-    if pair_embed_dim > 0:
-        eval_series_to_trained = np.array(
-            [pair_to_id.get(s.pair, oov_id) for s in bundle.series], dtype=np.int64
-        )
-    else:
-        eval_series_to_trained = None
+    # The dataset emits "__pair_idx" in THIS bundle's series order while the
+    # embedding is indexed by the TRAINED pair vocab, so a translation LUT is needed
+    # per member — built inside the member loop below, since two checkpoints can
+    # legitimately carry different vocabularies.
 
     all_logits = {h: [] for h in horizon_keys}
     all_dir = {h: [] for h in horizon_keys}
@@ -811,30 +1046,105 @@ def main():
     all_quant = {h: [] for h in horizon_keys}
     all_ret = {h: [] for h in horizon_keys}
 
-    with torch.no_grad():
-        for xb, yb in loader:
-            xb = xb.to(device)
-            pair_idx = yb.get("__pair_idx")
-            if pair_idx is not None and eval_series_to_trained is not None:
-                pair_idx = torch.from_numpy(
-                    eval_series_to_trained[pair_idx.numpy()]
-                ).to(device)
-            else:
-                pair_idx = None
-            out, dir_out, quant_out = model.forward_all(xb, pair_idx)
-            for h in horizon_keys:
-                all_logits[h].append(out[h].cpu())
-                all_y[h].append(yb[h].cpu())
-                # Raw forward return per horizon (P&L sim + baselines); always emitted.
-                all_ret[h].append(yb[f"ret_{h}"].cpu())
-                if dir_out is not None:
-                    all_dir[h].append(dir_out[h].cpu())
-                if quant_out is not None:
-                    all_quant[h].append(quant_out[h].cpu())
+    # Running PROBABILITY sums across ensemble members. Summing probabilities (not
+    # logits) is the whole point: logit averaging is a geometric mean of
+    # probabilities and would quietly change the calibration this eval reports on,
+    # which is the very property the ensemble exists to improve.
+    prob_sum = {h: None for h in horizon_keys}
+    dir_prob_sum = {h: None for h in horizon_keys}
+    quant_sum = {h: None for h in horizon_keys}
+
+    for mi, member in enumerate(members):
+        if mi > 0:
+            # Restore raw features, then normalize with THIS member's statistics.
+            # The norm range report stays ON for every member: `BROKEN SCALE` is a
+            # run-validity check (docs/NEXT_TRAINING_PLAN.md 0.4) and suppressing it
+            # for members 1..N would let a bad member into an ensemble unnoticed.
+            print(f"  ensemble member {mi} ({member['path'].name}):")
+            for ser, raw in zip(bundle.series, raw_feats):
+                np.copyto(ser.feats, raw)
+            _normalize_for(member["meta"], report=True)
+
+        m_vocab = list(member["meta"].get("pair_vocab") or [])
+        m_embed = int(member["meta"].get("pair_embed_dim", 0))
+        if m_embed > 0:
+            m_to_id = {q: i for i, q in enumerate(m_vocab)}
+            m_lut = np.array(
+                [m_to_id.get(ser.pair, len(m_vocab)) for ser in bundle.series],
+                dtype=np.int64,
+            )
+        else:
+            m_lut = None
+
+        parts_logits = {h: [] for h in horizon_keys}
+        parts_dir = {h: [] for h in horizon_keys}
+        parts_quant = {h: [] for h in horizon_keys}
+        with torch.no_grad():
+            for xb, yb in loader:
+                xb = xb.to(device)
+                pair_idx = yb.get("__pair_idx")
+                if pair_idx is not None and m_lut is not None:
+                    pair_idx = torch.from_numpy(m_lut[pair_idx.numpy()]).to(device)
+                else:
+                    pair_idx = None
+                out, dir_out, quant_out = member["model"].forward_all(xb, pair_idx)
+                for h in horizon_keys:
+                    parts_logits[h].append(out[h].cpu())
+                    if dir_out is not None:
+                        parts_dir[h].append(dir_out[h].cpu())
+                    if quant_out is not None:
+                        parts_quant[h].append(quant_out[h].cpu())
+                    # Labels and forward returns come from the bundle, not the model,
+                    # so they are identical for every member — collect them once.
+                    if mi == 0:
+                        all_y[h].append(yb[h].cpu())
+                        all_ret[h].append(yb[f"ret_{h}"].cpu())
+
+        for h in horizon_keys:
+            pr = torch.softmax(torch.cat(parts_logits[h], dim=0), dim=-1)
+            prob_sum[h] = pr if prob_sum[h] is None else prob_sum[h] + pr
+            if parts_dir[h]:
+                dpr = torch.softmax(torch.cat(parts_dir[h], dim=0), dim=-1)
+                dir_prob_sum[h] = dpr if dir_prob_sum[h] is None else dir_prob_sum[h] + dpr
+            if parts_quant[h]:
+                q = torch.cat(parts_quant[h], dim=0)
+                quant_sum[h] = q if quant_sum[h] is None else quant_sum[h] + q
+
+    n_members = len(members)
+    for h in horizon_keys:
+        all_logits[h] = [probs_to_logits(prob_sum[h] / n_members)]
+        if dir_prob_sum[h] is not None:
+            all_dir[h] = [probs_to_logits(dir_prob_sum[h] / n_members)]
+        if quant_sum[h] is not None:
+            all_quant[h] = [quant_sum[h] / n_members]
+
+    # --- C13: the served gate is derived from a COVERAGE target ------------------
+    # Done here, before any table is printed, so every "serve gate" row below marks
+    # the operating point this checkpoint would actually run at rather than a global
+    # constant tuned on some earlier model's confidence scale.
+    served_gate = None
+    if primary in horizon_keys and all_dir[primary]:
+        _p_dir = all_dir[primary][0]
+        served_gate = derive_served_gate(
+            dir_logits_to_three_class(_p_dir),
+            torch.cat(all_y[primary], dim=0),
+            _p_dir,
+            torch.cat(all_ret[primary], dim=0) if all_ret[primary] else None,
+            t_va,
+            p_va,
+            horizon_bars(eval_interval, int(primary)),
+            float(args.target_coverage),
+        )
+        SERVED_GATE = float(served_gate["conf_threshold"])
+        SERVED_GATE_SOURCE = f"derived@cov{args.target_coverage:g}"
+    else:
+        print(
+            "NOTE: no directional head on the primary horizon — the served gate "
+            f"falls back to the config constant GATE_THRESHOLD={GATE_THRESHOLD}."
+        )
 
     thresholds = [float(t) for t in args.gate.split(",") if t.strip()]
-    if GATE_THRESHOLD not in thresholds:
-        thresholds = sorted(set(thresholds + [GATE_THRESHOLD]))
+    thresholds = sorted(set(thresholds + [GATE_THRESHOLD, SERVED_GATE]))
 
     report = {
         "n_val": int(va_idx.shape[0]),
@@ -845,6 +1155,29 @@ def main():
     }
 
     print(f"M2 Eval | val samples={va_idx.shape[0]} | horizons={horizons}")
+    if served_gate:
+        me = served_gate["measured"]
+        print(
+            f"SERVED GATE (C13, coverage-targeted): trade the top "
+            f"{served_gate['target_coverage']*100:.3g}% of bars by confidence on the "
+            f"primary {primary}m head → conf >= {served_gate['conf_threshold']:.4f}"
+        )
+        print(
+            f"  measured here: n_gated={me['n_gated']} dir_acc={me['dir_acc']:.3f} "
+            f"lb={me['wilson_lb']:.3f} "
+            + (
+                f"trades={me['n_trades']} gross={me['gross_bps_per_trade']:+.2f}bps/trade "
+                f"net@taker={me['net_bps_per_trade']['taker']:+.2f} "
+                f"net@maker={me['net_bps_per_trade']['maker']:+.2f}"
+                if "n_trades" in me
+                else ""
+            )
+        )
+        print(
+            f"  config GATE_THRESHOLD={GATE_THRESHOLD} is NOT used for the rows marked "
+            f"'*' below — an absolute threshold means a different coverage on every "
+            f"checkpoint (see docs/NEXT_TRAINING_PLAN.md 1.5)."
+        )
     print("=" * 60)
 
     dump_rows = []
@@ -875,26 +1208,26 @@ def main():
         print(result["conf_matrix_tensor"].numpy())
         print(
             f"Directional gate: conf=max(p_up,p_down); trade when conf>=threshold "
-            f"(serve default GATE_THRESHOLD={GATE_THRESHOLD})"
+            f"(SERVED gate={SERVED_GATE:.4f}, source={SERVED_GATE_SOURCE})"
         )
         print(
             f"P&L sim: round-trip cost={ROUND_TRIP_COST*1e4:.1f}bps, hold={hold_bars} bars, "
             f"1 serial position/pair"
         )
         print(
-            f"{'gate':>6}  {'coverage':>8}  {'n_gated':>8}  {'gated_acc':>10}  "
+            f"{'gate':>8}  {'coverage':>8}  {'n_gated':>8}  {'gated_acc':>10}  "
             f"{'dir_acc':>8}  {'edge':>6}  {'net_ret':>9}  {'trades':>7}  "
             f"{'win':>5}  {'sharpe':>7}  {'maxdd':>9}  {'mean_conf':>9}"
         )
         for row in result["sweep_rows"]:
             edge = (row.get("gated_dir_acc") or 0.0) - 0.5 if row.get("n_gated", 0) else 0.0
-            marker = " *" if abs(row["threshold"] - GATE_THRESHOLD) < 1e-9 else ""
+            marker = " *" if abs(row["threshold"] - SERVED_GATE) < 1e-9 else ""
             nr = row.get("net_ret")
             nr_s = f"{nr:+.4f}" if nr is not None else "   n/a  "
             sh = row.get("daily_sharpe")
             sh_s = f"{sh:.2f}" if sh is not None else "   n/a"
             print(
-                f"{row['threshold']:6.2f}  {row['coverage']:8.3f}  {row['n_gated']:8d}  "
+                f"{row['threshold']:8.4f}  {row['coverage']:8.3f}  {row['n_gated']:8d}  "
                 f"{row['gated_acc']:10.3f}  {row.get('gated_dir_acc', 0):8.3f}  "
                 f"{edge:6.3f}  {nr_s:>9}  {row.get('n_trades', 0):7d}  "
                 f"{row.get('win_rate', 0):5.3f}  {sh_s:>7}  {row.get('max_dd', 0):9.4f}  "
@@ -908,7 +1241,7 @@ def main():
         # conf>=0.5 floor, so the serve row always showed coverage 1.0. Say it out
         # loud now, because it is a promote-blocking fact about the checkpoint.
         serve_r = next(
-            (r for r in result["sweep_rows"] if abs(r["threshold"] - GATE_THRESHOLD) < 1e-9),
+            (r for r in result["sweep_rows"] if abs(r["threshold"] - SERVED_GATE) < 1e-9),
             None,
         )
         if serve_r is not None and int(serve_r.get("n_gated", 0)) == 0:
@@ -916,12 +1249,17 @@ def main():
                 (r["threshold"] for r in result["sweep_rows"] if r.get("n_gated", 0) > 0),
                 default=None,
             )
+            scope = (
+                "this checkpoint would never trade at all"
+                if h == primary
+                else f"the {h}m head would never fire (the gate is derived on the "
+                f"primary {primary}m head, and serve.py applies one threshold to "
+                f"every horizon)"
+            )
             print(
-                f"  ⚠️  WARNING: at the SERVED gate {GATE_THRESHOLD} this checkpoint gates "
-                f"ZERO bars — serving it would never trade. Highest swept threshold with "
-                f"any coverage: {top_conf if top_conf is not None else 'none'}. Re-tune "
-                f"GATE_THRESHOLD / ML_GATE_THRESHOLD from the fixed-coverage P&L below "
-                f"before promoting."
+                f"  ⚠️  WARNING: at the SERVED gate {SERVED_GATE:.4f} this head gates "
+                f"ZERO bars — {scope}. Highest swept threshold with any coverage: "
+                f"{top_conf if top_conf is not None else 'none'}."
             )
 
         print(
@@ -982,7 +1320,7 @@ def main():
                 )
         ls = result.get("long_short_pnl")
         if ls:
-            print(f"Long/short serial P&L @ serve gate {GATE_THRESHOLD} (net of cost):")
+            print(f"Long/short serial P&L @ serve gate {SERVED_GATE:.4f} (net of cost):")
             for name in ("long", "short"):
                 v = ls.get(name) or {}
                 sh = v.get("daily_sharpe")
@@ -1014,7 +1352,7 @@ def main():
             print("Per-pair @ serve gate  |  fixed-cov 0.05 (dir_acc / wilson_lb / n_dir):")
             for pair, pr in result["per_pair"].items():
                 row = next(
-                    (r for r in pr["gate_sweep"] if abs(r["threshold"] - GATE_THRESHOLD) < 1e-9),
+                    (r for r in pr["gate_sweep"] if abs(r["threshold"] - SERVED_GATE) < 1e-9),
                     None,
                 )
                 fc05 = next(
@@ -1140,7 +1478,9 @@ def main():
             mask_m = conf_m >= GATE_THRESHOLD
             pnl_m = simulate_pnl(side_m, conf_m, mask_m, fwd_ret_pk, t_va, p_va, hb)
             print(
-                f"  momentum P&L @ gate {GATE_THRESHOLD}: net_ret={pnl_m['total_net_ret']:+.4f} "
+                f"  momentum P&L @ config gate {GATE_THRESHOLD} (its own confidence "
+                f"scale — the fixed-coverage rows above are the real comparison): "
+                f"net_ret={pnl_m['total_net_ret']:+.4f} "
                 f"trades={pnl_m['n_trades']} win={pnl_m['win_rate']} "
                 f"sharpe={pnl_m['daily_sharpe']} maxdd={pnl_m['max_dd']}"
             )
@@ -1158,11 +1498,42 @@ def main():
         print(f"  {bnh}\n  pooled sum (net of 1 round trip) = {pooled:.5f}")
         report["buy_hold"] = {"per_pair": bnh, "pooled_sum": pooled}
 
+    report["served_gate"] = served_gate
+    report["served_gate_effective"] = {
+        "conf_threshold": float(SERVED_GATE),
+        "source": SERVED_GATE_SOURCE,
+        "config_gate_threshold": float(GATE_THRESHOLD),
+    }
+    report["ensemble"] = {
+        "n_members": len(members),
+        "members": [m["path"].name for m in members],
+    }
+
     out_path = Path(OUTPUT_DIR) / "eval_m2.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(report, f, indent=2)
     print(f"\nWrote {out_path}")
+
+    # --- C13: persist the operating point INTO the checkpoint --------------------
+    # The training runner uploads the checkpoint after eval, so a normal run ships a
+    # file that already knows the gate it should be served at. An ensemble has no
+    # single file to write to; its gate is reported and must be carried by whatever
+    # the ensemble is eventually served as.
+    if served_gate and not args.no_write_gate_meta:
+        if is_ensemble:
+            print(
+                "NOTE: ensemble eval — the derived gate is reported above and in "
+                "eval_m2.json, but is NOT written into any member checkpoint (it "
+                "belongs to the ensemble, not to any one member)."
+            )
+        elif write_served_gate_meta(ckpt_path, ckpt, served_gate):
+            print(
+                f"Wrote served_gate into {ckpt_path.name}: "
+                f"conf>={served_gate['conf_threshold']:.4f} @ target coverage "
+                f"{served_gate['target_coverage']:g}. serve.py reads this; the config "
+                f"GATE_THRESHOLD is only a fallback."
+            )
 
     if args.dump_preds:
         write_pred_dump(dump_rows, OUTPUT_DIR)
@@ -1171,7 +1542,9 @@ def main():
     print("  dir_acc         → among gated trades with true up/down, fraction correct")
     print("  edge            → dir_acc - 0.5 (positive = better than coin flip)")
     print("  coverage        → fraction of bars that would trade")
-    print(f"  * marker        → serve GATE_THRESHOLD={GATE_THRESHOLD}")
+    print(f"  * marker        → the SERVED gate {SERVED_GATE:.4f} ({SERVED_GATE_SOURCE})")
+    print("  served gate     → derived so the top SERVE_TARGET_COVERAGE of bars trade;")
+    print("                    it is a property of THIS checkpoint, not a global constant")
     print("  gated_acc       → also counts true-flat as miss (stricter than dir_acc)")
     print("  fixed-coverage  → edge at top-x% confidence; comparable across models")
     print("  wilson_lb       → conservative lower bound on dir_acc (small n → low)")

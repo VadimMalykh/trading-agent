@@ -1,4 +1,4 @@
-# Training history archive (2026-07-23 → 2026-08-19)
+# Training history archive (2026-07-23 → 2026-08-21)
 
 **This file is HISTORY. Do not act on anything in it.** It is the verbatim
 session-by-session narrative that used to live at the top of
@@ -27,6 +27,167 @@ number from it:**
 
 Sections below are in reverse-chronological order, newest first, exactly as written at
 the time.
+
+## O-wave, as written 2026-08-19 — superseded by the P-wave (2026-08-21)
+
+Moved here from the live plan on 2026-08-21. **Three of its four claims did not survive
+seed replication.** Read the live plan §1.2–§1.5 for what actually holds; this section is
+kept only to show what a single seed made us believe and why.
+
+What the P-wave changed:
+
+- **"Window 2 inverts between 15m and 5m models"** — wrong. O2's low window-2 (0.535) was
+  seed noise; seeds 2 and 3 score 0.618 and 0.592 there, in line with the 15m models.
+- **"The 5m model is less regime-locked (spread 0.096 vs F4's 0.160)"** — mostly wrong.
+  Seeds 2/3 spread 0.139 and 0.130. The 5m family averages ~0.12, a mild narrowing at most.
+- **"Serial P&L +0.99 at gate 0.62, Sharpe 1.41"** — did not replicate in magnitude.
+  Seeds 2/3 book +0.10 (Sharpe 0.15) and +0.23 (Sharpe 0.41) at the same gate. Only the
+  *sign* replicated, and the reason is in live §1.5: an absolute confidence gate selects a
+  different coverage in every seed.
+- **What did replicate:** the mean-of-epochs LB level, and the fixed-coverage P&L at the
+  top 1–2% of confidence — pooled +19.4 / +22.0 gross bps/trade across three seeds against
+  O2's own +24.5 / +22.1.
+
+### 1.2 The regime structure is real but softer, and partly a model artifact
+
+`cov05 wilson_lb` on the primary 240m head, val window split into four ~2-month blocks:
+
+| window | period | F4 (15m) | N3 (15m) | N2 (GBT, 15m) | **O2 (5m)** |
+|---|---|---:|---:|---:|---:|
+| 1 | 2025-12 → 2026-02 | 0.486 | 0.499 | 0.492 | **0.573** |
+| 2 | 2026-02 → 2026-04 | **0.617** | **0.621** | **0.574** | 0.535 |
+| 3 | 2026-04 → 2026-06 | 0.457 | 0.419 | 0.415 | 0.500 |
+| 4 | 2026-06 → 2026-08 | **0.584** | **0.613** | 0.397 | **0.596** |
+
+The previous version of this section claimed three independent models agreed on where the
+edge lives, and treated that as the only unambiguously real effect in the dataset. O2
+breaks it. What actually survives all four models is narrower:
+
+- **Window 3 is the worst window** (all four), and **window 4 is a good one** (three of
+  four; N2 is the exception).
+- Windows 1 and 2 are **model-dependent**: they invert between the 15m models and the 5m
+  model.
+
+The "agreement" was among three models that shared a 15m bar grid and the same 771k
+training samples — a shared blind spot reads as consensus. And O2's window spread is
+**0.096** against F4's **0.160**: the higher-resolution model is *less* regime-locked, not
+differently regime-locked, which is what you would expect if part of the window structure
+was capacity rather than market state.
+
+This does **not** kill the regime-analysis item — a 0.10 spread is still four to six times
+the run-to-run noise of §0.3, and the top window is still worth ~5× maker cost. It changes
+the question from "find the observable that flags the good regime" to "how much of this is
+market state and how much is the model", and it means the analysis must run on **O2's**
+prediction dump, not F4's. See **P1**.
+
+### 1.3 🟢 Current reference numbers — O2 is the new baseline
+
+Run `20260818T185438Z` · ckpt `m2_multi_20260818T185438Z_8c4b2a03.pt` · `logs/O2.log`
+Config: `CANDLE_INTERVAL=5m`, seq 384 (= 32h context), `PAIR_EMBED_DIM=8`, `SEED=1`,
+`EARLY_STOP_PATIENCE=20`, fixed labels, 8 pairs, horizons 60/240/1440, primary 240.
+Split: `train [2022-08-19 21:45 → 2025-12-09 09:45]`, `val [2025-12-09 09:45 → 2026-08-17 18:35]`,
+2,895,782 samples (2,316,625 / 579,157). Early stop at epoch 34, **selected epoch 14**.
+
+| | 1h | **4h (primary)** | 24h |
+|---|---:|---:|---:|
+| cov05 dir_acc / Wilson-LB (selected epoch) | 0.544 / 0.537 | **0.563 / 0.557** | 0.582 / 0.575 |
+| cov05 LB, mean ± sd over epochs (§0.3) | — | **0.525 ± 0.015** (n=34) | — |
+
+**4h fixed-coverage P&L — the table that matters** (`net` is exactly `gross − trades ×
+cost`, so no re-run changes fees):
+
+| cov | trades | gross bps/trade | net @5bps maker | net @14bps taker | F4 gross, same cov |
+|---|---:|---:|---:|---:|---:|
+| 0.01 | 469 | **+24.50** | **+19.50** | **+10.50** | +2.61 |
+| 0.02 | 708 | **+22.11** | **+17.11** | **+8.11** | +6.53 |
+| 0.05 | 1361 | +3.50 | −1.50 | −10.50 | +6.50 |
+| 0.10 | 2577 | −5.16 | −10.16 | −19.16 | −2.96 |
+| 0.20 | 4489 | −3.13 | −8.13 | −17.13 | −4.38 |
+
+The ordering is monotone-decreasing in confidence, which is what makes it usable — the
+model's confidence ranks its own economics correctly. The matched-trade-count comparison
+is the cleanest one available: **O2 at 469 trades earns +24.50 bps/trade where F4 at 466
+trades earned +6.53.**
+
+Serial-position sim at the same checkpoint (`hold=48 bars`, 1 position/pair):
+
+| gate | coverage | trades | dir_acc | net_ret @14bps taker | win | Sharpe |
+|---|---:|---:|---:|---:|---:|---:|
+| 0.58 (served) | 4.8% | 1318 | 0.565 | −1.31 | 0.502 | −1.22 |
+| **0.62** | 1.2% | 548 | 0.556 | **+0.99** | 0.586 | **+1.41** |
+
+⚠️ **The served gate is wrong for this model.** `GATE_THRESHOLD=0.58` is tuned to F4's
+confidence scale; on O2 the profitable operating point is **0.62**. Do not promote O2
+without moving the gate — see **C13** in §6.
+
+Other health checks, all better than F4's:
+
+- **Side split is balanced** — up 0.563 / down 0.563 at cov 0.05 (F4: 0.547 / 0.528). The
+  model is no longer meaningfully long-biased.
+- **Calibration improved but is still over-confident** — the `[0.60,0.70)` bin has
+  `mean_pred 0.624` vs `emp_up 0.574` (F4: 0.636 vs 0.547). Still the wrong direction for
+  sharpening; §5's entry stands.
+- **No calendar confound** — book-era cov05 LB 0.545 vs pre-book 0.561; the edge is not
+  concentrated in the 31-day book window.
+- **Beats both trivial baselines** — momentum (sign of trailing 48 bars) cov05 LB 0.460;
+  buy-and-hold pooled deeply negative (only HYPE and ZEC are positive over the window).
+
+**Caveats that bound how much of this to believe** — all three are addressed by P0:
+
+1. **n = 1 seed.** §0.3's own rule says a single run cannot resolve much; this run clears
+   the bar on mean-of-epochs, but the P&L table does not have an equivalent error bar.
+2. **The P&L is measured on an order-statistic epoch.** Epoch 14 was selected as max LB,
+   +2.15 sd above the run's own mean. A replicate's epoch-14-equivalent will be worse.
+3. **The +24.5 bps cell has ~470 trades across 8 correlated pairs.** With per-trade sd of
+   roughly 150bps at 4h, the standard error is ~7bps if trades were independent and more
+   like ~11bps once cross-pair correlation is accounted for. That is a ~2σ result, not a
+   4σ one. It is the most promising cell in the project and it is not yet banked.
+
+F4 (`20260817T221811Z`, `logs/O0-f4-rescore.log` for its re-scored tables) remains the
+comparison point and is still reachable at
+`checkpoints/m2_multi_20260817T221811Z_94614795.pt`.
+
+### 1.4 O3 — longer context is worse; architecture is closed again
+
+`logs/O3.log`, run `20260819T021020Z`. Valid: `seq=256`, `CANDLE_INTERVAL=15m`,
+`PAIR_EMBED_DIM=8`, 964,483 samples, embed ON, split re-recorded. One variable vs F4.
+
+Mean-of-epochs cov05 LB **0.4925 ± 0.0227** (n=24) against F4's **0.5058 ± 0.0162**. Not
+merely flat — the per-epoch series drifts monotonically *down* (≈0.52 through epoch 5,
+≈0.47 from epoch 16 on) and the selected epoch is 4 of 24. The failure signature is
+consistent: coverage at the served 0.58 gate collapsed to **0.8%** (F4: 4.9%), and the side
+split went lopsided at cov 0.05 — 6,266 down-gated vs 3,379 up-gated, with the **up side at
+0.499, exactly coin flip**.
+
+The pre-registered verdict fires the negative way: **the LSTM already has all the context
+it can use at 15m.** N2's GBT gap is therefore about the GBT's 114-column static summary
+throwing away information, not about recurrence being essential. Encoder capacity, context
+length, and full architecture swaps all go back in the closed pile (§5). **Do not write a
+transformer.**
+
+Read O2 and O3 together and the shape is clear: **more, finer observations helped; more
+window did not.** The model is limited by what each timestep tells it, not by how many
+timesteps it sees.
+
+### 1.5 The "flat training loss" diagnostic is falsified — stop using it
+
+The previous plan reasoned that `loss_tr` barely moving (1.7318 → 1.7101 over F4's 11
+epochs) proved the model was not data-starved and the bottleneck was entirely features.
+O2 ran that experiment and the reasoning does not hold. O2's `loss_tr` was **equally flat
+for its first 22 epochs** (1.7284 → 1.7184), then descended only because memorization
+started at epoch 23, with `loss_va` diverging in lockstep (1.0404 → 1.3031 by epoch 34).
+By the loss-curve indicator, O2 looked exactly like F4 in the region where its selected
+epoch lives — and it was materially better.
+
+**On a near-noise-floor task the training loss is dominated by the irreducible term and
+carries no information about whether more data helps.** Judge the data lever on the
+validation-selection metric. This also means O2's own late-epoch descent is not a reason
+to add regularization: the selection metric already ignores those epochs.
+
+
+---
+
+
 
 ---
 
