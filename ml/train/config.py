@@ -20,6 +20,34 @@ SEQ_LEN = int(os.environ.get("SEQ_LEN", "128"))
 DIRECTIONAL_HEAD = os.environ.get("DIRECTIONAL_HEAD", "1") not in ("0", "false", "False")
 # Weight of the auxiliary directional loss relative to the 3-class loss.
 DIR_LOSS_WEIGHT = float(os.environ.get("DIR_LOSS_WEIGHT", "1.0"))
+# --- C3: magnitude-weighted directional loss (feeds run O6/R2) -------------------
+# The directional CE treats a 5bps move and a 300bps move as equally important;
+# the P&L does not. Eval consistently shows the model is right on smaller-than-
+# average moves, which is why dir_acc 0.559 converts to only ~+9 gross bps/trade
+# (docs/NEXT_TRAINING_PLAN.md §7, "cost arithmetic"). When this is on, each moved
+# bar's directional CE is weighted by its realized |forward return|.
+#
+# The weight is normalized per (pair, horizon) against the TRAIN-window mean |r|
+# for that cell. Raw |r| differs several-fold between BTC and 1000PEPE and by an
+# order of magnitude between 60m and 1440m, so an unnormalized weight would
+# silently reweight the PAIR MIX and the HORIZON MIX rather than the move sizes —
+# trap §0.5.8 (a blend is only a blend if its terms share a dynamic range). After
+# the clip the weight is rescaled so its train-set mean is exactly 1.0, which
+# keeps DIR_LOSS_WEIGHT's meaning and the printed loss scale comparable to an
+# unweighted run.
+#
+# OFF by default: this knob must not move the incumbent baseline. With it off the
+# loss is byte-identical to the pre-C3 path (asserted in the unit test).
+DIR_MAG_WEIGHT = os.environ.get("DIR_MAG_WEIGHT", "0") not in ("0", "false", "False", "off")
+# Cap on the normalized weight, applied AFTER the power. A single 20-sigma bar
+# must not own a batch's gradient; 5.0 means the largest moves count at most 5x a
+# mean-sized move.
+DIR_MAG_WEIGHT_CLIP = float(os.environ.get("DIR_MAG_WEIGHT_CLIP", "5.0"))
+# Exponent on the normalized magnitude, applied BEFORE the clip. 1.0 weights by
+# |r| (P&L-proportional); 0.5 by sqrt(|r|) is the gentler arm if 1.0 proves too
+# aggressive. Do not sweep both in one run (§0.2).
+DIR_MAG_WEIGHT_POWER = float(os.environ.get("DIR_MAG_WEIGHT_POWER", "1.0"))
+
 # Auxiliary quantile head: per-horizon regression of forward-return quantiles
 # (pinball loss). Policy-agnostic risk/vol context for the future RL policy; does
 # not affect the 3-class or directional heads. Off by default until validated.

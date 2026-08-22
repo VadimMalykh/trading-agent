@@ -816,6 +816,30 @@ def labels_for_indices(
     return out
 
 
+def returns_for_indices(
+    bundle: M2IndexBundle,
+    sample_idx: np.ndarray,
+    horizon_key: str,
+) -> np.ndarray:
+    """
+    Gather realized forward returns for a set of sample indices.
+
+    Mirrors labels_for_indices exactly (same grouping, same ordering), but reads
+    ser.returns instead of ser.labels. Used by the magnitude-weighted directional
+    loss (C3) to compute the per-pair mean |r| it normalizes against, which has to
+    be measured on the TRAIN window only.
+    """
+    if sample_idx.size == 0:
+        return np.zeros((0,), dtype=np.float64)
+    out = np.empty(sample_idx.shape[0], dtype=np.float64)
+    pi_all = bundle.pair_i[sample_idx]
+    t_all = bundle.t_i[sample_idx]
+    for pi in np.unique(pi_all):
+        m = pi_all == pi
+        out[m] = bundle.series[int(pi)].returns[horizon_key][t_all[m]]
+    return out
+
+
 def pair_ids_for_indices(bundle: M2IndexBundle, sample_idx: np.ndarray) -> np.ndarray:
     names = np.array([s.pair for s in bundle.series], dtype=object)
     return names[bundle.pair_i[sample_idx]]

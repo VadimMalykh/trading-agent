@@ -1,7 +1,8 @@
 # Training plan — what is true, what to run next
 
-**Last updated: 2026-08-22** (after the Q-wave: Q0 gate derivation, Q1 regime analysis,
-Q2 ensemble, Q3 feature expansion).
+**Last updated: 2026-08-22** (after R1 — the second and final feature-expansion arm.
+Preceded by the Q-wave: Q0 gate derivation, Q1 regime analysis, Q2 ensemble, Q3 feature
+expansion).
 
 This document is the project's session-to-session memory. It contains only what is
 **currently true and actionable**. The session-by-session narrative from 2026-07-23 →
@@ -43,9 +44,10 @@ first-class acceptance criterion: M3 consumes probabilities, so a model that ran
 while emitting meaningless probabilities (P2, §1.4) has not improved.
 
 **How to use this doc:** if you are picking this up cold, the fastest path is
-§1.1 (one paragraph on where we are) → §2's R0 (a 5-minute promote) → §2's R1 (the
-next experiment) →
-§0.3 and §0.6 (why the numbers are read the way they are).
+**§1.0 (plain-language state of play — no jargon, no §0 required)** → §2's R0 (a 5-minute
+promote) → §2's R3 (the next experiment). Read §1.1, §0.3 and §0.6 when you need to know
+*why* the numbers are read the way they are, or before you rank two runs against each
+other.
 
 - §0 — standing rules. Read before touching anything. Every rule cost us a real run.
 - §1 — where we are, in numbers. The current reference points.
@@ -193,7 +195,7 @@ Each line is here because its absence voided a real run.
 | `[market] cross-pair context filled for N/N pairs` | **N/N**, and `mean has_market` ≈ 1.0. Anything less means the cross-pair columns are zeros for some pair and Q3 tested less than it looks | — |
 | `SERVED GATE (C13, coverage-targeted)` | present, and the realized coverage is the one you asked for | — |
 | `Feature groups:` | the groups **and** the column count you intended — a knob that did not reach the VM shows up here and nowhere else (C18) | — |
-| `DEGENERATE SPIKE` | **absent.** A column flagged here is near-constant with a few odd rows rendered as a huge z; the CONSTANT detector missed it because its raw std clears `NORM_DEGENERATE_STD`. `heavy tail … N rows beyond — a populated tail` is fine (C15) | would have caught Q3's `beta_btc_1d` |
+| `DEGENERATE SPIKE` | **absent on any NEW column.** A column flagged here is near-constant with a few odd rows rendered as a huge z; the CONSTANT detector missed it because its raw std clears `NORM_DEGENERATE_STD`. `heavy tail … N rows beyond — a populated tail` is fine (C15). ⚠️ **`hl_range` is a known standing exception** — it flags on ~6 of 8 pairs at 66–364σ with 2–4 rows, it is a *legacy* column present identically in the §1.3 baseline, and it is **not** a reason to void a run (C19) | would have caught Q3's `beta_btc_1d` |
 
 **Two CONSTANT-column warnings are EXPECTED after C12 and are not defects.**
 `has_market` is constant (always 1) because the market context spans the whole
@@ -257,27 +259,93 @@ LB is not a ranking metric at all.**
 
 ## §1 — WHERE WE ARE (2026-08-22)
 
+### 1.0 Plain-language state of play — readable without §0
+
+*If you read one section, read this one. §1.1 says the same thing in the document's own
+vocabulary; everything below §1.1 is the evidence.*
+
+**What the model is.** A small recurrent network (2-layer LSTM, 64 hidden units — about
+56k parameters) that reads the last **384 five-minute candles (32 hours)** for one trading
+pair and outputs, for each of three horizons (1h / 4h / 24h), a probability that price goes
+up, down, or stays flat. 4h is the horizon we optimise. It does **not** decide trades —
+that is M3's job (see the preamble).
+
+**What it is worth.** Take the 5% of bars where it is most confident: it is right about
+direction **55.9%** of the time, and those trades are worth about **+9 basis points each
+before fees**. Narrow to the most confident 2% and it is **+22 bps**. A round trip costs
+**14 bps** as a taker and **5 bps** as a maker. So: comfortably profitable at maker fees on
+the top 2%, thin but positive at taker fees, and not usable at all if you trade more than
+about the top 5% of bars. This is measured on three independently seeded models that agree
+with each other, which is why we trust it.
+
+**What the input actually is — this is the surprising part.** The feature list has 19
+columns, but **12 of them are dead**. Order-book and trade-flow data only began being
+collected in July 2026, which is entirely inside the *validation* period, so across the
+training window they are constant and get zeroed out. The model is genuinely learning from
+**seven live columns**: 1-bar return, high–low range, open–close range, log volume, funding
+rate, a 15-bar return volatility, and one availability mask. That is it. Essentially price
+and volume.
+
+**What we have tried, and what happened.**
+
+| tried | outcome |
+|---|---|
+| Finer bars (15m → 5m) | ✅ **worked** — the one real improvement, +0.016, replicated on 3 seeds |
+| Finer still (1m) | ❌ no better at ranking, worse economics, broke the probabilities |
+| Longer memory (32h → 64h) | ❌ worse |
+| A gradient-boosted tree instead of the LSTM | ❌ much worse — sequence structure genuinely matters |
+| Averaging 3 models together | ❌ compresses exactly the confident bars where the money is |
+| Choosing the checkpoint by profit instead of accuracy | ❌ the profit estimate is too noisy to rank on |
+| Adding 11 new derived columns (Q3) | ❌ rejected |
+| Adding the best-behaved 6 of them (R1) | ❌ rejected, worse than Q3 — **§1.6, and this closes features** |
+| Hyperparameter tuning (dozens of runs, the R/E waves) | ❌ the whole spread was inside the noise |
+| More pairs (12 instead of 8) | ⬜ **never actually tested** — the one attempt was void; queued as **O8**, now next |
+
+**The one big thing that did work, and it is not a model change.** Q1 found that when
+**Bitcoin has moved more than ~4.3% in the past 24 hours** — which happens on about 5% of
+bars — the same model's top-5% trades are worth **+35 bps instead of +9**, and **+55
+instead of +22** at the top 2%. Three seeds agree closely. That is a **4×**, and no change
+we have ever made to the model itself has produced more than a few percent. It is a
+statement about *when to be in the market*, so it belongs to the trading policy (M3), not
+to the signal model.
+
+**Where that leaves us.** The signal model has been squeezed. Seven columns of price and
+volume support a small real edge and we have found it; two feature waves and a dozen tuning
+runs say there is not much more in there. **The recommendation is: promote the model we have
+(§2 R0), then run three experiments in this order — more data (§2 O8, 12 pairs instead of 8),
+a loss function that cares about move size (§2 R2), and finally encoder size (§2 R3) — and
+otherwise move to M3**, where the measured upside is several times larger. The ordering is
+deliberate: R1 showed that on this problem extra *parameters* turn into memorization, so the
+levers that add *information* go first and the capacity probe goes last, where its likely job
+is to close M2 rather than open it. The thing that would genuinely unlock M2 again is *new
+data* — order-book history deep enough to be inside the training window, which is a calendar
+problem, not a modelling one (§1.7).
+
 ### 1.1 The one-paragraph summary
 
-**The 5m/seq384 3-seed baseline is still the model, the feature expansion failed, and the
-one thing the Q-wave found worth building on belongs to M3, not M2.** Q3 gave the model 30
-columns instead of 19 and came back at mean-of-epochs cov05 LB **0.5003** against the
-family's **0.5219 ± 0.0014**, with an *inverted* calibration table — a rejection on two
-independent pre-registered criteria. But the diagnostic (§1.6) says the run was
-mis-specified rather than that the lever is dead: the extra columns did not add signal,
-they added *fitting speed*. The baseline sits on a 21–26 epoch plateau where all of its
-edge lives; Q3 left that plateau at **epoch 5** and its selected checkpoint is already
-outside it. Q2 tested the 3-seed ensemble against seed 2 on a matched split and it is not
-better — +0.002 dir_acc and −0.0005 brier are noise, and it is worse on gross bps at four
-of five coverages — so the pre-registered verdict fires: **drop the ensemble, promote seed
-2** (§2 R0; Q0 measured its gate at 0.6311). Q1 is the wave's positive result: of nine
-candidate regime observables, exactly one separates consistently across all three seeds —
-**BTC's trailing-24h absolute return**. Its top quintile (|ret| ≥ 4.31%, 5.2% of bars)
-holds trades worth **+35.5 gross bps/trade at cov 0.05 and +54.9 at cov 0.02**, against
-+8.8 / +22.0 overall, with close per-seed agreement (+34.8 / +32.5 / +38.7). That is a
-*when to be in the market* observable, which M3 owns — M2's job is to emit it, not to act
-on it (§1.8). The next GPU run (R1) retests the well-conditioned half of the feature set;
-two of C12's eleven columns are numerically defective and must be fixed first (§6 C15).
+**Per-timestep candle features are closed, M2 is finished as a research object, and the
+largest measured lever in the project belongs to M3.** R1 was the clean retest Q3 was
+supposed to be — the well-conditioned six-column half (`ret_1h/4h/1d`, `vol_1h/4h/1d`),
+`FEATURE_GROUPS` verified at 25 columns, every §0.4 line green — and it came back
+**plateau-mean cov05 LB 0.4979 against the family's 0.5239** (between-seed sd 0.0032, so
+≈8σ down), all-epoch mean 0.4889 vs 0.5219, `brier` 0.286 vs 0.250, and a calibration table
+that is flat at `emp_up ≈ 0.48` across every bin from 0.10 to 0.80. It is worse than Q3.
+🔴 **The decisive new fact is that R1 never reaches the baseline's validation loss at any
+epoch, including epoch 1** (best `loss_va` 1.0451 vs the family's 1.0398–1.0404). Q3 could
+be dismissed as "overfits too fast, needs regularization"; R1 cannot, because no amount of
+regularization recovers a level the model never touched. §1.6 has the mechanism, and it is
+a simple one: at `seq 384` every one of the six columns is an **exact function of bars
+already inside the window** at the timestep the prediction is made from, so they add no
+information while adding six smooth, strongly autocorrelated channels that are far easier
+to memorize than `ret_1` — `loss_tr` duly collapses 1.70 → 1.13 from epoch 12 while
+`loss_va` climbs to 1.45. Two feature waves, two rejections, and the second one rules out
+the escape hatch the first one left open. **The 3-seed 5m/seq384 baseline (§1.3) is the
+final M2.** What remains genuinely untested is not features and not model family but
+**encoder capacity on the current baseline** — never once swept, and newly measurable now
+that the plateau-restricted mean resolves ~0.01 (§2 R3). That is one cheap probe, not a
+wave. Everything else moves to M3, where Q1's `btc_absret_1d` turns the top-5% slice from
++8.8 to **+35.5 gross bps/trade** (§1.8) — a 4× that no M2 change has come within an order
+of magnitude of.
 
 ### 1.2 The regime structure, re-read on six models
 
@@ -395,67 +463,66 @@ bps/trade, **+4.68 net at 14bps taker** (`logs/Q0.log`). ⚠️ `--eval-only` ne
 checkpoint, so that gate lives only in the log — the bucket copy still carries none, and
 the promote must pass it explicitly (§2 R0).
 
-### 1.6 🔴 The feature expansion failed, and the reason is fitting speed, not signal
+### 1.6 🔴 Per-timestep candle features are closed — two arms, two rejections
 
-Q3 was the one-variable test of §1.6-as-it-stood (the model sees six live columns per bar).
-It added eleven candle-derived columns — `ret_1h/4h/1d`, `vol_1h/4h/1d`, `btc_rel_ret_1h`,
-`beta_btc_1d`, `xs_rank_1h`, `xs_disp_1h`, `has_market` — and lost:
+Two runs tested the same lever from different sides. Both lost, and together they close it.
+(Family columns are in O2 / seed2 / seed3 order throughout.)
 
-| | 5m family (3 seeds, 19 cols) | Q3 (30 cols) |
-|---|---:|---:|
-| mean-of-epochs cov05 LB | **0.5219 ± 0.0014** | **0.5003** (n=28) |
-| brier (240m, moved bars) | 0.250 | **0.2897** |
-| calibration bin table | monotone in `emp_up` | **inverted** (0.495 → 0.465 as `mean_pred` 0.35 → 0.75) |
-| ungated 3-class accuracy | 0.472 / 0.473 | 0.4553 |
-| gross bps/trade @cov 0.01 / 0.02 | +19.4 / +22.0 | +19.7 / +17.6 |
+| | 5m family (3 seeds, 19 cols) | Q3 (30 cols) | **R1 (25 cols)** |
+|---|---:|---:|---:|
+| plateau-restricted mean cov05 LB | **0.5239** (0.5235 / 0.5273 / 0.5209) | 0.5000 (n=5) | **0.4979** (n=11) |
+| all-epoch mean cov05 LB | 0.5219 ± 0.0014 | 0.5003 (n=28) | **0.4889** (n=38) |
+| plateau length (epochs) | 24 / 21 / 26 | 5 | **11** |
+| **best `loss_va` ever reached** | **1.0404 / 1.0398 / 1.0401** | 1.0431 | **1.0451** |
+| `brier` (240m, moved bars) | 0.250 | 0.2897 | **0.2863** |
+| calibration bin table | monotone in `emp_up` | inverted | **flat — `emp_up` 0.48 in every bin 0.10→0.80** |
+| gross bps/trade @ cov 0.01 / 0.02 | +19.4 / +22.0 | +19.7 / +17.6 | **+8.0 / +11.7** |
+| selected epoch | inside its plateau | ep 8 (outside) | ep 18, `loss_va` 1.157 = **+0.11 above its own min** |
 
-Two independent pre-registered criteria reject it: LB ≤ 0.525 (§2's Q3 rule) and a
-non-monotone `emp_up` (§3 item 3c).
+**R1 was a valid run.** Every §0.4 line is green: `Feature groups: legacy,multiscale ->
+25 columns`, `Feature columns: 25`, `12/25 CONSTANT` with **no new column** in the list (all
+six multiscale columns are live), `Samples: 2,902,678`, `hold=48 bars`, `Pair embedding: ON
+dim=8`, split recorded, `Early stop at epoch 38` (not `1 + patience`). The knob reached the
+VM and the run tested exactly what it was supposed to test.
 
-🔴 **But the training trajectory says the run was mis-specified, not that the lever is
-dead.** Every baseline run sits on a long plateau — `loss_tr` ≈ 1.72, `loss_va` ≈ 1.041 —
-and *every good epoch lives inside it*. Q3 left the plateau at epoch 5:
+🔴 **What R1 proves that Q3 could not.** Q3's short plateau supported a benign reading —
+"the extra columns are informative, the run just overfits before it can use them, add
+regularization and retry." R1 kills that reading, because **R1 never matches the baseline's
+validation loss at any epoch, starting at epoch 1** (1.0451 vs 1.0398–1.0404, and its
+epoch-1 value *is* its minimum). Regularization can lengthen a plateau; it cannot lower a
+model onto a level it never reached in its best epoch, before capacity has been consumed at
+all. The pre-registered "plateau collapses ⇒ run a `DROPOUT` arm at 25 columns" branch is
+therefore **withdrawn, not executed** — it would spend 3h GPU to reach, at best, the
+baseline.
 
-| run | cols | plateau epochs | `loss_tr` first → last | mean LB, plateau | mean LB, all |
-|---|---:|---:|---|---:|---:|
-| O2 (s1) | 19 | 24 | 1.7284 → 1.2625 | 0.5235 | 0.5248 |
-| P0-seed2 | 19 | 21 | 1.7288 → 1.4043 | 0.5273 | 0.5206 |
-| P0-seed3 | 19 | 26 | 1.7286 → 1.2070 | 0.5209 | 0.5203 |
-| **Q3** | **30** | **5** | **1.7210 → 1.0971** | **0.5000** | **0.5003** |
+🔴 **The mechanism, and it explains both runs.** At `seq_len 384` on 5m bars the window is
+**32h**. Every multiscale column looks back at most a day: `ret_1d` and `vol_1d` need 288
+bars, `ret_4h`/`vol_4h` 48, `ret_1h`/`vol_1h` 12 — all inside 384. So at the final timestep,
+*the one the prediction is made from*, all six are **exact deterministic functions of the
+`ret_1` and `hl_range` values already in the window**. They carry no information the encoder
+did not already have. Only the earlier timesteps of the sequence reach further back (up to
+56h) — and longer context is separately closed by O3 (§5). What they do add is six smooth,
+strongly autocorrelated channels, which are enormously easier to memorize than noisy
+`ret_1`: `loss_tr` sits at 1.70 through epoch 11 and then falls to 1.13 by epoch 38 while
+`loss_va` climbs to 1.45. **Redundant re-parameterizations of the input are not free; they
+are pure overfitting surface.** Q3 fits the same story with eleven columns instead of six.
 
-(plateau = epochs whose `loss_va` is within 0.02 of that run's minimum.) With 19 columns
-the model *cannot* fit the train set — 1.72 flat for 25 epochs. With 30 it fits it, down to
-1.10, while `loss_va` climbs monotonically from epoch 5 onward. Q3's selected epoch 8 is
-already outside its own plateau, which is exactly why its ranking survives (top-5% dir_acc
-0.551) while its probabilities do not. **Nothing in the run's configuration was changed to
-absorb a 58% wider input** — same `DROPOUT`, `WEIGHT_DECAY`, `LR`, `HIDDEN_SIZE`.
+**What is and is not closed.** *Own-pair* per-timestep candle features are closed —
+there is nothing left to derive from a pair's own OHLCV inside a 32h window that the
+encoder cannot already compute. *Cross-pair / external* information is the one thing
+neither run tested cleanly (Q3's market-context group had a 590σ defect and no
+regularization change), but Q1 independently measured the informative member of that family
+— BTC trailing-move magnitude — and found it to be a *when to trade* observable that M3
+owns, while the dispersion family C12 actually shipped ranks least informative of nine
+(§1.8). So there is no arm here worth 3h of GPU.
 
-Note this cuts both ways and neither reading is free: extra columns enable memorization
-whether they carry signal or not, so the fast overfit is *not* evidence that the features
-are informative — it is only evidence that the test did not measure what it intended to.
-
-🔴 **One of the eleven columns is numerically defective and a second is merely fat-tailed**
-(§6 C15) — both in the market-context group:
-
-- **`beta_btc_1d` is degenerate for BTCUSDT.** Beta of BTC against itself is identically
-  1.0. The column is 1.0 everywhere except a handful of warm-up / sub-floor-variance bars
-  set to 0.0, which makes its raw std ~1e-3 — above the `1e-8` CONSTANT detector, so it is
-  *not* zeroed — and the per-pair normalizer then turns those few bars into a **590σ**
-  spike, winsorized at ±50. BTC's worst tail was 66σ (`hl_range`) before C12. The
-  `ok_var = b_var > 1e-12` guard at `ml/train/data/features.py:436` is ~6 orders of
-  magnitude below a real `var(ret_1)` (~2.3e-6 at 5m), so it floors nothing in practice.
-- **`xs_disp_1h` carries a 122σ tail**, identical for every pair at a given bar, and became
-  the worst column for ETH, SOL and ZEC (was 75 / 81 / 85σ on `hl_range`). 🔵 **On
-  measurement this is a genuine fat tail, not a defect** — the tail is *populated* (347 rows
-  beyond 5σ, 44 beyond 10σ on the val window), which is what a real market-wide volatility
-  event looks like and is the same class as `hl_range`'s long-accepted 212–364σ. It is
-  correctly winsorized at ±50 and no change was made to it (§6 C15.4). The reason to drop it
-  is instead that Q1 ranks cross-sectional dispersion the *least* informative of nine
-  observables tested (§1.8): C12 added the dispersion family, which is noise, and omitted
-  the market-move-magnitude family, which is the one thing that separates.
-
-The legacy columns are byte-identical between O2 and Q3 (`hl_range` tails 212.8 → 212.9,
-363.5 → 363.8), confirming the change is isolated to the new columns.
+🔵 **One incidental finding, recorded so it is not rediscovered.** C15's new spike detector
+fires on `hl_range` for six of eight pairs (max|z| 66–364, 2–4 rows beyond 50σ out of
+~420k), and `hl_range` is a **legacy** column — so the 3-seed baseline has carried this
+since forever and R1 did not introduce it. The values are byte-identical to Q3's. It is 2–4
+rows per pair, winsorized at ±50, so the practical impact is nil; it is logged as **C19**
+(§6) at low priority. SOL and HYPE get the benign "populated tail" message at the same
+`max|z|` because the detector is correctly rate-based, not count-based.
 
 ### 1.7 Data status (verified on the VM, 2026-08-18; exercised at 1m/5m by the P-wave)
 
@@ -593,26 +660,40 @@ it is not what R1 tests, because R1 has one variable already.
 
 ## §2 — THE RUN QUEUE
 
-The Q-wave is complete: Q0 and Q2 ran, Q3 came back negative, Q1 is done (§1.8). **Do not
-re-launch any Q item.** The R-wave below is what follows. Training runs are strictly serial
-(§7), so this is an ordered list and the wall clock is the sum.
+The R-wave's experiment is done and negative (§1.6). **Features are closed; do not queue
+another column set.** What is left is four things: promote the model we have, add the four
+pairs the experiment control has been holding out, run the loss-function arm that targets the
+diagnosed economic failure, and run the capacity probe that has never been run. Training runs
+are strictly serial (§7), so this is an ordered list and the wall clock is the sum (~13h GPU
+end to end).
 
 | item | what | cost | needs a GPU? |
 |---|---|---|---|
 | **R0** | promote seed 2 with its measured gate — **do this first, it is 5 minutes** | promote only | no |
-| ~~C15/C16/C18~~ | ✅ **shipped 2026-08-22** (§6) — R1 is unblocked | — | — |
-| **R1** | feature retest, well-conditioned half only — **the experiment** | ~3h GPU | **yes** |
-| **R2** | O6 — magnitude-weighted directional loss (needs C3) | ~3h GPU | **yes** |
+| **O8** | **12 pairs instead of 8** — the only remaining lever that adds *information* | ~4h GPU | **yes** |
+| **R2** | magnitude-weighted directional loss — ✅ **C3 shipped, unblocked** | ~3h GPU | **yes** |
+| **R3** | encoder capacity probe, 2 runs — the closing formality | ~6h GPU | **yes** |
+| ~~R1~~ | ❌ **ran 2026-08-22, decisive negative** (§1.6, §4) | — | — |
 
-R0 is unblocked and independent — do it first. C15, C16 and C18 shipped on 2026-08-22, so
-**R1 is ready to launch**. R2 is unchanged from the P-wave queue and stays behind R1.
+🔄 **Order changed 2026-08-22, and the reason is R1's.** The previous queue put the capacity
+probe first. R1 showed that on this problem extra *parameters* convert into memorization
+rather than signal — `loss_tr` 1.70 → 1.13 while `loss_va` climbed. So run the levers that
+add **information** before the one that adds **capacity**: O8 adds 58% more training samples,
+R2 changes what the loss optimizes for, and R3 — the only one that adds modelling power — goes
+last, where its most likely job is to close M2 rather than to open it.
+
+🔴 **The exit condition, stated in advance so nobody has to relitigate it.** If O8 and R3
+both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross
+bps/trade at cov 0.02 by more than +5, **M2 is frozen at the §1.3 baseline and every
+remaining hour goes to M3.** That is the expected outcome; these three runs exist to make it
+an evidenced conclusion rather than a tired one.
 
 ### R0 — promote seed 2. Unblocked, do it now.
 
-Q2 settled which checkpoint: the ensemble is **not** better than its best member (§1.1,
-archive), so the pre-registered "drop the idea, promote seed 2" branch fires. Q0 already
-measured seed 2's gate, and because `--eval-only` never pushes a checkpoint that gate is
-**not** in the bucket copy — it must be passed explicitly.
+Q2 settled which checkpoint: the ensemble is **not** better than its best member, so the
+pre-registered "drop the idea, promote seed 2" branch fires. Q0 already measured seed 2's
+gate, and because `--eval-only` never pushes a checkpoint that gate is **not** in the
+bucket copy — it must be passed explicitly.
 
 ```sh
 ./scripts/gcp_promote.sh --list
@@ -622,92 +703,219 @@ ML_GATE_THRESHOLD=0.6311 \
 
 **Verify on the `/health` line the promote prints:** `gate_source` must be `env-override`
 with threshold 0.6311 — **never `config-fallback`**, which serves 0.58 and loses money in
-3 of 3 seeds (§1.5). ⚠️ `checkpoints/latest.pt` is still **Q3's** checkpoint now (it
-finished last) — the 30-column model with inverted calibration. Never promote `latest`.
+3 of 3 seeds (§1.5). ⚠️ `checkpoints/latest.pt` is now **R1's** checkpoint
+(`m2_multi_20260821T182844Z_3dd6b357.pt`) — the 25-column model whose calibration is flat
+in every bin. Never promote `latest`.
 
-### R1 — feature retest, own-pair multi-scale columns only. **The main event.**
+### O8 — 12 pairs. Promoted to first experiment.
 
-**Why this and not "the feature lever is closed".** Q3's pre-registered verdict was
-"≤0.525 ⇒ the per-timestep story is wrong too", and taken literally that closes M2. It
-should not be taken literally, for three reasons that are all measurements, not opinions:
-Q3 left its training plateau at epoch 5 against the baseline's 21–26 and selected a
-post-overfit checkpoint (§1.6); two of its eleven columns are numerically defective and one
-of those injects a 590σ spike (§6 C15); and Q1 independently shows the column family C12
-*did* add (cross-sectional dispersion) is the least informative observable of nine tested,
-while the family it *omitted* (market-move magnitude) is the only one that separates
-(§1.8). Q3 tested one particular 11-column set at unchanged regularization and it lost.
-That is a real result about that set. It is not a result about per-timestep features.
+**Why it moved to the front.** The 8-pair set was never a considered choice about *how much
+data to use* — it is a **control**. §0.2 forbids changing data and model in the same run, so
+once the 8 pairs were fixed for the E-wave they had to stay fixed for every one-variable
+experiment that followed, or nothing would have been attributable. The one 12-pair attempt,
+E3a, was **VOID** on unrelated grounds (truncated log, pair embedding accidentally off) and
+was never redone. So it is intentional as a control and overdue as an experiment.
 
-**The one variable: `FEATURE_DIM` 19 → 25, own-pair multi-scale only.** Keep `ret_1h`,
-`ret_4h`, `ret_1d`, `vol_1h`, `vol_4h`, `vol_1d`. **Drop all five market-context columns** —
-that group contains both defects, `has_market` is a dead constant by construction (§0.4),
-and Q1 gives no reason to want dispersion or rank. This is the well-conditioned half and it
-is a genuine one-variable test against §1.3.
+It is now the best of the remaining levers for the reason R1 gave us: this model **cannot fit
+its own training set** (`loss_tr` flat at 1.72 for ~25 epochs) yet **overfits instantly** when
+handed anything easy to memorize. That combination says the binding constraint is the
+signal-to-noise ratio of the data, not the capacity of the encoder. More independent data is
+the textbook response; more parameters is not, and R1 measured what more parameters buys.
 
-✅ **Unblocked** — C15 and C18 shipped (§6). `FEATURE_GROUPS` is what makes the column set
-selectable, and it is in the launcher allowlist, so the line below actually reaches the VM.
-Everything else is identical to §1.3:
+**What it adds.** ADA / AVAX / LINK / XRP all have full 4-year history at 5m (§1.7), so this
+is ~421k samples each: **2.90M → ~4.58M, +58%**. Crypto pairs are highly correlated, so the
+gain in *effective independent* samples is smaller than 58% — expect a modest effect, not a
+step change. It also gives the pair embedding four more pairs to place, and a 12-pair model is
+a better product regardless of what the metric says.
 
 ```sh
-FEATURE_GROUPS=legacy,multiscale \
+FEATURE_GROUPS=legacy \
+  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
+  EARLY_STOP_PATIENCE=20 SEED=1 \
+  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT \
+  ./scripts/gcp_train.sh --gpu 60 384
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh > logs/O8.log
+```
+
+⚠️ **Re-verify the four new pairs before launching** — §1.7's row counts were measured
+2026-08-18 and a backfill may have landed since (§0.1, and it also moves the split):
+
+```sh
+cat > /tmp/q.sh <<'EOF'
+cd ~/trading_agent && docker compose exec -T postgres psql -U fluxtrader -d fluxtrader <<'SQL'
+SELECT symbol, min(open_time)::date, max(open_time)::date, count(*)
+FROM candles WHERE interval = '5m'
+  AND symbol IN ('ADAUSDT','AVAXUSDT','LINKUSDT','XRPUSDT')
+GROUP BY 1 ORDER BY 1;
+SQL
+EOF
+gcloud compute ssh --zone me-central1-b fluxtrader-1 --project fluxtrader -- bash -s < /tmp/q.sh
+```
+
+Each should show ~2022-08-18 → today and ~421k rows. **If any of the four is short, drop it
+rather than launching a ragged set** — a late-listing pair is exactly what made HYPE the
+smallest cell in every table since.
+
+🔴 **Comparability — read this before ranking the result.** O8 changes the **validation
+population**, not just the training set: four more pairs means more val bars and a different
+pair mix, so its `cov05` slice is not selecting from the same universe as §1.3's and the
+headline LB is **not** directly comparable (§0.6's lesson generalized from bar-interval to
+pair-mix). Rank it two ways and report both:
+
+1. **The honest primary comparison — re-aggregate on the original 8 pairs.** C9 dumps
+   `eval_preds.parquet` with a `pair` column on every run, so filter to the 8 baseline pairs,
+   take the top 5% *within that subset* by confidence, and compute `dir_acc` / Wilson-LB /
+   gross bps. That is an apples-to-apples read against §1.3 and needs no code and no re-run.
+   The Q1 harness already does exactly this kind of re-aggregation and reproduced the logged
+   tables exactly, so the method is validated.
+2. **The all-12 numbers as reported**, for the record and because a 12-pair model is what
+   would actually be served.
+
+**Verify** (§0.4 plus these): `Training pairs: [...]` lists **12**; `Feature groups: legacy
+-> 19 columns`; `Samples:` ≈ **4.5–4.6M** (if it is ~2.9M the pair list did not reach the
+VM); `Pair embedding: ON dim=8 n_pairs=12`; `hold=48 bars`; split recorded — **it will differ
+from §1.3's**, which is expected and is why comparison (1) exists.
+
+**Verdict, pre-registered.** On the 8-pair re-aggregation, against the family's plateau mean
+**0.5239** (between-seed sd 0.0032):
+
+- **≥ 0.534, plateau ≥15 epochs, calibration monotone** → data volume is live. Replicate at
+  two more seeds, then consider the remaining whitelist pairs.
+- **0.527–0.534** → real but small. Bank it, adopt 12 pairs as the baseline (it is free at
+  serve time), and move on — do not start a pair-count ladder.
+- **≤ 0.527** → data volume is not the constraint either. Combined with R1, that is a strong
+  statement that M2 on OHLCV is finished, and it should be written into §5 as such.
+- **Plateau collapses (<10 epochs)** → check whether its best `loss_va` beats
+  1.0398–1.0404, exactly as §1.6 reads R1. If it does not, the arm is simply worse.
+
+### R2 — magnitude-weighted directional loss. ✅ Unblocked, C3 shipped 2026-08-22.
+
+**What it attacks.** The model's `dir_acc` at cov 0.05 is 0.559 but that converts to only
+**+8.8 gross bps/trade**, because it is systematically right on smaller-than-average moves
+(§7, cost arithmetic). Ranking accuracy and P&L have come apart, and every lever tried so far
+has aimed at the first. C3 aims at the second: it weights each moved bar's directional CE by
+its realized `|forward return|`, normalized per (pair, horizon) so the weight is about move
+size and not about which pair or which horizon (§6 C3). Unlike N3's selection-time cousin —
+which failed because it ranked a statistic with ~600 effective samples — this applies per
+sample over 2.3M training bars, where the estimate is not the problem.
+
+```sh
+DIR_MAG_WEIGHT=1 FEATURE_GROUPS=legacy \
   CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
   EARLY_STOP_PATIENCE=20 SEED=1 \
   TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
   TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
   ./scripts/gcp_train.sh --gpu 60 384
 ./scripts/gcp_status.sh
-./scripts/gcp_logs.sh > logs/R1.log
+./scripts/gcp_logs.sh > logs/R2.log
 ```
 
+⚠️ **If O8 lands positive first, run R2 on the 12-pair set instead** — one variable at a time
+means R2's control must be whatever the baseline is when it launches, not whatever it was
+when this was written (§0.2).
+
+**Verify** (§0.4 plus these): `knob DIR_MAG_WEIGHT=1` in the resolved-knobs echo;
+`Magnitude-weighted directional loss: ON (power=1.0 clip=5.0)`; the three `dir-mag <h>m:`
+lines, where **`scale` should be ~0.8–1.0 and `at_clip` should be a few percent at most** — an
+`at_clip` above ~10% means the clip is binding on a large minority of bars and the weight has
+become closer to a step function than to `|r|`, which is a different experiment; `mean|r|`
+should rise with the horizon (60m < 240m < 1440m) and be in the tens-to-hundreds of bps.
+
+**Verdict, pre-registered — and note this one is NOT ranked on LB.** R2 is a loss-function
+change aimed at economics, so rank it on **gross bps/trade at cov 0.01 / 0.02 / 0.05** from
+the `Fixed-coverage P&L` table, against the family's pooled **+19.4 / +22.0 / +8.8**. Report
+plateau-mean LB alongside as a guard, not as the decision.
+
+- **cov 0.02 gross ≥ +27 with LB no worse than 0.517** (i.e. within ~2 between-seed sd of
+  0.5239) → the lever works: it bought economics without giving up ranking. Replicate at two
+  more seeds.
+- **cov 0.02 gross +22 to +27** → inside noise on ~1,780 trades. Not evidence. Do not run the
+  `POWER=0.5` arm on the strength of it.
+- **Gross improves but LB drops below ~0.510** → it traded ranking for magnitude. That is a
+  real finding and it belongs to M3's sizing problem, not to M2 — record it and stop.
+- **No movement in either** → the aux head's weighting is not the constraint. Closed.
+
+### R3 — encoder capacity on the current baseline. **Last, and most likely a closer.**
+
+**Why this is not barred by §5.** §5 closed capacity sweeps twice, and both closures are
+now stale for the same reason. The first rested on O3 (a *context-length* run at 15m, not a
+capacity run) and on N2 (a GBT, which says nothing about LSTM width). The second rested on
+§0.3's "a single run cannot resolve anything under 0.04 LB" — **and that is no longer
+true.** The plateau-restricted mean (§0.3, 2026-08-22) has a between-seed sd of **0.0032**
+across the three baseline seeds (0.5235 / 0.5273 / 0.5209), so a single well-plateaued run
+now resolves a ~0.01 effect. The measurement improved; the lever is re-openable on that
+basis and on no other. It is also the only structural knob in `config.py` that has **never**
+been varied on the 5m/seq384 baseline — `hidden_size=64, num_layers=2, dropout=0.2` were
+inherited, not measured.
+
+**Two runs, one variable each, both against §1.3.** Everything else is byte-identical to
+the baseline, including `FEATURE_GROUPS` left **unset** (it defaults to the 30-column set,
+so it must be pinned to `legacy` — see the verify list).
+
+```sh
+# R3a — double the width
+FEATURE_GROUPS=legacy HIDDEN_SIZE=128 \
+  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
+  EARLY_STOP_PATIENCE=20 SEED=1 \
+  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+  ./scripts/gcp_train.sh --gpu 60 384
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh > logs/R3a.log
+
+# R3b — half the width (only after R3a has FINISHED; runs are serial, §7)
+FEATURE_GROUPS=legacy HIDDEN_SIZE=32 \
+  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
+  EARLY_STOP_PATIENCE=20 SEED=1 \
+  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
+  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+  ./scripts/gcp_train.sh --gpu 60 384
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh > logs/R3b.log
+```
+
+**Why both directions and not a ladder.** One run tells you nothing about the shape of the
+curve. Two bracketing runs do: baseline in the middle, one arm up, one arm down. If the
+plateau mean is flat across 32 / 64 / 128, capacity is not the binding constraint and the
+question is answered for good. A monotone rise toward 128 would be the only result that
+justifies a third run.
+
 **Verify** (§0.4 plus these):
-`Feature groups: legacy,multiscale -> 25 columns` — **if this line says 30, `FEATURE_GROUPS`
-did not reach the VM and the run is a repeat of Q3**; `Feature columns: 25` in the eval
-block; the `WARNING [norm]` block reports **12/25 CONSTANT** with *no new column* in it (if
-`vol_1d` or any `ret_*` appears there, the run tested less than it looks); no
-`DEGENERATE SPIKE` flag on any `[norm] normalized[…]` line, and `max|z|` back to `hl_range`
-for every pair; `Samples:` ≈ 2.9M; `hold=48 bars`; split recorded.
+`Feature groups: legacy -> 19 columns` — **if it says 25 or 30 the run is not a baseline
+comparison**; `hidden_size=128` (resp. `32`) on the architecture line; `Feature columns:
+19`; `12/19 CONSTANT`; `Samples:` ≈ 2.9M; `hold=48 bars`; `Pair embedding: ON dim=8`;
+split recorded.
 
-**Verdict, pre-registered — and note the metric has changed (§0.3).** Rank on
-**mean-of-epochs cov05 LB restricted to plateau epochs** against the family's plateau means
-(0.5235 / 0.5273 / 0.5209, pooling to **0.5239**), and report the all-epoch mean alongside
-it. Also required: a **monotone `emp_up`** bin table (§3 item 3c) and a **plateau of at
-least ~15 epochs** — a run that leaves the plateau before epoch 10 has not been compared
-fairly to the baseline, whatever its LB says.
+**Verdict, pre-registered.** Rank on **plateau-restricted mean cov05 LB** against the
+family's 0.5239 (between-seed sd 0.0032), report the all-epoch mean alongside, and require a
+plateau of ≥15 epochs and a monotone `emp_up` table (§3 item 3c).
 
-- **≥ 0.537 plateau mean LB, plateau ≥15 epochs, calibration monotone** → features are the
-  live lever. Replicate at two more seeds, then add the market-context group back (fixed).
-- **0.527–0.537** → real but small; bank it and widen the column set once more.
-- **≤ 0.527 with a healthy ≥15-epoch plateau** → this is the clean negative Q3 was supposed
-  to be. **Per-timestep candle features are closed**, and the milestone conclusion stands:
-  stop tuning M2, ship seed 2 to M3, and let the policy do the work M2 cannot.
-- **Plateau still collapses (<10 epochs)** → the result is again uninterpretable and the
-  next run is a regularization arm (`DROPOUT` 0.1→0.3 at 25 columns), not another feature
-  set. Say so explicitly rather than reading the LB.
+- **Either arm ≥ 0.534 with a ≥15-epoch plateau and monotone calibration** → capacity is
+  live. Replicate that arm at two more seeds before believing it.
+- **Both arms within ±0.005 of 0.5239** → capacity is not the constraint. **M2 is done.**
+  Record it in §5 as closed *on measurement* this time, and stop.
+- **Either arm's plateau collapses below ~10 epochs** → read it the way §1.6 reads R1:
+  check whether its *best* `loss_va` beats 1.0398–1.0404. If it does not, the arm is worse,
+  full stop, and no regularization follow-up is warranted.
 
-### R2 — O6, magnitude-weighted directional loss. Unchanged, still next after R1.
+### Still queued behind that, and only if O8, R2 or R3 reopens M2
 
-Blocked on **C3** (§6). It attacks the failure §7's cost arithmetic describes — the model is
-systematically right on smaller-than-average moves — and it does so with per-sample weights
-over 2.3M training bars rather than over a ~600-effective-sample validation statistic, which
-is why N3's selection-time cousin failed. Cheap, one variable, one run.
-
-### Still queued behind that
-
-- **O8 — 12 pairs.** Cheap (§1.7): ADA/AVAX/LINK/XRP have full 4-year history at 5m. One
-  variable, one run. Do it after R1 so it tests the *final* feature set.
 - **O7 — triple-barrier redo.** Blocked on C4b, wider barriers (target ~30–40% flat), and a
-  pinned dataset.
+  pinned dataset. A *label* lever — also unaffected by §1.6.
 - **O5 — L2 ladder feature audit. Still demoted.** Book-derived columns are constant across
   99% of the train window and get zeroed. Revisit when book coverage passes ~6 months; the
   60-day milestone for BTC/ETH/SOL is ≈2026-09-15, so this is a 2027 item.
 
-### For M3, not for M2
+### For M3, not for M2 — and after R0 this is the main line of work
 
 §1.8's `btc_absret_1d` finding is an **input to the policy milestone**, not a run in this
 queue. When M3 starts, its observation vector should carry trailing market-move magnitude
 (BTC |ret| over 24h, or the pooled-universe equivalent) alongside M2's per-horizon
 probabilities, because conditioning on it moves the top-2% slice from +22.0 to +54.9 gross
-bps/trade. Do **not** implement it as an M2 gate (§1.8, §5).
+bps/trade. Do **not** implement it as an M2 gate (§1.8, §5). With features closed and
+capacity about to be, this is where the remaining upside in the project lives.
 
 ---
 
@@ -732,14 +940,14 @@ instead; that is how every log currently in `logs/` was produced.
 should be relaunched rather than analyzed:
 
 ```sh
-L=logs/Q3.log                              # repeat for each run in the wave
+L=logs/R3a.log                             # repeat for each run in the wave
 grep -nE 'resolved knobs|knob |Pair embedding|Training pairs|primary=|Split global_time' $L
 grep -nE 'WARNING \[norm\]|max\|z\||BROKEN SCALE' $L
 grep -n  'P&L sim:' $L                     # hold must be horizon_min / bar_min (5m/240m ⇒ 48)
 grep -n  'Early stop at epoch' $L           # must NOT be 1 + patience
 grep -n  'Samples:' $L                      # 5m/8 pairs ⇒ ~2.90M
 grep -n  'epoch LB series' $L               # the §0.3 verdict metric, printed by C10
-grep -n  'Feature columns:' $L              # the count you intended (25 for R1)
+grep -n  'Feature columns:' $L              # the count you intended (19 for R3)
 grep -nE 'max\|z\|' $L                     # no new column above ~100 sigma (C15)
 ```
 
@@ -798,6 +1006,7 @@ line.**
 | Run | What | Primary | cov05 LB | Valid? | Verdict |
 |---|---|---:|---:|---|---|
 | **5m/seq384 family** — **O2** `20260818T185438Z` (s1) · **P0-seed2** `20260819T142759Z` · **P0-seed3** `20260820T025723Z` | **5m bars, seq 384 (32h), ~2.90M samples, 3 seeds** | 240m | **pooled mean-of-epochs 0.5219 (between-seed SEM 0.0014)** | ✅ **BANKED — the baseline** | The project's first replicated result. +0.016 ≈ 4σ over F4. Pooled fixed-coverage P&L **+19.4 / +22.0 gross bps/trade at cov 0.01 / 0.02** (1,081 / 1,783 trades) = +5.4 / +8.0 net at 14bps taker. Per-seed max LB 0.5565 / 0.5576 / 0.5425 — all order statistics, do not quote. Did **not** replicate: serial-sim magnitude (§1.5), side balance, book-era split, per-pair numbers. Served gate must become a coverage target (C13). §1.3 |
+| **R1** `20260821T182844Z` | **25 columns** = 19 legacy + the 6 own-pair multi-scale (`ret_1h/4h/1d`, `vol_1h/4h/1d`); the well-conditioned half of C12 | 240m | **plateau mean 0.4979 (n=11); all-epoch 0.4889±0.016 (n=38)** | ✅ valid, **decisive negative — closes the lever** | −0.026 vs the family's plateau 0.5239 (between-seed sd 0.0032) ≈ 8σ. Worse than Q3 on every axis. 🔴 **Best `loss_va` = 1.0451, above the family's 1.0398–1.0404 at *every* epoch including epoch 1** — so this is not an overfitting story a `DROPOUT` arm could rescue, and that branch is withdrawn. Calibration flat (`emp_up` ≈ 0.48 in every bin 0.10→0.80; brier 0.286) ⇒ also rejected by §3.3c. Gross bps +8.0 / +11.7 at cov 0.01 / 0.02 vs +19.4 / +22.0. Selected ep 18 sits +0.11 `loss_va` above its own minimum. Mechanism: at seq 384 all six columns are exact functions of bars already in the window ⇒ zero information, six easy-to-memorize channels. §1.6 |
 | **Q3** `20260821T…` | **30 candle-derived columns** (C12) vs the 19-col baseline — the feature expansion | 240m | mean 0.5003±0.018 (n=28); **plateau mean 0.5000, n=5** | ✅ valid, **decisive negative for THIS column set** | −0.022 against the family. **Calibration inverted** (`emp_up` 0.495→0.465 as `mean_pred` 0.35→0.75; brier 0.2897 vs 0.250) ⇒ rejected by §3.3c independently. Left its training plateau at **epoch 5** vs the baseline's 21–26 and selected a post-overfit epoch, so it is not a fair test of the lever — see §1.6. Two columns numerically defective (C15). Retest = R1. |
 | **Q2** `20260821T…` | **3-seed probability ensemble** (C14) | 240m | cov05 LB 0.561 | ✅ valid, **lever closed** | Matched against Q0 on the same split: dir_acc +0.002, brier −0.0005 (both noise), gross bps **worse at 4 of 5 coverages** (cov02 +10.6 vs +18.7; cov05 +11.9 vs +15.1; cov10 +0.6 vs +6.7). Pre-registered "no better than the best member" ⇒ dropped. §5 |
 | **Q0** `20260821T083737Z` | eval-only re-score of seed 2 under C13 | 240m | cov05 LB 0.559 | ✅ | Derived seed 2's coverage-targeted gate: **`conf >= 0.6311`**, dir_acc 0.578, +18.68 gross bps/trade, **+4.68 net at taker**. Gate written to the VM's local copy only — pass it explicitly on promote (§2 R0). |
@@ -830,8 +1039,8 @@ line.**
 | **Cost-aware checkpoint selection (`SEL_NET_WEIGHT`)** | **Closed (new, 2026-08-18)** | N3 ran it at the horizon where R5's objection no longer applies. The term is alive but ranks a statistic with ~600 effective samples and ~5bps standard error against a 19bps range, at ~88% effective weight. Chosen epoch was no more profitable than F4's. §1.5. Reopen only with a fixed range (`SEL_NET_SCALE≈0.04`) *and* a reason to believe per-epoch net/trade is estimable. |
 | **The book ON/OFF walk-forward *design*** | **Retired (new, 2026-08-18)** | Three attempts, zero decidable verdicts. The book-OFF arm's modal failure (collapse to an all-flat predictor) is exactly what pushes `n_dir` under the reliability floor, so the design is least able to decide precisely when the book helps most. The book question is not closed — it moves to within-model attribution (**O5**). Do not launch `gcp_walkforward.sh` for it again. |
 | **Context length / sequence window** | **Closed (new, 2026-08-19)** | O3 ran seq 128→256 at 15m as a clean one-variable test and it is *worse* on mean-of-epochs (0.4925±0.023 vs F4's 0.5058±0.016), with a collapsing confidence distribution and a coin-flip up side. The LSTM already uses all the window it can. Do not sweep seq 512. Note this is about *window*, not *resolution* — finer bars at the same window (O2) is a separate and live lever. §1.4 |
-| Encoder capacity / layers / hidden sweeps | **Closed again (2026-08-19)** | Was reopened on N2's GBT gap. O3 tested the cheap version of that hypothesis and refuted it: the gap is about the GBT's static summary discarding information, not about the LSTM needing more modelling power. Also barred by the last row of this table — a single-run capacity sweep cannot resolve what it would be measuring. |
-| Full architecture swap (transformer / TCN) | **Closed (2026-08-19)** | Was gated behind O3; O3 came back negative. **Do not write a transformer.** Reopen only if Q3's richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit. |
+| **Encoder capacity / layers / hidden** | 🟡 **REOPENED once, 2026-08-22 — this is R3** | Both prior closures are stale. The 2026-08-19 one rested on O3 (a *context-length* run at 15m) and N2 (a GBT) — neither is a capacity measurement — and on "a single run cannot resolve under 0.04 LB", which the plateau-restricted mean has since falsified: between-seed sd of the plateau mean is **0.0032**, so one well-plateaued run resolves ~0.01. `hidden_size=64, num_layers=2, dropout=0.2` were never chosen by measurement on the 5m/seq384 baseline. **Two bracketing runs (32 / 128) and then it closes for good** (§2 R3). Do not expand this into a ladder or a joint sweep. |
+| Full architecture swap (transformer / TCN) | **Closed, and reaffirmed 2026-08-22** | Was gated behind O3; O3 came back negative. The reopening condition written in 2026-08-19 was "if richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit" — Q3 and R1 have now *both* run and the failure looks like the opposite: the model already memorizes the training set the moment it is handed anything easy (`loss_tr` 1.70 → 1.13 in R1), while its validation loss never improves. That is an **input** limit and an SNR floor, not a modelling limit. A higher-capacity family would make it worse, not better. **Do not write a transformer.** The only remaining capacity question is R3's, and it is a two-run bracket on the existing encoder, not a family swap. |
 | Confidence calibration / temperature / focal loss | **Closed** | F4's head is *over*-confident (`[0.60,0.70)` bin mean_pred 0.636 vs empirical 0.547; N3's is 0.609 vs 0.521). Sharpening an over-confident head is the wrong direction. |
 | Raising `GATE_THRESHOLD` as an experiment | **Superseded by C1+C2** | The served gate is 0.58 and eval now reports there. Derive the operating point from the fixed-coverage P&L table, not from another sweep. |
 | Quantile head | **Deferred** | Regressed direction ~0.014; band coverage unstable. Revisit at M3, detached. |
@@ -840,6 +1049,8 @@ line.**
 | **Bar resolution — 15m → 5m** | **🟢 BANKED and frozen (2026-08-21)** | Replicated across three seeds: pooled mean-of-epochs 0.5219 ± 0.0014 vs F4's 0.5058, and pooled +22 gross bps/trade at the top 2% (§1.3). `5m / seq 384` is the permanent baseline. Nothing further to test here — do not run a fourth seed. |
 | **Bar resolution — finer than 5m** | **Closed (new, 2026-08-21)** | P2 ran 1m/seq768 as a direction probe: flat `dir_acc` (0.561 vs 0.559), materially worse economics, **destroyed calibration** (`emp_up ≈ 0.48` in every bin, brier 0.323 vs 0.250), 20h wall clock. The ladder has one rung and we are standing on it. The untested variant (1m at a 32h window, seq 1920) is unaffordable and context length is separately closed. §1.4 |
 | **Multi-checkpoint ensembling (probability averaging)** | **Closed (new, 2026-08-22)** | Q2 averaged three seeds of one configuration and compared against the best member on a matched split (Q0). Ranking improved by noise (+0.002 dir_acc), calibration by noise (−0.0005 brier), and **gross bps/trade got worse at four of five coverages**. The mechanism: averaging pulls every bar toward the consensus, which preserves the directional *order* but compresses exactly the outlier-confident bars where the large moves are. Reopen only if calibration — not P&L — becomes the binding constraint on M3. §1.1 |
+| **Per-timestep candle features (own-pair)** | **Closed (new, 2026-08-22)** | Two arms, both rejected. Q3 added 11 columns (30 total) and R1 added the well-conditioned 6 (25 total) with every §0.4 line green. R1's plateau mean is 0.4979 vs 0.5239, and — the fact that closes it — **R1's best validation loss (1.0451) is worse than the baseline's (1.0398–1.0404) at every epoch including epoch 1**, so no regularization arm can recover it. At `seq 384` (32h) every multiscale column is an exact function of bars already inside the window at the prediction timestep: zero information, six smooth channels that are far easier to memorize than `ret_1`. **Redundant re-parameterizations of the input are pure overfitting surface.** Reopen only for genuinely *external* information, and note Q1 already measured the informative member of that family and assigned it to M3. §1.6 |
+| **"Add regularization and retry the feature set"** | **Withdrawn before it ran (2026-08-22)** | It was §2's pre-registered branch for a collapsed plateau, and R1 falsified its premise. Regularization lengthens a plateau; it cannot lower a model onto a validation loss it never reached in its single best epoch. Do not spend 3h GPU on a `DROPOUT` arm at 25 columns. |
 | **Gating M2 on a regime observable** | **Barred (new, 2026-08-22)** | Q1's `btc_absret_1d` finding is real and worth +26bps/trade of conditioning (§1.8), and it still must not be built into M2. Deciding *when to be in the market* is M3's job by the design in this document's preamble; building it into the signal model is the cost-aware-selection mistake in a new costume. M2 emits the observable, the policy acts on it. |
 | **Absolute `GATE_THRESHOLD` as a serving constant** | **Closed (new, 2026-08-21)** | Not a lever, a defect. The same probability is 1.2% / 2.5% / 1.7% coverage across three seeds of one configuration and 80% on P2 (§1.5). The gate must be a per-checkpoint coverage target chosen from the fixed-coverage P&L table. C13. |
 | **"Flat training loss proves nothing" — and now "one seed proves nothing"** | **Reinforced (2026-08-21)** | Of the four claims the O-wave made from one seed, three did not survive replication (§1.2, §1.5). Any result quoted from a single run is provisional until a second seed agrees. |
@@ -1025,9 +1236,45 @@ now start 2022-08-18 for all nine long pairs (§1.7).
   minimum) to the same summary line, and warn when the plateau is under ~15 epochs. Until
   it ships, §3 has the one-liner that computes it.
 
-- ⬜ **C3 — magnitude-weighted directional loss.** Weight the aux up/down CE by `|r_T|`.
-  Gate behind a config flag defaulting to off. Feeds **O6**, which the P-wave promoted to
-  next-after-Q3 (§2).
+- ⬜ **C19 — triage `hl_range`'s spike-shaped tail (low priority, no run blocked).** C15's
+  detector fires on `hl_range` for six of eight pairs with `max|z|` 66–364 and only 2–4 rows
+  beyond 50σ out of ~420k, which its rate-based rule correctly calls a spike rather than a
+  populated tail (SOL at 6 rows and HYPE at 2-of-128k fall the other side and are labelled
+  benign). `hl_range` is a **legacy** column, so the 3-seed baseline in §1.3 has carried this
+  from the beginning and R1 did not introduce it — the values are byte-identical to Q3's.
+  Handful-of-rows scale, winsorized at ±50, so the practical impact is nil. Worth one query
+  on the VM to confirm those rows are real flash candles rather than a bad bar, and then
+  either whitelist the column in the detector or drop the offending bars. **Do not treat a
+  `DEGENERATE SPIKE` on `hl_range` as a reason to void a run** — update §0.4's row to say so
+  when this is resolved.
+
+- ✅ **C3 — magnitude-weighted directional loss. DONE 2026-08-22. Unblocks R2.**
+  `DIR_MAG_WEIGHT=1` weights each moved bar's directional CE by its realized
+  `|forward return|`, so being right on a large move counts for more than being right on a
+  small one. Two design points carry the weight of the change:
+  - **The weight is normalized per (pair, horizon)** against that cell's train-window mean
+    `|r|`. 1000PEPE's typical move is ~10× BTC's and a 24h move is an order of magnitude
+    larger than a 1h one, so a raw `|r|` weight would silently reweight the *pair mix* and
+    the *horizon mix* rather than the move sizes — trap §0.5.8 in a new costume. Measured on
+    a 3-pair fixture whose pairs differ 10× in `|r|`: per-pair mean weight comes out
+    0.998 / 1.002 / 1.000, a 0.4% spread. Within a pair, top-quintile moves outweigh
+    bottom-quintile by **25.7×**.
+  - **`scale` renormalizes E[w] to exactly 1.0 on the train window** after the power and the
+    clip, so `DIR_LOSS_WEIGHT` keeps its meaning and the printed loss stays comparable to an
+    unweighted run. Verified `mean=1.000000`.
+  - Knobs: `DIR_MAG_WEIGHT` (default **off**), `DIR_MAG_WEIGHT_POWER` (default 1.0 =
+    P&L-proportional; 0.5 is the gentler arm), `DIR_MAG_WEIGHT_CLIP` (default 5.0 — one
+    20σ bar must not own a batch's gradient). All three are in the launcher allowlist and
+    are echoed by the generic `knob K=V` loop, on both the GPU and CPU paths.
+  - **Off is byte-identical to the incumbent** — asserted, not assumed: the weighted
+    reduction `sum(cw·w·ce)/sum(cw·w)` reduces exactly to
+    `nn.CrossEntropyLoss(weight=dw)`'s `sum(cw·ce)/sum(cw)` when every `w` is 1, and the
+    check compares the two to 12 decimal places.
+  - A degenerate pair (all-zero returns) falls back to the global mean with a relative
+    floor rather than dividing by ~0 — §0.5.5 applied to a divisor.
+  - **Regression check:** `docker compose --profile ml run --rm --no-deps ml_trainer python
+    check_c3_dir_mag.py` (7 groups, all passing). Re-run it if the directional loss or the
+    class-weighting path is touched.
 - ⬜ **C4b — barrier-aware `simulate_pnl`.** Under triple-barrier labels the model predicts
   a TP/SL outcome but `simulate_pnl` books `fwd_ret` at a fixed `hold_bars` — a policy
   mismatch. Walk forward to first TP/SL touch, else timeout. **Blocks O7.**

@@ -28,6 +28,82 @@ number from it:**
 Sections below are in reverse-chronological order, newest first, exactly as written at
 the time.
 
+---
+
+## 2026-08-22 — §1.6 as written after Q3, before R1 ran
+
+Superseded by R1. Kept because it is the reasoning that *justified launching R1*, and
+because its "the run was mis-specified, not the lever dead" reading was a reasonable call
+on the evidence available at the time. R1 then tested exactly that reading and refuted it:
+R1's best validation loss is worse than the baseline's at every epoch including epoch 1, so
+the "add regularization and retry" escape hatch this section opened is closed. See the live
+plan's §1.6 for the conclusion that replaced it.
+
+### 1.6 🔴 The feature expansion failed, and the reason is fitting speed, not signal
+
+Q3 was the one-variable test of §1.6-as-it-stood (the model sees six live columns per bar).
+It added eleven candle-derived columns — `ret_1h/4h/1d`, `vol_1h/4h/1d`, `btc_rel_ret_1h`,
+`beta_btc_1d`, `xs_rank_1h`, `xs_disp_1h`, `has_market` — and lost:
+
+| | 5m family (3 seeds, 19 cols) | Q3 (30 cols) |
+|---|---:|---:|
+| mean-of-epochs cov05 LB | **0.5219 ± 0.0014** | **0.5003** (n=28) |
+| brier (240m, moved bars) | 0.250 | **0.2897** |
+| calibration bin table | monotone in `emp_up` | **inverted** (0.495 → 0.465 as `mean_pred` 0.35 → 0.75) |
+| ungated 3-class accuracy | 0.472 / 0.473 | 0.4553 |
+| gross bps/trade @cov 0.01 / 0.02 | +19.4 / +22.0 | +19.7 / +17.6 |
+
+Two independent pre-registered criteria reject it: LB ≤ 0.525 (§2's Q3 rule) and a
+non-monotone `emp_up` (§3 item 3c).
+
+🔴 **But the training trajectory says the run was mis-specified, not that the lever is
+dead.** Every baseline run sits on a long plateau — `loss_tr` ≈ 1.72, `loss_va` ≈ 1.041 —
+and *every good epoch lives inside it*. Q3 left the plateau at epoch 5:
+
+| run | cols | plateau epochs | `loss_tr` first → last | mean LB, plateau | mean LB, all |
+|---|---:|---:|---|---:|---:|
+| O2 (s1) | 19 | 24 | 1.7284 → 1.2625 | 0.5235 | 0.5248 |
+| P0-seed2 | 19 | 21 | 1.7288 → 1.4043 | 0.5273 | 0.5206 |
+| P0-seed3 | 19 | 26 | 1.7286 → 1.2070 | 0.5209 | 0.5203 |
+| **Q3** | **30** | **5** | **1.7210 → 1.0971** | **0.5000** | **0.5003** |
+
+(plateau = epochs whose `loss_va` is within 0.02 of that run's minimum.) With 19 columns
+the model *cannot* fit the train set — 1.72 flat for 25 epochs. With 30 it fits it, down to
+1.10, while `loss_va` climbs monotonically from epoch 5 onward. Q3's selected epoch 8 is
+already outside its own plateau, which is exactly why its ranking survives (top-5% dir_acc
+0.551) while its probabilities do not. **Nothing in the run's configuration was changed to
+absorb a 58% wider input** — same `DROPOUT`, `WEIGHT_DECAY`, `LR`, `HIDDEN_SIZE`.
+
+Note this cuts both ways and neither reading is free: extra columns enable memorization
+whether they carry signal or not, so the fast overfit is *not* evidence that the features
+are informative — it is only evidence that the test did not measure what it intended to.
+
+🔴 **One of the eleven columns is numerically defective and a second is merely fat-tailed**
+(§6 C15) — both in the market-context group:
+
+- **`beta_btc_1d` is degenerate for BTCUSDT.** Beta of BTC against itself is identically
+  1.0. The column is 1.0 everywhere except a handful of warm-up / sub-floor-variance bars
+  set to 0.0, which makes its raw std ~1e-3 — above the `1e-8` CONSTANT detector, so it is
+  *not* zeroed — and the per-pair normalizer then turns those few bars into a **590σ**
+  spike, winsorized at ±50. BTC's worst tail was 66σ (`hl_range`) before C12. The
+  `ok_var = b_var > 1e-12` guard at `ml/train/data/features.py:436` is ~6 orders of
+  magnitude below a real `var(ret_1)` (~2.3e-6 at 5m), so it floors nothing in practice.
+- **`xs_disp_1h` carries a 122σ tail**, identical for every pair at a given bar, and became
+  the worst column for ETH, SOL and ZEC (was 75 / 81 / 85σ on `hl_range`). 🔵 **On
+  measurement this is a genuine fat tail, not a defect** — the tail is *populated* (347 rows
+  beyond 5σ, 44 beyond 10σ on the val window), which is what a real market-wide volatility
+  event looks like and is the same class as `hl_range`'s long-accepted 212–364σ. It is
+  correctly winsorized at ±50 and no change was made to it (§6 C15.4). The reason to drop it
+  is instead that Q1 ranks cross-sectional dispersion the *least* informative of nine
+  observables tested (§1.8): C12 added the dispersion family, which is noise, and omitted
+  the market-move-magnitude family, which is the one thing that separates.
+
+The legacy columns are byte-identical between O2 and Q3 (`hl_range` tails 212.8 → 212.9,
+363.5 → 363.8), confirming the change is isolated to the new columns.
+
+
+---
+
 ## P-wave detail, as written 2026-08-21 — conclusions carried forward, narrative archived 2026-08-22
 
 Moved here from the live plan on 2026-08-22. All three of its conclusions survive; only the

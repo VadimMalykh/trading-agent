@@ -40,6 +40,9 @@ from config import (
     CLS_WEIGHT_CLIP,
     CLS_WEIGHT_MODE,
     DIR_LOSS_WEIGHT,
+    DIR_MAG_WEIGHT,
+    DIR_MAG_WEIGHT_CLIP,
+    DIR_MAG_WEIGHT_POWER,
     DIRECTIONAL_HEAD,
     EARLY_STOP_PATIENCE,
     EPOCHS,
@@ -77,6 +80,7 @@ from data.dataset import (
     fit_norm_from_bundle,
     labels_for_indices,
     pair_ids_for_indices,
+    returns_for_indices,
     time_split_indices,
     time_split_indices_window,
 )
@@ -197,12 +201,108 @@ def multi_loss(logits_dict, y_dict, crits, horizon_keys):
     return loss / len(horizon_keys)
 
 
-def directional_loss(dir_logits_dict, y_dict, dir_crits, horizon_keys):
+class DirMagWeighter:
+    """
+    C3 — per-sample magnitude weights for the auxiliary directional loss.
+
+    w_i = clip( (|r_i| / mean_train|r| for this (pair, horizon))^POWER, 0, CLIP ) / scale_h
+
+    Two normalizations, both load-bearing:
+
+    * **Per (pair, horizon) mean.** 1000PEPE's typical 4h move is several times
+      BTC's, and a 24h move is an order of magnitude larger than a 1h one. Dividing
+      by the cell's own train-window mean makes the weight a statement about "big
+      FOR THIS pair at THIS horizon" instead of silently reweighting the pair mix
+      and the horizon mix (trap §0.5.8).
+    * **scale_h.** After the power and the clip, the mean weight is no longer 1, so
+      the effective DIR_LOSS_WEIGHT would drift and the printed loss would not be
+      comparable to an unweighted run. scale_h is the train-set mean of the clipped
+      weight, so E[w] == 1 exactly on the training distribution.
+
+    Both are measured on the TRAIN indices only and on directional bars only
+    (label != flat), because those are the only bars the directional loss sees.
+    """
+
+    def __init__(self, bundle, tr_idx, horizon_keys, dir_class_w, device):
+        self.crits_none = {}
+        self.class_w = {}
+        self.pair_mean = {}
+        self.scale = {}
+        self.clip = float(DIR_MAG_WEIGHT_CLIP)
+        self.power = float(DIR_MAG_WEIGHT_POWER)
+        self.summary = {}
+
+        n_pairs = len(bundle.series)
+        for h in horizon_keys:
+            w_t = torch.tensor(dir_class_w[h], dtype=torch.float32, device=device)
+            self.class_w[h] = w_t
+            self.crits_none[h] = nn.CrossEntropyLoss(weight=w_t, reduction="none")
+
+            y_tr = labels_for_indices(bundle, tr_idx, h)
+            r_tr = np.abs(returns_for_indices(bundle, tr_idx, h))
+            pi_tr = bundle.pair_i[tr_idx]
+            moved = y_tr != 1
+            r_m, pi_m = r_tr[moved], pi_tr[moved]
+
+            # Per-pair mean |r| on moved train bars. A pair with no moved bars (or
+            # a degenerate all-zero return column) falls back to the global mean so
+            # it cannot divide by ~0 and manufacture a huge weight — §0.5.5, the
+            # "additive epsilons are not floors" lesson, applied to a divisor.
+            global_mean = float(r_m.mean()) if r_m.size else 0.0
+            means = np.full(n_pairs, global_mean, dtype=np.float64)
+            if r_m.size:
+                sums = np.bincount(pi_m, weights=r_m, minlength=n_pairs)
+                cnts = np.bincount(pi_m, minlength=n_pairs)
+                ok = cnts > 0
+                means[ok] = sums[ok] / cnts[ok]
+            floor = max(global_mean * 1e-3, 1e-12)
+            means = np.maximum(means, floor)
+            self.pair_mean[h] = torch.tensor(means, dtype=torch.float32, device=device)
+
+            # scale_h: mean of the clipped weight over the train moved bars.
+            if r_m.size:
+                w_raw = np.clip((r_m / means[pi_m]) ** self.power, 0.0, self.clip)
+                scale = float(w_raw.mean())
+                frac_clipped = float((w_raw >= self.clip - 1e-9).mean())
+            else:
+                scale, frac_clipped = 1.0, 0.0
+            self.scale[h] = max(scale, 1e-9)
+            self.summary[h] = {
+                "n_moved": int(r_m.size),
+                "mean_abs_ret_bps": global_mean * 1e4,
+                "scale": self.scale[h],
+                "frac_at_clip": frac_clipped,
+            }
+
+    def weights(self, h, ret, pair_idx):
+        m = self.pair_mean[h][pair_idx]
+        w = (ret.abs() / m).pow(self.power).clamp(max=self.clip)
+        return w / self.scale[h]
+
+
+def directional_loss(
+    dir_logits_dict,
+    y_dict,
+    dir_crits,
+    horizon_keys,
+    mag=None,
+    pair_idx=None,
+):
     """
     Binary up/down CE per horizon, computed ONLY on bars that actually moved
     (true label != flat). Bars where nothing moved contribute no gradient, so
     this head learns a clean up-vs-down boundary undiluted by the flat mass.
-    Returns (loss, n_directional_bars) averaged over horizons.
+    Averaged over horizons.
+
+    `mag` (C3, optional) is a DirMagWeighter. When supplied, each moved bar's CE
+    is additionally weighted by its normalized |forward return|, so being right on
+    a large move counts for more than being right on a small one — the failure the
+    cost arithmetic in the plan's §7 describes. `pair_idx` is required with it,
+    because the normalization is per (pair, horizon).
+
+    With `mag=None` this is byte-identical to the pre-C3 path: the weighted-mean
+    reduction below reduces exactly to nn.CrossEntropyLoss(weight=dw)'s default
+    `sum(w_y * ce) / sum(w_y)` when every sample weight is 1.
     """
     total = 0.0
     n_h = 0
@@ -213,7 +313,17 @@ def directional_loss(dir_logits_dict, y_dict, dir_crits, horizon_keys):
             continue
         # map 3-class {0=down,2=up} -> 2-class {0=down,1=up}
         y_dir = (y[move] == 2).long()
-        total = total + dir_crits[h](dir_logits_dict[h][move], y_dir)
+        if mag is None:
+            total = total + dir_crits[h](dir_logits_dict[h][move], y_dir)
+        else:
+            # dir_crits_none[h] already returns cw[y_i] * ce_i (PyTorch applies the
+            # class weight inside reduction='none'), so the denominator needs the
+            # same class weights to keep the reduction a weighted MEAN.
+            per = mag.crits_none[h](dir_logits_dict[h][move], y_dir)
+            cw = mag.class_w[h][y_dir]
+            w = mag.weights(h, y_dict[f"ret_{h}"][move], pair_idx[move])
+            denom = (cw * w).sum().clamp_min(1e-12)
+            total = total + (per * w).sum() / denom
         n_h += 1
     if n_h == 0:
         return None
@@ -528,6 +638,7 @@ def main():
     )
     crits = {}
     dir_crits = {}
+    dir_class_w = {}
     for h in horizon_keys:
         y_tr_h = labels_for_indices(bundle, tr_idx, h)
         counts = np.bincount(y_tr_h, minlength=3).astype(np.float64)
@@ -555,6 +666,33 @@ def main():
         dir_crits[h] = nn.CrossEntropyLoss(
             weight=torch.tensor(dw, dtype=torch.float32, device=device)
         )
+        dir_class_w[h] = dw
+
+    # C3 — magnitude-weighted directional loss. Built AFTER dir_class_w so it can
+    # reuse the exact class weights (its weighted-mean reduction must reduce to the
+    # unweighted path when every sample weight is 1). Off by default; when off,
+    # `dir_mag` stays None and the loss call is the pre-C3 one.
+    dir_mag = None
+    if DIRECTIONAL_HEAD and DIR_MAG_WEIGHT:
+        dir_mag = DirMagWeighter(bundle, tr_idx, horizon_keys, dir_class_w, device)
+        print(
+            f"Magnitude-weighted directional loss: ON "
+            f"(power={DIR_MAG_WEIGHT_POWER} clip={DIR_MAG_WEIGHT_CLIP}) "
+            f"— weight = clip((|r| / per-pair train mean |r|)^power) / scale"
+        )
+        for h in horizon_keys:
+            sm = dir_mag.summary[h]
+            print(
+                f"  dir-mag {h}m: n_moved={sm['n_moved']} "
+                f"mean|r|={sm['mean_abs_ret_bps']:.1f}bps "
+                f"scale={sm['scale']:.4f} at_clip={sm['frac_at_clip'] * 100:.2f}%"
+            )
+        print(
+            "  (scale normalizes E[w] to 1.0 on the train window, so DIR_LOSS_WEIGHT "
+            "and the printed loss stay comparable to an unweighted run)"
+        )
+    elif DIRECTIONAL_HEAD:
+        print("Magnitude-weighted directional loss: off (DIR_MAG_WEIGHT=0)")
 
     best_score = -1.0
     best_early_score = -1.0
@@ -581,7 +719,14 @@ def main():
             logits, dir_logits, quant = model.forward_all(xb, pair_idx)
             loss = multi_loss(logits, yb, crits, horizon_keys)
             if dir_logits is not None:
-                dloss = directional_loss(dir_logits, yb, dir_crits, horizon_keys)
+                dloss = directional_loss(
+                    dir_logits,
+                    yb,
+                    dir_crits,
+                    horizon_keys,
+                    mag=dir_mag,
+                    pair_idx=pair_idx,
+                )
                 if dloss is not None:
                     loss = loss + DIR_LOSS_WEIGHT * dloss
             if quant is not None:
@@ -768,6 +913,10 @@ def main():
                     "pair_embed_dim": PAIR_EMBED_DIM,
                     "pair_vocab": pair_vocab,
                     "directional_head": DIRECTIONAL_HEAD,
+                    "dir_loss_weight": DIR_LOSS_WEIGHT,
+                    "dir_mag_weight": bool(DIR_MAG_WEIGHT),
+                    "dir_mag_weight_power": DIR_MAG_WEIGHT_POWER,
+                    "dir_mag_weight_clip": DIR_MAG_WEIGHT_CLIP,
                     "cls_weight_mode": CLS_WEIGHT_MODE,
                     "cls_weight_clip": CLS_WEIGHT_CLIP,
                     "cls_label_smoothing": CLS_LABEL_SMOOTHING,
