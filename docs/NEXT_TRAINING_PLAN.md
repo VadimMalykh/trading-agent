@@ -494,6 +494,13 @@ bps/trade, **+4.68 net at 14bps taker** (`logs/Q0.log`). ⚠️ `--eval-only` ne
 checkpoint, so that gate lives only in the log — the bucket copy still carries none, and
 the promote must pass it explicitly (§2 R0).
 
+⚠️ **"Passing it explicitly" means the VM's `.env`, not your shell.** `ML_GATE_THRESHOLD`
+on the launcher was a no-op until 2026-08-24 — compose interpolates it on the *remote*
+host — and the VM's `.env` value silently won. `gcp_promote.sh` now writes the value into
+that file and fails the promote if `/health` disagrees, but if you ever change the gate by
+hand, change it there and recreate **both** `ml_inference` and `app`: the Elixir
+`Predict.gate_threshold/0` reads the same variable and gates independently.
+
 ### 1.6 🔴 Per-timestep candle features are closed — two arms, two rejections
 
 Two runs tested the same lever from different sides. Both lost, and together they close it.
@@ -815,7 +822,7 @@ queue text, with the verdict bands each run was judged against, is in
 
 | item | what | cost | needs a GPU? |
 |---|---|---|---|
-| **R0** | **promote seed 2 with its measured gate — this is the only open action, and it is 5 minutes** | promote only | no |
+| **R0** | 🔴 **re-run the promote — the 2026-08-24 attempt shipped seed 2 at gate 0.55 instead of 0.6311; script fixed, still the only open action** | promote only | no |
 | ~~O8~~ | ❌ ran 2026-08-22, flat — data volume is not the constraint (§1.9) | — | — |
 | ~~R2~~ | ❌ ran 2026-08-23, negative — economics worse, calibration destroyed (§1.9) | — | — |
 | ~~R3a / R3b~~ | ❌ ran 2026-08-23, both flat — capacity is not the constraint (§1.9) | — | — |
@@ -828,12 +835,26 @@ the only one that ever moved was 15m → 5m. The single condition that reopens M
 order-book history deep enough to sit inside the *training* window, which is a calendar
 problem (≈2027, see §5's O5 row), not a modelling one.
 
-### R0 — promote seed 2. Unblocked, still the next thing to do.
+### R0 — promote seed 2. Ran 2026-08-24, shipped at the WRONG GATE, must be re-run.
 
 Q2 settled which checkpoint: the ensemble is **not** better than its best member, so the
 pre-registered "drop the idea, promote seed 2" branch fires. Q0 already measured seed 2's
 gate, and because `--eval-only` never pushes a checkpoint that gate is **not** in the
 bucket copy — it must be passed explicitly.
+
+🔴 **What actually happened on 2026-08-24.** The command below was run as written and the
+checkpoint *did* land, but `ML_GATE_THRESHOLD=0.6311` never reached the VM: it was set in
+the Mac's shell, while the remote `docker compose` interpolates `${ML_GATE_THRESHOLD}` from
+the **VM's own `.env`**, which carries `0.55`. Seed 2 therefore went live gating at **0.55**
+— not 0.6311, and not even the 0.58 fallback §1.5 warns about. The promote also aborted
+before printing `/health` (`curl: (56)`): `serve.py` binds its port before finishing
+`torch.load`, and `curl --retry` does not treat a connection reset as transient.
+
+Both defects are fixed in `scripts/gcp_promote.sh`: the gate is now **persisted into the
+VM's `.env`** (so it also survives the next unrelated `docker compose up`), `app` is
+recreated alongside `ml_inference` when the gate changes because the Elixir signal gate
+reads the same variable, `/health` is polled rather than raced, and the script **exits
+non-zero unless the served `gate_threshold` equals the value you asked for.**
 
 ```sh
 ./scripts/gcp_promote.sh --list
@@ -841,10 +862,20 @@ ML_GATE_THRESHOLD=0.6311 \
   ./scripts/gcp_promote.sh --checkpoint m2_multi_20260819T142759Z_a186182b.pt
 ```
 
-**Verify on the `/health` line the promote prints:** `gate_source` must be `env-override`
-with threshold 0.6311 — **never `config-fallback`**, which serves 0.58 and loses money in
-3 of 3 seeds (§1.5). ⚠️ `checkpoints/latest.pt` is now **R3b's** checkpoint
+**Verification is now the script's exit code**, not an eyeballed line: a clean exit means
+`/health` came back `ok=true` with `gate_threshold=0.6311`. ⚠️ Do **not** wait for
+`gate_source` on this promote — that field was added by C13 (commit `5b8a5e2`), and the
+promote deliberately pins serve code to the *checkpoint's own* commit, which for seed 2 is
+`a186182b` and predates it. On this deployment the number is the only evidence there is.
+⚠️ `checkpoints/latest.pt` is now **R3b's** checkpoint
 (`m2_multi_20260823T135748Z_da7ef975.pt`, the 32-unit arm). Never promote `latest`.
+
+**Anything the simulator logged between the 2026-08-24 promote and the re-run was produced
+at gate 0.55.** Seed 2's coverage at 0.55 has not been measured, but it is by construction
+*wider* than the 2% that 0.6311 realizes, and §1.3's table turns negative at taker cost
+somewhere between cov 0.02 and cov 0.05. Treat that stretch of sim output as void; do not
+let it become M3's first training data. (One `eval_m2.py --eval-only` on seed 2 would pin
+the exact coverage if it ever matters.)
 
 **Why seed 2 and not O8's 12-pair model,** even though 12 pairs is free (§1.9): O8 is a
 single seed, its gate has not been derived under C13 against a held-out re-score the way

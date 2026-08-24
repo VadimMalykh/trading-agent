@@ -11,6 +11,13 @@
 #   ./scripts/gcp_promote.sh --checkpoint <key> --force        # skip the DONE-status guard
 #   ./scripts/gcp_promote.sh --list                     # show promotable checkpoints
 #
+#   ML_GATE_THRESHOLD=0.6311 ./scripts/gcp_promote.sh --checkpoint <key>
+#       Serve at an explicitly measured gate. Needed for any checkpoint written
+#       before C13 (commit 5b8a5e2), or measured with `eval_m2.py --eval-only`,
+#       since neither carries a served_gate in the checkpoint's meta. The value is
+#       persisted into the VM's .env and the promote FAILS if /health does not come
+#       back serving exactly it.
+#
 # 🔴 --checkpoint is REQUIRED and has no default. It used to promote
 # `checkpoints/latest.pt` unconditionally, but EVERY training run overwrites that
 # key, so "promote" meant "ship whatever finished last" — which at various points
@@ -132,7 +139,28 @@ fi
 
 # --- promote on always-on: serve code (git) + checkpoint (bucket) ---------------
 echo ""
+# --- gate override: must reach the VM, and must PERSIST there ---------------------
+# `ML_GATE_THRESHOLD=0.6311 ./scripts/gcp_promote.sh …` used to be a silent no-op.
+# The value lived in the Mac's shell; the remote `docker compose` interpolates
+# ${ML_GATE_THRESHOLD} from the VM's OWN environment and .env file, which this
+# script never touched. On 2026-08-24 that shipped R0's seed-2 checkpoint at the
+# VM's stale .env value of 0.55 — below even the 0.58 config fallback the plan
+# warns loses money in 3 of 3 seeds.
+#
+# The fix writes the value into the VM's .env rather than exporting it for one
+# command, because .env is what compose actually reads AND what survives the next
+# unrelated `docker compose up` on that host. Both `app` (Elixir signal gate) and
+# `ml_inference` (serve.py gate) read the same key, so both are recreated when it
+# changes — a half-applied gate is two components disagreeing about the operating
+# point.
+GATE_OVERRIDE="${ML_GATE_THRESHOLD:-}"
+if [[ -n "$GATE_OVERRIDE" ]]; then
+  echo "==> gate override requested: ML_GATE_THRESHOLD=$GATE_OVERRIDE (will be persisted to the VM's .env)"
+fi
+
 echo "==> install checkpoint + serve code on $GCP_ALWAYS_ON (ref=$PROMOTE_REF)"
+_PROMOTE_LOG="$(mktemp -t fluxpromote)"
+set +e
 gssh "$GCP_ALWAYS_ON" "set -e
   cd $R
   # Match the trained code exactly (serve.py must read checkpoint norm_stats + dir head)
@@ -146,23 +174,110 @@ gssh "$GCP_ALWAYS_ON" "set -e
   docker run --rm -v \"\$VOL:/models\" -v /tmp:/in:ro alpine \
     sh -c 'cp /in/m2_multi.pt /models/m2_multi.pt && ls -la /models/m2_multi.pt'
 
+  GATE='$GATE_OVERRIDE'
+  GATE_CHANGED=0
+  if [[ -n \"\$GATE\" ]]; then
+    touch .env
+    PREV=\$(sed -n 's/^ML_GATE_THRESHOLD=//p' .env | tail -1)
+    if [[ \"\$PREV\" != \"\$GATE\" ]]; then GATE_CHANGED=1; fi
+    if grep -q '^ML_GATE_THRESHOLD=' .env; then
+      sed -i \"s|^ML_GATE_THRESHOLD=.*|ML_GATE_THRESHOLD=\$GATE|\" .env
+    else
+      printf 'ML_GATE_THRESHOLD=%s\n' \"\$GATE\" >> .env
+    fi
+    echo \"    .env ML_GATE_THRESHOLD: \${PREV:-<unset>} -> \$GATE\"
+  fi
+
   docker compose up -d --force-recreate ml_inference
   echo ml_inference recreated
-  sleep 4
-  curl -sS --retry 5 --retry-delay 1 --retry-connrefused http://127.0.0.1:8001/health
-  echo
-"
+  # The Elixir app gates independently (Predict.gate_threshold/0 reads the same
+  # env var), so a changed gate that only reaches ml_inference leaves the two
+  # halves on different operating points.
+  if [[ \"\$GATE_CHANGED\" == 1 ]]; then
+    echo '    gate changed -> recreating app so its signal gate matches'
+    docker compose up -d app
+  fi
+
+  # serve.py binds the port BEFORE it finishes torch.load()ing the checkpoint, so
+  # an early request is answered with a TCP reset (curl exit 56) — which curl's
+  # --retry does NOT classify as transient, so the old 'sleep 4 + --retry' aborted
+  # the promote before it ever printed a /health line. Poll instead.
+  HEALTH=''
+  for _ in \$(seq 1 30); do
+    HEALTH=\$(curl -sS -m 3 http://127.0.0.1:8001/health 2>/dev/null || true)
+    [[ -n \"\$HEALTH\" ]] && break
+    sleep 2
+  done
+  if [[ -z \"\$HEALTH\" ]]; then
+    echo 'ERROR: /health never answered within 60s. Check: docker compose logs ml_inference'
+    exit 1
+  fi
+  echo \"HEALTH \$HEALTH\"
+" 2>&1 | tee "$_PROMOTE_LOG"
+_RC=${PIPESTATUS[0]}
+set -e
+if [[ "$_RC" -ne 0 ]]; then
+  echo ""
+  echo "ERROR: remote promote step failed (rc=$_RC). Nothing above is verified."
+  exit "$_RC"
+fi
+
+# --- verify the served operating point, don't just print it ----------------------
+HEALTH_JSON="$(sed -n 's/^HEALTH //p' "$_PROMOTE_LOG" | tail -1)"
+SERVED_GATE="$(printf '%s' "$HEALTH_JSON" | sed -n 's/.*"gate_threshold"[: ]*\([0-9.]*\).*/\1/p')"
+GATE_SOURCE="$(printf '%s' "$HEALTH_JSON" | sed -n 's/.*"gate_source"[: ]*"\([^"]*\)".*/\1/p')"
+rm -f "$_PROMOTE_LOG"
+
+echo ""
+if ! printf '%s' "$HEALTH_JSON" | grep -q '"ok"[: ]*true'; then
+  echo "🔴 FAILED — /health reports ok=false. The model did not load:"
+  echo "   $HEALTH_JSON"
+  exit 1
+fi
+
+if [[ -n "$GATE_OVERRIDE" ]]; then
+  if [[ -z "$SERVED_GATE" ]]; then
+    echo "🔴 FAILED — could not read gate_threshold from /health: $HEALTH_JSON"
+    exit 1
+  fi
+  if ! awk -v a="$SERVED_GATE" -v b="$GATE_OVERRIDE" 'BEGIN{exit !(a==b || (a-b<1e-9 && b-a<1e-9))}'; then
+    echo "🔴 FAILED — you asked for gate $GATE_OVERRIDE but the service is serving $SERVED_GATE."
+    echo "   Check the VM's .env and environment for a competing ML_GATE_THRESHOLD."
+    exit 1
+  fi
+  echo "✅ served gate = $SERVED_GATE (matches the requested override)"
+else
+  echo "   served gate = ${SERVED_GATE:-?} (no override requested; from checkpoint or config)"
+fi
+
+# gate_source only exists in serve.py from commit 5b8a5e2 (the C13 wave) onward.
+# Checkpoints trained BEFORE that commit pin serve code that predates it, so the
+# field is absent — that is expected, not a fault, but it means the operator has
+# to verify the number rather than the label.
+if [[ -z "$GATE_SOURCE" ]]; then
+  echo "   NOTE: this serve commit ($PROMOTE_REF) predates C13, so /health carries no"
+  echo "         gate_source field. The gate above is authoritative; verify the NUMBER."
+else
+  echo "   gate_source = $GATE_SOURCE"
+fi
+
 
 echo ""
 echo "OK — promoted $CKPT_KEY."
 echo "  Checkpoint installed on always-on model volume ($MODEL_VOLUME_NAME)."
 echo "  Serve code @ $PROMOTE_REF (git)."
+echo "  Operating point VERIFIED against /health above — this script now exits non-zero"
+echo "  if the service is not serving the gate you asked for, so a clean exit IS the"
+echo "  green light. (It used to only print /health, and a startup race meant it usually"
+echo "  did not even manage that.)"
 echo ""
-echo "🔴 Check the /health line above before walking away:"
-echo "   gate_source=\"checkpoint\"      → healthy: served at the operating point it was"
-echo "                                  measured at (gate_target_coverage says which)."
-echo "   gate_source=\"config-fallback\" → this checkpoint has no served_gate in its meta."
-echo "                                  Re-run eval_m2.py on it; the gate being used is a"
-echo "                                  constant from some other model's confidence scale."
-echo "   gate_source=\"env-override\"    → ML_GATE_THRESHOLD is set and is beating the"
-echo "                                  measured gate. Unset it unless that is deliberate."
+echo "gate_source, when the serve commit is new enough to report it:"
+echo "   \"checkpoint\"      → healthy: served at the operating point it was measured at"
+echo "                       (gate_target_coverage says which)."
+echo "   \"config-fallback\" → this checkpoint has no served_gate in its meta. Re-run"
+echo "                       eval_m2.py on it, or pass the measured gate explicitly as"
+echo "                       ML_GATE_THRESHOLD; the constant otherwise in use belongs to"
+echo "                       some other model's confidence scale."
+echo "   \"env-override\"    → ML_GATE_THRESHOLD is set and beats the measured gate."
+echo "                       Correct for a pre-C13 checkpoint whose gate lives only in a"
+echo "                       log (§1.5); wrong if you did not mean it."
