@@ -3,7 +3,7 @@
 **Status:** Not started. Blocked only on §2 R0 of [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) (a 5-minute promote).
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
-**Related:** [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack)
+**Related:** [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
 
 *Written 2026-08-24, at the moment M2 froze. This document is the plan for the whole
 milestone; it holds only what is currently true and actionable. When a step's conclusions
@@ -220,6 +220,11 @@ This unlocks three things that are impossible in M3-0a:
 
 **Do not start here.** A fixed-hold policy that works is worth more than a barrier policy
 that cannot be validated, and M3-0a's acceptance test is only expressible in fixed-hold terms.
+
+**When you do build it, add the book columns in the same pass.** `docs/BOOK_ERA_PLAN.md` B0
+needs exactly this export plus the 11 microstructure scalars over the book era, joined on the
+same `(pair, ts)` grid with the same staleness caps. Building it once serves both wavefronts;
+building it twice risks two different alignments and neither being evidence about the other.
 
 ### M3-1 — Pre-register the evaluation protocol, before searching anything
 
