@@ -8,6 +8,7 @@ Master roadmap for the whole project. Details can change via discussion; this is
 | [SPEC.md](../SPEC.md) | Original system / infra specification |
 | [MODEL.md](../MODEL.md) | ML architecture (signal + policy + risk) |
 | [M1_PLAN.md](./M1_PLAN.md) | M1 implementation checklist (session-resilient) |
+| [M3_PLAN.md](./M3_PLAN.md) | M3 policy milestone — sequence, constraints, exit criteria |
 | [README.md](../README.md) | How to run what exists today |
 
 **Last updated:** 2026-07-18  
@@ -181,6 +182,8 @@ Legacy SPEC “Phase 1–4” maps roughly as:
 | A/B | Signal-only vs signal+policy in simulation |
 
 **Exit criteria:** Sim shows controlled max DD and non-pathological trade rate; policy never bypasses hard limits.
+
+**Full plan:** see [M3_PLAN.md](./M3_PLAN.md) — the sequence (backtester → protocol → rules baseline → learned policy), the constraints M2 hands over, and what to bring back at each step. No GPU is required for any of it.
 
 ---
 

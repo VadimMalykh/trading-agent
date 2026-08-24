@@ -5,8 +5,10 @@ negative, the pre-registered exit condition fired, and **M2 is frozen at the §1
 Preceded by R1, and by the Q-wave: Q0 gate derivation, Q1 regime analysis, Q2 ensemble,
 Q3 feature expansion).
 
-🔴 **If you are picking this up cold: there is one open action (§2 R0, a 5-minute promote)
-and then all work moves to M3.** There are no M2 experiments left to run.
+🔴 **If you are picking this up cold: there is one open action (§2 R0, a re-run of the
+promote — the 2026-08-24 attempt shipped seed 2 at gate 0.55 instead of its measured
+0.6311) and then all work moves to M3.** There are no M2 experiments left to run, and
+M3 is planned in **`docs/M3_PLAN.md`**, not here.
 
 This document is the project's session-to-session memory. It contains only what is
 **currently true and actionable**. The session-by-session narrative from 2026-07-23 →
@@ -49,7 +51,7 @@ while emitting meaningless probabilities (P2, §1.4) has not improved.
 
 **How to use this doc:** if you are picking this up cold, the fastest path is
 **§1.0 (plain-language state of play — no jargon, no §0 required)** → §2's R0 (the promote)
-→ §2's "For M3". Read §1.1, §0.3 and §0.6 when you need to know *why* the numbers are read
+→ **`docs/M3_PLAN.md`**, which is where the work continues. Read §1.1, §0.3 and §0.6 when you need to know *why* the numbers are read
 the way they are, or before you rank two runs against each other. §1.9 is the wave that
 closed M2; §0 exists to stop a future session re-running what it already refuted.
 
@@ -898,28 +900,21 @@ Both items are optional, neither is on M3's critical path, and neither is an exp
    the current model is the one whose numbers are banked. **Default: keep 64.** Revisit only
    if serving cost ever becomes a live constraint.
 
-### For M3 — this is now the whole of the work
+### For M3 — the work has moved to `docs/M3_PLAN.md`
 
-§1.8's `btc_absret_1d` finding is the largest measured effect in the project and it is an
-**input to the policy milestone**. M3's observation vector should carry trailing market-move
-magnitude (BTC |ret| over 24h, or the pooled-universe equivalent) alongside M2's per-horizon
-probabilities and confidences, because conditioning on it moves the top-2% slice from
-+22.0 to **+54.9 gross bps/trade**. Do **not** implement it as an M2 gate (§1.8, §5).
+🔴 **M3 is planned in its own document now. Do not restate it here** — a second M3 narrative
+in the training plan is exactly how this file grew to 2,400 lines the last time.
 
-Carry these three M2 findings into M3's design, because each one is a constraint on the
-policy rather than a curiosity:
+The handover in one line: §1.8's `btc_absret_1d` is the largest measured effect in the
+project (top-2% slice from +22.0 to **+54.9** gross bps/trade), it is an **input to the
+policy**, and it must **not** be implemented as an M2 gate (§1.8, §5).
 
-- **The signal is only cost-viable in a narrow confidence band.** +19 to +22 gross bps at
-  the top 1–2% of bars, +8.9 at 5%, ~0 by 10% (§1.3). The policy's coverage is therefore a
-  first-class decision variable, not a threshold to be tuned away.
-- **Calibration is fragile and it is M2's actual deliverable.** Three separate levers (P2,
-  R2, R3a) improved or held ranking while destroying the probability scale. If M3 consumes
-  `p_up` as a probability — for sizing, for a Kelly-style rule, for anything but an ordering
-  — it must re-check brier and the bin table on whatever checkpoint it is given, not trust
-  that a model which ranks well is calibrated.
-- **Absolute confidence thresholds do not transfer between checkpoints** (§1.5, §5). The
-  same probability is 1.2% / 2.5% / 1.7% coverage across three seeds of one configuration.
-  M3 must condition on *coverage rank*, never on a raw confidence constant.
+`docs/M3_PLAN.md` carries the rest: the three M2 findings that constrain the policy
+(coverage is a decision variable; calibration is fragile; confidence thresholds do not
+transfer between checkpoints), the ordered sequence, the fee assumption that underwrites
+half the published economics, and what to bring back at each step. It also records that
+**the Q1 harness was never committed** — `btc_absret_1d` exists only in prose — so M3's
+first task is rebuilding it against §1.8's published table.
 
 ---
 
@@ -1463,6 +1458,8 @@ Needs only `pandas pyarrow numpy`; a throwaway venv is fine. It never runs on th
 
 ### Related docs
 
+- `docs/M3_PLAN.md` — **the policy milestone, which is where the work goes now.** M2's
+  handover, the constraints it imposes on the policy, and the ordered sequence.
 - `docs/archive/TRAINING_HISTORY.md` — the full session narrative, 2026-07-23 → 2026-08-21,
   including the O-wave as written before seed replication corrected three of its claims.
 - `docs/DATA_COLLECTION_AUDIT.md` — what the collector captures vs silently drops.
