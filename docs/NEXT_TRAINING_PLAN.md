@@ -1,8 +1,12 @@
 # Training plan — what is true, what to run next
 
-**Last updated: 2026-08-22** (after R1 — the second and final feature-expansion arm.
-Preceded by the Q-wave: Q0 gate derivation, Q1 regime analysis, Q2 ensemble, Q3 feature
-expansion).
+**Last updated: 2026-08-24** (after the closing wave — O8, R2, R3a, R3b. All four flat or
+negative, the pre-registered exit condition fired, and **M2 is frozen at the §1.3 baseline**.
+Preceded by R1, and by the Q-wave: Q0 gate derivation, Q1 regime analysis, Q2 ensemble,
+Q3 feature expansion).
+
+🔴 **If you are picking this up cold: there is one open action (§2 R0, a 5-minute promote)
+and then all work moves to M3.** There are no M2 experiments left to run.
 
 This document is the project's session-to-session memory. It contains only what is
 **currently true and actionable**. The session-by-session narrative from 2026-07-23 →
@@ -44,14 +48,14 @@ first-class acceptance criterion: M3 consumes probabilities, so a model that ran
 while emitting meaningless probabilities (P2, §1.4) has not improved.
 
 **How to use this doc:** if you are picking this up cold, the fastest path is
-**§1.0 (plain-language state of play — no jargon, no §0 required)** → §2's R0 (a 5-minute
-promote) → §2's R3 (the next experiment). Read §1.1, §0.3 and §0.6 when you need to know
-*why* the numbers are read the way they are, or before you rank two runs against each
-other.
+**§1.0 (plain-language state of play — no jargon, no §0 required)** → §2's R0 (the promote)
+→ §2's "For M3". Read §1.1, §0.3 and §0.6 when you need to know *why* the numbers are read
+the way they are, or before you rank two runs against each other. §1.9 is the wave that
+closed M2; §0 exists to stop a future session re-running what it already refuted.
 
 - §0 — standing rules. Read before touching anything. Every rule cost us a real run.
 - §1 — where we are, in numbers. The current reference points.
-- §2 — **the run queue.** This is the "what do I type" section.
+- §2 — **the run queue.** This is the "what do I type" section. It is now one promote.
 - §3 — what to bring back so a fresh session can decide.
 - §4 — results ledger (one row per run, with a validity flag).
 - §5 — levers that are closed, and why. Don't re-propose these.
@@ -147,7 +151,10 @@ grep -oE 'epoch [0-9]+  loss_tr=[0-9.]+ loss_va=[0-9.]+.*lb=[0-9.]+' logs/X.log 
 ```
 
 The plateau means for the baseline family are **0.5235 / 0.5273 / 0.5209 (pooled 0.5239)**
-— that is the number R1 must beat, not 0.5219.
+— that is the number every arm is ranked against, not 0.5219. Nothing ever beat it: R1 0.4979,
+Q3 0.5000, R2 0.5058, R3a 0.5185, R3b 0.5199, O8 0.5222 (≈0.512 pair-mix-corrected). 🔴 **The
+plateau length is part of the read, not a footnote** — R3b's 36-epoch plateau and R3a's
+26-epoch one are trustworthy; a run under ~15 epochs is not comparable at all (§1.6).
 
 **The mean-of-epochs series to date** (C10 prints this at the end of every training log):
 
@@ -160,6 +167,10 @@ The plateau means for the baseline family are **0.5235 / 0.5273 / 0.5209 (pooled
 | F4 (15m, seq 128) | 18 | 0.5058 | 0.0162 | 0.5310 | +1.56 sd |
 | N3 (15m, cost-sel) | 11 | 0.4987 | 0.0155 | 0.5230 | +1.57 sd |
 | O3 (15m, seq 256) | 24 | 0.4925 | 0.0227 | 0.5313 | +1.71 sd |
+| **O8** (12 pairs — *12-pair val population, not comparable, §1.9*) | 30 | 0.5126 | 0.0208 | 0.5431 | +1.47 sd |
+| **R2** (`DIR_MAG_WEIGHT=1`) | 37 | 0.5102 | 0.0108 | 0.5345 | +2.25 sd |
+| **R3a** (`HIDDEN_SIZE=128`) | 58 | 0.5182 | 0.0131 | 0.5432 | +1.91 sd |
+| **R3b** (`HIDDEN_SIZE=32`) | 37 | 0.5194 | 0.0133 | 0.5459 | +1.99 sd |
 
 🟢 **The three 5m seeds are the first replicated result in the project.** Their means agree
 to within 0.0025 (SEM 0.0014), pooling to **0.5219**, and the gap to F4 is **+0.016 ≈ 4σ**.
@@ -257,7 +268,7 @@ LB is not a ranking metric at all.**
 
 ---
 
-## §1 — WHERE WE ARE (2026-08-22)
+## §1 — WHERE WE ARE (2026-08-24)
 
 ### 1.0 Plain-language state of play — readable without §0
 
@@ -299,7 +310,10 @@ and volume.
 | Adding 11 new derived columns (Q3) | ❌ rejected |
 | Adding the best-behaved 6 of them (R1) | ❌ rejected, worse than Q3 — **§1.6, and this closes features** |
 | Hyperparameter tuning (dozens of runs, the R/E waves) | ❌ the whole spread was inside the noise |
-| More pairs (12 instead of 8) | ⬜ **never actually tested** — the one attempt was void; queued as **O8**, now next |
+| **More pairs — 12 instead of 8, 58% more data (O8)** | ❌ **no better.** Free to adopt, but it buys coverage, not edge — §1.9 |
+| **A loss that cares about move size (R2)** | ❌ **worse.** Made the model wildly overconfident and broke the probabilities — §1.9 |
+| **A bigger encoder — 128 units (R3a)** | ❌ **worse.** Memorized the training set; worst calibration in the project — §1.9 |
+| **A smaller encoder — 32 units (R3b)** | ❌ **identical.** Half the size, same result — the model was never capacity-limited — §1.9 |
 
 **The one big thing that did work, and it is not a model change.** Q1 found that when
 **Bitcoin has moved more than ~4.3% in the past 24 hours** — which happens on about 5% of
@@ -309,19 +323,36 @@ we have ever made to the model itself has produced more than a few percent. It i
 statement about *when to be in the market*, so it belongs to the trading policy (M3), not
 to the signal model.
 
-**Where that leaves us.** The signal model has been squeezed. Seven columns of price and
-volume support a small real edge and we have found it; two feature waves and a dozen tuning
-runs say there is not much more in there. **The recommendation is: promote the model we have
-(§2 R0), then run three experiments in this order — more data (§2 O8, 12 pairs instead of 8),
-a loss function that cares about move size (§2 R2), and finally encoder size (§2 R3) — and
-otherwise move to M3**, where the measured upside is several times larger. The ordering is
-deliberate: R1 showed that on this problem extra *parameters* turn into memorization, so the
-levers that add *information* go first and the capacity probe goes last, where its likely job
-is to close M2 rather than open it. The thing that would genuinely unlock M2 again is *new
-data* — order-book history deep enough to be inside the training window, which is a calendar
-problem, not a modelling one (§1.7).
+**Where that leaves us — and this is now settled rather than provisional.** The last three
+experiments were the ones the previous session queued to decide whether M2 was finished, and
+they all said yes. More data did nothing. A loss aimed squarely at the economic weakness made
+it worse. Making the network bigger made it worse; making it *smaller* changed nothing at all,
+which is the clearest possible statement that the network was never the bottleneck. Seven
+columns of price and volume support a small real edge, we have found it, and there is nothing
+further to extract from these inputs.
+
+**So M2 is done.** The recommendation is: promote the model we have (§2 R0, five minutes),
+then spend everything on M3 — the trading policy — where the one big measured effect lives.
+That effect is worth restating: conditioning on *whether the market has been moving* takes the
+same model's top-2% trades from +22 to **+55 basis points**, roughly a 4× improvement, versus
+the few-percent noise that every model change produced. The only thing that would reopen M2 is
+**new data** — order-book history deep enough to fall inside the training window — and that is
+a calendar problem, not a modelling one (§1.7). Expect it around 2027.
+
+One small free win worth taking separately: the 12-pair run was no better, but it was no
+*worse* either, so a 12-pair model covers four more instruments at the same edge and the same
+serving cost. That is a product improvement, not a research result (§2).
 
 ### 1.1 The one-paragraph summary
+
+🔴 **Updated 2026-08-24 — the conditional has been discharged.** The paragraph below ended by
+naming encoder capacity as the one untested structural knob and O8/R2 as the remaining
+information levers. All three have now run and all three are flat or negative (§1.9): O8's
+pair-mix-corrected plateau mean is ≈0.512 against the family's 0.5239, R2 lost economics at
+every coverage while driving brier from 0.250 to 0.316, R3a memorized (`loss_tr` → 0.888,
+brier 0.419) and R3b at half the width reproduced the baseline exactly. **§2's pre-registered
+exit condition fired on every clause, so M2 is frozen at §1.3 and the queue is now one
+promote.** The paragraph below stands as written for the reasoning that got us here.
 
 **Per-timestep candle features are closed, M2 is finished as a research object, and the
 largest measured lever in the project belongs to M3.** R1 was the clean retest Q3 was
@@ -656,39 +687,148 @@ it. Do not add a gate to M2 for it; that is the cost-aware-selection mistake (§
 costume. As an M2 *input* column it is a reasonable candidate for a later feature wave, but
 it is not what R1 tests, because R1 has one variable already.
 
+### 1.9 🔴 The closing wave — O8, R2, R3a, R3b all flat or negative. M2 is frozen.
+
+Four runs, one variable each, all against the §1.3 baseline. **The exit condition
+pre-registered in §2 on 2026-08-22 fired exactly as written**, so M2 is closed on
+measurement rather than on fatigue. Every run passed every §0.4 verification line — the
+knobs reached the VM, the pair sets and column counts are the intended ones, `hold=48`,
+splits recorded, no `BROKEN SCALE`, no new `DEGENERATE SPIKE`.
+
+| run | lever | plateau mean LB (n) | best `loss_va` | brier | cov0.02 gross bps | verdict |
+|---|---|---|---:|---:|---:|---|
+| **baseline (3 seeds)** | — | **0.5239** (sd 0.0032) | 1.0398–1.0404 | 0.250 | **+22.0** | reference |
+| **O8** | 12 pairs (+58% samples) | 0.5222 (17) †  | 1.0454 † | 0.2495 | +21.3 ‡ | ❌ flat — data volume is not the constraint |
+| **R2** | `DIR_MAG_WEIGHT=1` | 0.5058 (12) | 1.0419 | **0.3156** | +18.8 | ❌ rejected — no economic gain, calibration destroyed |
+| **R3a** | `HIDDEN_SIZE=128` | 0.5185 (26) | 1.0440 | **0.4187** | +12.0 | ❌ rejected — memorizes, calibration destroyed |
+| **R3b** | `HIDDEN_SIZE=32` | 0.5199 (36) | 1.0420 | 0.2507 | +16.2 | ❌ flat — capacity is not the constraint |
+
+† O8's LB and `loss_va` are measured on a **12-pair validation population** and are not
+directly comparable to the baseline's — see the re-aggregation below.
+‡ O8's P&L figure is the honest 8-pair re-aggregation, not its logged 12-pair number.
+
+#### O8 — more data buys nothing, but 12 pairs is free
+
+The re-aggregation §2 pre-registered was performed locally on O8's `eval_preds.parquet`
+(`gs://fluxtrader-train-artifacts/eval/20260822T012619Z/`) with
+**`ml/train/reaggregate_preds.py`** — committed this time, so the next session does not
+rebuild it a third time (§7). **The harness was validated first by reproducing O8's logged
+12-pair table exactly** — cov 0.01/0.02/0.05 gross came
+back +24.76 / +23.63 / +6.85 and `dir_acc` 0.547 / 0.563 / 0.548 against the logged
++24.76 / +23.63 / +6.85 and 0.547 / 0.563 / 0.548 — so the 8-pair numbers below are on the
+same footing as §1.3's.
+
+| slice | cov | dir_acc | wilson_lb | trades | gross bps/trade |
+|---|---:|---:|---:|---:|---:|
+| **8 baseline pairs (the honest comparison)** | 0.01 | 0.561 | 0.546 | 291 | **+23.93** |
+| | 0.02 | 0.566 | 0.556 | 608 | **+21.32** |
+| | 0.05 | 0.540 | 0.533 | 1,340 | +6.81 |
+| *§1.3 family, pooled 3 seeds* | 0.01 / 0.02 / 0.05 | — | — | — | *+19.38 / +22.03 / +8.91* |
+| all 12 pairs, as served | 0.01 | 0.547 | 0.535 | 429 | +24.76 |
+| | 0.02 | 0.563 | 0.555 | 871 | +23.63 |
+| | 0.05 | 0.548 | 0.543 | 2,019 | +6.85 |
+| the 4 new pairs alone | 0.02 | 0.560 | 0.546 | 266 | +28.31 |
+| | 0.05 | 0.565 | 0.556 | 681 | +9.69 |
+
+**Read it as: 58% more training data moved nothing.** On the original 8 pairs one seed of
+O8 lands inside the 3-seed family's spread at every coverage — +23.9/+21.3/+6.8 against
++19.4/+22.0/+8.9 — which is what "no effect" looks like on this measurement. The verdict
+metric confirms it: the 12-pair plateau mean is 0.5222, and at the selected epoch the
+12-pair aggregation runs **+0.010 above** the 8-pair one (0.543 vs 0.533) because the four
+new pairs happen to score better, so the pair-mix-corrected 8-pair plateau mean is ≈**0.512**
+— inside §2's pre-registered "**≤ 0.527 → data volume is not the constraint either**" band.
+Combined with R1, that is the strong statement §2 asked for: **M2 on OHLCV is finished.**
+
+🟢 **One genuinely useful negative, though: adding four pairs costs nothing.** The majors'
+edge did not degrade, the new pairs are individually as good as the old ones (LINK cov05
+`dir_acc` 0.599, XRP 0.606, AVAX 0.557 against BTC's 0.612 and ZEC's 0.515), brier is 0.2495
+and the calibration table is monotone. A 12-pair model is a strictly better *product* at the
+same measured edge, and it is free at serve time. That is a deployment fact, **not** a
+research result, and it should not be counted as an improvement.
+
+#### R2 — the magnitude-weighted loss ran correctly and did the opposite of its job
+
+The instrumentation is green: `scale` 0.982–0.989, `at_clip` 0.56–0.77% (well under the 10%
+that would have made it a step function), `mean|r|` rising 100.5 → 201.9 → 501.3 bps with the
+horizon. So this is a clean measurement of the lever, not of a bug.
+
+It **lost** economics at every coverage — +1.75 / +18.79 / +5.27 gross bps at cov 0.01/0.02/
+0.05 against the family's +19.38 / +22.03 / +8.91 — while dropping the plateau mean to
+0.5058. §2's pre-registered branch is **"no movement in either → the aux head's weighting is
+not the constraint. Closed."**
+
+The mechanism is worth recording because it is the third instance of one failure mode. The
+weighting made the head **wildly overconfident**: the coverage-targeted gate landed at
+`conf ≥ 0.9797` (the baseline's is 0.6311), 84% of bars clear 0.55, and the calibration table
+is **flat at `emp_up` ≈ 0.47–0.51 in every bin from 0.05 to 0.95** with brier 0.3156 vs 0.250.
+By §3 item 3c that rejects the run on its own, independent of P&L. Up-weighting large moves
+teaches the head that confident-and-large is the same axis as confident-and-correct; it is
+not, and the probability output — which is M2's entire deliverable to M3 — stops meaning
+anything.
+
+#### R3a / R3b — capacity is not the constraint, in either direction
+
+**R3a (128 units) is the clearest memorization result in the project.** `loss_tr` falls to
+**0.888** against the baseline's ~1.72 floor while `loss_va` never gets below **1.0440** —
+worse than the family's 1.0398–1.0404 at *every* epoch. That is R1's mechanism reproduced
+with parameters instead of columns, and it is why §5's transformer bar stands. Its brier is
+**0.4187**, the worst in the ledger: 110,628 bars predicted at p(up)=0.023 and 106,168 at
+p(up)=0.976, with `emp_up` flat at 0.47–0.50 across all ten bins. The confidence distribution
+has collapsed to the corners while carrying no information. It also inverts §1.2's regime
+pattern (window 3 becomes its *best* at 0.585, window 1 its worst at 0.500), which is the
+signature of a model fitting something other than the shared structure.
+
+**R3b (32 units) is the more interesting arm and it is a clean null.** Plateau mean 0.5199
+over a **36-epoch plateau** — the longest in the project — brier 0.2507 against the
+baseline's 0.2501, a monotone calibration table, and §1.2's window pattern reproduced almost
+exactly (w1 0.549 / w2 0.621 / w3 0.457 / w4 0.622, against seed 3's 0.593/0.592/0.491/0.621).
+Its economics are +20.07 / +16.20 / +4.74, inside single-seed spread of the family. **Half the
+width, ~15k parameters instead of ~56k, and it matches.**
+
+Both arms land below 0.5239 — R3b by 0.0040, R3a by 0.0054 — and neither comes near the
++0.011 that §2 required for "capacity is live". **Be precise about which branch fires:** R3b is
+inside the pre-registered ±0.005 "flat" band; R3a is 0.0004 outside it, on the *negative* side.
+So the literal reading is "one arm flat, one arm marginally worse", which lands in the same
+place as "both flat" and more strongly — a lever cannot be live when its upward arm is the
+losing one. The bracket also says something the ledger did not have before: 64 units is not a
+tuned choice, it is **over-parameterized**, and the encoder is sitting on a flat top between 32
+and 64 with a cliff into memorization above it.
+
+#### What did NOT change, and should not be over-read
+
+- **The book-era split is still underpowered, not alarming.** O8's book-era cov05 `dir_acc`
+  of 0.476 looks bad next to pre_book's 0.552, but the three baseline seeds span
+  0.571 / 0.486 / 0.624 on `n_dir` ≈ 1,500–2,000. O8 is inside that spread. This split has
+  never had the power to say anything and still does not.
+- **All four beat the momentum baseline**, which sits at `dir_acc` ≈ 0.47 (i.e. trailing-48-bar
+  momentum is mildly *anti*-predictive at 4h). No run is a repackaged momentum rule.
+
 ---
 
 ## §2 — THE RUN QUEUE
 
-The R-wave's experiment is done and negative (§1.6). **Features are closed; do not queue
-another column set.** What is left is four things: promote the model we have, add the four
-pairs the experiment control has been holding out, run the loss-function arm that targets the
-diagnosed economic failure, and run the capacity probe that has never been run. Training runs
-are strictly serial (§7), so this is an ordered list and the wall clock is the sum (~13h GPU
-end to end).
+🔴 **The queue is empty of M2 experiments, and that is the finding, not an oversight.**
+O8, R2, R3a and R3b have all run (§1.9); the exit condition pre-registered here on
+2026-08-22 fired on every clause. **M2 is frozen at the §1.3 baseline.** The superseded
+queue text, with the verdict bands each run was judged against, is in
+`docs/archive/TRAINING_HISTORY.md`.
 
 | item | what | cost | needs a GPU? |
 |---|---|---|---|
-| **R0** | promote seed 2 with its measured gate — **do this first, it is 5 minutes** | promote only | no |
-| **O8** | **12 pairs instead of 8** — the only remaining lever that adds *information* | ~4h GPU | **yes** |
-| **R2** | magnitude-weighted directional loss — ✅ **C3 shipped, unblocked** | ~3h GPU | **yes** |
-| **R3** | encoder capacity probe, 2 runs — the closing formality | ~6h GPU | **yes** |
-| ~~R1~~ | ❌ **ran 2026-08-22, decisive negative** (§1.6, §4) | — | — |
+| **R0** | **promote seed 2 with its measured gate — this is the only open action, and it is 5 minutes** | promote only | no |
+| ~~O8~~ | ❌ ran 2026-08-22, flat — data volume is not the constraint (§1.9) | — | — |
+| ~~R2~~ | ❌ ran 2026-08-23, negative — economics worse, calibration destroyed (§1.9) | — | — |
+| ~~R3a / R3b~~ | ❌ ran 2026-08-23, both flat — capacity is not the constraint (§1.9) | — | — |
+| ~~R1~~ | ❌ ran 2026-08-22, decisive negative (§1.6) | — | — |
 
-🔄 **Order changed 2026-08-22, and the reason is R1's.** The previous queue put the capacity
-probe first. R1 showed that on this problem extra *parameters* convert into memorization
-rather than signal — `loss_tr` 1.70 → 1.13 while `loss_va` climbed. So run the levers that
-add **information** before the one that adds **capacity**: O8 adds 58% more training samples,
-R2 changes what the loss optimizes for, and R3 — the only one that adds modelling power — goes
-last, where its most likely job is to close M2 rather than to open it.
+**Do not queue another M2 run without new *data*.** Six levers have now been tested one
+variable at a time on the same baseline — two feature sets, resolution, context length, loss
+shaping, model family, ensembling, data volume, and encoder capacity in both directions — and
+the only one that ever moved was 15m → 5m. The single condition that reopens M2 is §1.7's:
+order-book history deep enough to sit inside the *training* window, which is a calendar
+problem (≈2027, see §5's O5 row), not a modelling one.
 
-🔴 **The exit condition, stated in advance so nobody has to relitigate it.** If O8 and R3
-both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross
-bps/trade at cov 0.02 by more than +5, **M2 is frozen at the §1.3 baseline and every
-remaining hour goes to M3.** That is the expected outcome; these three runs exist to make it
-an evidenced conclusion rather than a tired one.
-
-### R0 — promote seed 2. Unblocked, do it now.
+### R0 — promote seed 2. Unblocked, still the next thing to do.
 
 Q2 settled which checkpoint: the ensemble is **not** better than its best member, so the
 pre-registered "drop the idea, promote seed 2" branch fires. Q0 already measured seed 2's
@@ -703,223 +843,67 @@ ML_GATE_THRESHOLD=0.6311 \
 
 **Verify on the `/health` line the promote prints:** `gate_source` must be `env-override`
 with threshold 0.6311 — **never `config-fallback`**, which serves 0.58 and loses money in
-3 of 3 seeds (§1.5). ⚠️ `checkpoints/latest.pt` is now **R1's** checkpoint
-(`m2_multi_20260821T182844Z_3dd6b357.pt`) — the 25-column model whose calibration is flat
-in every bin. Never promote `latest`.
+3 of 3 seeds (§1.5). ⚠️ `checkpoints/latest.pt` is now **R3b's** checkpoint
+(`m2_multi_20260823T135748Z_da7ef975.pt`, the 32-unit arm). Never promote `latest`.
 
-### O8 — 12 pairs. Promoted to first experiment.
+**Why seed 2 and not O8's 12-pair model,** even though 12 pairs is free (§1.9): O8 is a
+single seed, its gate has not been derived under C13 against a held-out re-score the way
+Q0 derived seed 2's, and it is not the checkpoint any of §1.3's banked numbers describe.
+Promote the banked model now; **adopting 12 pairs is a separate, later, deployment change**
+(next section) and it should not be bundled into the promote that unblocks M3.
 
-**Why it moved to the front.** The 8-pair set was never a considered choice about *how much
-data to use* — it is a **control**. §0.2 forbids changing data and model in the same run, so
-once the 8 pairs were fixed for the E-wave they had to stay fixed for every one-variable
-experiment that followed, or nothing would have been attributable. The one 12-pair attempt,
-E3a, was **VOID** on unrelated grounds (truncated log, pair embedding accidentally off) and
-was never redone. So it is intentional as a control and overdue as an experiment.
+### The only M2 work left, and it is deployment, not research
 
-It is now the best of the remaining levers for the reason R1 gave us: this model **cannot fit
-its own training set** (`loss_tr` flat at 1.72 for ~25 epochs) yet **overfits instantly** when
-handed anything easy to memorize. That combination says the binding constraint is the
-signal-to-noise ratio of the data, not the capacity of the encoder. More independent data is
-the textbook response; more parameters is not, and R1 measured what more parameters buys.
+Both items are optional, neither is on M3's critical path, and neither is an experiment.
 
-**What it adds.** ADA / AVAX / LINK / XRP all have full 4-year history at 5m (§1.7), so this
-is ~421k samples each: **2.90M → ~4.58M, +58%**. Crypto pairs are highly correlated, so the
-gain in *effective independent* samples is smaller than 58% — expect a modest effect, not a
-step change. It also gives the pair embedding four more pairs to place, and a 12-pair model is
-a better product regardless of what the metric says.
+1. **Adopt the 12-pair config for the served model** (§1.9). Cheap and a better product:
+   four more instruments at an unchanged measured edge. Do it by re-running O8's exact
+   command at seeds 2 and 3 (~8h GPU, serial) so the served model has the same 3-seed
+   evidence §1.3 has, deriving the C13 gate on the chosen seed. **This buys coverage, not
+   edge — do not report it as an improvement, and do not do it before R0.**
+2. **Consider `HIDDEN_SIZE=32` as the served encoder** (§1.9). R3b matched the baseline on
+   one seed with a quarter of the parameters and the longest plateau in the project. That
+   is a real inference-cost and robustness argument, but it is one seed against three, and
+   the current model is the one whose numbers are banked. **Default: keep 64.** Revisit only
+   if serving cost ever becomes a live constraint.
 
-```sh
-FEATURE_GROUPS=legacy \
-  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=1 \
-  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
-  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT \
-  ./scripts/gcp_train.sh --gpu 60 384
-./scripts/gcp_status.sh
-./scripts/gcp_logs.sh > logs/O8.log
-```
+### For M3 — this is now the whole of the work
 
-⚠️ **Re-verify the four new pairs before launching** — §1.7's row counts were measured
-2026-08-18 and a backfill may have landed since (§0.1, and it also moves the split):
+§1.8's `btc_absret_1d` finding is the largest measured effect in the project and it is an
+**input to the policy milestone**. M3's observation vector should carry trailing market-move
+magnitude (BTC |ret| over 24h, or the pooled-universe equivalent) alongside M2's per-horizon
+probabilities and confidences, because conditioning on it moves the top-2% slice from
++22.0 to **+54.9 gross bps/trade**. Do **not** implement it as an M2 gate (§1.8, §5).
 
-```sh
-cat > /tmp/q.sh <<'EOF'
-cd ~/trading_agent && docker compose exec -T postgres psql -U fluxtrader -d fluxtrader <<'SQL'
-SELECT symbol, min(open_time)::date, max(open_time)::date, count(*)
-FROM candles WHERE interval = '5m'
-  AND symbol IN ('ADAUSDT','AVAXUSDT','LINKUSDT','XRPUSDT')
-GROUP BY 1 ORDER BY 1;
-SQL
-EOF
-gcloud compute ssh --zone me-central1-b fluxtrader-1 --project fluxtrader -- bash -s < /tmp/q.sh
-```
+Carry these three M2 findings into M3's design, because each one is a constraint on the
+policy rather than a curiosity:
 
-Each should show ~2022-08-18 → today and ~421k rows. **If any of the four is short, drop it
-rather than launching a ragged set** — a late-listing pair is exactly what made HYPE the
-smallest cell in every table since.
-
-🔴 **Comparability — read this before ranking the result.** O8 changes the **validation
-population**, not just the training set: four more pairs means more val bars and a different
-pair mix, so its `cov05` slice is not selecting from the same universe as §1.3's and the
-headline LB is **not** directly comparable (§0.6's lesson generalized from bar-interval to
-pair-mix). Rank it two ways and report both:
-
-1. **The honest primary comparison — re-aggregate on the original 8 pairs.** C9 dumps
-   `eval_preds.parquet` with a `pair` column on every run, so filter to the 8 baseline pairs,
-   take the top 5% *within that subset* by confidence, and compute `dir_acc` / Wilson-LB /
-   gross bps. That is an apples-to-apples read against §1.3 and needs no code and no re-run.
-   The Q1 harness already does exactly this kind of re-aggregation and reproduced the logged
-   tables exactly, so the method is validated.
-2. **The all-12 numbers as reported**, for the record and because a 12-pair model is what
-   would actually be served.
-
-**Verify** (§0.4 plus these): `Training pairs: [...]` lists **12**; `Feature groups: legacy
--> 19 columns`; `Samples:` ≈ **4.5–4.6M** (if it is ~2.9M the pair list did not reach the
-VM); `Pair embedding: ON dim=8 n_pairs=12`; `hold=48 bars`; split recorded — **it will differ
-from §1.3's**, which is expected and is why comparison (1) exists.
-
-**Verdict, pre-registered.** On the 8-pair re-aggregation, against the family's plateau mean
-**0.5239** (between-seed sd 0.0032):
-
-- **≥ 0.534, plateau ≥15 epochs, calibration monotone** → data volume is live. Replicate at
-  two more seeds, then consider the remaining whitelist pairs.
-- **0.527–0.534** → real but small. Bank it, adopt 12 pairs as the baseline (it is free at
-  serve time), and move on — do not start a pair-count ladder.
-- **≤ 0.527** → data volume is not the constraint either. Combined with R1, that is a strong
-  statement that M2 on OHLCV is finished, and it should be written into §5 as such.
-- **Plateau collapses (<10 epochs)** → check whether its best `loss_va` beats
-  1.0398–1.0404, exactly as §1.6 reads R1. If it does not, the arm is simply worse.
-
-### R2 — magnitude-weighted directional loss. ✅ Unblocked, C3 shipped 2026-08-22.
-
-**What it attacks.** The model's `dir_acc` at cov 0.05 is 0.559 but that converts to only
-**+8.8 gross bps/trade**, because it is systematically right on smaller-than-average moves
-(§7, cost arithmetic). Ranking accuracy and P&L have come apart, and every lever tried so far
-has aimed at the first. C3 aims at the second: it weights each moved bar's directional CE by
-its realized `|forward return|`, normalized per (pair, horizon) so the weight is about move
-size and not about which pair or which horizon (§6 C3). Unlike N3's selection-time cousin —
-which failed because it ranked a statistic with ~600 effective samples — this applies per
-sample over 2.3M training bars, where the estimate is not the problem.
-
-```sh
-DIR_MAG_WEIGHT=1 FEATURE_GROUPS=legacy \
-  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=1 \
-  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
-  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-  ./scripts/gcp_train.sh --gpu 60 384
-./scripts/gcp_status.sh
-./scripts/gcp_logs.sh > logs/R2.log
-```
-
-⚠️ **If O8 lands positive first, run R2 on the 12-pair set instead** — one variable at a time
-means R2's control must be whatever the baseline is when it launches, not whatever it was
-when this was written (§0.2).
-
-**Verify** (§0.4 plus these): `knob DIR_MAG_WEIGHT=1` in the resolved-knobs echo;
-`Magnitude-weighted directional loss: ON (power=1.0 clip=5.0)`; the three `dir-mag <h>m:`
-lines, where **`scale` should be ~0.8–1.0 and `at_clip` should be a few percent at most** — an
-`at_clip` above ~10% means the clip is binding on a large minority of bars and the weight has
-become closer to a step function than to `|r|`, which is a different experiment; `mean|r|`
-should rise with the horizon (60m < 240m < 1440m) and be in the tens-to-hundreds of bps.
-
-**Verdict, pre-registered — and note this one is NOT ranked on LB.** R2 is a loss-function
-change aimed at economics, so rank it on **gross bps/trade at cov 0.01 / 0.02 / 0.05** from
-the `Fixed-coverage P&L` table, against the family's pooled **+19.4 / +22.0 / +8.8**. Report
-plateau-mean LB alongside as a guard, not as the decision.
-
-- **cov 0.02 gross ≥ +27 with LB no worse than 0.517** (i.e. within ~2 between-seed sd of
-  0.5239) → the lever works: it bought economics without giving up ranking. Replicate at two
-  more seeds.
-- **cov 0.02 gross +22 to +27** → inside noise on ~1,780 trades. Not evidence. Do not run the
-  `POWER=0.5` arm on the strength of it.
-- **Gross improves but LB drops below ~0.510** → it traded ranking for magnitude. That is a
-  real finding and it belongs to M3's sizing problem, not to M2 — record it and stop.
-- **No movement in either** → the aux head's weighting is not the constraint. Closed.
-
-### R3 — encoder capacity on the current baseline. **Last, and most likely a closer.**
-
-**Why this is not barred by §5.** §5 closed capacity sweeps twice, and both closures are
-now stale for the same reason. The first rested on O3 (a *context-length* run at 15m, not a
-capacity run) and on N2 (a GBT, which says nothing about LSTM width). The second rested on
-§0.3's "a single run cannot resolve anything under 0.04 LB" — **and that is no longer
-true.** The plateau-restricted mean (§0.3, 2026-08-22) has a between-seed sd of **0.0032**
-across the three baseline seeds (0.5235 / 0.5273 / 0.5209), so a single well-plateaued run
-now resolves a ~0.01 effect. The measurement improved; the lever is re-openable on that
-basis and on no other. It is also the only structural knob in `config.py` that has **never**
-been varied on the 5m/seq384 baseline — `hidden_size=64, num_layers=2, dropout=0.2` were
-inherited, not measured.
-
-**Two runs, one variable each, both against §1.3.** Everything else is byte-identical to
-the baseline, including `FEATURE_GROUPS` left **unset** (it defaults to the 30-column set,
-so it must be pinned to `legacy` — see the verify list).
-
-```sh
-# R3a — double the width
-FEATURE_GROUPS=legacy HIDDEN_SIZE=128 \
-  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=1 \
-  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
-  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-  ./scripts/gcp_train.sh --gpu 60 384
-./scripts/gcp_status.sh
-./scripts/gcp_logs.sh > logs/R3a.log
-
-# R3b — half the width (only after R3a has FINISHED; runs are serial, §7)
-FEATURE_GROUPS=legacy HIDDEN_SIZE=32 \
-  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=1 \
-  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
-  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-  ./scripts/gcp_train.sh --gpu 60 384
-./scripts/gcp_status.sh
-./scripts/gcp_logs.sh > logs/R3b.log
-```
-
-**Why both directions and not a ladder.** One run tells you nothing about the shape of the
-curve. Two bracketing runs do: baseline in the middle, one arm up, one arm down. If the
-plateau mean is flat across 32 / 64 / 128, capacity is not the binding constraint and the
-question is answered for good. A monotone rise toward 128 would be the only result that
-justifies a third run.
-
-**Verify** (§0.4 plus these):
-`Feature groups: legacy -> 19 columns` — **if it says 25 or 30 the run is not a baseline
-comparison**; `hidden_size=128` (resp. `32`) on the architecture line; `Feature columns:
-19`; `12/19 CONSTANT`; `Samples:` ≈ 2.9M; `hold=48 bars`; `Pair embedding: ON dim=8`;
-split recorded.
-
-**Verdict, pre-registered.** Rank on **plateau-restricted mean cov05 LB** against the
-family's 0.5239 (between-seed sd 0.0032), report the all-epoch mean alongside, and require a
-plateau of ≥15 epochs and a monotone `emp_up` table (§3 item 3c).
-
-- **Either arm ≥ 0.534 with a ≥15-epoch plateau and monotone calibration** → capacity is
-  live. Replicate that arm at two more seeds before believing it.
-- **Both arms within ±0.005 of 0.5239** → capacity is not the constraint. **M2 is done.**
-  Record it in §5 as closed *on measurement* this time, and stop.
-- **Either arm's plateau collapses below ~10 epochs** → read it the way §1.6 reads R1:
-  check whether its *best* `loss_va` beats 1.0398–1.0404. If it does not, the arm is worse,
-  full stop, and no regularization follow-up is warranted.
-
-### Still queued behind that, and only if O8, R2 or R3 reopens M2
-
-- **O7 — triple-barrier redo.** Blocked on C4b, wider barriers (target ~30–40% flat), and a
-  pinned dataset. A *label* lever — also unaffected by §1.6.
-- **O5 — L2 ladder feature audit. Still demoted.** Book-derived columns are constant across
-  99% of the train window and get zeroed. Revisit when book coverage passes ~6 months; the
-  60-day milestone for BTC/ETH/SOL is ≈2026-09-15, so this is a 2027 item.
-
-### For M3, not for M2 — and after R0 this is the main line of work
-
-§1.8's `btc_absret_1d` finding is an **input to the policy milestone**, not a run in this
-queue. When M3 starts, its observation vector should carry trailing market-move magnitude
-(BTC |ret| over 24h, or the pooled-universe equivalent) alongside M2's per-horizon
-probabilities, because conditioning on it moves the top-2% slice from +22.0 to +54.9 gross
-bps/trade. Do **not** implement it as an M2 gate (§1.8, §5). With features closed and
-capacity about to be, this is where the remaining upside in the project lives.
+- **The signal is only cost-viable in a narrow confidence band.** +19 to +22 gross bps at
+  the top 1–2% of bars, +8.9 at 5%, ~0 by 10% (§1.3). The policy's coverage is therefore a
+  first-class decision variable, not a threshold to be tuned away.
+- **Calibration is fragile and it is M2's actual deliverable.** Three separate levers (P2,
+  R2, R3a) improved or held ranking while destroying the probability scale. If M3 consumes
+  `p_up` as a probability — for sizing, for a Kelly-style rule, for anything but an ordering
+  — it must re-check brier and the bin table on whatever checkpoint it is given, not trust
+  that a model which ranks well is calibrated.
+- **Absolute confidence thresholds do not transfer between checkpoints** (§1.5, §5). The
+  same probability is 1.2% / 2.5% / 1.7% coverage across three seeds of one configuration.
+  M3 must condition on *coverage rank*, never on a raw confidence constant.
 
 ---
 
 ## §3 — WHAT TO BRING BACK (for the next session)
+
+⚠️ **No M2 run is queued (§2), so this section is dormant** — it is kept because it is the
+protocol that made the last four waves decidable, and because the 12-pair adoption runs in §2
+(if they are ever done) must follow it. If you are here to analyze a *new* run, something has
+gone wrong with §2's freeze; check §5's "M2 as a research object" row before spending GPU.
+
+🔴 **One addition the closing wave earned, and it is now the fastest way to kill a bad run:**
+read the `SERVED GATE (C13, coverage-targeted)` line first. The baseline's is `conf ≥ 0.6311`.
+**A gate above ~0.90 means the confidence distribution has collapsed to the corners and the
+calibration table will be flat**, whatever the LB says — R2 (0.9797) and R3a (0.9999) were both
+diagnosable from that single line before any other number was read.
 
 Save each run's full log under `logs/` **named after the queue item** (`Q3.log`, not
 the run id), then open a **fresh session** and paste the paths. Do not summarize the logs
@@ -985,6 +969,12 @@ grep -oE 'epoch [0-9]+.*lb=[0-9.]+' $L | grep -oE 'lb=[0-9.]+' | cut -d= -f2 | \
    probability (`emp_up ≈ 0.48` in every bin). M2's deliverable to M3 is a *calibrated*
    probability, so a run that improves ranking while destroying calibration has not
    improved. Reject any run whose bin table is flat in `emp_up`.
+   🔴 **This check has now rejected four runs on its own — P2 (0.323), R1 (0.286), R2 (0.316)
+   and R3a (0.419), against a baseline of 0.250 — and it caught all four *before* the P&L
+   table did.** Three of them were changes that had nothing to do with calibration (a
+   resolution change, a loss weighting, a width change), which is the point: on this problem
+   the probability scale is the first thing to break and the last thing anyone thinks to look
+   at. Treat `brier > ~0.27` as a rejection, not a caveat.
 4. `--- Walk-forward edge on val window ---` win 1–4 → does the §1.2 regime pattern hold,
    and did anything narrow the window-2-vs-window-3 spread.
 5. `Fixed-coverage directional edge` → is the ordering monotone in confidence.
@@ -1006,6 +996,10 @@ line.**
 | Run | What | Primary | cov05 LB | Valid? | Verdict |
 |---|---|---:|---:|---|---|
 | **5m/seq384 family** — **O2** `20260818T185438Z` (s1) · **P0-seed2** `20260819T142759Z` · **P0-seed3** `20260820T025723Z` | **5m bars, seq 384 (32h), ~2.90M samples, 3 seeds** | 240m | **pooled mean-of-epochs 0.5219 (between-seed SEM 0.0014)** | ✅ **BANKED — the baseline** | The project's first replicated result. +0.016 ≈ 4σ over F4. Pooled fixed-coverage P&L **+19.4 / +22.0 gross bps/trade at cov 0.01 / 0.02** (1,081 / 1,783 trades) = +5.4 / +8.0 net at 14bps taker. Per-seed max LB 0.5565 / 0.5576 / 0.5425 — all order statistics, do not quote. Did **not** replicate: serial-sim magnitude (§1.5), side balance, book-era split, per-pair numbers. Served gate must become a coverage target (C13). §1.3 |
+| **O8** `20260822T012619Z` | **12 pairs** (+ADA/AVAX/LINK/XRP), 4.59M samples (+58%) vs the 8-pair baseline | 240m | **plateau mean 0.5222 (n=17) on the 12-pair population; ≈0.512 pair-mix-corrected to the 8-pair universe** | ✅ valid, **flat — closes data volume** | 58% more training data moved nothing. Re-aggregated locally on `eval_preds.parquet` (harness validated by reproducing the logged 12-pair table exactly): on the **original 8 pairs** gross bps +23.9 / +21.3 / +6.8 at cov 0.01/0.02/0.05 vs the 3-seed family's +19.4 / +22.0 / +8.9 — one seed inside the family spread at every coverage. The 12-pair aggregation reads +0.010 higher than the 8-pair one at the selected epoch (0.543 vs 0.533) purely from pair mix, which is why the headline LB is not the verdict. Inside §2's pre-registered "≤ 0.527 ⇒ data volume is not the constraint" band. 🟢 **But adopting 12 pairs is free:** brier 0.2495, monotone calibration, majors undegraded, new pairs individually good (LINK cov05 0.599, XRP 0.606). A product win, not a research result. §1.9 |
+| **R2** `20260822T170844Z` | **`DIR_MAG_WEIGHT=1`** — directional CE weighted by realized \|forward return\|, normalized per (pair, horizon) | 240m | **plateau mean 0.5058 (n=12); all-epoch 0.5102±0.011 (n=37)** | ✅ valid, **negative — closes the lever** | Instrumentation green (`scale` 0.982–0.989, `at_clip` 0.56–0.77%, `mean\|r\|` 100.5/201.9/501.3bps rising with horizon), so this measures the lever and not a bug. It **lost** economics at every coverage: +1.75 / +18.79 / +5.27 gross bps at cov 0.01/0.02/0.05 vs +19.4 / +22.0 / +8.9. §2's "no movement in either ⇒ closed" branch. 🔴 **Calibration destroyed** — coverage-targeted gate at `conf ≥ 0.9797` (baseline 0.6311), 84% of bars above 0.55, `emp_up` flat at 0.47–0.51 in all ten bins, brier 0.3156 vs 0.250 ⇒ also rejected by §3.3c. Up-weighting large moves conflates "confident and large" with "confident and correct". §1.9 |
+| **R3a** `20260823T053017Z` | **`HIDDEN_SIZE=128`** — double width, all else byte-identical to §1.3 | 240m | **plateau mean 0.5185 (n=26); all-epoch 0.5182±0.013 (n=58)** | ✅ valid, **negative** | The project's clearest memorization result: `loss_tr` → **0.888** against the baseline's ~1.72 floor while best `loss_va` = **1.0440**, worse than the family's 1.0398–1.0404 at *every* epoch — R1's mechanism reproduced with parameters instead of columns. Gross bps +13.4 / +12.0 / +3.5. 🔴 **brier 0.4187, the worst in the ledger**: 110,628 bars at p(up)=0.023 and 106,168 at 0.976 with `emp_up` flat at 0.47–0.50 — the confidence distribution collapsed to the corners carrying no information. Inverts §1.2's window pattern (w3 becomes its best at 0.585). §1.9 |
+| **R3b** `20260823T135748Z` | **`HIDDEN_SIZE=32`** — half width, all else byte-identical to §1.3 | 240m | **plateau mean 0.5199 (n=36 — the longest plateau in the project); all-epoch 0.5194±0.013 (n=37)** | ✅ valid, **a clean null — with R3a this closes capacity for good** | −0.0040 vs 0.5239, i.e. flat. brier **0.2507** vs the baseline's 0.2501, calibration monotone, §1.2's window pattern reproduced almost exactly (0.549/0.621/0.457/0.622 vs seed 3's 0.593/0.592/0.491/0.621), gross bps +20.1 / +16.2 / +4.7 — inside single-seed family spread. **A quarter of the parameters (~15k vs ~56k) and it matches.** With R3a, the encoder sits on a flat top between 32 and 64 with a cliff into memorization above: `hidden_size=64` is not tuned, it is over-parameterized. §1.9 |
 | **R1** `20260821T182844Z` | **25 columns** = 19 legacy + the 6 own-pair multi-scale (`ret_1h/4h/1d`, `vol_1h/4h/1d`); the well-conditioned half of C12 | 240m | **plateau mean 0.4979 (n=11); all-epoch 0.4889±0.016 (n=38)** | ✅ valid, **decisive negative — closes the lever** | −0.026 vs the family's plateau 0.5239 (between-seed sd 0.0032) ≈ 8σ. Worse than Q3 on every axis. 🔴 **Best `loss_va` = 1.0451, above the family's 1.0398–1.0404 at *every* epoch including epoch 1** — so this is not an overfitting story a `DROPOUT` arm could rescue, and that branch is withdrawn. Calibration flat (`emp_up` ≈ 0.48 in every bin 0.10→0.80; brier 0.286) ⇒ also rejected by §3.3c. Gross bps +8.0 / +11.7 at cov 0.01 / 0.02 vs +19.4 / +22.0. Selected ep 18 sits +0.11 `loss_va` above its own minimum. Mechanism: at seq 384 all six columns are exact functions of bars already in the window ⇒ zero information, six easy-to-memorize channels. §1.6 |
 | **Q3** `20260821T…` | **30 candle-derived columns** (C12) vs the 19-col baseline — the feature expansion | 240m | mean 0.5003±0.018 (n=28); **plateau mean 0.5000, n=5** | ✅ valid, **decisive negative for THIS column set** | −0.022 against the family. **Calibration inverted** (`emp_up` 0.495→0.465 as `mean_pred` 0.35→0.75; brier 0.2897 vs 0.250) ⇒ rejected by §3.3c independently. Left its training plateau at **epoch 5** vs the baseline's 21–26 and selected a post-overfit epoch, so it is not a fair test of the lever — see §1.6. Two columns numerically defective (C15). Retest = R1. |
 | **Q2** `20260821T…` | **3-seed probability ensemble** (C14) | 240m | cov05 LB 0.561 | ✅ valid, **lever closed** | Matched against Q0 on the same split: dir_acc +0.002, brier −0.0005 (both noise), gross bps **worse at 4 of 5 coverages** (cov02 +10.6 vs +18.7; cov05 +11.9 vs +15.1; cov10 +0.6 vs +6.7). Pre-registered "no better than the best member" ⇒ dropped. §5 |
@@ -1039,8 +1033,11 @@ line.**
 | **Cost-aware checkpoint selection (`SEL_NET_WEIGHT`)** | **Closed (new, 2026-08-18)** | N3 ran it at the horizon where R5's objection no longer applies. The term is alive but ranks a statistic with ~600 effective samples and ~5bps standard error against a 19bps range, at ~88% effective weight. Chosen epoch was no more profitable than F4's. §1.5. Reopen only with a fixed range (`SEL_NET_SCALE≈0.04`) *and* a reason to believe per-epoch net/trade is estimable. |
 | **The book ON/OFF walk-forward *design*** | **Retired (new, 2026-08-18)** | Three attempts, zero decidable verdicts. The book-OFF arm's modal failure (collapse to an all-flat predictor) is exactly what pushes `n_dir` under the reliability floor, so the design is least able to decide precisely when the book helps most. The book question is not closed — it moves to within-model attribution (**O5**). Do not launch `gcp_walkforward.sh` for it again. |
 | **Context length / sequence window** | **Closed (new, 2026-08-19)** | O3 ran seq 128→256 at 15m as a clean one-variable test and it is *worse* on mean-of-epochs (0.4925±0.023 vs F4's 0.5058±0.016), with a collapsing confidence distribution and a coin-flip up side. The LSTM already uses all the window it can. Do not sweep seq 512. Note this is about *window*, not *resolution* — finer bars at the same window (O2) is a separate and live lever. §1.4 |
-| **Encoder capacity / layers / hidden** | 🟡 **REOPENED once, 2026-08-22 — this is R3** | Both prior closures are stale. The 2026-08-19 one rested on O3 (a *context-length* run at 15m) and N2 (a GBT) — neither is a capacity measurement — and on "a single run cannot resolve under 0.04 LB", which the plateau-restricted mean has since falsified: between-seed sd of the plateau mean is **0.0032**, so one well-plateaued run resolves ~0.01. `hidden_size=64, num_layers=2, dropout=0.2` were never chosen by measurement on the 5m/seq384 baseline. **Two bracketing runs (32 / 128) and then it closes for good** (§2 R3). Do not expand this into a ladder or a joint sweep. |
-| Full architecture swap (transformer / TCN) | **Closed, and reaffirmed 2026-08-22** | Was gated behind O3; O3 came back negative. The reopening condition written in 2026-08-19 was "if richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit" — Q3 and R1 have now *both* run and the failure looks like the opposite: the model already memorizes the training set the moment it is handed anything easy (`loss_tr` 1.70 → 1.13 in R1), while its validation loss never improves. That is an **input** limit and an SNR floor, not a modelling limit. A higher-capacity family would make it worse, not better. **Do not write a transformer.** The only remaining capacity question is R3's, and it is a two-run bracket on the existing encoder, not a family swap. |
+| **Encoder capacity / layers / hidden** | 🔴 **CLOSED ON MEASUREMENT, 2026-08-23 — R3a and R3b both ran** | It was reopened once, on the one legitimate basis (the plateau-restricted mean resolves ~0.01, so a single run can now decide), and the bracket was run as designed. **Both arms are flat on the low side**: 128 units → plateau mean 0.5185, 32 units → 0.5199, against 0.5239 (between-seed sd 0.0032). Neither approaches the +0.011 the pre-registration required. The bracket also refutes the *shape* of the hypothesis, not just its size: going up produces pure memorization (`loss_tr` 1.72 → 0.888 with `loss_va` never reaching baseline, brier 0.419), and going *down* to a quarter of the parameters changes nothing. There is no monotone curve to climb, so **no third run is justified and this is closed for good.** §1.9 |
+| **Training data volume / pair count** | **Closed (new, 2026-08-22)** | O8 added ADA/AVAX/LINK/XRP for 4.59M samples, +58%, the largest data increase available without new *kinds* of data. Re-aggregated onto the original 8 pairs it is inside the 3-seed family's spread at every coverage (+23.9 / +21.3 / +6.8 vs +19.4 / +22.0 / +8.9), and the pair-mix-corrected plateau mean is ≈0.512 vs 0.5239. Crypto pairs are highly correlated, so 58% more *rows* is far less than 58% more independent observations — the effective-sample gain was small and the measured gain is zero. Do not start a pair-count ladder; the remaining whitelist pairs are shorter-history and would be worse. **This does not bar adopting 12 pairs at serve time** — it is free, it just is not an improvement (§2). §1.9 |
+| **Magnitude / cost-shaped training losses (`DIR_MAG_WEIGHT`)** | **Closed (new, 2026-08-23)** | R2 was the second and better-designed attempt at teaching M2 about economics rather than accuracy (N3's selection-time cousin was the first, closed 2026-08-18). It ran correctly — `at_clip` under 1%, `scale` ≈ 0.98, `mean\|r\|` rising with horizon — and it lost gross bps/trade at every coverage while driving brier from 0.250 to 0.316 and flattening `emp_up` to ≈0.48 in all ten bins. The mechanism generalizes past this one knob: **up-weighting large moves teaches the head that "confident and large" is the same axis as "confident and correct", and it is not.** Position sizing by expected move magnitude is M3's job and belongs in the policy, where it can be applied without corrupting the probability M2 exists to emit. §1.9 |
+| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired** | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2 |
+| Full architecture swap (transformer / TCN) | **Closed, and reaffirmed 2026-08-22** | Was gated behind O3; O3 came back negative. The reopening condition written in 2026-08-19 was "if richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit" — Q3 and R1 have now *both* run and the failure looks like the opposite: the model already memorizes the training set the moment it is handed anything easy (`loss_tr` 1.70 → 1.13 in R1), while its validation loss never improves. That is an **input** limit and an SNR floor, not a modelling limit. A higher-capacity family would make it worse, not better. **Do not write a transformer.** 🔴 **Reaffirmed again 2026-08-23: R3a ran the two-run bracket's upward arm and produced exactly this prediction** — `loss_tr` 1.72 → 0.888 with `loss_va` never once reaching the baseline's level, and the worst calibration in the ledger. More capacity of any kind makes this problem worse. There is no remaining capacity question. |
 | Confidence calibration / temperature / focal loss | **Closed** | F4's head is *over*-confident (`[0.60,0.70)` bin mean_pred 0.636 vs empirical 0.547; N3's is 0.609 vs 0.521). Sharpening an over-confident head is the wrong direction. |
 | Raising `GATE_THRESHOLD` as an experiment | **Superseded by C1+C2** | The served gate is 0.58 and eval now reports there. Derive the operating point from the fixed-coverage P&L table, not from another sweep. |
 | Quantile head | **Deferred** | Regressed direction ~0.014; band coverage unstable. Revisit at M3, detached. |
@@ -1407,6 +1404,31 @@ table, never off a single run's `net_ret` line.
 - Walk-forward compares: `…/walkforward/<run_id>.compare.txt`
 - GBT reports: `…/gbt/<run_id>.json`
 - Status markers: `…/status/latest.json`
+- **Per-bar prediction dumps: `…/eval/<RUN_ID>/eval_preds.parquet`** (C9, written by every
+  run) — `ts, pair, horizon, side, conf, p_up, fwd_ret, y3, has_book`. This is what makes
+  after-the-fact analysis cheap: Q1's whole regime study and O8's 8-pair re-aggregation were
+  done from these dumps with no GPU, no DB and no checkpoint.
+
+### Re-aggregating a run onto a different pair set — `ml/train/reaggregate_preds.py`
+
+When an arm changes the **validation population** (a different pair set, a different bar
+interval), its logged `cov05` slice is not selecting from the same universe as §1.3's, so the
+headline LB and P&L are not comparable (§0.6, §1.9). Re-derive them on the baseline's pairs:
+
+```sh
+gsutil cp gs://fluxtrader-train-artifacts/eval/<run_id>/eval_preds.parquet /tmp/
+python ml/train/reaggregate_preds.py /tmp/eval_preds.parquet --validate --split-new
+```
+
+🔴 **Always pass `--validate` and read its first table before anything else.** It recomputes
+the metrics on the *full* population, which must reproduce the run's logged `Fixed-coverage
+directional edge` and `Fixed-coverage P&L` blocks **exactly** — that is the only proof the
+harness has not drifted from `eval_m2.py`/`gate.py`, whose definitions it deliberately
+duplicates so it can run locally without torch. It reproduced O8's table to the digit
+(+24.76 / +23.63 / +6.85). If it ever does not, fix the script before believing any subset
+number it prints.
+
+Needs only `pandas pyarrow numpy`; a throwaway venv is fine. It never runs on the VM.
 
 ### Related docs
 
