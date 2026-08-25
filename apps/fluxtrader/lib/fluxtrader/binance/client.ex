@@ -62,6 +62,39 @@ defmodule FluxTrader.Binance.Client do
     get("/fapi/v1/openInterest?#{params}")
   end
 
+  # --- Positioning / sentiment ratios (B4.2) ---------------------------------
+  #
+  # `/futures/data/*` endpoints, NOT `/fapi/v1/*`. The exchange retains these
+  # series for only ~30 days, so history beyond that exists only if we stored it
+  # (docs/DATA_COLLECTION_AUDIT.md). Minimum `period` is "5m".
+  #
+  # All three return a LIST of maps, oldest-first, each with a "timestamp" (ms).
+  # `start_time`/`end_time` page the ~30-day window; `limit` maxes out at 500.
+
+  @doc "Top traders' long/short ACCOUNT ratio. Rows: longShortRatio/longAccount/shortAccount."
+  def top_long_short_account_ratio(symbol, opts \\ []) do
+    futures_data("topLongShortAccountRatio", symbol, opts)
+  end
+
+  @doc "All accounts' long/short ratio. Same row shape as top_long_short_account_ratio/2."
+  def global_long_short_account_ratio(symbol, opts \\ []) do
+    futures_data("globalLongShortAccountRatio", symbol, opts)
+  end
+
+  @doc "Taker (aggressor) buy/sell volume ratio. Rows: buySellRatio/buyVol/sellVol."
+  def taker_long_short_ratio(symbol, opts \\ []) do
+    futures_data("takerlongshortRatio", symbol, opts)
+  end
+
+  defp futures_data(endpoint, symbol, opts) do
+    params =
+      [symbol: symbol, period: Keyword.get(opts, :period, "5m"), limit: Keyword.get(opts, :limit, 30)]
+      |> maybe_put(:startTime, Keyword.get(opts, :start_time))
+      |> maybe_put(:endTime, Keyword.get(opts, :end_time))
+
+    get("/futures/data/#{endpoint}?#{URI.encode_query(params)}")
+  end
+
   # NOTE: Binance's REST liquidation endpoint (/fapi/v1/allForceOrders) is
   # auth-gated and unusable for public market-wide data. Liquidations are
   # collected in real time via the WebSocket !forceOrder@arr stream in

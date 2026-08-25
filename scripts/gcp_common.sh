@@ -101,8 +101,12 @@ export FLUX_SHM_SIZE
 # Local folder for OPTIONAL backup copies (--local-copy). Not on the hot path.
 : "${EXPORT_DIR:=$HOME/fluxtrader-train-export}"
 
-# App tables dumped for training / settings (not Timescale internals)
-: "${DUMP_TABLES:=candles orderbook_snapshots market_trades funding_rates open_interest liquidations app_settings positions trades schema_migrations}"
+# App tables dumped for training / settings (not Timescale internals).
+# long_short_ratios (2026-08-24, B4.2) travels with the dump: it is small and it
+# is collector-only history — the exchange keeps only ~30 days, so a dump without
+# it silently loses everything older than that. orderbook_levels is deliberately
+# NOT here (JSONB ladders, far too large, and nothing on the Python side reads it).
+: "${DUMP_TABLES:=candles orderbook_snapshots market_trades funding_rates open_interest liquidations long_short_ratios app_settings positions trades schema_migrations}"
 
 require_gcloud() {
   if ! command -v gcloud >/dev/null 2>&1; then

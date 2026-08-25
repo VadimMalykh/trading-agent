@@ -5,7 +5,14 @@ defmodule FluxTrader.MarketData.OrderbookSnapshot do
   @primary_key false
   schema "orderbook_snapshots" do
     field :symbol, :string
+    # Local collection time. Keeps its historical meaning — training's as-of joins
+    # and the 1:1 join to orderbook_levels are both on (symbol, ts).
     field :ts, :utc_datetime_usec
+    # Exchange-provided times from the depth payload (E / T) and lastUpdateId.
+    # NULL for rows collected before migration 20260824000001. See B4.1.
+    field :event_time, :utc_datetime_usec
+    field :transaction_time, :utc_datetime_usec
+    field :last_update_id, :integer
     field :mid, :float
     field :spread, :float
     field :microprice, :float
@@ -23,6 +30,9 @@ defmodule FluxTrader.MarketData.OrderbookSnapshot do
     |> cast(attrs, [
       :symbol,
       :ts,
+      :event_time,
+      :transaction_time,
+      :last_update_id,
       :mid,
       :spread,
       :microprice,

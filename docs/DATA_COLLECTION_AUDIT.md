@@ -26,7 +26,7 @@ The ONLY thing that matters for "collect ASAP" is whether a source has history:
 | **Book ticker (best bid/ask)** | ⚠️ Partial — `data.binance.vision` bookTicker archive (best bid/ask only, not full L2) | Recoverable-ish for L1; full L2 depth is NOT. |
 | **Order book L2 depth** | ❌ No history anywhere | **Collect ASAP, and stop compressing.** |
 | **Open interest** | ⚠️ Shallow — `/futures/data/openInterestHist` ~30-day retention, coarse granularity | Mostly collector-only; ~30d partial backfill. |
-| **Long/short & taker ratios** | ⚠️ Shallow — `/futures/data/*Ratio` ~30-day retention | Collector-only beyond 30d; not collected today. |
+| **Long/short & taker ratios** | ⚠️ Shallow — `/futures/data/*Ratio` ~30-day retention | Collector-only beyond 30d. ✅ **Collected since 2026-08-24** (B4.2), incl. a one-time grab of the ~30d the exchange still held. |
 | **Liquidations (forceOrder)** | ❌ No REST history; WS only | Collector-only; currently **blocked** (see below). |
 
 Rule of thumb: **anything in the ❌ / ⚠️ rows should be collected at full fidelity
@@ -91,11 +91,19 @@ unrecoverable. Ordered by how much it hurts:
 - Taker-buy volume is a genuine order-flow signal, BUT klines are fully backfillable,
   so this is a cheap fix anytime — not time-sensitive.
 
-### 🟡 4. Exchange timestamps replaced with local wall-clock
-- `orderbook_snapshots.ts`, `funding_rates.ts`, `open_interest.ts` use
-  `DateTime.utc_now()` (collection time), not the exchange event time
-  (`collector.ex:243-283`). This is a data-quality issue (adds jitter/skew to
-  alignment) but not a "lost data" one. Worth storing the exchange `E`/`T` alongside.
+### ✅ 4. Exchange timestamps — FIXED 2026-08-24 (B4.1)
+- `orderbook_snapshots.ts`, `funding_rates.ts` and `open_interest.ts` are still
+  `DateTime.utc_now()` (local receipt time), and deliberately so: `ts` is the key
+  every training as-of join and the 1:1 `orderbook_levels` join already use.
+- The exchange's own clock is now stored **alongside** it — `event_time` /
+  `transaction_time` / `last_update_id` on `orderbook_snapshots`, `event_time` on
+  `funding_rates` and `open_interest` (migration `20260824000001`). Rows collected
+  before that date stay NULL, which is honest: their exchange time is genuinely
+  unknown and must not be imputed.
+- The skew is now measurable rather than assumed —
+  `./scripts/gcp_data_collection_stats.sh` §2b prints p50/p95 of `ts - event_time`
+  per symbol. Irrelevant at a 240m horizon; a large fraction of the prediction
+  window at 1m, which is why it blocked trustworthy short-horizon work.
 
 ---
 
@@ -149,12 +157,13 @@ The answer splits cleanly:
 ### Raw collection at fidelity → TIME-SENSITIVE, act now (in order)
 1. ✅ **DONE (2026-08-05) — Stop lossy-compressing the order book.** See
    "RAW ORDER-BOOK LADDER IMPLEMENTED" below.
-2. **Start polling long/short & taker ratios** (cheap 60s REST) — new collector-only
-   history that we're currently not accruing at all.
-3. **Store exchange event timestamps** alongside local ts for book/OI/funding
-   (data-quality; small collector change).
+2. ✅ **DONE (2026-08-24) — Poll long/short & taker ratios.** See "B4 COLLECTION
+   FIXES" below.
+3. ✅ **DONE (2026-08-24) — Store exchange event timestamps** alongside local `ts`
+   for book/OI/funding. See "B4 COLLECTION FIXES" below.
 4. **Resolve liquidations source** (vendor vs proxy) — highest *analytical* value but
-   gated on a vendor/network decision, not code.
+   gated on a vendor/network decision, not code. `scripts/gcp_depth_ws_test.sh`
+   (B4.3) now measures the egress side of that question directly.
 
 Backfillable items (kline taker-buy volume, funding history) can be picked up anytime
 and need no urgency.
@@ -197,6 +206,76 @@ tables join 1:1; JSONB is queryable (`jsonb_array_length`, `bids->0->>0`). Scala
   datacenter-egress question as liquidations.
 - Storage: JSONB ladders are larger than the scalar rows — monitor
   `orderbook_levels` growth; consider TimescaleDB compression / retention if needed.
+
+## B4 COLLECTION FIXES (2026-08-24)
+
+Implements B4 of `docs/BOOK_ERA_PLAN.md`: the collection changes whose *data* is
+unrecoverable if deferred. Independent of B0–B3 and on nobody's critical path — the
+point is that if the book wave concludes "wait for the calendar", the calendar should
+accumulate better data meanwhile.
+
+### B4.1 — exchange event timestamps (migration `20260824000001`)
+`orderbook_snapshots` gains `event_time` (`E`), `transaction_time` (`T`) and
+`last_update_id`; `funding_rates` and `open_interest` gain `event_time` (`time`).
+Additive and nullable — `ts` keeps its exact meaning, so training's as-of joins, the
+`(symbol, ts)` join to `orderbook_levels`, and every existing query are untouched.
+`BookFeatures.from_depth/2` carries the metadata through; no scalar changes value.
+
+### B4.2 — long/short & taker ratios (migration `20260824000002`)
+New table `long_short_ratios`, one row per `(symbol, exchange 5m bucket, period)`,
+fed by three `/futures/data` endpoints: `topLongShortAccountRatio`,
+`globalLongShortAccountRatio`, `takerlongshortRatio`. Polled every 60s
+(`Collector`), and each endpoint upserts **only its own column group**, so one
+endpoint lagging or failing never blanks another's values — the taker series is
+routinely a bucket behind the other two, so this is the normal case, not an edge one.
+
+`ts` is the exchange bucket, not local time, so this table has no jitter to correct.
+Added to `DUMP_TABLES` (`gcp_common.sh`) — it is collector-only history and a dump
+without it silently loses everything past the exchange's ~30-day window.
+
+**One-time backfill.** On first sight of a pair the collector grabs the ~30 days the
+exchange still holds, off-process under `Task.Supervisor` (serial across pairs, 200ms
+between pages, so it cannot crowd out the 5s book/trade polls). It pages **backward**
+via `endTime`, which is not a style choice: verified live 2026-08-24, the endpoint
+answers `startTime=30d ago, endTime=now, limit=500` with the newest 500 buckets
+(~42h), *not* the oldest 500. Paging forward would have silently captured only the
+last ~42h of a window we get exactly one chance at.
+
+### B4.3 — is `@depth` egress-blocked? (`scripts/gcp_depth_ws_test.sh`)
+A ~1 minute connectivity test, not a project. The 5s REST cadence is the fidelity
+ceiling for all 1m/5m work and the `@depth` diff stream is the fix — but
+`!forceOrder@arr` is already gated from datacenter egress (upgrade + SUBSCRIBE ack,
+then zero data frames; hence `liquidations` = 0 rows), so nobody should design around
+`@depth` before knowing which side of that line it is on.
+
+`mix flux.depth_ws_test` subscribes to `@depth`, `@aggTrade` (control: does *any*
+market data arrive?) and `!forceOrder@arr` (known-blocked reference) on one
+connection and counts frames by type. The control is what makes the result
+interpretable — "no depth frames" alone cannot separate "`@depth` is gated" from
+"this host gets no WS data at all", and those imply completely different next steps.
+Verdict is the last line: `DEPTH_OK` / `DEPTH_BLOCKED` / `WS_BLOCKED` /
+`CONNECT_FAILED`. Nothing is written to the database.
+
+**Status: not yet run** — it must run from the always-on VM, since that is the egress
+that matters. Record the verdict in `docs/BOOK_ERA_PLAN.md` B4; a `WS_BLOCKED` answer
+is a real result and closes the item.
+
+### Verified before commit
+Compile clean (`--warnings-as-errors`); both migrations applied; the three ratio
+endpoints and the depth/premiumIndex/openInterest payloads checked live against
+Binance (field names and shapes match the mapping exactly); `from_depth` run on a real
+depth payload and persisted, with `last_update_id` = 1.14e13 confirming `bigint` was
+required; the three-endpoint upsert verified to merge into one row and to leave the
+other groups intact when a single endpoint re-polls. Smoke rows cleaned up.
+
+**Not verified locally:** the collector's live REST path. This machine's egress runs
+through a TLS-intercepting proxy whose CA the container does not trust, so
+container-side HTTPS to Binance fails with `unknown_ca`. That is a local-environment
+artifact — the VM has direct egress — but it means the poll loop's first real
+exercise is on the VM after deploy. Watch the first `gcp_data_collection_stats.sh`
+§2b and §9 for confirmation.
+
+---
 
 ## Cross-refs
 - Root-cause of the book-era edge collapse + staleness fix: `docs/NEXT_TRAINING_PLAN.md`

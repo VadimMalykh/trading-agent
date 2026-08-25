@@ -44,13 +44,31 @@ FROM candles GROUP BY symbol, interval ORDER BY symbol, interval;
 
 \echo ''
 \echo '=== 2. Order book — scalar snapshots (orderbook_snapshots) ==='
+\echo '    with_event_time counts rows carrying the EXCHANGE clock (B4.1, from 2026-08-24).'
+\echo '    Older rows are NULL by design — their exchange time is genuinely unknown.'
 SELECT symbol,
        COUNT(*)            AS rows,
        MIN(ts)             AS first,
        MAX(ts)             AS last,
+       COUNT(*) FILTER (WHERE event_time IS NOT NULL) AS with_event_time,
        pg_temp.human_span(MIN(ts), MAX(ts)) AS existence,
        now() - MAX(ts)     AS staleness
 FROM orderbook_snapshots GROUP BY symbol ORDER BY symbol;
+
+\echo ''
+\echo '=== 2b. Collection jitter, now that it is measurable (B4.1) ==='
+\echo '    ts is local receipt time, event_time is the exchange clock. p50/p95 of the'
+\echo '    difference IS the timestamp noise every short-horizon dataset inherits.'
+\echo '    Irrelevant at 240m; a large fraction of the prediction window at 1m.'
+SELECT symbol,
+       COUNT(*) AS rows_with_both,
+       round((percentile_cont(0.5) WITHIN GROUP (
+         ORDER BY EXTRACT(EPOCH FROM (ts - event_time)) * 1000))::numeric, 0) AS p50_skew_ms,
+       round((percentile_cont(0.95) WITHIN GROUP (
+         ORDER BY EXTRACT(EPOCH FROM (ts - event_time)) * 1000))::numeric, 0) AS p95_skew_ms
+FROM orderbook_snapshots
+WHERE event_time IS NOT NULL
+GROUP BY symbol ORDER BY symbol;
 
 \echo ''
 \echo '=== 3. Order book — RAW L2 ladder (orderbook_levels, new 2026-08-05) ==='
@@ -93,6 +111,7 @@ SELECT symbol,
        COUNT(*)            AS rows,
        MIN(ts)             AS first,
        MAX(ts)             AS last,
+       COUNT(*) FILTER (WHERE event_time IS NOT NULL) AS with_event_time,
        pg_temp.human_span(MIN(ts), MAX(ts)) AS existence,
        now() - MAX(ts)     AS staleness
 FROM funding_rates GROUP BY symbol ORDER BY symbol;
@@ -103,6 +122,7 @@ SELECT symbol,
        COUNT(*)            AS rows,
        MIN(ts)             AS first,
        MAX(ts)             AS last,
+       COUNT(*) FILTER (WHERE event_time IS NOT NULL) AS with_event_time,
        pg_temp.human_span(MIN(ts), MAX(ts)) AS existence,
        now() - MAX(ts)     AS staleness
 FROM open_interest GROUP BY symbol ORDER BY symbol;
@@ -117,7 +137,25 @@ SELECT COUNT(*) AS rows,
 FROM liquidations;
 
 \echo ''
-\echo '=== 9. Candles — INTERIOR gaps (missed rows strictly between first/last) ==='
+\echo '=== 9. Long/short + taker ratios (long_short_ratios, new 2026-08-24) ==='
+\echo '    ts is the EXCHANGE 5m bucket, not local time, so staleness under ~10m is healthy.'
+\echo '    The exchange keeps only ~30 days: existence should GROW past 30d over time, and'
+\echo '    any row older than 30d exists ONLY because we stored it. A nil column group means'
+\echo '    that endpoint has not answered for that bucket (the three are polled separately).'
+SELECT symbol,
+       period,
+       COUNT(*)         AS rows,
+       MIN(ts)          AS first,
+       MAX(ts)          AS last,
+       COUNT(*) FILTER (WHERE top_long_short_ratio IS NULL)    AS missing_top,
+       COUNT(*) FILTER (WHERE global_long_short_ratio IS NULL) AS missing_global,
+       COUNT(*) FILTER (WHERE taker_buy_sell_ratio IS NULL)    AS missing_taker,
+       pg_temp.human_span(MIN(ts), MAX(ts)) AS existence,
+       now() - MAX(ts)  AS staleness
+FROM long_short_ratios GROUP BY symbol, period ORDER BY symbol, period;
+
+\echo ''
+\echo '=== 10. Candles — INTERIOR gaps (missed rows strictly between first/last) ==='
 \echo '    gaps>0 means rows are missing INSIDE min..max — a backfill re-run will NOT fix those'
 \echo '    (it only fills older-than-first + tail). Tails past the last row are NOT flagged here;'
 \echo '    those are repaired by re-running gcp_backfill.sh. missing_hours = total missing span.'

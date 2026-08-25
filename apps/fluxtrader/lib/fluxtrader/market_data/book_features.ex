@@ -21,6 +21,10 @@ defmodule FluxTrader.MarketData.BookFeatures do
 
   Only the top #{@scalar_levels} levels per side feed the scalar features (stable
   semantics); the raw ladder is captured separately via `raw_levels/1`.
+
+  The returned map also carries the exchange's `E` / `T` / `lastUpdateId` so
+  `orderbook_snapshots` records the exchange clock next to the local one (B4.1).
+  These are additions — no existing scalar changes value.
   """
   def from_depth(symbol, depth) when is_map(depth) do
     bids = depth |> Map.get("bids", []) |> parse_levels() |> Enum.take(@scalar_levels)
@@ -56,7 +60,13 @@ defmodule FluxTrader.MarketData.BookFeatures do
       {:ok,
        %{
          symbol: symbol,
+         # Local receipt time — the key everything else joins on. The exchange's
+         # own clock is carried alongside it (B4.1) so a short-horizon consumer can
+         # correct for REST round-trip jitter instead of guessing at it.
          ts: DateTime.utc_now() |> DateTime.truncate(:microsecond),
+         event_time: ms_to_dt(Map.get(depth, "E")),
+         transaction_time: ms_to_dt(Map.get(depth, "T")),
+         last_update_id: as_int(Map.get(depth, "lastUpdateId")),
          mid: mid,
          spread: spread,
          microprice: microprice,

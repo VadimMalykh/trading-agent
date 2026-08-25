@@ -1,6 +1,7 @@
 # Book-era plan — the B-wave
 
-**Status:** Not started. Runs **in parallel with M3**, blocks nothing, and is blocked by nothing.
+**Status:** B4 implemented 2026-08-24 (awaiting deploy to the always-on VM); B0–B3 not started.
+Runs **in parallel with M3**, blocks nothing, and is blocked by nothing.
 **GPU required:** **No, at any step.** B0–B2 are laptop `pandas`. B3 is LightGBM on CPU, on its own
 throwaway VM (`gcp_gbt.sh`), which is explicitly designed to run concurrently with anything else.
 **Keys required:** No.
@@ -168,6 +169,7 @@ So B1 is a **re-run with those three fixes**, not a re-run.
 | `orderbook_levels` (raw L2, 100+100) | 8 pairs **~19d** (from 2026-08-05). **Nothing on the Python side reads this yet.** |
 | `market_trades`, `open_interest` | mirror the snapshots |
 | `funding_rates` | 2y9mo–3y11mo — real history, and already a live feature |
+| `long_short_ratios` (B4.2) | **starts 2026-08-24**, plus the ~30d the exchange still held. Not in any model yet; collector-only from here. |
 | `liquidations` | 0 rows, WS egress blocked from datacenters. Not in any plan. |
 
 🔴 **Re-verify before B0** — this table is copied forward from 2026-08-18 plus elapsed days, not
@@ -214,10 +216,11 @@ what to bring back.
 | **B1** | Economic information check (the fixed audit) | ~1 afternoon laptop | no | B0 |
 | **B2** | Book features as **M3 regime observables** | ~1 afternoon laptop | no | B0, M3-0a |
 | **B3** | One book-era GBT, pre-registered | ~1h on its own CPU VM | no | **B1 passing §4.1** |
-| **B4** | Collection fixes (unrecoverable if deferred) | small Elixir change | no | nothing — **start now** |
+| **B4** | Collection fixes (unrecoverable if deferred) | small Elixir change | no | nothing — ✅ **code done 2026-08-24, needs deploy** |
 
-**B4 is independent of the rest and should be started immediately**, because the data it protects is
-gone if we wait. Everything else can queue behind M3's attention.
+**B4 was independent of the rest and is now written** (see below). It still has to be *deployed* to
+the always-on VM to start accruing anything — until then nothing has changed about what we collect.
+Everything else can queue behind M3's attention.
 
 ### B0 — the book-era side-table
 
@@ -363,28 +366,65 @@ calibration bin table, the loaded sample count and date window, and LightGBM's f
 the last is O5's within-model attribution, finally obtained, and is arguably the most durable output
 of the whole wave regardless of whether the P&L clears.
 
-### B4 — collection fixes, start now, independent of everything above
+### B4 — collection fixes ✅ implemented 2026-08-24, ⚠️ not yet deployed
 
-These are on the audit's unrecoverable list and none of them is on the critical path for B0–B3.
-They matter because if this wave says "wait for the calendar", we want the calendar to be
-accumulating *better* data, not more of the same.
+On the audit's unrecoverable list, none of it on the critical path for B0–B3. It matters because if
+this wave says "wait for the calendar", we want the calendar to be accumulating *better* data, not
+more of the same.
 
-1. **Store exchange event timestamps** alongside local wall-clock for book / OI / funding.
-   `orderbook_snapshots.ts` is currently `DateTime.utc_now()` at collection time
-   (`collector.ex:243-283`). At a 4h horizon that jitter is irrelevant; at 1m it is a large fraction
-   of the prediction window, and it is the single cheapest thing standing between us and a
-   trustworthy short-horizon dataset. `orderbook_levels` already stores `event_time` and
-   `transaction_time` — mirror that onto the scalar table.
-2. **Start polling long/short & taker ratios** — `topLongShortAccountRatio`,
-   `globalLongShortAccountRatio`, `takerlongshortRatio`. Cheap 60s REST, ~30-day exchange retention,
-   **not collected at all today**, so every day we wait is a day permanently missing.
-3. **Test whether `@depth` WS is egress-blocked** before planning around it. The 5s REST cadence is
-   the fidelity ceiling for any short-horizon work, and the `@depth` diff stream is the fix — but it
-   may be gated exactly like `!forceOrder@arr` was. This is a 10-minute connectivity test, not a
-   project: connect from the always-on VM and see whether market-data frames arrive. Do not design
-   around the WS stream until that test passes.
+**Code is written and verified; it is doing nothing until the VM runs it.** Deploy is the whole
+remaining task and it is small — see "What is left" below.
 
----
+1. ✅ **Exchange event timestamps.** `orderbook_snapshots` now stores `event_time` (`E`),
+   `transaction_time` (`T`) and `last_update_id`; `funding_rates` and `open_interest` store
+   `event_time` (migration `20260824000001`). `ts` deliberately keeps its old meaning — local
+   receipt time, the key every as-of join and the 1:1 `orderbook_levels` join already use — so this
+   is purely additive and nothing downstream changes. Pre-migration rows stay NULL, which is honest:
+   their exchange time is genuinely unknown. The skew is now *measurable* rather than assumed;
+   `gcp_data_collection_stats.sh` §2b prints p50/p95 of `ts - event_time` per symbol.
+
+2. ✅ **Long/short & taker ratios.** New `long_short_ratios` table (migration `20260824000002`), one
+   row per `(symbol, exchange 5m bucket, period)` fed by `topLongShortAccountRatio`,
+   `globalLongShortAccountRatio` and `takerlongshortRatio` at 60s. Each endpoint upserts only its
+   own column group, so the taker series routinely running a bucket behind the other two is the
+   normal case rather than a data loss. Added to `DUMP_TABLES`.
+
+   On first sight of a pair the collector also grabs the ~30 days the exchange still holds, in a
+   supervised task (serial, 200ms between pages, cannot crowd out the 5s polls). 🔴 It pages
+   **backward** via `endTime` — verified live 2026-08-24, the endpoint answers
+   `startTime=30d ago, limit=500` with the newest ~42h, *not* the oldest 500. Forward paging would
+   have silently captured 42h of a 30-day window we get one shot at.
+
+3. ⏳ **Is `@depth` egress-blocked?** `scripts/gcp_depth_ws_test.sh` (wrapping
+   `mix flux.depth_ws_test`) is written but **not yet run** — it has to run from the always-on VM,
+   because that host's egress is the thing being measured. It subscribes to `@depth`, `@aggTrade`
+   (control: does *any* market data arrive?) and `!forceOrder@arr` (known-blocked reference) on one
+   connection and counts frames. The control is the point: "no depth frames" alone cannot separate
+   "`@depth` is gated" from "this host gets no WS data at all", and those imply completely different
+   next steps. Writes nothing to the DB.
+
+**What is left, in order:**
+
+```sh
+# 1. Deploy the collector change to the always-on VM and run the two migrations.
+#    (The app container bind-mounts the checkout; migrations run on boot via the
+#    compose command, so updating the checkout and restarting `app` is enough.)
+
+# 2. Confirm the new columns/table are actually filling — this is the acceptance test.
+./scripts/gcp_data_collection_stats.sh
+#    §2  with_event_time climbing from 0 on new rows
+#    §2b p50/p95 skew — the first real measurement of collection jitter we have ever had
+#    §9  long_short_ratios: ~30d of existence within minutes of boot (the backfill),
+#        then growing; missing_top/global/taker small
+
+# 3. Answer B4.3. One run, ~1 minute; a "blocked" verdict is a real answer, not a retry.
+./scripts/gcp_depth_ws_test.sh --seconds 60
+```
+
+**Bring back:** the §2b skew table (this is new information about our own data, not just a health
+check), the §9 row counts and date span, and B4.3's verdict line. Record the verdict here — if it is
+`WS_BLOCKED` or `DEPTH_BLOCKED`, the 5s REST cadence is the permanent fidelity ceiling for this
+project and §1.2's fee-wall arithmetic is the only lever left at short horizons.
 
 ## §3 — WHAT TO BRING BACK (for a fresh session)
 
@@ -399,6 +439,9 @@ Results are analyzed in a fresh session for token hygiene, so each step's output
   `n_trades` on every row, verdict against §4.2.
 - **B3:** fixed-coverage P&L at every horizon, `dir_acc`/LB/`n_dir`, calibration bins, loaded sample
   count and window, feature importances, verdict against §4.3.
+- **B4:** `gcp_data_collection_stats.sh` §2b (the p50/p95 `ts - event_time` skew — genuinely new
+  information about our own data) and §9 (`long_short_ratios` span and row counts), plus
+  `gcp_depth_ws_test.sh`'s verdict line. B4 has no gate: it is collection, not evidence.
 
 Fetch training-style logs the usual way — `./scripts/gcp_logs.sh > logs/<name>.log`, never `--save`.
 `gcp_audit.sh` and `gcp_gbt.sh` have their own `--fetch` / `--log` modes (§2).
@@ -471,5 +514,6 @@ recorded. Do not open a B5.
   document launches one, which is the main reason the two wavefronts do not collide.
 - **B0 is shared work**: build it as M3-0b's side-table with book columns added, and both plans are
   served by one export. If M3 gets there first, B0 is a column addition rather than a new step.
-- Sequencing recommendation: start **B4 now** (unrecoverable data), do **B0** whenever M3-0b comes
-  up, then **B1**, then **B2** once M3-0a's harness exists. B3 only on B1's gate.
+- Sequencing recommendation: **B4 is written — deploy it** (unrecoverable data; it collects nothing
+  until it is on the VM), do **B0** whenever M3-0b comes up, then **B1**, then **B2** once M3-0a's
+  harness exists. B3 only on B1's gate.

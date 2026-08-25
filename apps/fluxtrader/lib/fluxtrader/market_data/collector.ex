@@ -10,6 +10,7 @@ defmodule FluxTrader.MarketData.Collector do
 
   alias FluxTrader.MarketData.{
     BookFeatures,
+    LongShortRatio,
     MarketTrade,
     OrderbookSnapshot,
     OrderbookLevel,
@@ -23,6 +24,26 @@ defmodule FluxTrader.MarketData.Collector do
   @book_interval_ms 5_000
   @trade_interval_ms 5_000
   @slow_interval_ms 60_000
+  @ratio_interval_ms 60_000
+
+  # Positioning / sentiment ratios (B4.2, docs/BOOK_ERA_PLAN.md).
+  #
+  # The exchange's minimum granularity is 5m and it retains only ~30 days, so:
+  #   * polling faster than the bucket only refreshes the still-forming bucket,
+  #     which is why the poll upserts rather than inserts;
+  #   * the one-time backfill below is the ONLY chance to capture the ~30 days
+  #     that already exist. After that, history accrues only because we poll.
+  @ratio_period "5m"
+  # Last few buckets each poll: cheap, and it lets a bucket that was still
+  # forming when we first saw it be corrected once it closes.
+  @ratio_poll_limit 3
+  @ratio_backfill_days 30
+  # Exchange cap on `limit` for /futures/data/*.
+  @ratio_backfill_page 500
+  # Politeness pause between backfill pages — the backfill is ~18 pages x 3
+  # endpoints x n_pairs and must not crowd out the 5s book/trade polls' rate
+  # budget. It runs off-process (Task.Supervisor), so this sleep blocks nothing.
+  @ratio_backfill_sleep_ms 200
 
   # Depth levels to fetch per book poll. Fetch DEEP for the lossless raw ladder
   # (OrderbookLevel); the compressed scalar features stay pinned to the top 20 in
@@ -40,7 +61,12 @@ defmodule FluxTrader.MarketData.Collector do
 
     state = %{
       pairs: pairs,
-      last_trade_ids: %{}
+      last_trade_ids: %{},
+      # Pairs whose one-time ~30-day ratio backfill has already been kicked off.
+      # Guards against re-running it every time the whitelist changes.
+      ratio_backfilled: MapSet.new(),
+      # Monitor ref of the in-flight ratio poll, or nil. See start_ratio_poll/1.
+      ratio_poll: nil
     }
 
     Phoenix.PubSub.subscribe(FluxTrader.PubSub, "settings:whitelist")
@@ -51,6 +77,7 @@ defmodule FluxTrader.MarketData.Collector do
     Process.send_after(self(), :poll_trades, 2_000)
     Process.send_after(self(), :poll_slow, 3_000)
     Process.send_after(self(), :poll_candles, 4_000)
+    Process.send_after(self(), :poll_ratios, 5_000)
 
     Logger.info("MarketData.Collector started for #{inspect(pairs)}")
     {:ok, state}
@@ -83,7 +110,7 @@ defmodule FluxTrader.MarketData.Collector do
     end)
 
     Logger.info("Historical backfill complete")
-    {:noreply, state}
+    {:noreply, backfill_ratios_async(state)}
   end
 
   @impl true
@@ -147,6 +174,16 @@ defmodule FluxTrader.MarketData.Collector do
 
     Process.send_after(self(), :poll_candles, @slow_interval_ms)
     {:noreply, state}
+  end
+
+  def handle_info(:poll_ratios, state) do
+    state = sync_pairs(state)
+    Process.send_after(self(), :poll_ratios, @ratio_interval_ms)
+    {:noreply, state |> start_ratio_poll() |> backfill_ratios_async()}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{ratio_poll: ref} = state) do
+    {:noreply, %{state | ratio_poll: nil}}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -279,6 +316,8 @@ defmodule FluxTrader.MarketData.Collector do
         attrs = %{
           symbol: symbol,
           ts: DateTime.utc_now() |> DateTime.truncate(:microsecond),
+          # Exchange clock alongside the local one (B4.1). `ts` is unchanged.
+          event_time: ms_to_dt(Map.get(data, "time")),
           mark_price: to_f(Map.get(data, "markPrice")),
           index_price: to_f(Map.get(data, "indexPrice")),
           last_funding_rate: to_f(Map.get(data, "lastFundingRate")),
@@ -303,6 +342,8 @@ defmodule FluxTrader.MarketData.Collector do
         attrs = %{
           symbol: symbol,
           ts: DateTime.utc_now() |> DateTime.truncate(:microsecond),
+          # Exchange clock alongside the local one (B4.1). `ts` is unchanged.
+          event_time: ms_to_dt(Map.get(data, "time")),
           open_interest: to_f(Map.get(data, "openInterest"))
         }
 
@@ -317,6 +358,199 @@ defmodule FluxTrader.MarketData.Collector do
         :ok
     end
   end
+
+  # --- Positioning / sentiment ratios (B4.2) --------------------------------
+  #
+  # Three /futures/data endpoints share one row per (symbol, exchange bucket ts,
+  # period). Each writes ONLY its own column group via `on_conflict: {:replace,
+  # ...}`, so one endpoint failing or lagging never blanks another's values, and
+  # re-polling a still-forming bucket corrects it in place.
+
+  # Off the GenServer on purpose. This is 3 requests x n_pairs; run inline it can
+  # stall the loop for seconds and the 5s book poll slips with it — which would
+  # add exactly the collection jitter B4.1 exists to remove. The overlap guard
+  # keeps a slow exchange from piling up ticks; a skipped tick costs nothing,
+  # since each poll re-reads the last @ratio_poll_limit buckets anyway.
+  defp start_ratio_poll(%{ratio_poll: ref} = state) when is_reference(ref) do
+    Logger.debug("Ratio poll still in flight; skipping this tick")
+    state
+  end
+
+  defp start_ratio_poll(state) do
+    pairs = state.pairs
+
+    case Task.Supervisor.start_child(FluxTrader.TaskSupervisor, fn ->
+           Enum.each(pairs, &collect_ratios/1)
+         end) do
+      {:ok, pid} -> %{state | ratio_poll: Process.monitor(pid)}
+      _ -> state
+    end
+  end
+
+  defp collect_ratios(symbol) do
+    opts = [period: @ratio_period, limit: @ratio_poll_limit]
+
+    fetch_ratio(:top, symbol, opts) |> persist_ratios(:top, symbol)
+    fetch_ratio(:global, symbol, opts) |> persist_ratios(:global, symbol)
+    fetch_ratio(:taker, symbol, opts) |> persist_ratios(:taker, symbol)
+  end
+
+  defp fetch_ratio(:top, symbol, opts), do: Client.top_long_short_account_ratio(symbol, opts)
+  defp fetch_ratio(:global, symbol, opts), do: Client.global_long_short_account_ratio(symbol, opts)
+  defp fetch_ratio(:taker, symbol, opts), do: Client.taker_long_short_ratio(symbol, opts)
+
+  defp persist_ratios({:ok, rows}, kind, symbol) when is_list(rows) do
+    Enum.each(rows, &persist_ratio(kind, symbol, &1))
+  end
+
+  defp persist_ratios({:error, reason}, kind, symbol) do
+    Logger.warning("Ratio poll failed #{symbol}/#{kind}: #{inspect(reason)}")
+  end
+
+  defp persist_ratios(_, _kind, _symbol), do: :ok
+
+  defp persist_ratio(:top, symbol, row) do
+    upsert_ratio(
+      %{
+        top_long_short_ratio: to_f_or_nil(Map.get(row, "longShortRatio")),
+        top_long_account: to_f_or_nil(Map.get(row, "longAccount")),
+        top_short_account: to_f_or_nil(Map.get(row, "shortAccount"))
+      },
+      symbol,
+      Map.get(row, "timestamp"),
+      [:top_long_short_ratio, :top_long_account, :top_short_account]
+    )
+  end
+
+  defp persist_ratio(:global, symbol, row) do
+    upsert_ratio(
+      %{
+        global_long_short_ratio: to_f_or_nil(Map.get(row, "longShortRatio")),
+        global_long_account: to_f_or_nil(Map.get(row, "longAccount")),
+        global_short_account: to_f_or_nil(Map.get(row, "shortAccount"))
+      },
+      symbol,
+      Map.get(row, "timestamp"),
+      [:global_long_short_ratio, :global_long_account, :global_short_account]
+    )
+  end
+
+  defp persist_ratio(:taker, symbol, row) do
+    upsert_ratio(
+      %{
+        taker_buy_sell_ratio: to_f_or_nil(Map.get(row, "buySellRatio")),
+        taker_buy_vol: to_f_or_nil(Map.get(row, "buyVol")),
+        taker_sell_vol: to_f_or_nil(Map.get(row, "sellVol"))
+      },
+      symbol,
+      Map.get(row, "timestamp"),
+      [:taker_buy_sell_ratio, :taker_buy_vol, :taker_sell_vol]
+    )
+  end
+
+  defp upsert_ratio(values, symbol, timestamp_ms, replace_fields) do
+    case ms_to_dt(to_int(timestamp_ms)) do
+      nil ->
+        :ok
+
+      ts ->
+        attrs = Map.merge(values, %{symbol: symbol, ts: ts, period: @ratio_period})
+
+        %LongShortRatio{}
+        |> LongShortRatio.changeset(attrs)
+        |> Repo.insert(
+          on_conflict: {:replace, replace_fields},
+          conflict_target: [:symbol, :ts, :period]
+        )
+        |> case do
+          {:ok, _} -> :ok
+          {:error, cs} -> Logger.debug("Ratio insert rejected #{symbol}: #{inspect(cs.errors)}")
+        end
+    end
+  end
+
+  # One-time capture of the ~30 days the exchange still holds. Runs off the
+  # GenServer (Task.Supervisor) because it is ~18 pages x 3 endpoints x n_pairs
+  # with a politeness sleep between pages — blocking the collector loop for that
+  # long would stall the 5s book/trade polls.
+  defp backfill_ratios_async(state) do
+    case Enum.reject(state.pairs, &MapSet.member?(state.ratio_backfilled, &1)) do
+      [] ->
+        state
+
+      new_pairs ->
+        Logger.info("Backfilling #{@ratio_backfill_days}d of long/short ratios for #{inspect(new_pairs)}")
+
+        Task.Supervisor.start_child(FluxTrader.TaskSupervisor, fn ->
+          # Serial across pairs and endpoints on purpose: concurrent pages would
+          # multiply the request rate by n_pairs against a shared IP budget.
+          Enum.each(new_pairs, &backfill_ratios/1)
+          Logger.info("Long/short ratio backfill complete for #{inspect(new_pairs)}")
+        end)
+
+        %{state | ratio_backfilled: MapSet.union(state.ratio_backfilled, MapSet.new(new_pairs))}
+    end
+  end
+
+  defp backfill_ratios(symbol) do
+    now_ms = System.system_time(:millisecond)
+    start_ms = now_ms - @ratio_backfill_days * 86_400_000
+
+    Enum.each([:top, :global, :taker], fn kind ->
+      try do
+        backfill_ratio_kind(symbol, kind, start_ms, now_ms)
+      rescue
+        e -> Logger.warning("Ratio backfill crashed #{symbol}/#{kind}: #{Exception.message(e)}")
+      catch
+        :exit, reason -> Logger.warning("Ratio backfill exit #{symbol}/#{kind}: #{inspect(reason)}")
+      end
+    end)
+  end
+
+  # Pages BACKWARD, and that is not a style choice. Verified against the live
+  # endpoint 2026-08-24: given startTime 30d ago, endTime now and limit 500, it
+  # returns the 500 buckets ending at endTime (~42h) — it does NOT return the
+  # oldest 500 from startTime. Paging forward from startTime therefore never
+  # reaches the past and would silently capture only the last ~42h of a window we
+  # get exactly one chance to collect. So walk endTime down instead.
+  defp backfill_ratio_kind(symbol, kind, start_ms, end_ms) when start_ms < end_ms do
+    opts = [
+      period: @ratio_period,
+      limit: @ratio_backfill_page,
+      start_time: start_ms,
+      end_time: end_ms
+    ]
+
+    case fetch_ratio(kind, symbol, opts) do
+      {:ok, rows} when is_list(rows) and rows != [] ->
+        Enum.each(rows, &persist_ratio(kind, symbol, &1))
+
+        timestamps =
+          rows
+          |> Enum.map(&to_int(Map.get(&1, "timestamp")))
+          |> Enum.reject(&is_nil/1)
+
+        Process.sleep(@ratio_backfill_sleep_ms)
+
+        # Drop end_ms strictly below the oldest bucket seen, so the window shrinks
+        # on every recursion and this terminates (the start_ms < end_ms guard is
+        # the floor). A short page means the window is exhausted — the exchange
+        # has no more history.
+        cond do
+          timestamps == [] -> :ok
+          length(rows) < @ratio_backfill_page -> :ok
+          true -> backfill_ratio_kind(symbol, kind, start_ms, Enum.min(timestamps) - 1)
+        end
+
+      {:error, reason} ->
+        Logger.warning("Ratio backfill failed #{symbol}/#{kind}: #{inspect(reason)}")
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp backfill_ratio_kind(_symbol, _kind, _start_ms, _end_ms), do: :ok
 
   defp collect_candles(symbol, interval) do
     case Client.klines(symbol, interval, limit: 5) do
@@ -401,4 +635,33 @@ defmodule FluxTrader.MarketData.Collector do
   end
 
   defp to_f(_), do: 0.0
+
+  # Ratio columns are documented as "nil = that endpoint has not answered for this
+  # bucket". to_f/1 would turn a missing field into a confident 0.0 and quietly
+  # break that reading, so ratio values go through this instead.
+  defp to_f_or_nil(nil), do: nil
+  defp to_f_or_nil(v) when is_float(v), do: v
+  defp to_f_or_nil(v) when is_integer(v), do: v * 1.0
+
+  defp to_f_or_nil(v) when is_binary(v) do
+    case Float.parse(v) do
+      {f, _} -> f
+      :error -> nil
+    end
+  end
+
+  defp to_f_or_nil(_), do: nil
+
+  # Unlike to_f/1 this returns nil rather than 0 on garbage: a missing exchange
+  # timestamp must skip the row, not become 1970.
+  defp to_int(v) when is_integer(v), do: v
+
+  defp to_int(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {int, _} -> int
+      :error -> nil
+    end
+  end
+
+  defp to_int(_), do: nil
 end
