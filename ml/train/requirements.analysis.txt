@@ -1,0 +1,14 @@
+# Offline analysis deps for the M3 policy work (docs/M3_PLAN.md §0.3).
+#
+# M3 reads the `eval_preds.parquet` dumps every eval run writes and decides things on
+# already-computed predictions, so it needs NO torch, no DB driver and no GPU — which is
+# why it gets its own image instead of the 5.6GB `ml_trainer` one. Everything still runs
+# in Docker; nothing is ever installed on the host.
+#
+# pandas is held below 3.0 deliberately: `reaggregate_preds.py` and the M3 backtester
+# duplicate `eval_m2.py`/`gate.py` semantics and must keep reproducing their published
+# tables to the digit, so the dataframe layer is pinned to the major version those
+# numbers were produced under.
+numpy>=1.26.0,<3.0.0
+pandas>=2.1.0,<3.0.0
+pyarrow>=14.0.0

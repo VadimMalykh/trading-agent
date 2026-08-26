@@ -81,6 +81,22 @@ services:
       postgres:
         condition: service_healthy
 
+  # Torch-free image for the M3 offline policy work (docs/M3_PLAN.md §2). It reads the
+  # eval_preds.parquet dumps under ml/train/output/eval_dumps and needs no DB and no GPU,
+  # so unlike ml_trainer it has no `depends_on`. Wrapped by scripts/m3.sh.
+  ml_analysis:
+    build:
+      context: ./ml/train
+      dockerfile: Dockerfile.analysis
+    image: trading_agent-ml_analysis:latest
+    environment:
+      OUTPUT_DIR: /workspace/train/output
+    working_dir: /workspace/train
+    volumes:
+      - ./ml/train:/workspace/train
+    profiles:
+      - ml
+
   ml_trainer:
     build:
       context: ./ml/train

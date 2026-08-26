@@ -1,6 +1,6 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** Not started. Blocked only on §2 R0 of [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) (a 5-minute promote).
+**Status:** In progress — **M3-0a is complete and its acceptance tests pass** (§0.0). Unblocked: R0 promoted 2026-08-26.
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
 **Related:** [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
@@ -9,6 +9,94 @@
 milestone; it holds only what is currently true and actionable. When a step's conclusions
 are superseded, move the narrative to `docs/archive/TRAINING_HISTORY.md` and carry the
 surviving conclusion forward — do not append a contradicting section.*
+
+---
+
+## §0.0 — STATUS: RESUME HERE
+
+*This block is the session-to-session handoff. It holds only what is true **now**: what is
+done, what the next command is, and what to bring back. When a step closes, its narrative
+moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
+never left here contradicting a later result.*
+
+**Last updated: 2026-08-26.**
+
+### Where the work stands
+
+| step | state |
+|---|---|
+| **R0** (the blocker) | ✅ promoted 2026-08-26 — seed 2 served at gate 0.6311 |
+| **M3-0a** — regime harness + policy backtester | ✅ **built, and both acceptance tests pass** |
+| **M3-0b** — price/funding side-table | ⬜ not started, and not needed until barrier exits are wanted |
+| **M3-1** — pre-registered protocol | ⬜ **this is the next step**, and no search may run before it |
+| **M3-2** — rules baseline | ⬜ not started |
+| **M3-3** — learned policy | ⬜ not started |
+
+### How to run anything in M3
+
+🔴 **Everything runs in Docker — nothing is installed on the host, including for
+"just a pandas script".** M3 uses its own torch-free image (`ml/train/Dockerfile.analysis`,
+compose service `ml_analysis`, ~200MB, builds in seconds) because it needs no torch, no DB
+and no GPU. `scripts/m3.sh` wraps it and builds it on first use:
+
+```sh
+./scripts/m3.sh -m m3 validate          # the two acceptance tests — run first, always
+./scripts/m3.sh -m m3 policy --help     # score one policy spec
+./scripts/m3.sh --shell                 # interactive
+```
+
+`ml/train` is bind-mounted into the container, so host edits take effect with no rebuild.
+The four prediction dumps live in `ml/train/output/eval_dumps/` (gitignored, ~125MB); if
+they are missing, re-fetch them:
+
+```sh
+mkdir -p ml/train/output/eval_dumps
+for RUN in 20260818T185438Z 20260819T142759Z 20260820T025723Z 20260822T012619Z; do
+  gcloud storage cp "gs://fluxtrader-train-artifacts/eval/$RUN/eval_preds.parquet" \
+    "ml/train/output/eval_dumps/eval_preds_$RUN.parquet"
+done
+```
+
+### What M3-0a established (2026-08-26)
+
+**Both acceptance tests pass, so the harness is trustworthy and §1.4's risk #6 is closed.**
+
+1. **Fixed-coverage reproduction: 15 of 15 cells match to the digit.** Every seed at every
+   coverage reproduces the trainer's own logged `trades / gross_bps / win` — and the pooled
+   trade-weighted table reproduces §1.3 exactly (1,081 / 1,783 / 3,718 / 7,104 / 13,462
+   trades at +19.38 / +22.03 / +8.91 / +1.89 / −0.00 bps).
+2. **The regime ladder is rebuilt and reproduces §1.8.** Quintiles of `btc_absret_1d` over
+   the pooled cov05 trades: **−1.9 / −13.9 / +10.2 / +18.0 / +34.2** bps against the
+   published −3.4 / −15.3 / +10.1 / +17.4 / +35.5, with `dir_acc`
+   0.521 / 0.499 / 0.547 / 0.580 / 0.616 against 0.517 / 0.494 / 0.545 / 0.579 / 0.618.
+   The rebuild derives the Q5 boundary at **0.0432** (published 0.0431), selecting **5.218%**
+   of bars (published 5.2%). Per-seed Q5: +32.6 / +30.8 / +38.7 against +34.8 / +32.5 / +38.7.
+   The residual ≈1bps gap is 24 pooled trades whose 24h lookback is incomplete at the start
+   of the validation window; they are dropped rather than zero-filled.
+3. **`fwd_ret` compounding re-verified** at 6.34e-09 max abs difference (§1.8 reported 3.2e-7),
+   which is what licenses building every trailing observable from the dump instead of the DB.
+4. **A tie-handling decision, made explicitly.** `torch.topk` breaks confidence ties at the
+   coverage boundary in an order that is a kernel artifact and is not reproducible from
+   numpy — it is why `reaggregate_preds.py` books 1,222 trades / +9.43 where seed 3's log
+   says 1,223 / +9.60. The new harness selects **every bar at or above the k-th largest
+   confidence** (tie-inclusive, deterministic) and reproduces that cell too. Exactly one
+   boundary in 15 is contended, so this is a 1-trade-in-1,223 question — but it is now a
+   documented definition rather than an accident of which library ran.
+
+**A first look at what M3-2 is up against, from the same run.** Coverage 5% + top-quintile
+`btc_absret_1d` + max 3 concurrent positions, over the three pooled seeds, is 663 trades at
++30.04 gross / **+16.04 net at taker**, Sharpe 1.57, 1.11 trades/day. But per window it is
++18.5 / **−13.7** / +39.9 / +73.3 net at taker, and **the negative window holds 373 of the
+663 trades**. This is §1.8's caveat reproduced end-to-end on the new harness: the rule is
+excellent in three windows and loses money in the one where it fires hardest. It is not a
+result — no protocol has been pre-registered yet — but it is the reason M3-1 exists and it
+should be the first thing any candidate policy is measured against.
+
+### The next step, exactly
+
+**M3-1 — write and commit the evaluation protocol before running any search.** Nothing in
+the harness is allowed to be pointed at a parameter sweep until that file exists. See §2's
+M3-1 for what it must contain; §7 says what to bring back.
 
 ---
 
@@ -148,24 +236,25 @@ Two smaller ones worth carrying:
   long) while seeds 1 and 2 are balanced. Check long/short separately on whatever checkpoint
   is served; do not assume symmetry.
 
-### 1.4 🔴 What M2 does NOT hand over — the Q1 harness was never committed
+### 1.4 ✅ The Q1 harness was never committed — so M3-0a rebuilt it, and it is committed now
 
-`btc_absret_1d` appears **only in `docs/`**. The script that computed the regime observables,
-ran the AUC and quintile tables, and produced §1.8's numbers is not in the repository —
-`git log` shows the closing wave committed `reaggregate_preds.py` and nothing else.
+For the whole of M2, `btc_absret_1d` existed **only in `docs/`**: the script that computed
+the regime observables and produced §1.8's numbers was never in the repository. That was
+this milestone's risk #6, because every policy in M3 is built on top of it.
 
-**M3-0a therefore has to rebuild it, and rebuilding it is the first task, not a preliminary.**
-The construction is documented well enough to reproduce: `fwd_ret` at horizon *h*, shifted
-back *h* minutes, is a lookahead-free trailing return, and the three horizons compound
-exactly (verified to 3.2e-7), so every observable Q1 tested was derived from the dump itself
-with no DB round-trip.
+It is now `ml/train/m3/regime.py`, and it is pinned by an acceptance test rather than by
+trust: `ml/train/m3/validate.py` reproduces §1.8's published quintile ladder and the 4.31%
+threshold from the dumps alone (see §0.0 for the numbers). The construction is the one §1.8
+describes — `fwd_ret` at horizon *h*, shifted back *h* minutes, is a lookahead-free trailing
+return, and the horizons compound to 6.34e-09, so no DB round-trip is needed.
 
-⚠️ **Re-validate it against the published table before trusting it**, exactly the way
-`reaggregate_preds.py --validate` earns its keep: the rebuilt harness must reproduce
-§1.8's cov05 quintile ladder for `btc_absret_1d` (−3.4 / −15.3 / +10.1 / +17.4 / +35.5,
-`dir_acc` 0.517 / 0.494 / 0.545 / 0.579 / 0.618) and the +24.50 / +22.11 / +3.50 fixed-
-coverage figures. If it does not, fix the harness before believing any policy number
-built on top of it.
+⚠️ **Only `btc_absret_1d` is pinned.** `regime.py` also rebuilds `btc_ret_1d`, `btc_ret_7d`,
+`btc_sign_1d`, `rv_1d/7d/30d`, `xs_disp_4h` and `mean_conf_1d` so the AUC table can be
+re-derived as a cross-check, but their definitions are reconstructions and no test holds
+them in place. **`xs_corr_1d` and `xs_corr_7d` are not rebuilt at all.** Do not condition a
+policy on any of them without first reproducing §1.8's AUC column for it. §1.8's own reading
+is that none of them is worth conditioning on anyway — they were U-shaped, seed-unstable or
+flat — so this is a gap in the cross-check, not in the policy's toolkit.
 
 ---
 
@@ -174,32 +263,47 @@ built on top of it.
 Strictly ordered. Each step's output is the next step's input, and the ordering is the
 protection against the failure mode in §0.4.
 
-### M3-0a — Rebuild the regime harness and turn it into a policy backtester
+### M3-0a — ✅ DONE (2026-08-26). The harness exists and is validated.
 
-**No new data. No GPU. Pure `pandas`.**
+**What was built,** all of it in the torch-free `ml_analysis` container (§0.0 says how to
+run it):
 
-Extend `ml/train/reaggregate_preds.py`'s approach (it already has `wilson_lower_bound`,
-`serial_pnl`, `report`, and fixed-coverage logic) into an event-driven simulator over the
-three prediction dumps.
+| file | what it is |
+|---|---|
+| `ml/train/m3/dumps.py` | loading and **pooling** the per-seed dumps; the calendar windows; the BASE8 universe |
+| `ml/train/m3/regime.py` | the rebuilt Q1 observables (§1.4) and the compounding check |
+| `ml/train/m3/backtest.py` | the event-driven simulator — `PolicySpec` is the full list of the policy's degrees of freedom |
+| `ml/train/m3/metrics.py` | P&L at both fee levels, drawdown, daily Sharpe, per-window and long/short splits |
+| `ml/train/m3/validate.py` | **the two acceptance tests.** Run before believing any number |
+| `ml/train/m3/cli.py` | `python -m m3 validate` / `python -m m3 policy` |
+| `ml/train/Dockerfile.analysis`, `scripts/m3.sh` | the container everything runs in |
 
-Must support, because these are the policy's actual degrees of freedom:
+**Every degree of freedom §M3-0a called for is supported**: entry by coverage rank (never by
+a confidence constant), serial positions per (seed, pair), time-based exits, both fee levels
+side by side, a portfolio-wide concurrency cap, regime conditioning with the threshold
+derived as a quantile of *bars*, and regime-scaled sizing.
 
-- **Entry by coverage rank**, not absolute confidence (§1.3.3).
-- **Per-pair serial positions** — `simulate_pnl`'s existing rule: ignore new signals while a
-  position is open, so overlapping entries are not double-counted.
-- **Explicit exits.** At this step: time-based only (hold N bars). Barrier exits are M3-0b.
-- **Fees at both 5bps maker and 14bps taker**, reported side by side. Never one number.
-- **Concurrent-position caps** across pairs — the current `simulate_pnl` is per-pair and
-  unbounded in aggregate, which is not a tradeable portfolio.
-- **Regime conditioning** on the rebuilt observables.
-- **Reporting:** net bps/trade, trades/day, max drawdown, daily Sharpe, and a **per-calendar-
-  window breakdown** (§M3-1 depends on this).
+**Three constraints the implementation makes explicit**, each of which a future session
+should not have to rediscover:
 
-🔴 **Acceptance test, and it is not optional:** with the trivial policy "enter when gated at
-coverage *c*, hold 48 bars, exit", it must reproduce NEXT_TRAINING_PLAN §1.3's fixed-
-coverage table **to the digit**. That reproduction is the only evidence the harness has not
-drifted from `eval_m2.py`/`gate.py`, whose definitions it deliberately duplicates. It is the
-same discipline that made Q1 and `reaggregate_preds.py` credible, and it costs one afternoon.
+1. 🔴 **Exits can only land on 60 / 240 / 1440 minutes**, because those are the horizons the
+   dump carries `fwd_ret` for. `--hold-horizon` selects among them (a 4h signal held 1h is a
+   legitimate policy). Any other hold length — and every stop, take-profit or trailing exit —
+   needs M3-0b's price table. The simulator refuses rather than approximating, because a
+   barrier policy scored against a fixed-horizon return is exactly the C4b mismatch.
+2. **Pooling is concatenation keyed on the seed, never a merge.** Two seeds gating the same
+   bar are two observations, and one seed's open position must not block another's entry.
+3. **Coverage selection is tie-inclusive** — every bar at or above the k-th largest
+   confidence — so the slice is deterministic and re-derivable instead of depending on
+   `torch.topk`'s kernel-level tie order (§0.0, point 4).
+
+**Acceptance test result: both pass.** 15/15 fixed-coverage cells to the digit, the pooled
+§1.3 table exactly, and §1.8's regime ladder within ≈1bps. Numbers are in §0.0.
+
+**Still open inside M3-0a's scope, and deliberately deferred:** `xs_corr_1d` / `xs_corr_7d`
+are not rebuilt (§1.4), and O8's 12-pair dump is downloaded but not yet folded into a pooled
+search population (§5) — that decision belongs with M3-1's protocol, since it changes the
+sample the search runs on.
 
 ### M3-0b — The price/funding side-table (only when barrier exits are actually wanted)
 
@@ -357,7 +461,7 @@ collapse" framing was superseded). Read it for the quantile decision and its rat
 | 3 | **The regime rule is not uniform in time** | fails in window 2, where 47% of its trades live (§1.8) | never report pooled; require it to survive walk-forward |
 | 4 | **Sample size is the binding constraint** | ~3,700 cov05 trades is thin for a policy search | see §5 — the 12-pair dump is free power |
 | 5 | **Calibration drift on a future checkpoint** | policy consumes `p_up`; three levers have already broken the scale | rank-based conditioning (§1.3.3); re-check brier on any new checkpoint |
-| 6 | **The Q1 harness is unrecoverable / mis-rebuilt** | it is the foundation of the whole milestone and it is not in git (§1.4) | reproduce §1.8's published table before building on it |
+| ~~6~~ | ~~**The Q1 harness is unrecoverable / mis-rebuilt**~~ | ✅ **closed 2026-08-26** — rebuilt as `ml/train/m3/regime.py` and pinned by an acceptance test that reproduces §1.8's ladder (§1.4, §0.0) | — |
 
 ---
 
@@ -385,9 +489,10 @@ NEXT_TRAINING_PLAN §2.
 
 From PLAN.md, sharpened with what M2 measured:
 
-- [ ] The backtester reproduces §1.3's fixed-coverage table to the digit under a trivial
-      fixed-hold policy (M3-0a acceptance test).
-- [ ] The rebuilt regime harness reproduces §1.8's published quintile ladder (§1.4).
+- [x] The backtester reproduces §1.3's fixed-coverage table to the digit under a trivial
+      fixed-hold policy (M3-0a acceptance test) — **done 2026-08-26, 15/15 cells** (§0.0).
+- [x] The rebuilt regime harness reproduces §1.8's published quintile ladder (§1.4) —
+      **done 2026-08-26** (§0.0).
 - [ ] A rules baseline (M3-2) is positive **net of taker fees in the worst calendar window**,
       not just pooled.
 - [ ] Any learned policy beats that baseline on the pre-registered rule, judged on the worst
@@ -403,28 +508,18 @@ From PLAN.md, sharpened with what M2 measured:
 *Results are deliberately analyzed in a fresh session for token hygiene, so a step is not
 finished until the artifacts below exist.*
 
-**Starting M3-0a — bring back:**
+**M3-0a is done** — its artifacts are in the repository and its numbers are in §0.0. Nothing
+to fetch. The dumps are already in `ml/train/output/eval_dumps/` and §0.0 carries the
+re-fetch command if that directory is ever empty.
+
+Any session that changes the harness must re-run and bring back:
 
 ```sh
-# the three seed dumps (no VM, no GPU; a throwaway venv with pandas pyarrow numpy is fine)
-for RUN in 20260818T185438Z 20260819T142759Z 20260820T025723Z; do
-  gcloud storage cp "gs://fluxtrader-train-artifacts/eval/$RUN/eval_preds.parquet" \
-    "/tmp/eval_preds_$RUN.parquet"
-done
-
-# O8's 12-pair dump — free extra trades to search on, and it is known to exist (§5).
-# `gcloud storage ls gs://fluxtrader-train-artifacts/eval/` gives the run id."
+./scripts/m3.sh -m m3 validate
 ```
 
-Then report:
-
-1. The **acceptance-test output**: the harness's fixed-coverage table next to §1.3's, and
-   whether they match to the digit. If they do not, that is the only finding that matters —
-   stop and fix it.
-2. The **rebuilt regime ladder** next to §1.8's published one (§1.4).
-3. Which run ids have dumps in the bucket, and the trade count O8's 12-pair dump adds to
-   the pooled cov05 sample (§5) — that number sets how much policy search the data can
-   actually support.
+If either test stops passing, **that is the only finding that matters** — stop and fix it
+before touching a policy number.
 
 **Finishing M3-1 — bring back** the committed protocol file: split definition, metric,
 decision rule, and the number of configurations that will be searched. Before any search
@@ -436,4 +531,5 @@ daily Sharpe, and long/short split. Pooled-only numbers are not a result.
 
 ---
 
-*Updated: 2026-08-24 — written at M2 freeze. Nothing in §2 has been started.*
+*Updated: 2026-08-26 — M3-0a complete and validated; M3-1 is next. §0.0 is the live status
+block and the only place that needs reading to resume.*

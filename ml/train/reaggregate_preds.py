@@ -19,11 +19,19 @@ P&L` blocks exactly. If it does not, the harness has drifted from the trainer an
 subset number it prints can be trusted.
 
 Usage:
-    gsutil cp gs://fluxtrader-train-artifacts/eval/<run_id>/eval_preds.parquet /tmp/
-    python ml/train/reaggregate_preds.py /tmp/eval_preds.parquet --validate
-    python ml/train/reaggregate_preds.py /tmp/eval_preds.parquet --pairs BASE8
+    gcloud storage cp gs://fluxtrader-train-artifacts/eval/<run_id>/eval_preds.parquet \
+        ml/train/output/eval_dumps/eval_preds_<run_id>.parquet
+    ./scripts/m3.sh reaggregate_preds.py output/eval_dumps/eval_preds_<run_id>.parquet --validate
+    ./scripts/m3.sh reaggregate_preds.py output/eval_dumps/eval_preds_<run_id>.parquet --pairs BASE8
 
-Requires only `pandas pyarrow numpy` — a throwaway venv is fine, this never runs on the VM.
+Needs only `pandas pyarrow numpy` and never runs on the VM — but like everything else in
+this project it runs in Docker, not on the host. Use the torch-free analysis container:
+
+    ./scripts/m3.sh reaggregate_preds.py output/eval_dumps/eval_preds_<run_id>.parquet --validate
+
+Note that its `torch.topk`-free tie-breaking differs from the trainer's at a contended
+coverage boundary; `ml/train/m3/backtest.py` documents the case and takes the tie-inclusive
+definition instead.
 """
 import argparse
 

@@ -1,0 +1,14 @@
+"""M3 — the trading policy: offline backtesting over M2's prediction dumps.
+
+Everything here runs in the torch-free `ml_analysis` container (see scripts/m3.sh); it
+reads `eval_preds.parquet` and never touches the DB, a checkpoint or a GPU. The plan this
+implements is docs/M3_PLAN.md; §0.0 of that file is the live status block.
+
+Layout:
+    dumps.py     load and pool the per-seed prediction dumps
+    regime.py    rebuild the Q1 regime observables from the dumps themselves
+    backtest.py  the event-driven policy simulator
+    metrics.py   P&L / drawdown / Sharpe / calendar-window reporting
+    validate.py  the acceptance tests — run these before believing any policy number
+    cli.py       `python -m m3 <subcommand>`
+"""

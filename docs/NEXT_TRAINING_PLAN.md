@@ -5,10 +5,11 @@ negative, the pre-registered exit condition fired, and **M2 is frozen at the §1
 Preceded by R1, and by the Q-wave: Q0 gate derivation, Q1 regime analysis, Q2 ensemble,
 Q3 feature expansion).
 
-🔴 **If you are picking this up cold: there is one open action (§2 R0, a re-run of the
-promote — the 2026-08-24 attempt shipped seed 2 at gate 0.55 instead of its measured
-0.6311) and then all work moves to M3.** There are no M2 experiments left to run, and
-M3 is planned in **`docs/M3_PLAN.md`**, not here.
+🟢 **If you are picking this up cold: M2 is done and this document has no open actions.**
+The promote (§2 R0) shipped seed 2 at its measured gate on 2026-08-26. **All work is now in
+M3, planned and tracked in `docs/M3_PLAN.md`** — start at that file's §0.0 status block,
+not here. This document remains the reference for what M2 measured and for the standing
+rules in §0; it is no longer where anything gets queued.
 
 **One parallel wavefront exists: `docs/BOOK_ERA_PLAN.md`** (the B-wave, opened 2026-08-24).
 It does not reopen M2 and it queues no `gcp_train.sh` run. It is a measurement-first
@@ -56,14 +57,16 @@ first-class acceptance criterion: M3 consumes probabilities, so a model that ran
 while emitting meaningless probabilities (P2, §1.4) has not improved.
 
 **How to use this doc:** if you are picking this up cold, the fastest path is
-**§1.0 (plain-language state of play — no jargon, no §0 required)** → §2's R0 (the promote)
-→ **`docs/M3_PLAN.md`**, which is where the work continues. Read §1.1, §0.3 and §0.6 when you need to know *why* the numbers are read
+**§1.0 (plain-language state of play — no jargon, no §0 required)** →
+**`docs/M3_PLAN.md` §0.0**, which is where the work continues and where current status
+lives. Read §1.1, §0.3 and §0.6 when you need to know *why* the numbers are read
 the way they are, or before you rank two runs against each other. §1.9 is the wave that
 closed M2; §0 exists to stop a future session re-running what it already refuted.
 
 - §0 — standing rules. Read before touching anything. Every rule cost us a real run.
 - §1 — where we are, in numbers. The current reference points.
-- §2 — **the run queue.** This is the "what do I type" section. It is now one promote.
+- §2 — **the run queue.** Empty: M2 is frozen and the promote is done. M3's queue is in
+  `docs/M3_PLAN.md`.
 - §3 — what to bring back so a fresh session can decide.
 - §4 — results ledger (one row per run, with a validity flag).
 - §5 — levers that are closed, and why. Don't re-propose these.
@@ -830,7 +833,7 @@ queue text, with the verdict bands each run was judged against, is in
 
 | item | what | cost | needs a GPU? |
 |---|---|---|---|
-| **R0** | 🔴 **re-run the promote — the 2026-08-24 attempt shipped seed 2 at gate 0.55 instead of 0.6311; script fixed, still the only open action** | promote only | no |
+| ~~R0~~ | ✅ **done 2026-08-26 — seed 2 is served at its measured gate 0.6311.** The 2026-08-24 wrong-gate incident and the `gcp_promote.sh` fixes it produced are in `docs/archive/TRAINING_HISTORY.md` | — | — |
 | ~~O8~~ | ❌ ran 2026-08-22, flat — data volume is not the constraint (§1.9) | — | — |
 | ~~R2~~ | ❌ ran 2026-08-23, negative — economics worse, calibration destroyed (§1.9) | — | — |
 | ~~R3a / R3b~~ | ❌ ran 2026-08-23, both flat — capacity is not the constraint (§1.9) | — | — |
@@ -847,53 +850,28 @@ the only one that ever moved was 15m → 5m. The single condition that reopens M
 order-book history deep enough to sit inside the *training* window, which is a calendar
 problem (≈2027, see §5's O5 row), not a modelling one.
 
-### R0 — promote seed 2. Ran 2026-08-24, shipped at the WRONG GATE, must be re-run.
+### R0 — promote seed 2. ✅ Done 2026-08-26; nothing to run here.
 
-Q2 settled which checkpoint: the ensemble is **not** better than its best member, so the
-pre-registered "drop the idea, promote seed 2" branch fires. Q0 already measured seed 2's
-gate, and because `--eval-only` never pushes a checkpoint that gate is **not** in the
-bucket copy — it must be passed explicitly.
+**What is served now:** `m2_multi_20260819T142759Z_a186182b.pt` (seed 2) at
+**`ML_GATE_THRESHOLD=0.6311`**, the coverage-targeted gate Q0 derived for it — ~2%
+coverage, dir_acc 0.578, +18.68 gross bps/trade, +4.68 net at taker. `gcp_promote.sh`
+verifies the served `gate_threshold` against the value you asked for and exits non-zero if
+they differ, so a clean exit *is* the verification.
 
-🔴 **What actually happened on 2026-08-24.** The command below was run as written and the
-checkpoint *did* land, but `ML_GATE_THRESHOLD=0.6311` never reached the VM: it was set in
-the Mac's shell, while the remote `docker compose` interpolates `${ML_GATE_THRESHOLD}` from
-the **VM's own `.env`**, which carries `0.55`. Seed 2 therefore went live gating at **0.55**
-— not 0.6311, and not even the 0.58 fallback §1.5 warns about. The promote also aborted
-before printing `/health` (`curl: (56)`): `serve.py` binds its port before finishing
-`torch.load`, and `curl --retry` does not treat a connection reset as transient.
+Three operational facts outlive the promote itself:
 
-Both defects are fixed in `scripts/gcp_promote.sh`: the gate is now **persisted into the
-VM's `.env`** (so it also survives the next unrelated `docker compose up`), `app` is
-recreated alongside `ml_inference` when the gate changes because the Elixir signal gate
-reads the same variable, `/health` is polled rather than raced, and the script **exits
-non-zero unless the served `gate_threshold` equals the value you asked for.**
+- ⚠️ **`checkpoints/latest.pt` is R3b's checkpoint** (`m2_multi_20260823T135748Z_da7ef975.pt`,
+  the 32-unit arm). **Never promote `latest`** — name the checkpoint explicitly.
+- ⚠️ **Simulator output logged between 2026-08-24 and the 2026-08-26 re-run was produced at
+  gate 0.55**, a wider and unmeasured operating point. Treat that stretch as void; do not
+  let it become M3's first data.
+- **Why seed 2 and not O8's 12-pair model:** O8 is a single seed, its gate was never derived
+  under C13 against a held-out re-score, and it is not the checkpoint §1.3's banked numbers
+  describe. Adopting 12 pairs is a separate deployment change (next section).
 
-```sh
-./scripts/gcp_promote.sh --list
-ML_GATE_THRESHOLD=0.6311 \
-  ./scripts/gcp_promote.sh --checkpoint m2_multi_20260819T142759Z_a186182b.pt
-```
-
-**Verification is now the script's exit code**, not an eyeballed line: a clean exit means
-`/health` came back `ok=true` with `gate_threshold=0.6311`. ⚠️ Do **not** wait for
-`gate_source` on this promote — that field was added by C13 (commit `5b8a5e2`), and the
-promote deliberately pins serve code to the *checkpoint's own* commit, which for seed 2 is
-`a186182b` and predates it. On this deployment the number is the only evidence there is.
-⚠️ `checkpoints/latest.pt` is now **R3b's** checkpoint
-(`m2_multi_20260823T135748Z_da7ef975.pt`, the 32-unit arm). Never promote `latest`.
-
-**Anything the simulator logged between the 2026-08-24 promote and the re-run was produced
-at gate 0.55.** Seed 2's coverage at 0.55 has not been measured, but it is by construction
-*wider* than the 2% that 0.6311 realizes, and §1.3's table turns negative at taker cost
-somewhere between cov 0.02 and cov 0.05. Treat that stretch of sim output as void; do not
-let it become M3's first training data. (One `eval_m2.py --eval-only` on seed 2 would pin
-the exact coverage if it ever matters.)
-
-**Why seed 2 and not O8's 12-pair model,** even though 12 pairs is free (§1.9): O8 is a
-single seed, its gate has not been derived under C13 against a held-out re-score the way
-Q0 derived seed 2's, and it is not the checkpoint any of §1.3's banked numbers describe.
-Promote the banked model now; **adopting 12 pairs is a separate, later, deployment change**
-(next section) and it should not be bundled into the promote that unblocks M3.
+The 2026-08-24 wrong-gate incident — the env-var-never-reached-the-VM defect, the `/health`
+startup race, and the `gcp_promote.sh` changes that fixed both — is in
+`docs/archive/TRAINING_HISTORY.md`.
 
 ### The only M2 work left, and it is deployment, not research
 
@@ -1464,7 +1442,9 @@ duplicates so it can run locally without torch. It reproduced O8's table to the 
 (+24.76 / +23.63 / +6.85). If it ever does not, fix the script before believing any subset
 number it prints.
 
-Needs only `pandas pyarrow numpy`; a throwaway venv is fine. It never runs on the VM.
+Needs only `pandas pyarrow numpy` and never runs on the VM — but it runs in Docker like
+everything else here, via `./scripts/m3.sh reaggregate_preds.py …` (M3_PLAN §0.0). Nothing
+is installed on the host.
 
 ### Related docs
 

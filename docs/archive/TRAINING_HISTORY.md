@@ -30,6 +30,65 @@ the time.
 
 ---
 
+## 2026-08-26 — R0, the promote, and the wrong-gate incident that preceded it (archived from §2)
+
+Archived when the promote completed: seed 2 is served at gate 0.6311 and the live plan now
+carries only the three operational facts that outlive the incident. The section below is
+the text as it stood while the re-run was still the one open action. It is worth keeping
+because the failure mode — a variable set in the Mac's shell that the remote
+`docker compose` never sees — is a property of the deployment path, not of that one run.
+
+### R0 — promote seed 2. Ran 2026-08-24, shipped at the WRONG GATE, must be re-run.
+
+Q2 settled which checkpoint: the ensemble is **not** better than its best member, so the
+pre-registered "drop the idea, promote seed 2" branch fires. Q0 already measured seed 2's
+gate, and because `--eval-only` never pushes a checkpoint that gate is **not** in the
+bucket copy — it must be passed explicitly.
+
+🔴 **What actually happened on 2026-08-24.** The command below was run as written and the
+checkpoint *did* land, but `ML_GATE_THRESHOLD=0.6311` never reached the VM: it was set in
+the Mac's shell, while the remote `docker compose` interpolates `${ML_GATE_THRESHOLD}` from
+the **VM's own `.env`**, which carries `0.55`. Seed 2 therefore went live gating at **0.55**
+— not 0.6311, and not even the 0.58 fallback §1.5 warns about. The promote also aborted
+before printing `/health` (`curl: (56)`): `serve.py` binds its port before finishing
+`torch.load`, and `curl --retry` does not treat a connection reset as transient.
+
+Both defects are fixed in `scripts/gcp_promote.sh`: the gate is now **persisted into the
+VM's `.env`** (so it also survives the next unrelated `docker compose up`), `app` is
+recreated alongside `ml_inference` when the gate changes because the Elixir signal gate
+reads the same variable, `/health` is polled rather than raced, and the script **exits
+non-zero unless the served `gate_threshold` equals the value you asked for.**
+
+```sh
+./scripts/gcp_promote.sh --list
+ML_GATE_THRESHOLD=0.6311 \
+  ./scripts/gcp_promote.sh --checkpoint m2_multi_20260819T142759Z_a186182b.pt
+```
+
+**Verification is now the script's exit code**, not an eyeballed line: a clean exit means
+`/health` came back `ok=true` with `gate_threshold=0.6311`. ⚠️ Do **not** wait for
+`gate_source` on this promote — that field was added by C13 (commit `5b8a5e2`), and the
+promote deliberately pins serve code to the *checkpoint's own* commit, which for seed 2 is
+`a186182b` and predates it. On this deployment the number is the only evidence there is.
+⚠️ `checkpoints/latest.pt` is now **R3b's** checkpoint
+(`m2_multi_20260823T135748Z_da7ef975.pt`, the 32-unit arm). Never promote `latest`.
+
+**Anything the simulator logged between the 2026-08-24 promote and the re-run was produced
+at gate 0.55.** Seed 2's coverage at 0.55 has not been measured, but it is by construction
+*wider* than the 2% that 0.6311 realizes, and §1.3's table turns negative at taker cost
+somewhere between cov 0.02 and cov 0.05. Treat that stretch of sim output as void; do not
+let it become M3's first training data. (One `eval_m2.py --eval-only` on seed 2 would pin
+the exact coverage if it ever matters.)
+
+**Why seed 2 and not O8's 12-pair model,** even though 12 pairs is free (§1.9): O8 is a
+single seed, its gate has not been derived under C13 against a held-out re-score the way
+Q0 derived seed 2's, and it is not the checkpoint any of §1.3's banked numbers describe.
+Promote the banked model now; **adopting 12 pairs is a separate, later, deployment change**
+(next section) and it should not be bundled into the promote that unblocks M3.
+
+
+---
+
 ## 2026-08-24 — the R/O-wave run queue, as it stood before it was executed
 
 **Superseded.** Every item below has now run: O8 (12 pairs), R2 (magnitude-weighted

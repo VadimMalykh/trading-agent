@@ -1,0 +1,21 @@
+# Torch-free image for the M3 offline policy work (docs/M3_PLAN.md §0.3, §2 M3-0a).
+#
+# The policy search is a search over decisions made on already-computed predictions, so
+# it needs only pandas/pyarrow/numpy. Building this separately from Dockerfile.train
+# keeps the loop fast (seconds to build, ~200MB) while honouring the project rule that
+# all development, analysis and tests run inside Docker.
+#
+# Usage is wrapped by scripts/m3.sh; the equivalent raw command is:
+#   docker run --rm -v "$PWD/ml/train:/workspace/train" -w /workspace/train \
+#     trading_agent-ml_analysis python reaggregate_preds.py <parquet> --validate
+FROM python:3.11-slim-bookworm
+
+WORKDIR /workspace/train
+
+COPY requirements.analysis.txt .
+RUN pip install --no-cache-dir -r requirements.analysis.txt
+
+ENV PYTHONUNBUFFERED=1
+ENV OUTPUT_DIR=/workspace/train/output
+
+CMD ["python", "-c", "import pandas, pyarrow, numpy; print('m3 analysis image ok')"]
