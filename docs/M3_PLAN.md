@@ -1,6 +1,7 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** In progress — **M3-0a, M3-1, M3-2 and M3-3 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar; the learned policy did not beat it, so that rule stands as M3's policy. Unblocked: R0 promoted 2026-08-26.
+**Status:** In progress — **M3-0a, M3-1, M3-2 and M3-3 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar; the learned policy did not beat it, so that rule stands as M3's policy. **Three items remain: M3-4 (maker-fee study — next), M3-0b (price/funding side-table), M3-5 (wire the rule to the executor).** Unblocked: R0 promoted 2026-08-26.
+**New to this document?** **§0.5** explains what we have in plain language — every term defined, the strategy in dollars, and a direct answer to "can it trade profitably yet?" (short version: the edge is real, but it is unproven at this size, half its economics rests on an untested fee assumption, and nothing is wired to the executor).
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
 **Related:** [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (**M3-3's own pre-registration — the fold structure and the 14 learned runs**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [M3_3_RESULTS.md](./M3_3_RESULTS.md) (**M3-3's full generated results — all 14 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
@@ -21,17 +22,23 @@ never left here contradicting a later result.*
 
 **Last updated: 2026-08-27 (M3-3 complete — the learned policy did not beat the rules baseline).**
 
+👉 **New here, or want this without the jargon?** Read **§0.5** — it defines every term
+(what a "basis point" is, what "14 bps" means, maker vs taker), says what the strategy is
+worth in dollars, and answers "can it trade profitably yet?" directly. The rest of this
+block assumes you have.
+
 ### Where the work stands
 
 | step | state |
 |---|---|
 | **R0** (the blocker) | ✅ promoted 2026-08-26 — seed 2 served at gate 0.6311 |
 | **M3-0a** — regime harness + policy backtester | ✅ **built, and both acceptance tests pass** |
-| **M3-0b** — price/funding side-table | ⬜ not started, and not needed until barrier exits are wanted |
 | **M3-1** — pre-registered protocol | ✅ **committed 2026-08-27 as [M3_PROTOCOL.md](./M3_PROTOCOL.md)**, before any search ran |
 | **M3-2** — rules baseline | ✅ **run 2026-08-27, all 40 configurations** — [M3_2_RESULTS.md](./M3_2_RESULTS.md). A baseline passes Tier 1 |
 | **M3-3** — learned policy | ✅ **run 2026-08-27, all 14 configurations** — [M3_3_RESULTS.md](./M3_3_RESULTS.md). **None beat the baseline; M3-2's rule stands as M3's policy** |
-| **the maker-fee study** (§3.3) | ⬜ **this is the next step** — ranked risk #2, and now the highest-value open item in the milestone |
+| **M3-4** — the maker-fee study (§3.3) | ⬜ **this is the next step** — ranked risk #2, and the highest-value open item in the milestone |
+| **M3-0b** — price/funding side-table | ⬜ not started — the only item that adds *new* evidence rather than re-slicing the same 253 days |
+| **M3-5** — wire the rule to the executor | ⬜ not started — the policy exists only offline; the live executor is an 86-line stub (§0.5.4) |
 
 ### How to run anything in M3
 
@@ -190,30 +197,72 @@ The honest reading of why: the learned policy was given four genuinely new obser
 anything. That is a real answer to a real question, and it cost one afternoon of laptop time
 rather than a wave of GPU runs.
 
-### The next step, exactly
+### The plan from here, in order
 
-**The maker-fee study (§3.3).** It was already the parallel item M3-2 rated above any further
-knob; with M3-3 closed it is simply the next step, and it is ranked risk #2.
+*Three items remain. They are listed in the order they should be done, and the reason for the
+order is that item 1 can invalidate published numbers, item 2 adds evidence item 1 cannot, and
+item 3 is worthless until we know what a fill actually costs.*
 
-Every M3-2 candidate roughly doubles at 5 bps — the winner is **+27.1 at maker against +15.0
-at taker** — so whether 5-bps fills are actually obtainable for these pairs and sizes is an
-untested assumption underwriting half the published economics. If maker fills are real the
-decision problem changes shape; if they are not, several M3-2 rows stop being interesting.
-It is measurable cheaply on the paper-sim stack ([SIMULATION.md](./SIMULATION.md)): quoted
-versus filled, queue position, and adverse selection on the fills that do arrive.
+#### 1. M3-4 — the maker-fee study 🔴 **NEXT** (§2 M3-4, ranked risk #2)
 
-**The second item, and it is the one that adds degrees of freedom rather than re-slicing the
-ones we have: M3-0b's price/funding side-table** (§M3-0b). It unlocks barrier exits (the open
-C4b mismatch), the funding term — signed, and real at a 4h hold — and the position-state
-observations M3-3 had to leave out of its vector for want of a price path. Build it in one
-pass with the book columns `BOOK_ERA_PLAN.md` B0 needs, so the two wavefronts share one
-alignment.
+**The question:** if we rest a limit order instead of crossing the spread, do we actually get
+filled — and at what real cost? Every M3-2 candidate roughly doubles at maker fees (the winner
+is **+27.1 at maker against +15.0 at taker**), so this untested assumption underwrites half the
+published economics. If maker fills are real the decision problem changes shape; if they are
+not, several M3-2 rows stop being interesting.
 
-**What M3-3 says NOT to do.** Do not widen the learned grid, extend the feature list, or
-reach for a larger model class — M3_3_PROTOCOL §4.1 and §7 pre-registered that a linear
-failure is not evidence a bigger model would succeed, and §D2's ablation is evidence in the
-opposite direction. Do not re-tune the M3-2 winner against the same evidence either. The
-binding constraint is ~220 independent trading days, and no rearrangement of them fixes that.
+🔴 **Do it offline, from data we already have — not on the live paper-sim stack.** §3.3 used to
+say "measure it on the paper-sim stack"; that is now known to be wrong, because
+`apps/fluxtrader/lib/fluxtrader/trading/executor.ex` cannot place a limit order at all (§0.5.4).
+Standing that up first would be days of order-simulation work before the first number arrives.
+
+The data to answer it is **already collected**: the collector has written **5-second L2 order-book
+ladders** (`orderbook_levels` — raw best-first `[price, qty]` arrays) plus 5-second trade
+aggregates with `high`/`low`/`buy_volume`/`sell_volume` (`market_trades`) since 2026-07-17.
+That is ~40 days, entirely inside the validation window, and it supports all three questions
+directly: **fill probability** (did the tape trade at or through our resting price inside the
+window), **queue position** (resting depth at our level against subsequent same-side volume),
+and **adverse selection** (which way the mid moved right after the fills we did get). It runs
+in the existing `ml_analysis` image via `scripts/m3.sh` — no GPU, no new stack, no orders.
+
+Take it in the milestone's established two-step order:
+
+- **M3-4a** — export the book/tape slice for the eight served pairs, then **pre-register** the
+  study: the fill definition, the queue model, the adverse-selection horizon, and the number
+  that decides whether maker economics are real. Commit it before any measurement, exactly as
+  M3-1 and M3-3a did.
+- **M3-4** — run it, and publish the **realized effective round-trip cost per pair** next to
+  the assumed 5 and 14 bps, then re-score the M3-2 grid at the measured cost.
+
+#### 2. M3-0b — the price/funding side-table (§2 M3-0b)
+
+The only remaining item that adds **degrees of freedom** rather than re-slicing the 253 days we
+have already spent. It unlocks barrier exits (the open C4b mismatch), the funding term — signed,
+and a real term in the P&L at a 4h hold — and the position-state observations M3-3 had to leave
+out of its vector for want of a price path.
+
+**Build it in one pass with the book columns `BOOK_ERA_PLAN.md` B0 needs**, so the two wavefronts
+share one alignment rather than risking two. M3-4a's export overlaps this one, so pulling the 5m
+candles and `funding_rates` in the same pass costs almost nothing extra.
+
+#### 3. M3-5 — wire the rule to the executor (§2 M3-5)
+
+The M3-2 rule exists only inside `ml/train/m3/`. PLAN.md's M3 row has always listed "Elixir
+Executor + hard RiskManager always on" and "signal-only vs signal+policy A/B in simulation", and
+the last unchecked exit criterion (§6) is "the policy never bypasses hard `RiskManager` limits" —
+which cannot be checked while nothing calls the policy. See §2 M3-5 for what the stub is missing.
+
+**Sequence it last** because the fee study decides what the executor should even try to do
+(rest a maker quote versus cross), and building the order path twice is the expensive mistake.
+
+### What M3-3 says NOT to do
+
+Do not widen the learned grid, extend the feature list, or reach for a larger model class —
+M3_3_PROTOCOL §4.1 and §7 pre-registered that a linear failure is not evidence a bigger model
+would succeed, and §D2's ablation is evidence in the opposite direction. Do not re-tune the M3-2
+winner against the same evidence either. The binding constraint is ~220 independent trading days,
+and no rearrangement of them fixes that — **only forward time does**, which is a further argument
+for getting to paper trading (item 3) rather than re-analysing.
 
 ---
 
@@ -269,6 +318,89 @@ Build the backtester before the policy; pre-register how it will be scored befor
 anything; ship an explicit rules baseline before anything learned; and only then ask whether
 a learned policy beats it. The risk that ends M3 badly is not "the policy is not clever
 enough" — it is **overfitting a five-knob policy to 3,700 trades and believing the number**.
+
+### 0.5 What we actually have right now — in plain words
+
+*This subsection assumes nothing. It defines the vocabulary the rest of the document uses,
+says what the system is worth in money terms, and answers the bottom-line question directly.
+If you read only one part of this file, read this one.*
+
+#### 0.5.1 The words, defined once
+
+| term | what it means |
+|---|---|
+| **basis point (bp)** | one hundredth of one percent. **1 bp = 0.01%**, so 100 bps = 1%. Everything here is quoted per trade: "+15 bps" means a trade returns 0.15% of the money put into it. |
+| **gross** | the price move the trade captured, **before** paying anything to trade. |
+| **net** | what is left **after** trading costs. This is the only number that matters. |
+| **taker** | you cross the spread and take the price on offer — instant fill, higher fee. |
+| **maker** | you rest a limit order and wait for someone to trade against it — cheaper, but **you might never get filled**. |
+| **round trip** | the full cost of one trade: getting in *and* getting out. |
+| **the 14 bps** | our **taker** round-trip cost assumption: 4 bps exchange fee + 3 bps slippage, **doubled** because you pay it on entry and again on exit = 14 bps = **0.14% per trade**. |
+| **the 5 bps** | the **maker** equivalent: 2 bps fee + 0.5 bps slippage, doubled = 5 bps = 0.05% per trade. 🔴 **This one is an assumption we have never verified** — see §0.5.5. |
+| **coverage** | what fraction of all available bars we actually trade. "Top 2%" = we sit out 98% of the time and only act on the 2% of moments the model is most confident about. |
+| **a window** | one of the four consecutive calendar chunks the 253-day test period is cut into. A rule has to work in *all four*, not just on average — that is how we catch a rule that only worked during one lucky stretch. |
+| **the worst window** | the score in whichever of the four chunks went worst. We rank policies on this, not on the average, deliberately. |
+
+#### 0.5.2 The one-sentence version of the whole milestone
+
+**The model finds a real edge of about +34 bps per trade before costs; trading costs eat
+roughly 14 of those; what survives is about +15 bps — 0.15% per trade — and that is a
+genuine profit but too thin, on too few independent days, to prove it will persist.**
+
+#### 0.5.3 What "+15 bps a trade" actually means in money
+
+The policy is: watch eight crypto pairs; on the 2% of moments the model is most confident,
+open a position in the direction it calls; hold for **4 hours**; size it by how violently BTC
+has been moving over the past day (a third of normal size when the market is calm, up to
+five thirds when it is wild); then close, regardless of what happened.
+
+That fires about **2.3 trades per day**. So with **$10,000** committed per trade:
+
+| | per trade | per day (2.3 trades) | over the 253-day test |
+|---|---:|---:|---:|
+| gross (before costs) | +$33.80 | +$78 | ≈ +$20,000 |
+| **net at taker (14 bps)** | **+$15.00** | **+$34** | **≈ +$8,900** |
+| net at maker (5 bps) | +$27.10 | +$62 | ≈ +$16,000 |
+
+Two honest deductions from that table. First, the sizing rule means the *average* position is
+1.34× the base size, so per dollar actually deployed it is **+11.2 bps, not +15.0**. Second,
+this is the result of three separately-trained copies of the model pooled together over
+1,773 trades — it is not a live track record, and no order has ever been placed.
+
+#### 0.5.4 So — can it trade profitably or not?
+
+**Not yet. Three separate things are missing, and only one of them is about the edge.**
+
+1. **The edge is real but unproven at this size.** +15 bps per trade is positive in all four
+   calendar windows, on all three model seeds, and the direction genuinely comes from the
+   model (swapping in a momentum-based direction turns +15 into −22). But the statistical
+   error bar on it runs from **−33 to +63 bps**. The reason is not sloppiness: 253 days of
+   eight correlated pairs is only about **220 genuinely independent days**, and that is
+   nowhere near enough to prove a 0.15% edge against a 0.14% cost. This was written down in
+   advance (M3_PROTOCOL §2) as something this dataset *cannot* do, and it turned out exactly
+   as predicted. **More analysis of the same 253 days will not fix it — only more time will.**
+2. 🔴 **Half the economics rests on an untested assumption.** Every number roughly doubles at
+   maker fees (+15 → +27). We have never once checked whether a resting limit order on these
+   pairs actually gets filled at that price, or how often the fills we do get are the ones we
+   would rather not have had. That is the next piece of work (§0.5.5).
+3. 🔴 **Nothing is connected.** The policy exists only inside the offline backtester in
+   `ml/train/m3/`. The live executor (`apps/fluxtrader/lib/fluxtrader/trading/executor.ex`)
+   is an 86-line stub: it logs a mock position and has **no fees, no limit orders, no fill
+   logic, no 4-hour hold timer, and no position sizing**. Even in paper mode, the system
+   cannot currently execute the rule we just spent the milestone finding.
+
+**The honest verdict: we have a credible, well-tested candidate strategy and no way to run
+it.** The realistic next milestone is not "make the edge bigger" — it is "find out what the
+fills really cost, then wire the rule to the executor and let it paper-trade forward long
+enough to accumulate the independent days the statistics need."
+
+#### 0.5.5 The one thing that could still change the picture
+
+Whether **maker fills are real**. If we can rest limit orders and get filled at 5 bps, the
+strategy roughly doubles and becomes comfortable rather than marginal. If we cannot, several
+of the results published in [M3_2_RESULTS.md](./M3_2_RESULTS.md) stop being interesting and
+the whole thing stays marginal. We have the raw data to answer it without placing a single
+order — see **M3-4** in §2, which is the next step.
 
 ---
 
@@ -422,7 +554,7 @@ are not rebuilt (§1.4), and O8's 12-pair dump is downloaded but not yet folded 
 search population (§5) — that decision belongs with M3-1's protocol, since it changes the
 sample the search runs on.
 
-### M3-0b — The price/funding side-table (only when barrier exits are actually wanted)
+### M3-0b — The price/funding side-table (item 2 of the remaining three)
 
 Export **once** from the always-on VM to local parquet: 5m candles and `funding_rates` for
 the eight served pairs over the validation window. Join on `(pair, ts)`.
@@ -439,8 +571,15 @@ This unlocks three things that are impossible in M3-0a:
   error, and it is *signed* — it can pay you.
 - **Slippage / fill realism** beyond a flat per-trade constant.
 
-**Do not start here.** A fixed-hold policy that works is worth more than a barrier policy
-that cannot be validated, and M3-0a's acceptance test is only expressible in fixed-hold terms.
+**Do not start here — but it is no longer far off.** A fixed-hold policy that works is worth
+more than a barrier policy that cannot be validated, and M3-0a's acceptance test is only
+expressible in fixed-hold terms. That condition is now met: M3-2 produced a fixed-hold policy
+that works, so this is item 2 of the three remaining (§0.0), behind M3-4 only.
+
+🔴 **Do the export in the same pass as M3-4a's.** M3-4 needs the book/tape slice, M3-0b needs
+5m candles and `funding_rates`, and `BOOK_ERA_PLAN.md` B0 needs the 11 microstructure scalars —
+all on the same `(pair, ts)` grid with the same staleness caps. One pass, three consumers, one
+alignment.
 
 **When you do build it, add the book columns in the same pass.** `docs/BOOK_ERA_PLAN.md` B0
 needs exactly this export plus the 11 microstructure scalars over the book era, joined on the
@@ -476,7 +615,7 @@ Why this is a step and not a paragraph:
   val window), trailing-48-bar momentum (dir_acc 0.469 — mildly *anti*-predictive), and
   M2's own ungated fixed-coverage table from §1.3.
 
-### M3-2 — The rules baseline. Ship this before anything learned.
+### M3-2 — ✅ DONE (2026-08-27). The rules baseline, and it is M3's policy.
 
 Under five parameters, all of them interpretable:
 
@@ -552,6 +691,94 @@ with the barrier exits that would give it something to decide.
 failure is not evidence a bigger model would succeed, and the ablation is evidence pointing the
 other way.
 
+### M3-4 — 🔴 NEXT. The maker-fee study, measured offline from data we already hold.
+
+**The question in one line:** is the 5-bps maker round trip that doubles every published number
+actually obtainable, for these pairs, at these sizes?
+
+**Why it is ranked above every remaining knob.** It does not add a result — it can *invalidate*
+results already published. At taker the whole cov05 slice is −5.09 net; at maker it is +3.91. The
+M3-2 winner is +15.0 taker / +27.1 maker. No other open item can move numbers already in
+[M3_2_RESULTS.md](./M3_2_RESULTS.md) in both directions.
+
+🔴 **The data source, and why it is not the paper-sim stack.** §3.3 originally said to measure
+this live on the paper-sim stack. **That is not viable and the reason is concrete:**
+`apps/fluxtrader/lib/fluxtrader/trading/executor.ex` is an 86-line stub with no fee model, no
+limit orders, no fill logic and no hold timer (§0.5.4, and see M3-5). Building order simulation
+first would put days of work in front of the first number.
+
+Instead, measure it **offline** from what the collector has already stored:
+
+| source | what it gives | cadence / depth |
+|---|---|---|
+| `orderbook_levels` | raw L2 ladder, `bids`/`asks` as best-first `[price, qty]` arrays, joined to `orderbook_snapshots` on `(symbol, ts)` | **every 5s** (`@book_interval_ms`), since **2026-07-17** |
+| `market_trades` | per-window `high`, `low`, `volume`, `buy_volume`, `sell_volume`, `vwap` | **every 5s** (`@trade_interval_ms`) |
+| `orderbook_snapshots` | `mid`, `spread`, `microprice`, `imbalance`, near/far depth | every 5s |
+
+~40 days, **entirely inside the validation window**, which is the same era every M3 number is
+scored on. Three measurable quantities fall straight out:
+
+1. **Fill probability** — for a limit order resting at the best bid/ask at the decision bar, did
+   the tape trade at or through that price within the fill window? `market_trades.low` /
+   `.high` answer this at 5-second resolution.
+2. **Queue position** — resting quantity at our level from the ladder, against subsequent
+   same-side volume from `buy_volume` / `sell_volume`. This is a crude drain model, and it must
+   be *declared* as crude in the protocol rather than defended afterwards.
+3. **Adverse selection** — where the mid went in the seconds and minutes after the fills that
+   did arrive. A maker fill that only happens when the market is about to run you over is not a
+   5-bps fill, whatever the fee schedule says.
+
+**Do it in two commits, the way M3-1/M3-2 and M3-3a/M3-3 were done:**
+
+- **M3-4a — pre-register first.** Export the slice, then commit `docs/M3_4_PROTOCOL.md` fixing:
+  the fill definition; the queue model and its stated crudeness; the adverse-selection horizon;
+  the per-pair sample floor (M3-1's lesson — a count floor prunes the grid before any number is
+  seen); and **the number that decides the verdict**, written down before it is measured.
+- **M3-4 — then run it.** Publish `docs/M3_4_RESULTS.md`: the **realized effective round-trip
+  cost per pair**, next to the assumed 5 and 14, and then **re-score the M3-2 grid at the
+  measured cost**. That re-score is the deliverable that changes what we do next, not the fill
+  rate on its own.
+
+It runs in the existing torch-free `ml_analysis` image through `scripts/m3.sh` — **no GPU, no new
+stack, no orders placed.** Add a subcommand next to `search` / `learn` rather than a new harness.
+
+**Combine the export with M3-0b's.** The same pass should pull the 5m candles and `funding_rates`
+M3-0b needs and the book columns `BOOK_ERA_PLAN.md` B0 needs. One alignment, three consumers.
+
+### M3-5 — Wire the rule to the executor (the last unchecked exit criterion)
+
+PLAN.md's M3 row lists two work items that no step so far has touched: **"Integrate — Elixir
+Executor + hard RiskManager always on"** and **"A/B — signal-only vs signal+policy in
+simulation"**. §6's last open box — *the policy never bypasses hard `RiskManager` limits* —
+cannot be checked while nothing calls the policy.
+
+**What exists today.** `Trading.Executor` is 86 lines. In `simulation` mode it logs
+`[SIM] Signal: …` and appends a mock position built by `build_mock_position/1`. It has **no fee
+model, no limit orders, no fill logic, no hold timer, no exit path, and no sizing** — the mock
+position carries `pnl: 0.0` and is never updated. `Trading.RiskManager` is 98 lines alongside it.
+
+**What M3-5 has to add**, and nothing more — this is an integration step, not a new search:
+
+1. **The M3-2 rule, expressed once.** Entry on the top-2% confidence rank, side from M2, the
+   regime size multiplier (⅓ to 5/3 on trailing BTC 24h move), a **4-hour hold**, no concurrency
+   cap. §1.3.3's constraint binds here: the coverage condition is **rank-based**, so the policy
+   needs a trailing confidence distribution to rank against, not a fixed threshold.
+2. **The coverage decision from §3.1.** `serve.py` gates and the app gates again. If the policy
+   gates too there are three gates in series and it can never *widen* coverage. **The policy owns
+   coverage; the serve gate becomes a reported diagnostic.** `/predict` already returns raw
+   confidences next to `gated`, so this needs no serve-side change.
+3. **A real fill and fee path**, using whatever M3-4 measured — including the maker-vs-taker
+   decision, which is exactly why M3-5 is sequenced after M3-4.
+4. **The A/B.** Signal-only against signal+policy, both paper, scored on the same metrics
+   M3_PROTOCOL §4 uses so the live numbers are comparable to the backtest ones.
+5. **The risk-limit assertion.** A test that the policy's orders are refused by `RiskManager`
+   when they breach a hard limit — that is what closes §6's last box.
+
+**Why this matters beyond tidiness:** §0.5.4 and risk #4 both land on the same wall — ~220
+independent trading days is not enough to certify a 15-bps edge, and no re-analysis of the same
+253 days relieves it. **Paper trading forward is the only mechanism that manufactures new
+independent days.** Every week M3-5 is not running is a week of evidence not being collected.
+
 ## §3 — DESIGN DECISIONS TO SETTLE BEFORE WRITING CODE
 
 ### 3.1 Where the gate lives — decide this first, it is architectural
@@ -582,9 +809,15 @@ condition is what makes taker viable — and conversely, *whether maker fills ar
 obtainable at 5bps for these pairs and sizes* is currently an **untested assumption that
 silently underwrites half the published economics.**
 
-**Measure it early.** A short live study on the paper-sim stack — quoted vs filled, queue
-position, adverse selection on the fills you do get — is cheap and could reorder the entire
-milestone. Do not let it stay an assumption until after a policy is built on it.
+**Measure it early.** Quoted vs filled, queue position, adverse selection on the fills you do
+get — this is cheap and could reorder the entire milestone. Do not let it stay an assumption
+until after a policy is built on it.
+
+🔴 **Corrected 2026-08-27 — measure it offline, not on the paper-sim stack.** This section used
+to say "a short live study on the paper-sim stack". That is not viable: `Trading.Executor` cannot
+place a limit order at all (§0.5.4), so there is nothing to measure the fills *of*. The stored
+5-second L2 ladders and trade aggregates answer the same question with no orders and no new
+infrastructure. **§2 M3-4 is the step**, and it is the next thing to do.
 
 ### 3.4 Sizing needs a distribution — and there is a deferred branch waiting here
 
@@ -616,9 +849,10 @@ collapse" framing was superseded). Read it for the quantile decision and its rat
 | # | risk | why it is ranked here | mitigation |
 |---|---|---|---|
 | 1 | **Overfitting the policy to 3,717 trades** | seconds per configuration, ≈9.5bps quintile SEM, and five interacting knobs | M3-1's pre-registered protocol, scored on the **worst** window. 🔴 **M3-3 measured this risk rather than reasoning about it:** fitting nine observations on ~188 independent trading days produced a policy that loses to a fit on one of them (M3_3_RESULTS §D2). The mitigation worked — the leave-one-window-out refit is what made the overfit visible instead of publishable |
-| 2 | 🔴 **The maker-fee assumption is untested** (§3.3) — **now the top open item** | it is the difference between +3.91 and −5.09 at cov05 — it can invert conclusions | measure fills on the paper-sim stack; with M3-3 closed this is the next step (§0.0) |
+| 2 | 🔴 **The maker-fee assumption is untested** (§3.3) — **now the top open item** | it is the difference between +3.91 and −5.09 at cov05 — it can invert conclusions already published | **M3-4** — measure fills **offline** from the stored 5s L2 ladders and trade tape (§2 M3-4). 🔴 Corrected 2026-08-27: the earlier mitigation said "on the paper-sim stack", but `Trading.Executor` cannot place a limit order, so there would be nothing to measure |
 | 3 | **The regime rule is not uniform in time** | fails in window 2, where 47% of its trades live (§1.8) | never report pooled; require it to survive walk-forward. **M3-3 found the more general version of this**: the mean edge in the top decile swings 25.9 bps across the four windows, so any *level* is unstable and only *orderings* survive |
 | 4 | **Sample size is the binding constraint** | ~3,700 cov05 trades is thin for a policy search, and the honest count is ~220 independent trading days, not the trade count | see §5 — the 12-pair dump is free power. **M3-3 is what this risk looks like when it binds**, and no rearrangement of the same 253 days relieves it |
+| 7 | 🔴 **The policy is not connected to anything** — new 2026-08-27 | the milestone's output currently lives only in `ml/train/m3/`; the live executor has no fees, no limit orders, no fill logic and no hold timer, so §6's last exit criterion cannot even be tested | **M3-5** (§2). It is sequenced after M3-4 because the fee measurement decides what the order path should do, and building it twice is the expensive mistake |
 | 5 | **Calibration drift on a future checkpoint** | policy consumes `p_up`; three levers have already broken the scale | rank-based conditioning (§1.3.3); re-check brier on any new checkpoint |
 | ~~6~~ | ~~**The Q1 harness is unrecoverable / mis-rebuilt**~~ | ✅ **closed 2026-08-26** — rebuilt as `ml/train/m3/regime.py` and pinned by an acceptance test that reproduces §1.8's ladder (§1.4, §0.0) | — |
 
@@ -672,7 +906,16 @@ From PLAN.md, sharpened with what M2 measured:
       [M3_2_RESULTS.md](./M3_2_RESULTS.md) §G breaks them out (the winner is +18.1 long /
       +2.7 short at taker, i.e. the long side carries it, which is why §3.3 forbids
       selecting on the split).
-- [ ] The policy never bypasses the hard `RiskManager` limits.
+- [ ] **The maker-fee assumption is measured rather than assumed** (M3-4) — the realized
+      effective round-trip cost per pair is published, and the M3-2 grid is re-scored at it.
+      Added as an explicit criterion 2026-08-27: half the published economics rests on the
+      5-bps number, and the milestone should not close with it untested (risk #2, §3.3).
+- [ ] The policy never bypasses the hard `RiskManager` limits — **blocked on M3-5**, because
+      nothing currently calls the policy at all. `Trading.Executor` is an 86-line stub with no
+      fees, no limit orders, no fill logic and no hold timer (§2 M3-5).
+- [ ] **The signal-only vs signal+policy A/B runs in paper simulation** (PLAN.md's M3 row,
+      never yet started; M3-5). This is also the only mechanism that produces *new* independent
+      trading days, which risk #4 identifies as the binding constraint on certifying the edge.
 
 ---
 
@@ -729,16 +972,33 @@ normalisation of a size-varying policy, and whether the per-window coverage cut 
 the baseline's rule. They are proposals for a *next* pre-registration, never a re-scoring of
 this one.
 
-**The next step is the maker-fee study (§3.3), and what to bring back from it** is not a table
-from this harness at all: it is a measurement on the live paper-sim stack of quoted-versus-
-filled, queue position, and adverse selection on the fills that do arrive, for the eight served
-pairs at the sizes a 2%-coverage policy would actually trade. The number that matters is
-whether a 5-bps round trip is obtainable, because every M3-2 candidate roughly doubles between
-the two fee assumptions.
+**The next step is M3-4, the maker-fee study (§2 M3-4), and what to bring back from it** is not
+a table from this harness at all. It is a measurement — made **offline from the stored 5-second
+L2 ladders and trade aggregates, not on the live paper-sim stack** (which cannot place a limit
+order; §0.5.4) — of quoted-versus-filled, queue position, and adverse selection on the fills
+that do arrive, for the eight served pairs at the sizes a 2%-coverage policy would actually
+trade. Bring back two artifacts:
+
+```sh
+# after M3-4a's protocol is committed:
+./scripts/m3.sh -m m3 fills          # (to be added next to `search` / `learn`)
+cp ml/train/output/m3/M3_4_RESULTS.md docs/M3_4_RESULTS.md
+```
+
+1. `docs/M3_4_PROTOCOL.md` — committed **before** any fill is counted.
+2. `docs/M3_4_RESULTS.md` — the **realized effective round-trip cost per pair**, next to the
+   assumed 5 and 14 bps, **and the M3-2 grid re-scored at the measured cost**. The re-score is
+   the deliverable that changes what happens next; the fill rate alone is not.
+
+The number that matters is whether a 5-bps round trip is obtainable, because every M3-2
+candidate roughly doubles between the two fee assumptions.
 
 ---
 
 *Updated: 2026-08-27 — M3-0a, M3-1, M3-2 and M3-3 complete. The learned policy did not beat
-the rules baseline, so M3-2's rule is M3's policy; the maker-fee study (§3.3) is next and both
-protocols stay frozen. §0.0 is the live status block and the only place that needs reading to
-resume.*
+the rules baseline, so M3-2's rule is M3's policy. Three items remain, in order: **M3-4** (the
+maker-fee study, measured offline — next), **M3-0b** (the price/funding side-table), and
+**M3-5** (wiring the rule to the executor, which is what starts producing new independent
+trading days). Both existing protocols stay frozen. §0.0 is the live status block and the only
+place that needs reading to resume; **§0.5 is the same thing in plain language, with the
+vocabulary defined and the "can it trade profitably yet?" question answered directly.***

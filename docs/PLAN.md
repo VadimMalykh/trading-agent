@@ -99,7 +99,7 @@ Phase M1 Data + 15m supervised baseline     ✅ pipeline done (improve quality o
     │
 Phase M2 Multi-horizon + confidence gating  ✅ train_m2 / eval_m2 (quality improves with data)
     │
-Phase M3 Discrete policy + sim A/B          🟡 in progress (M3-0a/1/2/3 done; maker-fee study next)
+Phase M3 Discrete policy + sim A/B          🟡 in progress (M3-0a/1/2/3 done; M3-4 maker fees next, then M3-0b, M3-5)
     │
 Phase M4 Positional + alts                  ⬜
     │
@@ -176,10 +176,16 @@ Legacy SPEC “Phase 1–4” maps roughly as:
 
 **Goal:** Policy decides flat/long/short/hold/exit on top of signals (not end-to-end price RL).
 
-**State (2026-08-27):** M3-0a (backtester + regime harness, both acceptance tests passing)
-and M3-1 (the pre-registered protocol, [M3_PROTOCOL.md](./M3_PROTOCOL.md)) are done. M3-2,
-the rules baseline, is next. See [M3_PLAN.md](./M3_PLAN.md) §0.0 — it is the live status
-block and the only thing a fresh session needs to read to resume.
+**State (2026-08-27):** the sequence is complete through the learned policy — M3-0a
+(backtester + regime harness, both acceptance tests passing), M3-1 ([M3_PROTOCOL.md](./M3_PROTOCOL.md)),
+M3-2 ([M3_2_RESULTS.md](./M3_2_RESULTS.md), a rules baseline clears the pre-registered bar) and
+M3-3 ([M3_3_RESULTS.md](./M3_3_RESULTS.md), the learned policy did **not** beat it, so the rule
+stands as M3's policy). **Three items remain, in order: M3-4** (the maker-fee study, measured
+offline from stored L2 book data — **next**), **M3-0b** (price/funding side-table) and **M3-5**
+(wire the rule to the Executor + RiskManager and run the paper A/B). See
+[M3_PLAN.md](./M3_PLAN.md) §0.0 — it is the live status block and the only thing a fresh session
+needs to read to resume; **§0.5 is the same picture in plain language**, including whether this
+can trade profitably yet (it cannot, and §0.5.4 says exactly what is missing).
 
 | Work item | Description |
 |-----------|-------------|
@@ -191,7 +197,7 @@ block and the only thing a fresh session needs to read to resume.
 
 **Exit criteria:** Sim shows controlled max DD and non-pathological trade rate; policy never bypasses hard limits.
 
-**Status (2026-08-27):** the sequence is complete through the learned policy. A rules baseline clears the pre-registered bar ([M3_2_RESULTS.md](./M3_2_RESULTS.md)); the learned policy did not beat it ([M3_3_RESULTS.md](./M3_3_RESULTS.md)), so the rule stands as M3's policy and the maker-fee study is next.
+**Status (2026-08-27):** the offline search is finished and the remaining work is measurement and integration, not modelling. The policy earns **+15.0 bps/trade net of a 14-bps taker round trip** in backtest (≈0.15% per trade, ~2.3 trades/day) but is **not certifiable** on 253 days holding ~220 independent ones, and **nothing is wired to the Executor**, which is still an 86-line stub. Next: M3-4 (maker fees), then M3-0b, then M3-5.
 
 **Full plan:** see [M3_PLAN.md](./M3_PLAN.md) — the sequence (backtester → protocol → rules baseline → learned policy), the constraints M2 hands over, and what to bring back at each step. No GPU is required for any of it.
 
