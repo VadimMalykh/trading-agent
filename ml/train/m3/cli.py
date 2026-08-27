@@ -4,6 +4,7 @@
     ./scripts/m3.sh -m m3 power               # the pre-registration facts (M3_PROTOCOL §2/§4)
     ./scripts/m3.sh -m m3 fitprep             # M3-3 pre-registration facts (counts only)
     ./scripts/m3.sh -m m3 learn               # M3-3: fit and score the 14 learned runs
+    ./scripts/m3.sh -m m3 universe            # T3: 8 pairs vs 12, on the same dumps
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -408,6 +409,114 @@ def cmd_learn(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------------------
+# T3 — the 12-pair adoption probe.
+#
+# WHY THIS IS COMMITTED CODE and not a scratch script: M3_PLAN §0.0 records that the Q1
+# harness was never committed, so `btc_absret_1d` existed only in prose and M3's first task
+# was rebuilding it. The 8-vs-12 comparison is the same kind of number — one that decides a
+# deployment — and it is measured the same way here every time it is asked.
+#
+# The comparison is made WITHIN a run, never against the published 8-pair runs: restricting
+# the same checkpoint's own dump to the 8 baseline pairs holds the model, the seed and the
+# calendar fixed so that the only thing varying is the traded universe. Comparing a new
+# 12-pair run against §1.3's 8-pair family would confound universe with seed and split.
+# ---------------------------------------------------------------------------------------
+
+# M3-2's winner, verbatim: docs/M3_2_RESULTS.md, cov0.02_hold240_rqnone_mcnone_SIZED. It is
+# transcribed rather than re-selected — re-searching the grid on a new pair population and
+# taking the best would be exactly the shopping M3_PROTOCOL §0 forbids.
+WINNER_SPEC = dict(coverage=0.02, signal_horizon=240, hold_horizon=240,
+                   regime_col="btc_absret_1d", regime_quantile=None, regime_min=None,
+                   size_by_regime=True, max_concurrent=None, sides="both", side_from="model")
+
+
+def _score_universe(label: str, ds: list, spec: backtest.PolicySpec) -> dict:
+    regimes = {d.seed: regime.build(d.df) for d in ds}
+    res = backtest.run(ds, spec, regimes)
+    card = search.scorecard(label, res.trades, [d.seed for d in ds],
+                            search.calendar_days(ds), spec)
+    search.tier1(card)
+    card["_thresholds"] = res.thresholds
+    card["_bars"] = sum(len(d.at(spec.signal_horizon)) for d in ds)
+    card["_trades"] = res.trades
+    return card
+
+
+def _print_universe(card: dict) -> None:
+    t = card["taker14"]
+    thr = ", ".join(f"{k}={v:.4f}" for k, v in card["_thresholds"].items())
+    print(f"\n=== {card['label']} ===")
+    print(f"bars={card['_bars']:,}  conf thresholds: {thr}")
+    print(f"trades={card['trades']:,}  tr/day={t['trades_per_day']:.2f}  "
+          f"gross={t['gross_bps']:+.2f}  net@14={t['net_bps']:+.2f}  "
+          f"net@5={card['maker5']['net_bps']:+.2f}  sharpe={t['sharpe']:.2f}  "
+          f"maxdd={t['maxdd']:.4f}  mean_size={card['mean_size']:.3f}")
+    print(card["taker14_windows"].to_string(index=False, float_format=lambda v: f"{v:+.3f}"))
+    ci = card["taker14_ci"]
+    print("clustered: mean=%+.2f  clusters=%d  se=%.2f  95%% CI=[%+.2f, %+.2f]"
+          % (ci["mean_bps"], ci["clusters"], ci["se_bps"], ci["lo95_bps"], ci["hi95_bps"]))
+    print("tier-1: " + "  ".join(f"{k}={'Y' if v else 'N'}" for k, v in card["tier1"].items()))
+
+
+def cmd_universe(args) -> int:
+    """T3 — does the traded universe (8 pairs vs 12) change M3-2's winner?
+
+    Scores the winner spec twice on the SAME dumps: once restricted to the 8 pairs every
+    published M3 number is measured on, once on every pair the dumps carry. Reports the
+    per-pair breakdown of the wide run, because the interesting question after the headline
+    is whether the gain is broad or is one instrument.
+    """
+    run_ids = [r.strip() for r in (args.runs or dumps.O8_RUN).split(",") if r.strip()]
+    ds_all = [dumps.load(r, seed=f"s{i+1}" if len(run_ids) > 1 else "o8")
+              for i, r in enumerate(run_ids)]
+    ds_8 = [dumps.load(r, seed=d.seed, pairs=dumps.BASE8) for r, d in zip(run_ids, ds_all)]
+
+    wide_pairs = sorted(set().union(*[set(d.df["pair"].unique()) for d in ds_all]))
+    extra = [p for p in wide_pairs if p not in dumps.BASE8]
+    print(f"runs: {', '.join(run_ids)}")
+    print(f"universe: {len(wide_pairs)} pairs; {len(extra)} beyond the baseline 8: "
+          f"{', '.join(extra) or '(none — nothing to compare)'}")
+    print(f"policy:   {backtest.PolicySpec(label='M3-2 winner', **WINNER_SPEC)}")
+
+    narrow = _score_universe(f"baseline {len(dumps.BASE8)} pairs", ds_8,
+                             backtest.PolicySpec(label="base8", **WINNER_SPEC))
+    wide = _score_universe(f"all {len(wide_pairs)} pairs", ds_all,
+                           backtest.PolicySpec(label="wide", **WINNER_SPEC))
+    _print_universe(narrow)
+    _print_universe(wide)
+
+    # Per-pair, on the wide run. §1.3 warns per-pair dir_acc does not replicate across
+    # seeds, so this is read as texture — is the gain broad or one instrument — and never
+    # as a reason to drop or keep an individual pair.
+    t = wide["_trades"].copy()
+    t["net_bps"] = (t["signed_ret"] - metrics.TAKER_COST_BPS / 1e4 * t.get("size", 1.0)) * 1e4
+    g = t.groupby("pair").agg(trades=("net_bps", "size"),
+                              gross=("signed_ret", lambda s: float(s.mean()) * 1e4),
+                              net=("net_bps", "mean"),
+                              win=("signed_ret", lambda s: float((s > 0).mean())))
+    g["beyond_base8"] = ["" if p in dumps.BASE8 else "NEW" for p in g.index]
+    print("\n--- per pair, wide universe (texture only — per-pair numbers do not replicate "
+          "across seeds, NEXT_TRAINING_PLAN §1.3) ---")
+    print(g.sort_values("net", ascending=False).to_string(float_format=lambda v: f"{v:+.2f}"))
+    in8 = t["pair"].isin(dumps.BASE8)
+    print(f"\nbase8 pairs within the wide run: n={int(in8.sum()):,}  "
+          f"net@14={t.loc[in8, 'net_bps'].mean():+.2f}")
+    if (~in8).any():
+        print(f"pairs beyond the baseline 8:     n={int((~in8).sum()):,}  "
+              f"net@14={t.loc[~in8, 'net_bps'].mean():+.2f}")
+
+    d_net = wide["taker14"]["net_bps"] - narrow["taker14"]["net_bps"]
+    d_worst = wide["worst_net"] - narrow["worst_net"]
+    print(f"\nWIDE − NARROW:  pooled net@14 {d_net:+.2f}bps   "
+          f"worst window {d_worst:+.2f}bps ({narrow['worst_window']}→{wide['worst_window']})   "
+          f"trades/day {wide['taker14']['trades_per_day'] - narrow['taker14']['trades_per_day']:+.2f}")
+    print("The adoption rule (docs/NEXT_TRAINING_PLAN.md §2 T3): adopt 12 pairs iff the wide "
+          "run still passes Tier 1 and its worst window does not degrade.")
+    return 0
+
+
+
 def cmd_policy(args) -> int:
     ds = dumps.load_baseline(pairs=dumps.BASE8)
     spec = backtest.PolicySpec(
@@ -463,6 +572,14 @@ def main() -> int:
                    "(counts only — no learned P&L)").set_defaults(fn=cmd_fitprep)
     sub.add_parser("learn", help="M3-3: fit and score the 14 pre-registered learned runs"
                    ).set_defaults(fn=cmd_learn)
+
+    u = sub.add_parser("universe", help="T3: score M3-2's winner on 8 pairs vs every pair "
+                       "the dumps carry (the 12-pair adoption decision)")
+    u.add_argument("--runs", default=None,
+                   help="comma-separated eval run ids to pool (default: O8, the one "
+                        "existing 12-pair dump). Pass the three 12-pair seeds once T1/T2 "
+                        "have landed.")
+    u.set_defaults(fn=cmd_universe)
 
     p = sub.add_parser("policy", help="score one policy spec")
     p.add_argument("--coverage", type=float, default=0.05)

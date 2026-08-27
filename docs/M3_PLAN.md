@@ -1,6 +1,6 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** In progress — **M3-0a, M3-1, M3-2 and M3-3 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar; the learned policy did not beat it, so that rule stands as M3's policy. **Three items remain: M3-4 (maker-fee study — next), M3-0b (price/funding side-table), M3-5 (wire the rule to the executor).** Unblocked: R0 promoted 2026-08-26.
+**Status:** In progress — **M3-0a, M3-1, M3-2 and M3-3 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar; the learned policy did not beat it, so that rule stands as M3's policy. **Four items remain: the T-wave (12-pair universe — running now, in `NEXT_TRAINING_PLAN.md` §2), M3-4 (maker-fee study — next after it), M3-0b (price/funding side-table), M3-5 (wire the rule to the executor).** Unblocked: R0 promoted 2026-08-26.
 **New to this document?** **§0.5** explains what we have in plain language — every term defined, the strategy in dollars, and a direct answer to "can it trade profitably yet?" (short version: the edge is real, but it is unproven at this size, half its economics rests on an untested fee assumption, and nothing is wired to the executor).
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
@@ -20,7 +20,9 @@ done, what the next command is, and what to bring back. When a step closes, its 
 moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
 never left here contradicting a later result.*
 
-**Last updated: 2026-08-27 (M3-3 complete — the learned policy did not beat the rules baseline).**
+**Last updated: 2026-08-27 (M3-3 complete — the learned policy did not beat the rules
+baseline. Later the same day: the traded universe turned out to be a policy lever worth
++7.5 net bps/trade, and the T-wave was queued to bank it — §0.6.)**
 
 👉 **New here, or want this without the jargon?** Read **§0.5** — it defines every term
 (what a "basis point" is, what "14 bps" means, maker vs taker), says what the strategy is
@@ -36,7 +38,8 @@ block assumes you have.
 | **M3-1** — pre-registered protocol | ✅ **committed 2026-08-27 as [M3_PROTOCOL.md](./M3_PROTOCOL.md)**, before any search ran |
 | **M3-2** — rules baseline | ✅ **run 2026-08-27, all 40 configurations** — [M3_2_RESULTS.md](./M3_2_RESULTS.md). A baseline passes Tier 1 |
 | **M3-3** — learned policy | ✅ **run 2026-08-27, all 14 configurations** — [M3_3_RESULTS.md](./M3_3_RESULTS.md). **None beat the baseline; M3-2's rule stands as M3's policy** |
-| **M3-4** — the maker-fee study (§3.3) | ⬜ **this is the next step** — ranked risk #2, and the highest-value open item in the milestone |
+| **T-wave** — adopt the 12-pair universe | 🔵 **queued 2026-08-27, runs first** — two 12-pair training seeds, then re-score and promote. Owned by [NEXT_TRAINING_PLAN §2](./NEXT_TRAINING_PLAN.md); the measurement that justifies it is §0.6 below |
+| **M3-4** — the maker-fee study (§3.3) | ⬜ **the next M3 step** — ranked risk #2, and the highest-value open item in the milestone. **Sequence it after the T-wave decides the universe**, because its output is per-pair |
 | **M3-0b** — price/funding side-table | ⬜ not started — the only item that adds *new* evidence rather than re-slicing the same 253 days |
 | **M3-5** — wire the rule to the executor | ⬜ not started — the policy exists only offline; the live executor is an 86-line stub (§0.5.4) |
 
@@ -53,6 +56,7 @@ and no GPU. `scripts/m3.sh` wraps it and builds it on first use:
 ./scripts/m3.sh -m m3 search            # M3-2: all 40 pre-registered runs, scored (~4 min)
 ./scripts/m3.sh -m m3 fitprep           # M3-3's pre-registration facts (counts only)
 ./scripts/m3.sh -m m3 learn             # M3-3: fit and score the 14 learned runs (~3 min)
+./scripts/m3.sh -m m3 universe          # T3: M3-2's winner on 8 pairs vs 12, same dumps
 ./scripts/m3.sh -m m3 policy --help     # score one policy spec
 ./scripts/m3.sh --shell                 # interactive
 ```
@@ -197,13 +201,75 @@ The honest reading of why: the learned policy was given four genuinely new obser
 anything. That is a real answer to a real question, and it cost one afternoon of laptop time
 rather than a wave of GPU runs.
 
+### What was measured on 2026-08-27, after M3-3 closed — the universe is a policy lever
+
+**M3-2 and M3-3 both ran on the 8 pairs every published M2 number is measured on. That was
+never a decision; it is the experimental control the E-wave froze in place** (NEXT_TRAINING_PLAN
+§1.9). The collector and the app whitelist have carried **12** pairs for some time. Nobody had
+asked what the extra four are worth *to the policy*, because §1.9 had answered the adjacent
+question — are they worth anything to the *model* — and the answer there was no.
+
+They are worth a lot. M3-2's winner, scored twice on the same O8 dump, changing nothing but
+the traded universe (`./scripts/m3.sh -m m3 universe`):
+
+| universe | trades | tr/day | gross | **net @14 taker** | net @5 maker | Sharpe | maxdd |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| the 8 baseline pairs | 606 | 2.28 | +33.31 | **+13.93** | +26.71 | 0.96 | −1.13 |
+| **all 12 pairs** | 869 | 3.27 | +40.89 | **+21.44** | +33.94 | 1.23 | −1.67 |
+
+**Why this is not the same claim §1.9 refuted.** §1.9 asked whether 58% more training *rows*
+make a better model, and measured no. This asks whether more *instruments* make a better
+policy. The model is byte-identical in both rows above — the only difference is how many
+things the top-2% selection gets to choose between. Rows and instruments are not the same
+quantity, and only one of them was ever tested.
+
+**The validity check.** The 8-pair restriction of O8 reproduces the published 3-seed result
+(+13.93 against +15.0, at 2.28 trades/day against 2.3), so O8's single seed behaves like the
+family on the 8 pairs and the 12-pair row is the four extra instruments talking, not the seed.
+The confidence threshold barely moves (0.5996 → 0.5992), so the wide run is the narrow run's
+trades plus 260 new ones, and those 260 earn **+43.07 net against the base-8 trades' +12.21**
+inside the same run.
+
+🔴 **Three things this does NOT do, and the third is the one that matters most here.**
+
+1. **It does not fix window 3.** Trade count there goes 30 → 32 and net stays near −52; **P4
+   still fails**. The w3 hole is a shortage of confident *bars*, not of instruments.
+2. **It does not buy independent days.** Clustering is on the exit calendar day, so extra
+   pairs add trades inside existing clusters. The clustered interval *widens* (se 25.7 → 30.2)
+   and max drawdown grows. **The certification problem of §0.5.4 item 1 is untouched** — only
+   forward time fixes that.
+3. **It is one seed, and per-pair numbers do not replicate** (NEXT_TRAINING_PLAN §1.3). The
+   per-pair table `m3 universe` prints is texture, never a reason to keep or drop an
+   instrument. Two more seeds is exactly what the T-wave buys.
+
+**There is also a live defect this closes.** `serve.py`'s `/predict_all` iterates the app
+whitelist — 12 pairs — while the served checkpoint is the 8-pair seed 2, so ADA / AVAX / LINK
+/ XRP resolve to `pair_oov_id`, an embedding row never trained on any pair. The system is
+emitting live signals for four instruments the model has never seen. That is reason enough to
+run the T-wave before M3-4, independent of the economics.
+
 ### The plan from here, in order
 
-*Three items remain. They are listed in the order they should be done, and the reason for the
-order is that item 1 can invalidate published numbers, item 2 adds evidence item 1 cannot, and
-item 3 is worthless until we know what a fill actually costs.*
+*Four items remain. They are listed in the order they should be done. Item 0 changes which
+pairs every later item is about; item 1 can invalidate published numbers; item 2 adds evidence
+item 1 cannot; item 3 is worthless until we know what a fill actually costs.*
 
-#### 1. M3-4 — the maker-fee study 🔴 **NEXT** (§2 M3-4, ranked risk #2)
+#### 0. The T-wave — adopt the 12-pair universe 🔵 **RUNNING FIRST**
+
+Two 12-pair training seeds (~8h GPU, serial), then re-score under a fixed adoption rule, then
+promote. **It is queued and specified in [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2
+as T1–T4; do not restate it here.** M3 owns two things about it:
+
+- **The adoption rule is M3's, and it is pre-registered in that §2:** adopt 12 pairs iff the
+  wide run still passes every Tier-1 criterion the narrow run passes **and its worst window
+  does not degrade.** A pooled improvement that costs a window is a fail — §4.2 ranks on the
+  worst window precisely so that trade cannot be made.
+- **The grid is not re-searched.** T3 scores the already-chosen winner spec, transcribed, on
+  both universes of the same dumps. Re-running the 40 configs on a new pair population and
+  taking the best is the shopping [M3_PROTOCOL §0](./M3_PROTOCOL.md) forbids, and it would
+  cost this milestone the one thing that makes its numbers worth anything.
+
+#### 1. M3-4 — the maker-fee study 🔴 **NEXT after the T-wave** (§2 M3-4, ranked risk #2)
 
 **The question:** if we rest a limit order instead of crossing the spread, do we actually get
 filled — and at what real cost? Every M3-2 candidate roughly doubles at maker fees (the winner
@@ -216,23 +282,53 @@ say "measure it on the paper-sim stack"; that is now known to be wrong, because
 `apps/fluxtrader/lib/fluxtrader/trading/executor.ex` cannot place a limit order at all (§0.5.4).
 Standing that up first would be days of order-simulation work before the first number arrives.
 
-The data to answer it is **already collected**: the collector has written **5-second L2 order-book
-ladders** (`orderbook_levels` — raw best-first `[price, qty]` arrays) plus 5-second trade
-aggregates with `high`/`low`/`buy_volume`/`sell_volume` (`market_trades`) since 2026-07-17.
-That is ~40 days, entirely inside the validation window, and it supports all three questions
-directly: **fill probability** (did the tape trade at or through our resting price inside the
-window), **queue position** (resting depth at our level against subsequent same-side volume),
-and **adverse selection** (which way the mid moved right after the fills we did get). It runs
-in the existing `ml_analysis` image via `scripts/m3.sh` — no GPU, no new stack, no orders.
+The data to answer it is **already collected**: the collector has written raw L2 order-book
+ladders (`orderbook_levels` — best-first `[price, qty]` arrays, 100 levels a side) plus trade
+aggregates with `high`/`low`/`buy_volume`/`sell_volume` (`market_trades`). It supports all
+three questions directly: **fill probability** (did the tape trade at or through our resting
+price inside the window), **queue position** (resting depth at our level against subsequent
+same-side volume), and **adverse selection** (which way the mid moved right after the fills we
+did get). It runs in the existing `ml_analysis` image via `scripts/m3.sh` — no GPU, no new
+stack, no orders.
+
+🔴 **Two corrections to what this section used to claim, both measured on the VM 2026-08-27,
+and both change how M3-4a must be scoped.** It previously said "5-second ladders since
+2026-07-17, ~40 days". Neither half is right:
+
+| table | actual coverage |
+|---|---|
+| `orderbook_snapshots` (derived features) | from **2026-07-17** for BTC/ETH/SOL — this is the 40-day figure, and it is the *wrong table*, it carries no ladder |
+| `orderbook_levels` (**the raw L2 ladder M3-4 needs**) | from **2026-08-05** for the 8 served pairs (**22 days**) · from **2026-08-14** for ADA/AVAX/LINK/XRP (**13 days**) |
+| observed cadence | ~**10.7 s** per row, not 5 s — 8,037 rows/pair/day against the 17,280 a true 5-second poll would write, while `collector.ex` sets `@book_interval_ms 5_000` |
+
+The cadence gap is not cosmetic: **fill probability is measured against how much of the tape
+we can see, and a 10-second sampling interval sees half the book states a 5-second one does.**
+M3-4a must resolve whether the collector is dropping polls or the write is conditional, and
+state the sampling interval it assumes, before any fill number is quoted.
+
+**Scope it to the universe the T-wave decides.** If 12 pairs are adopted, the four new ones
+have 13 days of ladder against the majors' 22. Export all 12, but **pre-register the primary
+result on the pairs with the full window and report the short-window four separately** — do
+not silently pool two depths of evidence, and do not let a 13-day sample decide a pair's cost.
 
 Take it in the milestone's established two-step order:
 
-- **M3-4a** — export the book/tape slice for the eight served pairs, then **pre-register** the
-  study: the fill definition, the queue model, the adverse-selection horizon, and the number
-  that decides whether maker economics are real. Commit it before any measurement, exactly as
-  M3-1 and M3-3a did.
+- **M3-4a** — export the book/tape slice for the served pairs, then **pre-register** the
+  study: the sampling interval, the fill definition, the queue model, the adverse-selection
+  horizon, and the number that decides whether maker economics are real. Commit it before any
+  measurement, exactly as M3-1 and M3-3a did.
 - **M3-4** — run it, and publish the **realized effective round-trip cost per pair** next to
   the assumed 5 and 14 bps, then re-score the M3-2 grid at the measured cost.
+
+**This is also the gate on any universe wider than 12.** The 14 bps is a single number applied
+to every pair, and §0.6's gain is carried by mid-caps whose spreads are not the majors'. Until
+M3-4 produces per-pair costs, adding instruments is buying edge against an unpriced liability.
+The one thing worth doing *before* then is starting **collection** on any candidate pair, since
+candles backfill four years on demand and order-book history does not — it begins the day the
+collector is pointed at the pair, which is why the four newest pairs have 13 days and not 22.
+Budget the disk first: `orderbook_levels` runs ~24 MB per pair per day (5.3 GB for the 1.78M
+rows currently held), so 12 pairs is ~8.6 GB/month against 55 GB free on `fluxtrader-1` — about
+six months of headroom, under four if the universe grows to twenty.
 
 #### 2. M3-0b — the price/funding side-table (§2 M3-0b)
 
