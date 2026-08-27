@@ -12,7 +12,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from . import backtest, dumps, metrics, regime, search, validate
+from . import backtest, dumps, features, metrics, regime, search, validate
 
 
 def cmd_validate(args) -> int:
@@ -42,6 +42,21 @@ def primary_grid() -> list[backtest.PolicySpec]:
                         label=f"cov{cov:g}_hold{hold}_rq{rq if rq else 'none'}_mc{mc or 'none'}",
                     ))
     return specs
+
+
+# The runs docs/M3_3_PROTOCOL.md §4 and §6 pre-register, for the same reason primary_grid()
+# exists: "the 14 runs" has to be a list a later session can re-derive, not a claim in prose.
+def learned_grid() -> list[features.LearnedConfig]:
+    """§4: 2 model classes x 2 entry rules x 2 sizings = the 8 learned configurations."""
+    return [features.LearnedConfig(model=m, entry=e, sizing=s)
+            for m in ("A", "B") for e in ("R1", "R2") for s in ("S1", "S2")]
+
+
+def ablation_grid() -> list[features.LearnedConfig]:
+    """§6 control C2: the confidence-only fit at all four entry x sizing settings, so a
+    matched ablation exists whatever the winner's settings turn out to be."""
+    return [features.LearnedConfig(model="conf", entry=e, sizing=s)
+            for e in ("R1", "R2") for s in ("S1", "S2")]
 
 
 def cmd_power(args) -> int:
@@ -95,6 +110,78 @@ def cmd_power(args) -> int:
               + f"   {'YES' if ok else 'no'}")
     print(f"\n  {sum(eligible)} of {len(eligible)} configs are eligible for promotion; "
           f"the rest are under-sampled and are reported but cannot win (M3_PROTOCOL §4).")
+    return 0
+
+
+def cmd_fitprep(args) -> int:
+    """Print the facts M3-3's pre-registration is built on — COUNTS AND FEATURE STRUCTURE ONLY.
+
+    The counterpart of `m3 power`, and it exists for the same reason: it runs BEFORE any
+    model is fitted, so the fold structure, the capacity budget and the eligibility risk are
+    fixed without anyone having seen whether the features predict anything. Nothing here
+    touches `y_bps` — not a correlation, not a mean, not a sign. The relationship between an
+    observation and the target is the result, and M3_3_PROTOCOL is written before it exists.
+    """
+    ds = dumps.load_baseline(pairs=dumps.BASE8)
+    regimes = {d.seed: regime.build(d.df) for d in ds}
+    feats = {d.seed: features.build(d, regimes[d.seed]) for d in ds}
+
+    print("=" * 92)
+    print("A. THE OBSERVATION VECTOR — completeness over each seed's full 240m bar population")
+    print("=" * 92)
+    print(f"  {len(features.FEATURES)} features: {', '.join(features.FEATURES)}")
+    print(f"\n  {'seed':<6}{'bars':>12}{'complete':>12}{'dropped':>10}{'  reason a bar drops'}")
+    for s, f in feats.items():
+        c = features.complete(f)
+        print(f"  {s:<6}{len(f):>12,}{len(c):>12,}{len(f) - len(c):>10,}"
+              f"   incomplete 24h/7d lookback")
+    incomplete = pd.concat([f[~f.index.isin(features.complete(f).index)] for f in feats.values()])
+    if len(incomplete):
+        t = pd.to_datetime(incomplete["ts"], unit="ns", utc=True)
+        print(f"  every dropped bar lies in {t.min():%Y-%m-%d}..{t.max():%Y-%m-%d} "
+              f"(the warm-up at the start of the dump), across "
+              f"{incomplete['window'].value_counts().to_dict()}")
+
+    print("\n" + "=" * 92)
+    print(f"B. THE CANDIDATE POOL — the top {features.POOL_COVERAGE:.0%} of bars by 240m confidence")
+    print("=" * 92)
+    pools = {s: features.pool(f) for s, f in feats.items()}
+    print(f"  {'seed':<6}" + "".join(f"{n:>10}" for n in features.WINDOW_NAMES) + f"{'total':>10}")
+    for s, p in pools.items():
+        per = [int((p["window"] == n).sum()) for n in features.WINDOW_NAMES]
+        print(f"  {s:<6}" + "".join(f"{v:>10,}" for v in per) + f"{len(p):>10,}")
+    allpool = pd.concat(pools.values(), ignore_index=True)
+    per = [int((allpool["window"] == n).sum()) for n in features.WINDOW_NAMES]
+    print(f"  {'POOL':<6}" + "".join(f"{v:>10,}" for v in per) + f"{len(allpool):>10,}")
+
+    print("\n" + "=" * 92)
+    print("C. THE FOLDS — leave-one-window-out, and the CLUSTER count is the capacity budget")
+    print("=" * 92)
+    print("   Rows are not the sample size (M3_PROTOCOL §2). Clustering on the exit calendar")
+    print("   day, a fold's fit is backed by this many independent trading days:")
+    exit_day = pd.to_datetime(
+        allpool["ts"] + 240 * 60 * dumps.NS, unit="ns", utc=True).dt.floor("D")
+    allpool = allpool.assign(_day=exit_day)
+    print(f"\n  {'held out':<10}{'fit rows':>12}{'fit clusters':>14}"
+          f"{'held rows':>12}{'held clusters':>15}")
+    for held, train in features.folds():
+        tr = allpool[allpool["window"].isin(train)]
+        he = allpool[allpool["window"] == held]
+        print(f"  {held:<10}{len(tr):>12,}{tr['_day'].nunique():>14,}"
+              f"{len(he):>12,}{he['_day'].nunique():>15,}")
+    print(f"\n  model A = {len(features.design(allpool.head(2))[1])} terms, "
+          f"model B = {len(features.design(allpool.head(2), quadratic=True)[1])} terms, "
+          f"against ~{allpool['_day'].nunique() * 3 // 4} training clusters per fold.")
+
+    print("\n" + "=" * 92)
+    print("D. COLLINEARITY among the observations (target-free — no y_bps is touched)")
+    print("=" * 92)
+    corr = allpool[features.FEATURES].corr()
+    print(corr.to_string(float_format=lambda v: f"{v:+.2f}"))
+    off = corr.where(~np.eye(len(corr), dtype=bool)).abs().stack()
+    a, b = off.idxmax()
+    print(f"\n  strongest pair: {a} / {b} at {off.max():.2f} — a ridge penalty is chosen per")
+    print("  fold (M3_3_PROTOCOL §4.2) precisely because several of these move together.")
     return 0
 
 
@@ -240,6 +327,8 @@ def main() -> int:
                    ).set_defaults(fn=cmd_power)
     sub.add_parser("search", help="M3-2: run and score the 40 pre-registered configurations"
                    ).set_defaults(fn=cmd_search)
+    sub.add_parser("fitprep", help="M3-3 pre-registration facts: features, pool, folds "
+                   "(counts only — no learned P&L)").set_defaults(fn=cmd_fitprep)
 
     p = sub.add_parser("policy", help="score one policy spec")
     p.add_argument("--coverage", type=float, default=0.05)

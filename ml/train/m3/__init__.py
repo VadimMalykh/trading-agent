@@ -9,6 +9,7 @@ Layout:
     regime.py    rebuild the Q1 regime observables from the dumps themselves
     backtest.py  the event-driven policy simulator
     metrics.py   P&L / drawdown / Sharpe / calendar-window reporting
+    features.py  the M3-3 observation vector, the candidate pool and the LOWO folds
     validate.py  the acceptance tests — run these before believing any policy number
     cli.py       `python -m m3 <subcommand>`
 """

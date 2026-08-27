@@ -10,6 +10,7 @@ Master roadmap for the whole project. Details can change via discussion; this is
 | [M1_PLAN.md](./M1_PLAN.md) | M1 implementation checklist (session-resilient) |
 | [M3_PLAN.md](./M3_PLAN.md) | M3 policy milestone — sequence, constraints, exit criteria |
 | [M3_PROTOCOL.md](./M3_PROTOCOL.md) | M3's pre-registered evaluation protocol — frozen; read before any policy search |
+| [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) | M3-3's pre-registration — the leave-one-window-out fold structure and the 14 learned runs |
 | [README.md](../README.md) | How to run what exists today |
 
 **Last updated:** 2026-08-27  

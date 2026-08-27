@@ -62,6 +62,12 @@ class PolicySpec:
     max_concurrent: int | None = None      # portfolio cap, per seed, across pairs
     sides: str = "both"                    # "both" | "long" | "short"
     side_from: str = "model"               # "model" | "momentum" (M3_PROTOCOL §3.2 control)
+    # --- M3-3 (M3_3_PROTOCOL §4): entry ranked on a LEARNED score instead of on `conf` ---
+    # These name columns in the per-seed `overlay` frames `run()` takes. They are inert when
+    # unset, so every M3-2 number is produced by the identical code path it was produced by.
+    score_col: str | None = None           # rank entries on this column, not on `conf`
+    score_min: float | None = None         # or take every bar with score >= this (rule R1)
+    size_col: str | None = None            # per-bar size, already normalised by the fitter
     label: str = ""
 
     def degrees_of_freedom(self) -> int:
@@ -69,6 +75,10 @@ class PolicySpec:
                  self.regime_min or self.regime_quantile,
                  self.size_by_regime, self.max_concurrent]
         return sum(1 for k in knobs if k not in (None, False))
+
+    def __post_init__(self) -> None:
+        if self.score_min is not None and self.score_col is None:
+            raise SystemExit("score_min needs score_col — a threshold on which score?")
 
 
 @dataclass
@@ -137,11 +147,18 @@ def _simulate_seed(bars: pd.DataFrame, hold_bars: int, max_concurrent: int | Non
 
 
 def run(dumps: list[Dump], spec: PolicySpec,
-        regimes: dict[str, pd.DataFrame] | None = None) -> Result:
+        regimes: dict[str, pd.DataFrame] | None = None,
+        overlay: dict[str, pd.DataFrame] | None = None) -> Result:
     """Run one policy across a list of seed dumps and return the pooled trade ledger.
 
     `regimes` maps seed -> the frame returned by regime.build(); required iff the spec
     conditions or sizes on a regime column.
+
+    `overlay` maps seed -> a (pair, ts, ...) frame of per-bar columns computed OUTSIDE this
+    module — in practice M3-3's out-of-fold learned score and its derived size. It is merged
+    left onto the bar population, so a bar the fitter never scored (one outside the candidate
+    pool, or one with an incomplete lookback) carries NaN and is treated as unenterable
+    rather than as a zero-scoring candidate.
     """
     hold_h = spec.hold_horizon or spec.signal_horizon
     if hold_h not in HORIZON_BARS:
@@ -171,10 +188,25 @@ def run(dumps: list[Dump], spec: PolicySpec,
         elif spec.side_from != "model":
             raise SystemExit(f"side_from must be 'model' or 'momentum', got {spec.side_from!r}")
 
+        if overlay is not None and d.seed in overlay:
+            bars = bars.merge(overlay[d.seed], on=["pair", "ts"], how="left")
+
         # --- invariant 1: coverage rank over this seed's own population ---------------
-        thr = coverage_threshold(bars["conf"].to_numpy(np.float64), spec.coverage)
+        # With a learned score the ranking variable changes but the DEFINITION does not:
+        # still "the top c% of this seed's bars", still tie-inclusive, still derived per
+        # seed. Unscored bars sink to -inf, so a coverage of 0.02 against a pool of the top
+        # 10% means the top 2% OF ALL BARS — the same trade budget the M3-2 winner spends,
+        # which is what makes the two rankings comparable at matched coverage.
+        rank_col = spec.score_col or "conf"
+        rank_vals = bars[rank_col].to_numpy(np.float64)
+        if spec.score_col is not None:
+            rank_vals = np.where(np.isnan(rank_vals), -np.inf, rank_vals)
+        if spec.score_min is not None:
+            thr = float(spec.score_min)
+        else:
+            thr = coverage_threshold(rank_vals, spec.coverage)
         thresholds[d.seed] = thr
-        sel = bars[bars["conf"] >= thr].copy()
+        sel = bars[rank_vals >= thr].copy()
 
         # --- regime conditioning ------------------------------------------------------
         if spec.regime_col:
@@ -207,6 +239,13 @@ def run(dumps: list[Dump], spec: PolicySpec,
             sel = sel[sel["side"] < 0]
 
         sel["size"] = 1.0
+        if spec.size_col is not None:
+            # M3-3's learned sizing. The fitter has already normalised and clipped it on
+            # TRAINING-fold data only (learn.py), because a size normalised over the whole
+            # period would carry the held-out window's own scale back into its score.
+            if spec.size_by_regime:
+                raise SystemExit("size_col and size_by_regime are two different sizing rules")
+            sel["size"] = sel[spec.size_col].to_numpy(np.float64)
         if spec.size_by_regime:
             if not spec.regime_col:
                 raise SystemExit("size_by_regime needs regime_col")
