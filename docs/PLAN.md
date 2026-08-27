@@ -11,6 +11,7 @@ Master roadmap for the whole project. Details can change via discussion; this is
 | [M3_PLAN.md](./M3_PLAN.md) | M3 policy milestone — sequence, constraints, exit criteria |
 | [M3_PROTOCOL.md](./M3_PROTOCOL.md) | M3's pre-registered evaluation protocol — frozen; read before any policy search |
 | [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) | M3-3's pre-registration — the leave-one-window-out fold structure and the 14 learned runs |
+| [M3_3_RESULTS.md](./M3_3_RESULTS.md) | M3-3's generated results — the learned policy did not beat the rules baseline |
 | [README.md](../README.md) | How to run what exists today |
 
 **Last updated:** 2026-08-27  
@@ -98,7 +99,7 @@ Phase M1 Data + 15m supervised baseline     ✅ pipeline done (improve quality o
     │
 Phase M2 Multi-horizon + confidence gating  ✅ train_m2 / eval_m2 (quality improves with data)
     │
-Phase M3 Discrete policy + sim A/B          🟡 in progress (M3-0a, M3-1 done; M3-2 next)
+Phase M3 Discrete policy + sim A/B          🟡 in progress (M3-0a/1/2/3 done; maker-fee study next)
     │
 Phase M4 Positional + alts                  ⬜
     │
@@ -189,6 +190,8 @@ block and the only thing a fresh session needs to read to resume.
 | A/B | Signal-only vs signal+policy in simulation |
 
 **Exit criteria:** Sim shows controlled max DD and non-pathological trade rate; policy never bypasses hard limits.
+
+**Status (2026-08-27):** the sequence is complete through the learned policy. A rules baseline clears the pre-registered bar ([M3_2_RESULTS.md](./M3_2_RESULTS.md)); the learned policy did not beat it ([M3_3_RESULTS.md](./M3_3_RESULTS.md)), so the rule stands as M3's policy and the maker-fee study is next.
 
 **Full plan:** see [M3_PLAN.md](./M3_PLAN.md) — the sequence (backtester → protocol → rules baseline → learned policy), the constraints M2 hands over, and what to bring back at each step. No GPU is required for any of it.
 

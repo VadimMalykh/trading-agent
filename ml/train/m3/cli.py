@@ -2,6 +2,8 @@
 
     ./scripts/m3.sh -m m3 validate            # the two acceptance tests (run this first)
     ./scripts/m3.sh -m m3 power               # the pre-registration facts (M3_PROTOCOL §2/§4)
+    ./scripts/m3.sh -m m3 fitprep             # M3-3 pre-registration facts (counts only)
+    ./scripts/m3.sh -m m3 learn               # M3-3: fit and score the 14 learned runs
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -12,7 +14,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from . import backtest, dumps, features, metrics, regime, search, validate
+from . import backtest, dumps, features, learn, metrics, regime, search, validate
 
 
 def cmd_validate(args) -> int:
@@ -276,6 +278,136 @@ def cmd_search(args) -> int:
     return 0
 
 
+def cmd_learn(args) -> int:
+    """M3-3 — fit the learned policy and score it under the committed rule.
+
+    Like `m3 search`, this command decides nothing. Every threshold it applies is
+    transcribed from docs/M3_3_PROTOCOL.md, which was committed before the first fit ran;
+    §7 of that file pre-registers what happens if nothing beats the baseline, so a clean
+    sweep of failures is an outcome this code prints rather than an error it works around.
+    """
+    ds = dumps.load_baseline(pairs=dumps.BASE8)
+    seeds = [d.seed for d in ds]
+    cal = search.calendar_days(ds)
+    print(f"loaded {len(ds)} seeds ({', '.join(d.run_id for d in ds)}), "
+          f"{len(dumps.BASE8)} pairs, calendar span {cal:.1f}d")
+
+    regimes = {d.seed: regime.build(d.df) for d in ds}
+    feats = {d.seed: features.build(d, regimes[d.seed]) for d in ds}
+    counts = learn.bar_counts(feats)
+    pool = pd.concat([features.pool(f) for f in feats.values()], ignore_index=True)
+    print(f"candidate pool: {len(pool):,} rows (top {features.POOL_COVERAGE:.0%} by 240m conf)")
+
+    # --- §4: fit each MODEL CLASS once; the rules are read off it -----------------------
+    grid = learned_grid() + ablation_grid()
+    oofs = {}
+    for model in ("A", "B", "conf"):
+        oofs[model] = learn.fit_oof(pool, model, counts)
+        lams = {w: f.lam for w, f in oofs[model].fits.items()}
+        print(f"  fitted model {model}: lambda per fold {lams}")
+
+    def score_cfg(cfg: features.LearnedConfig) -> tuple[dict, learn.Policy]:
+        pol = learn.apply_rules(oofs[cfg.model], cfg, counts)
+        res = backtest.run(ds, learn.spec_for(cfg), regimes, overlay=learn.overlay(pol))
+        card = search.scorecard(cfg.label, res.trades, seeds, cal, learn.spec_for(cfg))
+        search.tier1(card)
+        return card, pol
+
+    cards, policies = {}, {}
+    for i, cfg in enumerate(grid, 1):
+        card, pol = score_cfg(cfg)
+        cards[cfg.label], policies[cfg.label] = card, pol
+        print(f"  [{i:>2}/{len(grid)}] {cfg.label:<20} n={card['trades']:>6,}  "
+              f"worst={card['worst_net']:+7.2f}  "
+              f"{'PASS' if card['tier1']['PASS'] else '-'}")
+
+    learned = [cards[c.label] for c in learned_grid()]
+    ablation = [cards[c.label] for c in ablation_grid()]
+
+    # --- §6 C1: the baseline re-scored under this machinery -----------------------------
+    c1_ov, c1_spec = learn.baseline_control(pool, counts)
+    c1 = search.scorecard(c1_spec.label, backtest.run(ds, c1_spec, regimes, overlay=c1_ov).trades,
+                          seeds, cal, c1_spec)
+    search.tier1(c1)
+    print(f"\nC1 (M3-2 winner re-scored): worst={c1['worst_net']:+.2f} against the "
+          f"published {learn.BASELINE_BAR_BPS:+.2f}")
+
+    # --- §6 C2's falsifiable check ------------------------------------------------------
+    # A one-feature fit with a positive coefficient orders bars identically to `conf`, so
+    # learnconf_R2_S1 must enter EXACTLY the bars C1 enters. If it does not, the harness is
+    # wrong and the run is void rather than interesting.
+    signs = {w: float(f.beta[1]) for w, f in oofs["conf"].fits.items()}
+    conf_pol = policies["learnconf_R2_S1"]
+    conf_bars = set(map(tuple, conf_pol.oof.pool.loc[conf_pol.entry, ["seed", "pair", "ts"]]
+                        .to_numpy()))
+    base_bars = set(map(tuple, pd.concat(
+        [g.assign(seed=s)[["seed", "pair", "ts"]] for s, g in c1_ov.items()]).to_numpy()))
+    same = conf_bars == base_bars
+    if all(v > 0 for v in signs.values()):
+        verdict = ("✅ **The check holds.**" if same else
+                   "🔴 **THE CHECK FAILS — the run is void, not interesting.**")
+        c2_check = (
+            f"All four folds fit `conf_rank` with a **positive** coefficient "
+            f"({', '.join(f'{w}={v:+.2f}' for w, v in signs.items())}), so the "
+            f"confidence-only model orders bars identically to `conf` and "
+            f"`learnconf_R2_S1` must enter exactly the bars C1 enters.\n\n{verdict} "
+            f"{len(conf_bars):,} entry bars against {len(base_bars):,}, "
+            f"{len(conf_bars & base_bars):,} in common.")
+    else:
+        c2_check = (
+            f"🔴 **The coefficient on `conf_rank` is not positive in every fold** "
+            f"({', '.join(f'{w}={v:+.2f}' for w, v in signs.items())}). Within the top "
+            f"{features.POOL_COVERAGE:.0%} of bars, more confidence does not mean more edge "
+            f"in at least one fold. That is a genuine finding about the signal rather than a "
+            f"harness fault, and M3_3_PROTOCOL §6 pre-registered reporting it as one; the "
+            f"set-equality check does not apply where the ordering inverts. "
+            f"{len(conf_bars):,} entry bars against C1's {len(base_bars):,}, "
+            f"{len(conf_bars & base_bars):,} in common.")
+    print(c2_check.replace("**", ""))
+
+    # --- ranking and the bar ------------------------------------------------------------
+    ranked = search.rank(learned)
+    beat = [c for c in ranked if c["worst_net"] > learn.BASELINE_BAR_BPS]
+    winner = ranked[0] if ranked else None
+
+    # --- §6 C3: the O8 replication -----------------------------------------------------
+    # Following the precedent `m3 search` set for M3-2: if nothing passes, the
+    # pre-registered run still happens and attaches to the best-ranked ELIGIBLE (P4-passing)
+    # configuration instead, labelled as such. A pre-registered run that only happens on
+    # success is a run that can only ever produce good news.
+    eligible = [c for c in learned if c["tier1"]["P4"]]
+    best = (ranked[0] if ranked else
+            max(eligible, key=lambda c: (c["worst_net"], c["taker14"]["net_bps"]))
+            if eligible else None)
+    c3 = None
+    if best is not None:
+        w_cfg = next(c for c in learned_grid() if c.label == best["label"])
+        o8 = dumps.load(dumps.O8_RUN, seed="o8")
+        o8_feat = features.build(o8, regime.build(o8.df))
+        o8_pool = features.pool(o8_feat)
+        ov = learn.replicate_o8(o8_pool, policies[w_cfg.label],
+                                learn.bar_counts({"o8": o8_feat}))
+        r = backtest.run([o8], learn.spec_for(w_cfg, label=w_cfg.label + "_O8"), None, overlay=ov)
+        c3 = search.scorecard(w_cfg.label + "_O8", r.trades, ["o8"],
+                              search.calendar_days([o8]), learn.spec_for(w_cfg))
+        search.tier1(c3)
+
+    # The pool's own mean gross edge per window — not a policy result, but the quantity the
+    # per-fold intercepts of §C are estimates of, and the only way to read them.
+    pool_means = {w: float(g["y_bps"].mean()) for w, g in pool.groupby("window", sort=True)}
+
+    text = learn.render_report(learned, ablation, c1, c3, oofs, winner, best, ranked,
+                               c2_check, pool_means, ds, cal,
+                               n_runs=len(grid) + 1 + (1 if c3 is not None else 0))
+    os.makedirs(os.path.dirname(learn.REPORT_PATH), exist_ok=True)
+    with open(learn.REPORT_PATH, "w") as fh:
+        fh.write(text)
+    print("\n" + text)
+    print(f"\n[report written to {learn.REPORT_PATH}] — copy it to its canonical home:")
+    print("  cp ml/train/output/m3/M3_3_RESULTS.md docs/M3_3_RESULTS.md")
+    return 0
+
+
 def cmd_policy(args) -> int:
     ds = dumps.load_baseline(pairs=dumps.BASE8)
     spec = backtest.PolicySpec(
@@ -329,6 +461,8 @@ def main() -> int:
                    ).set_defaults(fn=cmd_search)
     sub.add_parser("fitprep", help="M3-3 pre-registration facts: features, pool, folds "
                    "(counts only — no learned P&L)").set_defaults(fn=cmd_fitprep)
+    sub.add_parser("learn", help="M3-3: fit and score the 14 pre-registered learned runs"
+                   ).set_defaults(fn=cmd_learn)
 
     p = sub.add_parser("policy", help="score one policy spec")
     p.add_argument("--coverage", type=float, default=0.05)

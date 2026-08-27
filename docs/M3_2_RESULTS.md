@@ -153,7 +153,7 @@ cov0.02_hold240_rqnone_mcnone_SIZED_MOMSIDE  1,772    -9.8   -21.8   -18.3    +3
 
 ### cov0.02_hold240_rqnone_mcnone
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold240_rqnone_mcnone')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rqnone_mcnone')`
 
 ```
 trades=1,783  seeds=3  tr/day/seed=2.35 over 253d (2.71 over the 219d it is active)
@@ -177,7 +177,7 @@ tier-1: P1=Y  P2=Y  P3=Y  P4=Y  P5=Y  P6=Y  PASS=Y
 
 ### cov0.02_hold240_rqnone_mcnone_SIZED
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=None, size_by_regime=True, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold240_rqnone_mcnone_SIZED')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=None, size_by_regime=True, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rqnone_mcnone_SIZED')`
 
 ```
 trades=1,773  seeds=3  tr/day/seed=2.34 over 253d (2.71 over the 218d it is active)
@@ -224,7 +224,7 @@ Replication across *instruments*, not across time — same calendar period, four
 
 ### cov0.02_hold240_rqnone_mcnone_O8
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold240_rqnone_mcnone')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rqnone_mcnone')`
 
 ```
 trades=871  seeds=1  tr/day/seed=3.28 over 265d (3.58 over the 243d it is active)
@@ -248,7 +248,7 @@ tier-1: P1=Y  P2=Y  P3=N  P4=N  P5=Y  P6=Y  PASS=N
 
 ### cov0.02_hold240_rqnone_mcnone_SIZED_O8
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=None, size_by_regime=True, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold240_rqnone_mcnone_SIZED')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=None, size_by_regime=True, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rqnone_mcnone_SIZED')`
 
 ```
 trades=869  seeds=1  tr/day/seed=3.27 over 265d (3.61 over the 241d it is active)
@@ -288,7 +288,7 @@ Both fees, per window, per seed, per side, with the clustered interval, for ever
 
 ### cov0.01_hold60_rqnone_mcnone
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.01_hold60_rqnone_mcnone')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold60_rqnone_mcnone')`
 
 ```
 trades=2,440  seeds=3  tr/day/seed=3.22 over 253d (3.72 over the 218d it is active)
@@ -312,7 +312,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold60_rqnone_mc3
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.01_hold60_rqnone_mc3')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold60_rqnone_mc3')`
 
 ```
 trades=2,141  seeds=3  tr/day/seed=2.82 over 253d (3.27 over the 218d it is active)
@@ -336,7 +336,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold60_rq0.8_mcnone
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.01_hold60_rq0.8_mcnone')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold60_rq0.8_mcnone')`
 
 ```
 trades=1,502  seeds=3  tr/day/seed=1.98 over 253d (2.31 over the 216d it is active)
@@ -360,7 +360,7 @@ tier-1: P1=N  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold60_rq0.8_mc3
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.01_hold60_rq0.8_mc3')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold60_rq0.8_mc3')`
 
 ```
 trades=1,239  seeds=3  tr/day/seed=1.63 over 253d (1.91 over the 216d it is active)
@@ -384,7 +384,7 @@ tier-1: P1=N  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold240_rqnone_mcnone
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.01_hold240_rqnone_mcnone')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold240_rqnone_mcnone')`
 
 ```
 trades=1,081  seeds=3  tr/day/seed=1.43 over 253d (1.65 over the 218d it is active)
@@ -408,7 +408,7 @@ tier-1: P1=Y  P2=Y  P3=N  P4=N  P5=Y  P6=Y  PASS=N
 
 ### cov0.01_hold240_rqnone_mc3
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.01_hold240_rqnone_mc3')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold240_rqnone_mc3')`
 
 ```
 trades=920  seeds=3  tr/day/seed=1.21 over 253d (1.40 over the 218d it is active)
@@ -432,7 +432,7 @@ tier-1: P1=N  P2=Y  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold240_rq0.8_mcnone
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.01_hold240_rq0.8_mcnone')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold240_rq0.8_mcnone')`
 
 ```
 trades=707  seeds=3  tr/day/seed=0.93 over 253d (1.09 over the 216d it is active)
@@ -456,7 +456,7 @@ tier-1: P1=Y  P2=Y  P3=Y  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold240_rq0.8_mc3
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.01_hold240_rq0.8_mc3')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold240_rq0.8_mc3')`
 
 ```
 trades=565  seeds=3  tr/day/seed=0.75 over 253d (0.87 over the 216d it is active)
@@ -480,7 +480,7 @@ tier-1: P1=Y  P2=Y  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold1440_rqnone_mcnone
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.01_hold1440_rqnone_mcnone')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold1440_rqnone_mcnone')`
 
 ```
 trades=530  seeds=3  tr/day/seed=0.70 over 253d (0.81 over the 218d it is active)
@@ -504,7 +504,7 @@ tier-1: P1=Y  P2=Y  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold1440_rqnone_mc3
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.01_hold1440_rqnone_mc3')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold1440_rqnone_mc3')`
 
 ```
 trades=412  seeds=3  tr/day/seed=0.54 over 253d (0.63 over the 218d it is active)
@@ -528,7 +528,7 @@ tier-1: P1=Y  P2=Y  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.01_hold1440_rq0.8_mcnone
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.01_hold1440_rq0.8_mcnone')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold1440_rq0.8_mcnone')`
 
 ```
 trades=371  seeds=3  tr/day/seed=0.49 over 253d (0.57 over the 216d it is active)
@@ -552,7 +552,7 @@ tier-1: P1=Y  P2=N  P3=N  P4=N  P5=N  P6=N  PASS=N
 
 ### cov0.01_hold1440_rq0.8_mc3
 
-`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.01_hold1440_rq0.8_mc3')`
+`PolicySpec(coverage=0.01, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.01_hold1440_rq0.8_mc3')`
 
 ```
 trades=273  seeds=3  tr/day/seed=0.36 over 253d (0.42 over the 216d it is active)
@@ -576,7 +576,7 @@ tier-1: P1=Y  P2=N  P3=N  P4=N  P5=N  P6=N  PASS=N
 
 ### cov0.02_hold60_rqnone_mcnone
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold60_rqnone_mcnone')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold60_rqnone_mcnone')`
 
 ```
 trades=4,411  seeds=3  tr/day/seed=5.82 over 253d (6.71 over the 219d it is active)
@@ -600,7 +600,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold60_rqnone_mc3
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.02_hold60_rqnone_mc3')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold60_rqnone_mc3')`
 
 ```
 trades=3,762  seeds=3  tr/day/seed=4.96 over 253d (5.72 over the 219d it is active)
@@ -624,7 +624,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold60_rq0.8_mcnone
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold60_rq0.8_mcnone')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold60_rq0.8_mcnone')`
 
 ```
 trades=2,565  seeds=3  tr/day/seed=3.38 over 253d (3.95 over the 216d it is active)
@@ -648,7 +648,7 @@ tier-1: P1=N  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold60_rq0.8_mc3
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.02_hold60_rq0.8_mc3')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold60_rq0.8_mc3')`
 
 ```
 trades=2,044  seeds=3  tr/day/seed=2.70 over 253d (3.15 over the 216d it is active)
@@ -672,7 +672,7 @@ tier-1: P1=N  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold240_rqnone_mcnone
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold240_rqnone_mcnone')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rqnone_mcnone')`
 
 ```
 trades=1,783  seeds=3  tr/day/seed=2.35 over 253d (2.71 over the 219d it is active)
@@ -696,7 +696,7 @@ tier-1: P1=Y  P2=Y  P3=Y  P4=Y  P5=Y  P6=Y  PASS=Y
 
 ### cov0.02_hold240_rqnone_mc3
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.02_hold240_rqnone_mc3')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rqnone_mc3')`
 
 ```
 trades=1,458  seeds=3  tr/day/seed=1.92 over 253d (2.22 over the 219d it is active)
@@ -720,7 +720,7 @@ tier-1: P1=N  P2=Y  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold240_rq0.8_mcnone
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold240_rq0.8_mcnone')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rq0.8_mcnone')`
 
 ```
 trades=1,138  seeds=3  tr/day/seed=1.50 over 253d (1.75 over the 216d it is active)
@@ -744,7 +744,7 @@ tier-1: P1=Y  P2=Y  P3=Y  P4=N  P5=Y  P6=Y  PASS=N
 
 ### cov0.02_hold240_rq0.8_mc3
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.02_hold240_rq0.8_mc3')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rq0.8_mc3')`
 
 ```
 trades=868  seeds=3  tr/day/seed=1.14 over 253d (1.34 over the 216d it is active)
@@ -768,7 +768,7 @@ tier-1: P1=Y  P2=Y  P3=N  P4=N  P5=Y  P6=Y  PASS=N
 
 ### cov0.02_hold1440_rqnone_mcnone
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold1440_rqnone_mcnone')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold1440_rqnone_mcnone')`
 
 ```
 trades=804  seeds=3  tr/day/seed=1.06 over 253d (1.22 over the 219d it is active)
@@ -792,7 +792,7 @@ tier-1: P1=Y  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold1440_rqnone_mc3
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.02_hold1440_rqnone_mc3')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold1440_rqnone_mc3')`
 
 ```
 trades=595  seeds=3  tr/day/seed=0.78 over 253d (0.91 over the 219d it is active)
@@ -816,7 +816,7 @@ tier-1: P1=N  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold1440_rq0.8_mcnone
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold1440_rq0.8_mcnone')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold1440_rq0.8_mcnone')`
 
 ```
 trades=541  seeds=3  tr/day/seed=0.71 over 253d (0.83 over the 216d it is active)
@@ -840,7 +840,7 @@ tier-1: P1=Y  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold1440_rq0.8_mc3
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.02_hold1440_rq0.8_mc3')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold1440_rq0.8_mc3')`
 
 ```
 trades=378  seeds=3  tr/day/seed=0.50 over 253d (0.58 over the 216d it is active)
@@ -864,7 +864,7 @@ tier-1: P1=N  P2=N  P3=N  P4=N  P5=N  P6=N  PASS=N
 
 ### cov0.05_hold60_rqnone_mcnone
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.05_hold60_rqnone_mcnone')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold60_rqnone_mcnone')`
 
 ```
 trades=9,804  seeds=3  tr/day/seed=12.93 over 253d (14.33 over the 228d it is active)
@@ -888,7 +888,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold60_rqnone_mc3
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.05_hold60_rqnone_mc3')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=60, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold60_rqnone_mc3')`
 
 ```
 trades=8,250  seeds=3  tr/day/seed=10.88 over 253d (12.06 over the 228d it is active)
@@ -912,7 +912,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold60_rq0.8_mcnone
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.05_hold60_rq0.8_mcnone')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold60_rq0.8_mcnone')`
 
 ```
 trades=5,049  seeds=3  tr/day/seed=6.66 over 253d (7.78 over the 216d it is active)
@@ -936,7 +936,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold60_rq0.8_mc3
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.05_hold60_rq0.8_mc3')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=60, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold60_rq0.8_mc3')`
 
 ```
 trades=3,887  seeds=3  tr/day/seed=5.13 over 253d (5.99 over the 216d it is active)
@@ -960,7 +960,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold240_rqnone_mcnone
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.05_hold240_rqnone_mcnone')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold240_rqnone_mcnone')`
 
 ```
 trades=3,718  seeds=3  tr/day/seed=4.90 over 253d (5.44 over the 228d it is active)
@@ -984,7 +984,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold240_rqnone_mc3
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.05_hold240_rqnone_mc3')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=240, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold240_rqnone_mc3')`
 
 ```
 trades=3,016  seeds=3  tr/day/seed=3.98 over 253d (4.41 over the 228d it is active)
@@ -1008,7 +1008,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold240_rq0.8_mcnone
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.05_hold240_rq0.8_mcnone')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold240_rq0.8_mcnone')`
 
 ```
 trades=2,047  seeds=3  tr/day/seed=2.70 over 253d (3.15 over the 216d it is active)
@@ -1032,7 +1032,7 @@ tier-1: P1=Y  P2=Y  P3=Y  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold240_rq0.8_mc3
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.05_hold240_rq0.8_mc3')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold240_rq0.8_mc3')`
 
 ```
 trades=1,510  seeds=3  tr/day/seed=1.99 over 253d (2.33 over the 216d it is active)
@@ -1056,7 +1056,7 @@ tier-1: P1=Y  P2=Y  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold1440_rqnone_mcnone
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.05_hold1440_rqnone_mcnone')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold1440_rqnone_mcnone')`
 
 ```
 trades=1,497  seeds=3  tr/day/seed=1.97 over 253d (2.19 over the 228d it is active)
@@ -1080,7 +1080,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold1440_rqnone_mc3
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.05_hold1440_rqnone_mc3')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=1440, regime_col=None, regime_min=None, regime_quantile=None, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold1440_rqnone_mc3')`
 
 ```
 trades=1,051  seeds=3  tr/day/seed=1.39 over 253d (1.54 over the 228d it is active)
@@ -1104,7 +1104,7 @@ tier-1: P1=N  P2=N  P3=N  P4=Y  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold1440_rq0.8_mcnone
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', label='cov0.05_hold1440_rq0.8_mcnone')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold1440_rq0.8_mcnone')`
 
 ```
 trades=877  seeds=3  tr/day/seed=1.16 over 253d (1.35 over the 216d it is active)
@@ -1128,7 +1128,7 @@ tier-1: P1=N  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.05_hold1440_rq0.8_mc3
 
-`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', label='cov0.05_hold1440_rq0.8_mc3')`
+`PolicySpec(coverage=0.05, signal_horizon=240, hold_horizon=1440, regime_col='btc_absret_1d', regime_min=None, regime_quantile=0.8, size_by_regime=False, max_concurrent=3, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.05_hold1440_rq0.8_mc3')`
 
 ```
 trades=581  seeds=3  tr/day/seed=0.77 over 253d (0.89 over the 216d it is active)
@@ -1152,7 +1152,7 @@ tier-1: P1=N  P2=N  P3=N  P4=N  P5=N  P6=Y  PASS=N
 
 ### cov0.02_hold240_rqnone_mcnone_SIZED
 
-`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=None, size_by_regime=True, max_concurrent=None, sides='both', side_from='model', label='cov0.02_hold240_rqnone_mcnone_SIZED')`
+`PolicySpec(coverage=0.02, signal_horizon=240, hold_horizon=240, regime_col='btc_absret_1d', regime_min=None, regime_quantile=None, size_by_regime=True, max_concurrent=None, sides='both', side_from='model', score_col=None, score_min=None, size_col=None, label='cov0.02_hold240_rqnone_mcnone_SIZED')`
 
 ```
 trades=1,773  seeds=3  tr/day/seed=2.34 over 253d (2.71 over the 218d it is active)

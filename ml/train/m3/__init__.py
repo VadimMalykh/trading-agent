@@ -10,6 +10,7 @@ Layout:
     backtest.py  the event-driven policy simulator
     metrics.py   P&L / drawdown / Sharpe / calendar-window reporting
     features.py  the M3-3 observation vector, the candidate pool and the LOWO folds
+    learn.py     M3-3's ridge fits, the out-of-fold scoring and the write-up
     validate.py  the acceptance tests — run these before believing any policy number
     cli.py       `python -m m3 <subcommand>`
 """

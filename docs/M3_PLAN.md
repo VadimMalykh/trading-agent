@@ -1,9 +1,9 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** In progress — **M3-0a, M3-1 and M3-2 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar and M3-3 now has a benchmark. Unblocked: R0 promoted 2026-08-26.
+**Status:** In progress — **M3-0a, M3-1, M3-2 and M3-3 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar; the learned policy did not beat it, so that rule stands as M3's policy. Unblocked: R0 promoted 2026-08-26.
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
-**Related:** [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (**M3-3's own pre-registration — the fold structure and the 14 learned runs**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
+**Related:** [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (**M3-3's own pre-registration — the fold structure and the 14 learned runs**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [M3_3_RESULTS.md](./M3_3_RESULTS.md) (**M3-3's full generated results — all 14 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
 
 *Written 2026-08-24, at the moment M2 froze. This document is the plan for the whole
 milestone; it holds only what is currently true and actionable. When a step's conclusions
@@ -19,7 +19,7 @@ done, what the next command is, and what to bring back. When a step closes, its 
 moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
 never left here contradicting a later result.*
 
-**Last updated: 2026-08-27 (M3-2 complete).**
+**Last updated: 2026-08-27 (M3-3 complete — the learned policy did not beat the rules baseline).**
 
 ### Where the work stands
 
@@ -30,7 +30,8 @@ never left here contradicting a later result.*
 | **M3-0b** — price/funding side-table | ⬜ not started, and not needed until barrier exits are wanted |
 | **M3-1** — pre-registered protocol | ✅ **committed 2026-08-27 as [M3_PROTOCOL.md](./M3_PROTOCOL.md)**, before any search ran |
 | **M3-2** — rules baseline | ✅ **run 2026-08-27, all 40 configurations** — [M3_2_RESULTS.md](./M3_2_RESULTS.md). A baseline passes Tier 1 |
-| **M3-3** — learned policy | ⬜ **this is the next step** — it now has a benchmark to beat |
+| **M3-3** — learned policy | ✅ **run 2026-08-27, all 14 configurations** — [M3_3_RESULTS.md](./M3_3_RESULTS.md). **None beat the baseline; M3-2's rule stands as M3's policy** |
+| **the maker-fee study** (§3.3) | ⬜ **this is the next step** — ranked risk #2, and now the highest-value open item in the milestone |
 
 ### How to run anything in M3
 
@@ -43,6 +44,8 @@ and no GPU. `scripts/m3.sh` wraps it and builds it on first use:
 ./scripts/m3.sh -m m3 validate          # the two acceptance tests — run first, always
 ./scripts/m3.sh -m m3 power             # the pre-registration facts (M3_PROTOCOL §2/§3/§4)
 ./scripts/m3.sh -m m3 search            # M3-2: all 40 pre-registered runs, scored (~4 min)
+./scripts/m3.sh -m m3 fitprep           # M3-3's pre-registration facts (counts only)
+./scripts/m3.sh -m m3 learn             # M3-3: fit and score the 14 learned runs (~3 min)
 ./scripts/m3.sh -m m3 policy --help     # score one policy spec
 ./scripts/m3.sh --shell                 # interactive
 ```
@@ -149,22 +152,68 @@ untradeable** (every one loses 61–198 bps in w4), **1-hour holds never cover f
 **capping at 3 concurrent positions costs money in every single pairing** — on eight pairs
 held serially the uncapped policy is already a real 8-slot portfolio, not leverage.
 
+### What M3-3 established (2026-08-27) — the learned policy lost, and usefully
+
+**Full results: [M3_3_RESULTS.md](./M3_3_RESULTS.md) — all 14 runs, both fee assumptions,
+per window, per seed, per side. Protocol: [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md), committed
+before the first fit ran.** The short version, no statistics required:
+
+1. **Nothing learned beat the hand-written rule. Nothing learned even passed Tier 1.** The
+   best of the eight fitted configurations reaches **−7.18 bps** on its worst window against
+   the baseline's **+0.25**. M3_3_PROTOCOL §7 pre-registered this outcome and what follows
+   from it: **M3-2's rule is M3's policy**, the grid is not widened, and a bigger model is
+   not the remedy.
+2. 🔴 **The extra observations did not just fail to help — they cost money.** The
+   confidence-only ablation, fitted by the identical machinery on the one observation M3-2
+   already used, **beats both fitted models in three of the four rule pairings.** Nine
+   observations on ~188 independent trading days is over-specification, and running the
+   ablation is what makes that visible rather than arguable.
+3. 🔴 **The size of the edge does not hold still.** The mean gross edge available in the top
+   decile of bars is **+7.6 / +18.4 / +3.7 / −7.5 bps** across the four windows — a **25.9
+   bps swing, larger than the entire edge any policy here is chasing.** This is a fact about
+   the evidence, not about a model. It is why the entry rule that thresholds an *absolute*
+   predicted edge collapses (it simply stops firing in the low windows), and it is the
+   strongest argument yet for keeping every condition **rank-based** (§1.3.3): an ordering
+   survives what a level does not.
+4. **M3-2's central finding replicated, in a stronger form.** Holding the entry set constant
+   **bar for bar** — the ablation and the re-scored baseline enter the identical 1,796 trades
+   — sizing by the regime observable is worth **+8.6 bps on the worst window** and **+8.5
+   pooled**, and is the whole difference between failing Tier 1 and passing it. M3-2 reached
+   that conclusion by comparing two grid rows; this holds everything else fixed.
+5. **A harness check passed that was written to be able to fail.** §6 of the protocol
+   predicted, before the run, that a one-feature fit with a positive coefficient must select
+   exactly the bars the baseline selects. It did: 34,772 entry bars, identical. Had it not,
+   the run would have been void rather than interesting.
+
+The honest reading of why: the learned policy was given four genuinely new observations (the
+60m and 1440m heads and whether they agree with the 240m side) and could not turn them into
+anything. That is a real answer to a real question, and it cost one afternoon of laptop time
+rather than a wave of GPU runs.
+
 ### The next step, exactly
 
-**M3-3 — the learned policy.** Its bar is now set and is not negotiable (M3_PROTOCOL §4.4):
-pass all six Tier-1 criteria **and** beat **+0.25 bps worst-window net at taker**, which is
-`cov0.02_hold240_rqnone_mcnone_SIZED`. Re-run `m3 validate` first — a learned policy compared
-against a baseline computed by a changed harness is not a comparison. §2's M3-3 section holds
-the observation vector; give it `btc_absret_1d` as a **continuous** observation, not a
-threshold to rediscover, because §D1 is the evidence that the continuous form is the better
-one.
+**The maker-fee study (§3.3).** It was already the parallel item M3-2 rated above any further
+knob; with M3-3 closed it is simply the next step, and it is ranked risk #2.
 
-**The parallel item, and it is worth more than any further knob: the maker-fee study
-(§3.3).** Every candidate in M3-2 roughly doubles at 5 bps — the winner is +27.1 at maker
-against +15.0 at taker. Whether 5-bps fills are actually obtainable for these pairs and sizes
-is an untested assumption underwriting half the published economics, it is ranked risk #2,
-and it is cheap to measure on the paper-sim stack. If maker fills are real, the decision
-problem changes shape; if they are not, several M3-2 rows stop being interesting.
+Every M3-2 candidate roughly doubles at 5 bps — the winner is **+27.1 at maker against +15.0
+at taker** — so whether 5-bps fills are actually obtainable for these pairs and sizes is an
+untested assumption underwriting half the published economics. If maker fills are real the
+decision problem changes shape; if they are not, several M3-2 rows stop being interesting.
+It is measurable cheaply on the paper-sim stack ([SIMULATION.md](./SIMULATION.md)): quoted
+versus filled, queue position, and adverse selection on the fills that do arrive.
+
+**The second item, and it is the one that adds degrees of freedom rather than re-slicing the
+ones we have: M3-0b's price/funding side-table** (§M3-0b). It unlocks barrier exits (the open
+C4b mismatch), the funding term — signed, and real at a 4h hold — and the position-state
+observations M3-3 had to leave out of its vector for want of a price path. Build it in one
+pass with the book columns `BOOK_ERA_PLAN.md` B0 needs, so the two wavefronts share one
+alignment.
+
+**What M3-3 says NOT to do.** Do not widen the learned grid, extend the feature list, or
+reach for a larger model class — M3_3_PROTOCOL §4.1 and §7 pre-registered that a linear
+failure is not evidence a bigger model would succeed, and §D2's ablation is evidence in the
+opposite direction. Do not re-tune the M3-2 winner against the same evidence either. The
+binding constraint is ~220 independent trading days, and no rearrangement of them fixes that.
 
 ---
 
@@ -461,22 +510,47 @@ The direction-free property held: nothing in the winning configuration condition
 of the BTC move, and the momentum-side control (§3.2) confirms the *direction* comes from the
 model — its side is worth +36.9 bps/trade over `sign(trailing 240m)` on the same entry bars.
 
-### M3-3 — A learned policy, only if it beats M3-2
+### M3-3 — ✅ DONE (2026-08-27). The learned policy did not beat M3-2, and the rule stands.
 
-PLAN.md already locks the family: **offline / bandit-style on logged rollouts, not
-end-to-end price RL.** Keep it there.
+**Protocol: [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md), committed before the first fit ran.
+Results: [M3_3_RESULTS.md](./M3_3_RESULTS.md), 14 runs.** §0.0 carries the plain-language
+summary. The rest of this section is kept as the *rationale* — what was built and why it was
+built that way — because the next session's question will be "was this done properly?" and
+the answer has to be inspectable.
 
-**Observation vector** (from NEXT_TRAINING_PLAN §2):
+PLAN.md locks the family and M3-3 stayed inside it: **offline / bandit-style on logged
+rollouts, not end-to-end price RL.** One simplification is worth carrying forward, because it
+is a property of the evidence rather than a choice: **the logged rollouts carry full feedback,
+not bandit feedback.** The dumps hold `fwd_ret` for every bar, not only for bars a behaviour
+policy happened to trade, so the counterfactual is known everywhere. There is no propensity to
+model and no unobserved arm — the direct method is exact here, and any future policy work over
+these dumps inherits that.
 
-- M2's per-horizon probabilities and confidences — as **coverage rank**, per §1.3.3;
-- trailing market-move magnitude (BTC |ret| over 24h, or the pooled-universe equivalent);
-- position state: side, age, unrealized PnL;
-- optionally realized-vol context (see §3.4).
+**What was fitted.** A value function ŝ(x) = the estimated gross edge in bps of taking M2's
+side at this bar, over nine rank-valued observations; the policy is derived from it by an
+entry rule and a sizing rule. The side is **not** learned — M2 supplies it and M3-2 §D3 measured
+it at +36.9 bps over a momentum side, which is the one part of the system with three-seed
+replication behind it.
 
-Promote it over M3-2 only on the pre-registered rule from M3-1, judged on the **worst**
-calendar window.
+**The two things that made the result trustworthy**, both of which a future step should copy:
 
----
+1. 🔴 **Leave-one-window-out, refit four times.** M3-2 could score fixed rules on all four
+   calendar windows because a rule with no fitted parameter has no training error. A fitted
+   model scored on the windows it was fitted on has nothing but training error. Every learned
+   number in M3-3 was produced by a model that never saw the window it was placed in.
+2. **A matched ablation on the one observation M3-2 already used**, run at all four rule
+   settings. It is the number that decides whether the exercise was worth anything — and it
+   is what turned "the learned policy lost" into "the extra observations cost money", which
+   is a far more useful finding.
+
+**What was deliberately left out and is still waiting:** position state (side, age, unrealised
+P&L) needs a price path between entry and exit, so it needs M3-0b. Under fixed-hold serial
+entries it was not decision-relevant anyway — there is no exit decision to make. It arrives
+with the barrier exits that would give it something to decide.
+
+**Do not re-run this with more knobs.** M3_3_PROTOCOL §4.1 and §7 pre-registered that a linear
+failure is not evidence a bigger model would succeed, and the ablation is evidence pointing the
+other way.
 
 ## §3 — DESIGN DECISIONS TO SETTLE BEFORE WRITING CODE
 
@@ -541,10 +615,10 @@ collapse" framing was superseded). Read it for the quantile decision and its rat
 
 | # | risk | why it is ranked here | mitigation |
 |---|---|---|---|
-| 1 | **Overfitting the policy to 3,717 trades** | seconds per configuration, ≈9.5bps quintile SEM, and five interacting knobs | M3-1's pre-registered protocol, scored on the **worst** window |
-| 2 | **The maker-fee assumption is untested** (§3.3) | it is the difference between +3.91 and −5.09 at cov05 — it can invert conclusions | measure fills on the paper-sim stack early |
-| 3 | **The regime rule is not uniform in time** | fails in window 2, where 47% of its trades live (§1.8) | never report pooled; require it to survive walk-forward |
-| 4 | **Sample size is the binding constraint** | ~3,700 cov05 trades is thin for a policy search | see §5 — the 12-pair dump is free power |
+| 1 | **Overfitting the policy to 3,717 trades** | seconds per configuration, ≈9.5bps quintile SEM, and five interacting knobs | M3-1's pre-registered protocol, scored on the **worst** window. 🔴 **M3-3 measured this risk rather than reasoning about it:** fitting nine observations on ~188 independent trading days produced a policy that loses to a fit on one of them (M3_3_RESULTS §D2). The mitigation worked — the leave-one-window-out refit is what made the overfit visible instead of publishable |
+| 2 | 🔴 **The maker-fee assumption is untested** (§3.3) — **now the top open item** | it is the difference between +3.91 and −5.09 at cov05 — it can invert conclusions | measure fills on the paper-sim stack; with M3-3 closed this is the next step (§0.0) |
+| 3 | **The regime rule is not uniform in time** | fails in window 2, where 47% of its trades live (§1.8) | never report pooled; require it to survive walk-forward. **M3-3 found the more general version of this**: the mean edge in the top decile swings 25.9 bps across the four windows, so any *level* is unstable and only *orderings* survive |
+| 4 | **Sample size is the binding constraint** | ~3,700 cov05 trades is thin for a policy search, and the honest count is ~220 independent trading days, not the trade count | see §5 — the 12-pair dump is free power. **M3-3 is what this risk looks like when it binds**, and no rearrangement of the same 253 days relieves it |
 | 5 | **Calibration drift on a future checkpoint** | policy consumes `p_up`; three levers have already broken the scale | rank-based conditioning (§1.3.3); re-check brier on any new checkpoint |
 | ~~6~~ | ~~**The Q1 harness is unrecoverable / mis-rebuilt**~~ | ✅ **closed 2026-08-26** — rebuilt as `ml/train/m3/regime.py` and pinned by an acceptance test that reproduces §1.8's ladder (§1.4, §0.0) | — |
 
@@ -585,8 +659,12 @@ From PLAN.md, sharpened with what M2 measured:
       (M3_PROTOCOL §4.2) — **done 2026-08-27**, [M3_2_RESULTS.md](./M3_2_RESULTS.md).
       1 of 36 grid configs passes (`cov0.02_hold240_rqnone_mcnone`, worst window −3.56),
       and so does the §3.2 sizing variant (worst window +0.25), which outranks it.
-- [ ] Any learned policy beats that baseline on the pre-registered rule, judged on the worst
-      window.
+- [x] Any learned policy beats that baseline on the pre-registered rule, judged on the worst
+      window — **answered 2026-08-27, and the answer is no** ([M3_3_RESULTS.md](./M3_3_RESULTS.md)).
+      0 of 8 learned configurations pass Tier 1; the best reaches −7.18 worst-window against
+      the baseline's +0.25, and the confidence-only ablation beats both fitted models in
+      three of four rule pairings. M3_3_PROTOCOL §7 pre-registered this as a result: **the
+      M3-2 rule stands as M3's policy.** The criterion is closed, not outstanding.
 - [x] Max drawdown is controlled and the trade rate is non-pathological (PLAN.md) — the
       M3-2 winner runs 2.34 trades/day/seed at a −4.59 max drawdown; rule P6 makes the trade
       rate a promotion criterion and every table reports the drawdown next to it.
@@ -635,14 +713,32 @@ logged in M3-2's write-up and must be treated that way — the per-notional norm
 the sizing variant (§D1), and the fact that §3.2/§4.2 do not say whether an addition may win
 the §4.2 ranking (§A reports both readings rather than choosing one after the fact).
 
-**Finishing M3-3 — bring back** the same table for the learned policy, produced by the same
-harness: net bps/trade at both 5bps and 14bps, per calendar window with the worst called out,
-per seed, trades/day/seed, max drawdown, daily Sharpe, long/short split, plus the Tier-1
-pass/fail row and the clustered 95% CI. Then the one comparison that decides promotion:
-**worst-window net at taker against +0.25 bps** (M3_PROTOCOL §4.4). Pooled-only numbers are
-not a result.
+**M3-3 is done** — the artifacts are [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (frozen, written
+before the first fit) and [M3_3_RESULTS.md](./M3_3_RESULTS.md), regenerated in one command and
+never hand-edited:
+
+```sh
+./scripts/m3.sh -m m3 validate
+./scripts/m3.sh -m m3 learn
+cp ml/train/output/m3/M3_3_RESULTS.md docs/M3_3_RESULTS.md
+```
+
+⚠️ **Both protocols stay frozen.** M3_3_PROTOCOL §7.1 logged three proposals for a future
+pre-registration *before* the run — window-equalised fitting weights, per-notional
+normalisation of a size-varying policy, and whether the per-window coverage cut should also be
+the baseline's rule. They are proposals for a *next* pre-registration, never a re-scoring of
+this one.
+
+**The next step is the maker-fee study (§3.3), and what to bring back from it** is not a table
+from this harness at all: it is a measurement on the live paper-sim stack of quoted-versus-
+filled, queue position, and adverse selection on the fills that do arrive, for the eight served
+pairs at the sizes a 2%-coverage policy would actually trade. The number that matters is
+whether a 5-bps round trip is obtainable, because every M3-2 candidate roughly doubles between
+the two fee assumptions.
 
 ---
 
-*Updated: 2026-08-27 — M3-0a, M3-1 and M3-2 complete; M3-3 is next and the protocol stays
-frozen. §0.0 is the live status block and the only place that needs reading to resume.*
+*Updated: 2026-08-27 — M3-0a, M3-1, M3-2 and M3-3 complete. The learned policy did not beat
+the rules baseline, so M3-2's rule is M3's policy; the maker-fee study (§3.3) is next and both
+protocols stay frozen. §0.0 is the live status block and the only place that needs reading to
+resume.*
