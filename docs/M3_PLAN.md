@@ -1,9 +1,9 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** In progress — **M3-0a and M3-1 are complete** (§0.0). The search protocol is pre-registered and M3-2 may now run. Unblocked: R0 promoted 2026-08-26.
+**Status:** In progress — **M3-0a, M3-1 and M3-2 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar and M3-3 now has a benchmark. Unblocked: R0 promoted 2026-08-26.
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
-**Related:** [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
+**Related:** [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
 
 *Written 2026-08-24, at the moment M2 froze. This document is the plan for the whole
 milestone; it holds only what is currently true and actionable. When a step's conclusions
@@ -19,7 +19,7 @@ done, what the next command is, and what to bring back. When a step closes, its 
 moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
 never left here contradicting a later result.*
 
-**Last updated: 2026-08-27.**
+**Last updated: 2026-08-27 (M3-2 complete).**
 
 ### Where the work stands
 
@@ -29,8 +29,8 @@ never left here contradicting a later result.*
 | **M3-0a** — regime harness + policy backtester | ✅ **built, and both acceptance tests pass** |
 | **M3-0b** — price/funding side-table | ⬜ not started, and not needed until barrier exits are wanted |
 | **M3-1** — pre-registered protocol | ✅ **committed 2026-08-27 as [M3_PROTOCOL.md](./M3_PROTOCOL.md)**, before any search ran |
-| **M3-2** — rules baseline | ⬜ **this is the next step** — run the 40 pre-registered configurations |
-| **M3-3** — learned policy | ⬜ not started |
+| **M3-2** — rules baseline | ✅ **run 2026-08-27, all 40 configurations** — [M3_2_RESULTS.md](./M3_2_RESULTS.md). A baseline passes Tier 1 |
+| **M3-3** — learned policy | ⬜ **this is the next step** — it now has a benchmark to beat |
 
 ### How to run anything in M3
 
@@ -42,6 +42,7 @@ and no GPU. `scripts/m3.sh` wraps it and builds it on first use:
 ```sh
 ./scripts/m3.sh -m m3 validate          # the two acceptance tests — run first, always
 ./scripts/m3.sh -m m3 power             # the pre-registration facts (M3_PROTOCOL §2/§3/§4)
+./scripts/m3.sh -m m3 search            # M3-2: all 40 pre-registered runs, scored (~4 min)
 ./scripts/m3.sh -m m3 policy --help     # score one policy spec
 ./scripts/m3.sh --shell                 # interactive
 ```
@@ -84,16 +85,6 @@ done
    boundary in 15 is contended, so this is a 1-trade-in-1,223 question — but it is now a
    documented definition rather than an accident of which library ran.
 
-**A first look at what M3-2 is up against, from the same run.** Coverage 5% + top-quintile
-`btc_absret_1d` + max 3 concurrent positions, over the three pooled seeds, is 663 trades at
-+30.04 gross / **+16.04 net at taker**, Sharpe 1.57, 1.11 trades/day. But per window it is
-+18.5 / **−13.7** / +39.9 / +73.3 net at taker, and **the negative window holds 373 of the
-663 trades**. This is §1.8's caveat reproduced end-to-end on the new harness: the rule is
-excellent in three windows and loses money in the one where it fires hardest. It is not a
-result — no protocol had been pre-registered when it was measured — but it is the reason
-M3-1 exists, and **under the protocol M3-1 has since committed it does not clear the bar**
-(it fails rule P3, worst-window net ≥ −5 bps, at −13.7).
-
 ### What M3-1 established (2026-08-27)
 
 **The protocol is committed as [M3_PROTOCOL.md](./M3_PROTOCOL.md), before any search ran.**
@@ -117,11 +108,63 @@ things came out of writing it that change how every later number must be read:
    - `regime_col` with no threshold used to be an error; it now means "condition without
      filtering", which is what makes a sizing-only policy expressible at all.
 
+### What M3-2 established (2026-08-27) — the headline, in plain language
+
+**Full results: [M3_2_RESULTS.md](./M3_2_RESULTS.md) — all 40 pre-registered runs, both fee
+assumptions, per window, per seed, per side.** The short version, no statistics required:
+
+1. **There is a tradeable rule, and it is worth about +15 bps a trade after taker fees.**
+   Enter on the top **2%** of bars by model confidence, hold **4 hours**, size the position
+   by how much BTC has moved in the last 24h (a third of normal size in the calmest fifth of
+   the market, up to five thirds in the wildest), no concurrency cap. Over 253 days and three
+   seeds that is 1,773 trades, +33.8 bps gross, **+15.0 net at a 14-bps taker round trip**,
+   Sharpe 0.93, ~2.3 trades a day per seed. It is positive in all four calendar windows.
+2. 🔴 **The finding the whole milestone was built on did not survive in the form we expected.**
+   "Only trade when BTC has moved >4.3% in a day" — §1.8's 4× effect, used as a hard on/off
+   filter — **fails the bar in every one of its twelve configurations.** Not because it loses
+   money: the two best versions are +18.3 and +9.4 bps net pooled. One fails because the
+   filter leaves only 45 trades in an entire two-month window, the other because it is
+   negative on one of the three seeds. Those two floors were fixed in advance, in M3-1, from
+   trade counts alone.
+3. **The soft version is what works.** Using the same market-move observable to *size* the
+   trade, while still trading out of regime, passes everything the hard filter failed. This
+   is the concrete, actionable result of M3-2: **the regime signal is a dial, not a switch.**
+4. **The model's direction call is doing the work.** The same entries with the side taken
+   from trailing momentum instead of from the model earn **−21.8 bps** instead of +15.0 — a
+   **+36.9 bps** gap. Buy-and-hold on the same universe lost 13% over the period. The policy
+   is not a repackaged beta bet.
+5. **It still cannot be certified, exactly as pre-registered.** The clustered 95% interval on
+   the winner is [−33.0, +63.1]. M3_PROTOCOL §2 said in advance that 253 days holding ~162
+   independent trading days cannot prove a 15-bps edge net of a 14-bps round trip, and §4.3
+   pre-registered that Tier 2 would fail. It did. **This is enough to be M3-3's benchmark and
+   to justify paper trading; it is not enough to justify size.**
+
+Two caveats that belong next to the headline: the sizing variant's mean size is 1.34, so per
+unit of *notional deployed* it earns +11.2 rather than +15.0 bps; and its worst window (w3,
+192 trades) is **+0.25 bps** — an absence of a loss, not a profit. Its max drawdown is also
+larger than the flat-size version's (−4.59 against −2.76).
+
+Three structural facts hold across the whole grid and should shape M3-3: **24-hour holds are
+untradeable** (every one loses 61–198 bps in w4), **1-hour holds never cover fees**, and
+**capping at 3 concurrent positions costs money in every single pairing** — on eight pairs
+held serially the uncapped policy is already a real 8-slot portfolio, not leverage.
+
 ### The next step, exactly
 
-**M3-2 — run the 40 pre-registered configurations and score them under the committed rule.**
-Do not re-open the protocol. Run `m3 validate` first; if either acceptance test fails, that
-is the only finding that matters. §7 says exactly what to bring back.
+**M3-3 — the learned policy.** Its bar is now set and is not negotiable (M3_PROTOCOL §4.4):
+pass all six Tier-1 criteria **and** beat **+0.25 bps worst-window net at taker**, which is
+`cov0.02_hold240_rqnone_mcnone_SIZED`. Re-run `m3 validate` first — a learned policy compared
+against a baseline computed by a changed harness is not a comparison. §2's M3-3 section holds
+the observation vector; give it `btc_absret_1d` as a **continuous** observation, not a
+threshold to rediscover, because §D1 is the evidence that the continuous form is the better
+one.
+
+**The parallel item, and it is worth more than any further knob: the maker-fee study
+(§3.3).** Every candidate in M3-2 roughly doubles at 5 bps — the winner is +27.1 at maker
+against +15.0 at taker. Whether 5-bps fills are actually obtainable for these pairs and sizes
+is an untested assumption underwriting half the published economics, it is ranked risk #2,
+and it is cheap to measure on the paper-sim stack. If maker fills are real, the decision
+problem changes shape; if they are not, several M3-2 rows stop being interesting.
 
 ---
 
@@ -406,6 +449,18 @@ Two reasons this comes first rather than after a learned policy:
 BTC-down days. The regime term is about the **magnitude** of the market move, not its sign.
 A baseline that accidentally makes it directional is a bug.
 
+**Outcome (2026-08-27): done, and the result is in [M3_2_RESULTS.md](./M3_2_RESULTS.md).**
+Parameters 1 and 3 carried the milestone; parameter 2 — the hard top-quintile filter — did
+not. Of the 36 pre-registered grid configurations exactly one clears Tier 1 and it uses
+coverage alone; the twelve that apply the regime as an on/off filter all fail, two of them on
+a single criterion each (an under-sampled window, and one seed going negative). The §3.2
+sizing variant, which applies the same observable as a **size multiplier** rather than a
+filter, also clears Tier 1 and outranks it. §0.0 carries the plain-language summary.
+
+The direction-free property held: nothing in the winning configuration conditions on the sign
+of the BTC move, and the momentum-side control (§3.2) confirms the *direction* comes from the
+model — its side is worth +36.9 bps/trade over `sign(trailing 240m)` on the same entry bars.
+
 ### M3-3 — A learned policy, only if it beats M3-2
 
 PLAN.md already locks the family: **offline / bandit-style on logged rollouts, not
@@ -525,15 +580,21 @@ From PLAN.md, sharpened with what M2 measured:
       **done 2026-08-26** (§0.0).
 - [x] The evaluation protocol is pre-registered and committed before any search ran (M3-1) —
       **done 2026-08-27**, [M3_PROTOCOL.md](./M3_PROTOCOL.md).
-- [ ] A rules baseline (M3-2) clears the pre-registered Tier-1 bar — in particular
+- [x] A rules baseline (M3-2) clears the pre-registered Tier-1 bar — in particular
       **worst-window net at taker ≥ −5 bps**, not just a positive pooled number
-      (M3_PROTOCOL §4.2). A negative outcome here is a valid result, not a reason to
-      re-open the protocol (M3_PROTOCOL §6).
+      (M3_PROTOCOL §4.2) — **done 2026-08-27**, [M3_2_RESULTS.md](./M3_2_RESULTS.md).
+      1 of 36 grid configs passes (`cov0.02_hold240_rqnone_mcnone`, worst window −3.56),
+      and so does the §3.2 sizing variant (worst window +0.25), which outranks it.
 - [ ] Any learned policy beats that baseline on the pre-registered rule, judged on the worst
       window.
-- [ ] Max drawdown is controlled and the trade rate is non-pathological (PLAN.md).
+- [x] Max drawdown is controlled and the trade rate is non-pathological (PLAN.md) — the
+      M3-2 winner runs 2.34 trades/day/seed at a −4.59 max drawdown; rule P6 makes the trade
+      rate a promotion criterion and every table reports the drawdown next to it.
+- [x] Long and short sides are reported separately — every table in
+      [M3_2_RESULTS.md](./M3_2_RESULTS.md) §G breaks them out (the winner is +18.1 long /
+      +2.7 short at taker, i.e. the long side carries it, which is why §3.3 forbids
+      selecting on the split).
 - [ ] The policy never bypasses the hard `RiskManager` limits.
-- [ ] Long and short sides are reported separately (§1.3, side balance is not seed-stable).
 
 ---
 
@@ -558,17 +619,30 @@ before touching a policy number.
 **M3-1 is done** — the artifact is [M3_PROTOCOL.md](./M3_PROTOCOL.md) and every fact it
 quotes is reproducible with `./scripts/m3.sh -m m3 power`. Nothing to fetch.
 
-**Finishing M3-2 — bring back**, for each of the 40 pre-registered configurations
-(M3_PROTOCOL §3): net bps/trade at **both** 5bps and 14bps, **per calendar window** with the
-worst window called out, **per seed**, trades/day/seed, max drawdown, daily Sharpe, and
-long/short split. Then the Tier-1 pass/fail table (§4.2), and for the winner the clustered
-95% CI (§4.3) and the O8 replication. Pooled-only numbers are not a result.
+**M3-2 is done** — the artifact is [M3_2_RESULTS.md](./M3_2_RESULTS.md), regenerated in
+one command and never hand-edited:
 
-⚠️ **If no configuration clears Tier 1, report that** — do not widen the grid or soften the
-rule. M3_PROTOCOL §6 pre-registers what happens next in that case (the maker-fee study and
-M3-0b, not more knobs).
+```sh
+./scripts/m3.sh -m m3 validate
+./scripts/m3.sh -m m3 search
+cp ml/train/output/m3/M3_2_RESULTS.md docs/M3_2_RESULTS.md
+```
+
+⚠️ The protocol is **still frozen**. M3_PROTOCOL §0 applies to everything downstream: an
+observation that a different metric would have been better goes into a *future*
+pre-registration, never into a re-scoring of this run. Two such observations are already
+logged in M3-2's write-up and must be treated that way — the per-notional normalisation of
+the sizing variant (§D1), and the fact that §3.2/§4.2 do not say whether an addition may win
+the §4.2 ranking (§A reports both readings rather than choosing one after the fact).
+
+**Finishing M3-3 — bring back** the same table for the learned policy, produced by the same
+harness: net bps/trade at both 5bps and 14bps, per calendar window with the worst called out,
+per seed, trades/day/seed, max drawdown, daily Sharpe, long/short split, plus the Tier-1
+pass/fail row and the clustered 95% CI. Then the one comparison that decides promotion:
+**worst-window net at taker against +0.25 bps** (M3_PROTOCOL §4.4). Pooled-only numbers are
+not a result.
 
 ---
 
-*Updated: 2026-08-27 — M3-0a and M3-1 complete; M3-2 is next and its protocol is frozen.
-§0.0 is the live status block and the only place that needs reading to resume.*
+*Updated: 2026-08-27 — M3-0a, M3-1 and M3-2 complete; M3-3 is next and the protocol stays
+frozen. §0.0 is the live status block and the only place that needs reading to resume.*

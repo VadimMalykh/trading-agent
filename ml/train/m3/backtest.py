@@ -61,6 +61,7 @@ class PolicySpec:
     size_by_regime: bool = False           # flat size, or scaled by BAR-quintile of regime
     max_concurrent: int | None = None      # portfolio cap, per seed, across pairs
     sides: str = "both"                    # "both" | "long" | "short"
+    side_from: str = "model"               # "model" | "momentum" (M3_PROTOCOL §3.2 control)
     label: str = ""
 
     def degrees_of_freedom(self) -> int:
@@ -152,6 +153,23 @@ def run(dumps: list[Dump], spec: PolicySpec,
         sig = d.at(spec.signal_horizon)[["pair", "ts", "conf", "side", "y3", "has_book"]]
         hold = d.at(hold_h)[["pair", "ts", "fwd_ret"]]
         bars = sig.merge(hold, on=["pair", "ts"], how="inner")
+
+        # --- the side control (M3_PROTOCOL §3.2) --------------------------------------
+        # Replace the model's side with sign(trailing 240m return) while leaving entry
+        # selection untouched, so the control trades the SAME bars as the policy it is a
+        # control for. Applied before any filtering, because coverage rank, the regime cut
+        # and the concurrency cap all key off confidence and time, never off side.
+        if spec.side_from == "momentum":
+            if regimes is None or d.seed not in regimes:
+                raise SystemExit("side_from='momentum' needs regimes carrying trail_240m")
+            m = regimes[d.seed][["pair", "ts", "trail_240m"]]
+            bars = bars.merge(m, on=["pair", "ts"], how="left")
+            # Bars whose 4h lookback is incomplete carry no momentum side; drop rather
+            # than default to long, which would silently make the control directional.
+            bars = bars[bars["trail_240m"].notna()].copy()
+            bars["side"] = np.where(bars["trail_240m"] >= 0.0, 1.0, -1.0)
+        elif spec.side_from != "model":
+            raise SystemExit(f"side_from must be 'model' or 'momentum', got {spec.side_from!r}")
 
         # --- invariant 1: coverage rank over this seed's own population ---------------
         thr = coverage_threshold(bars["conf"].to_numpy(np.float64), spec.coverage)

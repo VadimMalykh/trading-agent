@@ -7,11 +7,12 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 import numpy as np
 import pandas as pd
 
-from . import backtest, dumps, metrics, regime, validate
+from . import backtest, dumps, metrics, regime, search, validate
 
 
 def cmd_validate(args) -> int:
@@ -97,6 +98,97 @@ def cmd_power(args) -> int:
     return 0
 
 
+def cmd_search(args) -> int:
+    """M3-2 — run the 40 pre-registered configurations and score them under the rule.
+
+    This command does not decide anything. Every threshold it applies is transcribed from
+    docs/M3_PROTOCOL.md, which was committed before any search ran; §6 of that file
+    pre-registers what happens if nothing passes, so a clean sweep of failures is an
+    outcome this code prints rather than an error it works around.
+    """
+    ds = dumps.load_baseline(pairs=dumps.BASE8)
+    seeds = [d.seed for d in ds]
+    cal = search.calendar_days(ds)
+    print(f"loaded {len(ds)} seeds ({', '.join(d.run_id for d in ds)}), "
+          f"{len(dumps.BASE8)} pairs, calendar span {cal:.1f}d")
+    regimes = {d.seed: regime.build(d.df) for d in ds}
+
+    # --- §3.1: the primary grid ------------------------------------------------------
+    cards = []
+    for i, spec in enumerate(primary_grid(), 1):
+        res = backtest.run(ds, spec, regimes)
+        c = search.scorecard(spec.label, res.trades, seeds, cal, spec)
+        c["thresholds"] = res.thresholds
+        c["regime_thresholds"] = res.regime_thresholds
+        search.tier1(c)
+        cards.append(c)
+        print(f"  [{i:>2}/36] {spec.label:<34} "
+              f"n={c['trades']:>6,}  worst={c['worst_net']:+7.2f}  "
+              f"{'PASS' if c['tier1']['PASS'] else '-'}")
+    ranked = search.rank(cards)
+
+    # --- §3.2: the three additions, plus the O8 replication --------------------------
+    # If nothing passes Tier 1 the pre-registered runs still have to happen, so they
+    # attach to the top-ranked ELIGIBLE (P4-passing) config instead, labelled as such.
+    if ranked:
+        anchor, anchor_note = ranked[0], "the Tier-1 winner of the primary grid"
+    else:
+        eligible = [c for c in cards if c["tier1"]["P4"]]
+        anchor = max(eligible, key=lambda c: (c["worst_net"], c["taker14"]["net_bps"]))
+        anchor_note = ("NO config passed Tier 1; attached instead to the best-ranked "
+                       "eligible config so the pre-registered runs still happen")
+    print(f"\nanchor config: {anchor['label']} — {anchor_note}")
+
+    sz_spec = backtest.PolicySpec(
+        **{**anchor["spec"].__dict__, "regime_col": "btc_absret_1d", "regime_quantile": None,
+           "regime_min": None, "size_by_regime": True,
+           "label": anchor["spec"].label + "_SIZED"})
+    sz = backtest.run(ds, sz_spec, regimes)
+    sz_card = search.scorecard(sz_spec.label, sz.trades, seeds, cal, sz_spec)
+    search.tier1(sz_card)
+
+    # Whether an §3.2 addition may win the §4.2 ranking is not stated unambiguously in the
+    # protocol, so this reports BOTH readings rather than picking one after seeing which
+    # is better: the grid winner is the M3-2 baseline under the narrow reading, and the
+    # top of the combined ranking is the winner under the wide one. M3-3's bar is set at
+    # the stricter of the two (§4.4), so the ambiguity costs nothing.
+    grid_winner = ranked[0] if ranked else None
+    contenders = search.rank(cards + [sz_card])
+    winner = contenders[0] if contenders else anchor
+
+    mom = search.momentum_control(ds, winner["spec"], regimes)
+    mom_card = search.scorecard(winner["spec"].label + "_MOMSIDE", mom.trades, seeds, cal)
+    search.tier1(mom_card)
+
+    bnh = search.buy_and_hold(ds[0], dumps.BASE8)
+
+    # §3.2's replication, run for every candidate that could be called the winner.
+    o8 = dumps.load(dumps.O8_RUN, seed="o8")
+    o8_reg = {"o8": regime.build(o8.df)}
+    o8_cards = []
+    seen = set()
+    for cand in [c for c in (grid_winner, winner) if c is not None] or [anchor]:
+        if cand["label"] in seen:
+            continue
+        seen.add(cand["label"])
+        r = backtest.run([o8], cand["spec"], o8_reg)
+        oc = search.scorecard(cand["label"] + "_O8", r.trades, ["o8"],
+                              search.calendar_days([o8]), cand["spec"])
+        search.tier1(oc)
+        o8_cards.append(oc)
+
+    # --- report -----------------------------------------------------------------------
+    text = search.render_report(cards, ranked, grid_winner, winner, anchor, anchor_note,
+                                sz_card, mom_card, bnh, o8_cards, ds, cal)
+    os.makedirs(os.path.dirname(search.REPORT_PATH), exist_ok=True)
+    with open(search.REPORT_PATH, "w") as fh:
+        fh.write(text)
+    print("\n" + text)
+    print(f"\n[report written to {search.REPORT_PATH}] — copy it to its canonical home:")
+    print("  cp ml/train/output/m3/M3_2_RESULTS.md docs/M3_2_RESULTS.md")
+    return 0
+
+
 def cmd_policy(args) -> int:
     ds = dumps.load_baseline(pairs=dumps.BASE8)
     spec = backtest.PolicySpec(
@@ -146,6 +238,8 @@ def main() -> int:
     sub.add_parser("validate", help="run the two acceptance tests").set_defaults(fn=cmd_validate)
     sub.add_parser("power", help="pre-registration facts: spans, SE calibration, eligibility"
                    ).set_defaults(fn=cmd_power)
+    sub.add_parser("search", help="M3-2: run and score the 40 pre-registered configurations"
+                   ).set_defaults(fn=cmd_search)
 
     p = sub.add_parser("policy", help="score one policy spec")
     p.add_argument("--coverage", type=float, default=0.05)

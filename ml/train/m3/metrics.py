@@ -102,14 +102,20 @@ def fmt_table(rows: list[dict], cols: list[tuple[str, str, str]]) -> str:
     return "\n".join(lines)
 
 
-def by_window(trades: pd.DataFrame, cost_bps: float) -> pd.DataFrame:
-    """Per-calendar-window scoring. The row that matters is the worst one."""
+def by_window(trades: pd.DataFrame, cost_bps: float, n_seeds: int = 1) -> pd.DataFrame:
+    """Per-calendar-window scoring. The row that matters is the worst one.
+
+    `n_seeds` divides the trade rate, for the same reason `summarise` does: pooling three
+    seeds triples the trade count but is still one strategy. The per-window rate uses the
+    window's own trade span as its denominator, so it says "how often it fires while it is
+    firing" — the honest whole-period rate is the pooled one.
+    """
     from .dumps import add_window
     t = add_window(trades, ts_col="entry_ts")
     rows = []
     for name in ["w1", "w2", "w3", "w4"]:
         sub = t[t["window"] == name]
-        rows.append({"window": name, **summarise(sub, cost_bps, span_days(sub))})
+        rows.append({"window": name, **summarise(sub, cost_bps, span_days(sub), n_seeds)})
     return pd.DataFrame(rows)
 
 

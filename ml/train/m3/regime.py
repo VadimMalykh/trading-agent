@@ -101,9 +101,13 @@ def build(df: pd.DataFrame, btc: str = "BTCUSDT") -> pd.DataFrame:
     out = out.merge(r1h.drop(columns="r1h"), on=["pair", "ts"], how="left")
 
     # --- cross-sectional dispersion of 4h moves -------------------------------------
-    r4h = trailing_return(df, 240).rename(columns={"trail_240m": "r4h"})
-    disp = r4h.groupby("ts", observed=True)["r4h"].std().rename("xs_disp_4h").reset_index()
+    r4h = trailing_return(df, 240)
+    disp = r4h.groupby("ts", observed=True)["trail_240m"].std().rename("xs_disp_4h").reset_index()
     out = out.merge(disp, on="ts", how="left")
+    # The per-pair value is carried through too: it is the momentum-side control of
+    # M3_PROTOCOL §3.2 ("side from sign(trailing 240m return)"), which needs a per-pair
+    # trailing move rather than a cross-sectional summary of one.
+    out = out.merge(r4h, on=["pair", "ts"], how="left")
 
     # --- the model's own trailing confidence ----------------------------------------
     # §1.8 found this ANTI-predictive in all three seeds (AUC 0.480/0.471/0.499). It is
@@ -122,7 +126,7 @@ def build(df: pd.DataFrame, btc: str = "BTCUSDT") -> pd.DataFrame:
 
 OBSERVABLES = [
     "btc_absret_1d", "btc_ret_1d", "btc_sign_1d", "btc_ret_7d",
-    "rv_1d", "rv_7d", "rv_30d", "xs_disp_4h", "mean_conf_1d",
+    "rv_1d", "rv_7d", "rv_30d", "xs_disp_4h", "trail_240m", "mean_conf_1d",
 ]
 
 # §1.8's rule, stated as a number so drift is visible: BTC trailing-24h |return| >= 4.31%,
