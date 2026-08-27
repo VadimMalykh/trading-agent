@@ -1,9 +1,9 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** In progress — **M3-0a is complete and its acceptance tests pass** (§0.0). Unblocked: R0 promoted 2026-08-26.
+**Status:** In progress — **M3-0a and M3-1 are complete** (§0.0). The search protocol is pre-registered and M3-2 may now run. Unblocked: R0 promoted 2026-08-26.
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
-**Related:** [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
+**Related:** [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
 
 *Written 2026-08-24, at the moment M2 froze. This document is the plan for the whole
 milestone; it holds only what is currently true and actionable. When a step's conclusions
@@ -19,7 +19,7 @@ done, what the next command is, and what to bring back. When a step closes, its 
 moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
 never left here contradicting a later result.*
 
-**Last updated: 2026-08-26.**
+**Last updated: 2026-08-27.**
 
 ### Where the work stands
 
@@ -28,8 +28,8 @@ never left here contradicting a later result.*
 | **R0** (the blocker) | ✅ promoted 2026-08-26 — seed 2 served at gate 0.6311 |
 | **M3-0a** — regime harness + policy backtester | ✅ **built, and both acceptance tests pass** |
 | **M3-0b** — price/funding side-table | ⬜ not started, and not needed until barrier exits are wanted |
-| **M3-1** — pre-registered protocol | ⬜ **this is the next step**, and no search may run before it |
-| **M3-2** — rules baseline | ⬜ not started |
+| **M3-1** — pre-registered protocol | ✅ **committed 2026-08-27 as [M3_PROTOCOL.md](./M3_PROTOCOL.md)**, before any search ran |
+| **M3-2** — rules baseline | ⬜ **this is the next step** — run the 40 pre-registered configurations |
 | **M3-3** — learned policy | ⬜ not started |
 
 ### How to run anything in M3
@@ -41,6 +41,7 @@ and no GPU. `scripts/m3.sh` wraps it and builds it on first use:
 
 ```sh
 ./scripts/m3.sh -m m3 validate          # the two acceptance tests — run first, always
+./scripts/m3.sh -m m3 power             # the pre-registration facts (M3_PROTOCOL §2/§3/§4)
 ./scripts/m3.sh -m m3 policy --help     # score one policy spec
 ./scripts/m3.sh --shell                 # interactive
 ```
@@ -89,14 +90,38 @@ done
 +18.5 / **−13.7** / +39.9 / +73.3 net at taker, and **the negative window holds 373 of the
 663 trades**. This is §1.8's caveat reproduced end-to-end on the new harness: the rule is
 excellent in three windows and loses money in the one where it fires hardest. It is not a
-result — no protocol has been pre-registered yet — but it is the reason M3-1 exists and it
-should be the first thing any candidate policy is measured against.
+result — no protocol had been pre-registered when it was measured — but it is the reason
+M3-1 exists, and **under the protocol M3-1 has since committed it does not clear the bar**
+(it fails rule P3, worst-window net ≥ −5 bps, at −13.7).
+
+### What M3-1 established (2026-08-27)
+
+**The protocol is committed as [M3_PROTOCOL.md](./M3_PROTOCOL.md), before any search ran.**
+It fixes the split, the metric, the decision rule and the exact 40 configurations. Three
+things came out of writing it that change how every later number must be read:
+
+1. 🔴 **The pooled trade count is not the sample size.** Clustering on the exit calendar day,
+   §1.3's cov05 slice has **220 clusters behind 3,718 trades** and a standard error **2.35×**
+   the iid one: +8.91 gross carries a 95% CI of **[−10.63, +28.45]**. The "≈9.5bps SEM" this
+   plan quoted was an iid figure and was optimistic by that factor. The consequence is
+   pre-registered in §2 of the protocol: **this dataset cannot certify a policy at taker
+   fees**, so the decision rule is built around robustness, not significance.
+2. **A trade-count floor prunes the grid before any P&L was seen.** Requiring ≥100 pooled
+   trades in *every* window leaves **16 of 36** configurations eligible. All in-regime configs
+   below cov0.05 fail it, because w3 starves — the top-quintile filter leaves only 23–87
+   trades there. The regime fires very unevenly across time, and the floor catches it.
+3. **Two definitional defects in the M3-0a harness were fixed** before they could be baked
+   into a search (both re-validated, TEST 1 and TEST 2 still pass):
+   - `size_by_regime` bucketed by a quantile of *selected trades*, contradicting the
+     "quantile of BARS" rule the hard threshold obeys. It now uses bar-level quintile edges.
+   - `regime_col` with no threshold used to be an error; it now means "condition without
+     filtering", which is what makes a sizing-only policy expressible at all.
 
 ### The next step, exactly
 
-**M3-1 — write and commit the evaluation protocol before running any search.** Nothing in
-the harness is allowed to be pointed at a parameter sweep until that file exists. See §2's
-M3-1 for what it must contain; §7 says what to bring back.
+**M3-2 — run the 40 pre-registered configurations and score them under the committed rule.**
+Do not re-open the protocol. Run `m3 validate` first; if either acceptance test fails, that
+is the only finding that matters. §7 says exactly what to bring back.
 
 ---
 
@@ -330,7 +355,12 @@ needs exactly this export plus the 11 microstructure scalars over the book era, 
 same `(pair, ts)` grid with the same staleness caps. Building it once serves both wavefronts;
 building it twice risks two different alignments and neither being evidence about the other.
 
-### M3-1 — Pre-register the evaluation protocol, before searching anything
+### M3-1 — ✅ DONE (2026-08-27). The protocol is pre-registered.
+
+**It is [M3_PROTOCOL.md](./M3_PROTOCOL.md), committed before any search ran.** §0.0 carries
+what writing it established. The rest of this section is kept as the *rationale* for why the
+step existed — the binding document is the protocol, and it is not edited once a search has
+begun.
 
 Write down, **and commit, before running a single search**: the split, the metric, the
 decision rule, and the number of configurations that will be tried.
@@ -493,8 +523,12 @@ From PLAN.md, sharpened with what M2 measured:
       fixed-hold policy (M3-0a acceptance test) — **done 2026-08-26, 15/15 cells** (§0.0).
 - [x] The rebuilt regime harness reproduces §1.8's published quintile ladder (§1.4) —
       **done 2026-08-26** (§0.0).
-- [ ] A rules baseline (M3-2) is positive **net of taker fees in the worst calendar window**,
-      not just pooled.
+- [x] The evaluation protocol is pre-registered and committed before any search ran (M3-1) —
+      **done 2026-08-27**, [M3_PROTOCOL.md](./M3_PROTOCOL.md).
+- [ ] A rules baseline (M3-2) clears the pre-registered Tier-1 bar — in particular
+      **worst-window net at taker ≥ −5 bps**, not just a positive pooled number
+      (M3_PROTOCOL §4.2). A negative outcome here is a valid result, not a reason to
+      re-open the protocol (M3_PROTOCOL §6).
 - [ ] Any learned policy beats that baseline on the pre-registered rule, judged on the worst
       window.
 - [ ] Max drawdown is controlled and the trade rate is non-pathological (PLAN.md).
@@ -521,15 +555,20 @@ Any session that changes the harness must re-run and bring back:
 If either test stops passing, **that is the only finding that matters** — stop and fix it
 before touching a policy number.
 
-**Finishing M3-1 — bring back** the committed protocol file: split definition, metric,
-decision rule, and the number of configurations that will be searched. Before any search
-output.
+**M3-1 is done** — the artifact is [M3_PROTOCOL.md](./M3_PROTOCOL.md) and every fact it
+quotes is reproducible with `./scripts/m3.sh -m m3 power`. Nothing to fetch.
 
-**Finishing M3-2 — bring back**, for the rules baseline: net bps/trade at **both** 5bps and
-14bps, **per calendar window** with the worst window called out, trades/day, max drawdown,
-daily Sharpe, and long/short split. Pooled-only numbers are not a result.
+**Finishing M3-2 — bring back**, for each of the 40 pre-registered configurations
+(M3_PROTOCOL §3): net bps/trade at **both** 5bps and 14bps, **per calendar window** with the
+worst window called out, **per seed**, trades/day/seed, max drawdown, daily Sharpe, and
+long/short split. Then the Tier-1 pass/fail table (§4.2), and for the winner the clustered
+95% CI (§4.3) and the O8 replication. Pooled-only numbers are not a result.
+
+⚠️ **If no configuration clears Tier 1, report that** — do not widen the grid or soften the
+rule. M3_PROTOCOL §6 pre-registers what happens next in that case (the maker-fee study and
+M3-0b, not more knobs).
 
 ---
 
-*Updated: 2026-08-26 — M3-0a complete and validated; M3-1 is next. §0.0 is the live status
-block and the only place that needs reading to resume.*
+*Updated: 2026-08-27 — M3-0a and M3-1 complete; M3-2 is next and its protocol is frozen.
+§0.0 is the live status block and the only place that needs reading to resume.*

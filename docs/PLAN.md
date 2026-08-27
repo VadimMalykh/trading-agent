@@ -9,9 +9,10 @@ Master roadmap for the whole project. Details can change via discussion; this is
 | [MODEL.md](../MODEL.md) | ML architecture (signal + policy + risk) |
 | [M1_PLAN.md](./M1_PLAN.md) | M1 implementation checklist (session-resilient) |
 | [M3_PLAN.md](./M3_PLAN.md) | M3 policy milestone — sequence, constraints, exit criteria |
+| [M3_PROTOCOL.md](./M3_PROTOCOL.md) | M3's pre-registered evaluation protocol — frozen; read before any policy search |
 | [README.md](../README.md) | How to run what exists today |
 
-**Last updated:** 2026-07-18  
+**Last updated:** 2026-08-27  
 **Environment rule:** **Docker only** — no host Elixir/Python/Node installs. Mac needs Docker Desktop.  
 **GPU:** Optional later (cloud); M1–M2 designed for **CPU** training.
 
@@ -96,7 +97,7 @@ Phase M1 Data + 15m supervised baseline     ✅ pipeline done (improve quality o
     │
 Phase M2 Multi-horizon + confidence gating  ✅ train_m2 / eval_m2 (quality improves with data)
     │
-Phase M3 Discrete policy + sim A/B          ⬜ next
+Phase M3 Discrete policy + sim A/B          🟡 in progress (M3-0a, M3-1 done; M3-2 next)
     │
 Phase M4 Positional + alts                  ⬜
     │
@@ -169,9 +170,14 @@ Legacy SPEC “Phase 1–4” maps roughly as:
 
 ---
 
-### Phase M3 — Discrete policy ⬜
+### Phase M3 — Discrete policy 🟡 in progress
 
 **Goal:** Policy decides flat/long/short/hold/exit on top of signals (not end-to-end price RL).
+
+**State (2026-08-27):** M3-0a (backtester + regime harness, both acceptance tests passing)
+and M3-1 (the pre-registered protocol, [M3_PROTOCOL.md](./M3_PROTOCOL.md)) are done. M3-2,
+the rules baseline, is next. See [M3_PLAN.md](./M3_PLAN.md) §0.0 — it is the live status
+block and the only thing a fresh session needs to read to resume.
 
 | Work item | Description |
 |-----------|-------------|

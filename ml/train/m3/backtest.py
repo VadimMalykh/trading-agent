@@ -57,7 +57,8 @@ class PolicySpec:
     regime_col: str | None = None          # e.g. "btc_absret_1d"
     regime_min: float | None = None        # absolute threshold on that column
     regime_quantile: float | None = None   # or a per-split quantile of BARS (not of trades)
-    size_by_regime: bool = False           # flat size, or scaled by regime quintile
+    #   regime_col set with NEITHER threshold = condition without filtering (sizing-only)
+    size_by_regime: bool = False           # flat size, or scaled by BAR-quintile of regime
     max_concurrent: int | None = None      # portfolio cap, per seed, across pairs
     sides: str = "both"                    # "both" | "long" | "short"
     label: str = ""
@@ -162,17 +163,24 @@ def run(dumps: list[Dump], spec: PolicySpec,
             if regimes is None or d.seed not in regimes:
                 raise SystemExit(f"spec conditions on {spec.regime_col} but no regimes for {d.seed}")
             r = regimes[d.seed][["pair", "ts", spec.regime_col]]
-            # The threshold is a quantile of BARS, not of trades: it must be a statement
-            # about the market, derivable without knowing which bars the model gated.
+            sel = sel.merge(r, on=["pair", "ts"], how="left")
+            # A bar whose lookback is incomplete carries no regime value. Drop it rather
+            # than zero-fill — validate.py's TEST 2 drops the same 24 pooled bars, so the
+            # simulator and the acceptance test agree on the population.
+            sel = sel[sel[spec.regime_col].notna()]
+            # EVERY regime cut — the hard filter here and the sizing buckets below — is a
+            # quantile of BARS, not of trades. It has to be a statement about the market,
+            # derivable without knowing which bars the model gated; a quantile taken over
+            # the already-selected trades is conditioned on the model and is not that.
             if spec.regime_quantile is not None:
                 cut = float(r[spec.regime_col].quantile(spec.regime_quantile))
             elif spec.regime_min is not None:
                 cut = float(spec.regime_min)
             else:
-                raise SystemExit("regime_col set without regime_min or regime_quantile")
-            regime_thr[d.seed] = cut
-            sel = sel.merge(r, on=["pair", "ts"], how="left")
-            sel = sel[sel[spec.regime_col] >= cut]
+                cut = None       # sizing-only: condition on the regime without filtering
+            if cut is not None:
+                regime_thr[d.seed] = cut
+                sel = sel[sel[spec.regime_col] >= cut]
             sel["regime"] = sel[spec.regime_col]
 
         if spec.sides == "long":
@@ -184,8 +192,15 @@ def run(dumps: list[Dump], spec: PolicySpec,
         if spec.size_by_regime:
             if not spec.regime_col:
                 raise SystemExit("size_by_regime needs regime_col")
-            q = pd.qcut(sel[spec.regime_col], 5, labels=False, duplicates="drop")
-            sel["size"] = (q.fillna(0).astype(float) + 1.0) / 3.0   # 1/3 .. 5/3, mean ~1
+            # Bucket against the BAR distribution's quintile edges, for the reason given
+            # above. One consequence is worth stating out loud: combined with a hard
+            # regime_quantile=0.8 filter every surviving trade is already in bucket 5, so
+            # sizing degenerates to a flat 5/3 and buys nothing. Regime sizing is a
+            # distinct policy only when the hard filter is OFF — it is the soft version of
+            # the same idea, trading small out-of-regime instead of not at all.
+            edges = r[spec.regime_col].quantile([0.2, 0.4, 0.6, 0.8]).to_numpy()
+            q = np.searchsorted(edges, sel[spec.regime_col].to_numpy(), side="right")
+            sel["size"] = (q.astype(np.float64) + 1.0) / 3.0        # 1/3 .. 5/3, mean ~1
 
         sel = sel.sort_values("ts", kind="mergesort")
         t = _simulate_seed(sel, hold_bars, spec.max_concurrent)

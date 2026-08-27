@@ -120,3 +120,50 @@ def side_split(trades: pd.DataFrame, cost_bps: float) -> pd.DataFrame:
         sub = trades[sel]
         rows.append({"side": label, **summarise(sub, cost_bps, span_days(sub))})
     return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------------------
+# Uncertainty. M3-1's decision rule needs an interval, and the naive one is wrong here.
+# --------------------------------------------------------------------------------------
+
+def clustered_mean_bps(trades: pd.DataFrame, cost_bps: float, z: float = 1.96,
+                       by: str = "day") -> dict:
+    """Mean net bps/trade with a CLUSTER-ROBUST standard error.
+
+    WHY NOT sd/sqrt(n). Two structural dependencies make pooled trades far from iid, and
+    both inflate confidence in the same direction:
+
+      1. **Seeds are not independent observations.** Three seeds gating the same bar are
+         three views of one market moment. §1.8's "3,717 trades, SEM ~9.5bps" treats them
+         as 3,717 draws; the number of *market moments* behind them is nearer a third of
+         that, and the seeds agree precisely because they are looking at the same thing.
+      2. **Trades overlap in time and across pairs.** A 4h hold on eight correlated
+         perpetuals during one BTC move is one bet expressed eight times, and the regime
+         policy deliberately concentrates entries into exactly such moves.
+
+    Clustering on the exit calendar day absorbs both: every trade closing on the same day —
+    any seed, any pair — enters as one cluster. The estimator is the standard CRVE for a
+    mean, with the usual G/(G-1) small-sample correction. It is conservative by design; a
+    policy that needs the iid interval to look significant is not a policy.
+    """
+    t = trades.copy()
+    n = len(t)
+    if n == 0:
+        return {"n": 0, "clusters": 0, "mean_bps": 0.0, "se_bps": 0.0,
+                "lo95_bps": 0.0, "hi95_bps": 0.0}
+    x = (t["signed_ret"] - cost_bps / BPS * t.get("size", 1.0)).to_numpy(np.float64) * BPS
+    mean = float(x.mean())
+    if by == "day":
+        key = pd.to_datetime(t["exit_ts"], unit="ns", utc=True).dt.floor("D").to_numpy()
+    else:
+        key = t[by].to_numpy()
+    resid = x - mean
+    sums = pd.Series(resid).groupby(pd.Series(key)).sum().to_numpy()
+    g = sums.size
+    if g < 2:
+        return {"n": n, "clusters": g, "mean_bps": mean, "se_bps": float("nan"),
+                "lo95_bps": float("nan"), "hi95_bps": float("nan")}
+    var = (sums ** 2).sum() / (n ** 2) * (g / (g - 1.0))
+    se = float(np.sqrt(var))
+    return {"n": n, "clusters": int(g), "mean_bps": mean, "se_bps": se,
+            "lo95_bps": mean - z * se, "hi95_bps": mean + z * se}
