@@ -74,7 +74,8 @@ defmodule FluxTrader.MarketData.Collector do
       # Guards against re-running it every time the whitelist changes.
       ratio_backfilled: MapSet.new(),
       # Monitor ref of the in-flight ratio poll, or nil. See start_ratio_poll/1.
-      ratio_poll: nil
+      ratio_poll: nil,
+      trade_poll: nil
     }
 
     Phoenix.PubSub.subscribe(FluxTrader.PubSub, "settings:whitelist")
@@ -129,23 +130,13 @@ defmodule FluxTrader.MarketData.Collector do
     {:noreply, state}
   end
 
+  # The tape sweep runs OFF this process. It is ~1.2s of network per pair and the book poll
+  # shares this mailbox, so doing it inline makes the book wait behind the tape: raising the
+  # tape limit to 1000 that way cost 2.5x of the book snapshot rate (55 -> 22 rows/min,
+  # measured 2026-08-28) before this was decoupled. The book cadence is the input to M3-4 and
+  # to the whole book-era wave, so it must not pay for tape fidelity.
   def handle_info(:poll_trades, state) do
-    state = sync_pairs(state)
-
-    state =
-      Enum.reduce(state.pairs, state, fn pair, acc ->
-        case collect_trades(pair, Map.get(acc.last_trade_ids, pair)) do
-          {:ok, last_id} ->
-            %{acc | last_trade_ids: Map.put(acc.last_trade_ids, pair, last_id)}
-
-          :ok ->
-            acc
-
-          {:error, _} ->
-            acc
-        end
-      end)
-
+    state = state |> sync_pairs() |> start_trade_poll()
     Process.send_after(self(), :poll_trades, @trade_interval_ms)
     {:noreply, state}
   end
@@ -194,7 +185,18 @@ defmodule FluxTrader.MarketData.Collector do
     {:noreply, %{state | ratio_poll: nil}}
   end
 
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{trade_poll: ref} = state) do
+    {:noreply, %{state | trade_poll: nil}}
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # The sweep reports the highest aggTrade id it saw per pair, so the next sweep can ask for
+  # only what is new. Sent as a cast: the sweep must never block on this process.
+  @impl true
+  def handle_cast({:trade_ids, ids}, state) do
+    {:noreply, %{state | last_trade_ids: Map.merge(state.last_trade_ids, ids)}}
+  end
 
   defp sync_pairs(state) do
     %{state | pairs: pairs()}
@@ -383,6 +385,34 @@ defmodule FluxTrader.MarketData.Collector do
   # add exactly the collection jitter B4.1 exists to remove. The overlap guard
   # keeps a slow exchange from piling up ticks; a skipped tick costs nothing,
   # since each poll re-reads the last @ratio_poll_limit buckets anyway.
+  # Skipped rather than queued while one is still in flight, for the same reason the ratio
+  # poll is: a sweep that cannot keep up must drop ticks, not build an unbounded backlog.
+  defp start_trade_poll(%{trade_poll: ref} = state) when is_reference(ref) do
+    Logger.debug("Trade poll still in flight; skipping this tick")
+    state
+  end
+
+  defp start_trade_poll(state) do
+    pairs = state.pairs
+    known = state.last_trade_ids
+    parent = self()
+
+    case Task.Supervisor.start_child(FluxTrader.TaskSupervisor, fn ->
+           ids =
+             Enum.reduce(pairs, %{}, fn pair, acc ->
+               case collect_trades(pair, Map.get(known, pair)) do
+                 {:ok, last_id} -> Map.put(acc, pair, last_id)
+                 _ -> acc
+               end
+             end)
+
+           if ids != %{}, do: GenServer.cast(parent, {:trade_ids, ids})
+         end) do
+      {:ok, pid} -> %{state | trade_poll: Process.monitor(pid)}
+      _ -> state
+    end
+  end
+
   defp start_ratio_poll(%{ratio_poll: ref} = state) when is_reference(ref) do
     Logger.debug("Ratio poll still in flight; skipping this tick")
     state
