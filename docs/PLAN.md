@@ -99,13 +99,13 @@ Phase M1 Data + 15m supervised baseline     ✅ pipeline done (improve quality o
     │
 Phase M2 Multi-horizon + confidence gating  ✅ train_m2 / eval_m2 (quality improves with data)
     │
-Phase M3 Discrete policy + sim A/B          🟡 in progress (M3-0a/1/2/3/4a done; M3-4 execution costs next, then M3-0b, M3-5)
+Phase M3 Discrete policy + sim A/B          🟡 in progress (M3-0a/1/2/3/4a/4/5 done; the paper A/B is RUNNING; only M3-0b left)
     │
 Phase M4 Positional + alts                  ⬜
     │
 Phase I  Inference serving + live signals   ✅ light (serve.py + SignalEngine + dashboard)
     │
-Phase S  Simulation hardening + paper       ⬜
+Phase S  Simulation hardening + paper       🟡 harness built 2026-08-28 by M3-5 (paper A/B ready, awaiting deploy; real order path still unsigned)
     │
 Phase P  Production (manual → auto)         ⬜ gated
 ```
@@ -178,16 +178,15 @@ Legacy SPEC “Phase 1–4” maps roughly as:
 
 **State (2026-08-27):** the sequence is complete through the learned policy — M3-0a
 (backtester + regime harness, both acceptance tests passing), M3-1 ([M3_PROTOCOL.md](./M3_PROTOCOL.md)),
-M3-2 ([M3_2_RESULTS.md](./M3_2_RESULTS.md), a rules baseline clears the pre-registered bar) and
+M3-2 ([M3_2_RESULTS.md](./M3_2_RESULTS.md), a rules baseline clears the pre-registered bar),
 M3-3 ([M3_3_RESULTS.md](./M3_3_RESULTS.md), the learned policy did **not** beat it, so the rule
-stands as M3's policy). M3-4a is
-also done ([M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md), the execution study's pre-registration).
-**Three items remain, in order: M3-4** (run that study, measured offline from stored L2 book
-data — **next**), **M3-0b** (price/funding side-table) and **M3-5** (wire the rule to the
-Executor + RiskManager and run the paper A/B). See
-[M3_PLAN.md](./M3_PLAN.md) §0.0 — it is the live status block and the only thing a fresh session
-needs to read to resume; **§0.5 is the same picture in plain language**, including whether this
-can trade profitably yet (it cannot, and §0.5.4 says exactly what is missing).
+stands as M3's policy), M3-4a/M3-4 ([M3_4_RESULTS.md](./M3_4_RESULTS.md), crossing costs 9.84 bps
+round trip and the maker arm is not worth building) and **M3-5**
+([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md), the rule is wired to a crossing executor and the
+paper A/B is running). **One item remains: M3-0b** (price/funding side-table; its data is already
+exported). See [M3_PLAN.md](./M3_PLAN.md) §0.0 — it is the live status block and the only thing a
+fresh session needs to read to resume; **§0.5 is the same picture in plain language**, including
+whether this can trade profitably yet (not certifiably — §0.5.4 says exactly what is missing).
 
 | Work item | Description |
 |-----------|-------------|
@@ -197,9 +196,9 @@ can trade profitably yet (it cannot, and §0.5.4 says exactly what is missing).
 | Integrate | Elixir Executor + hard RiskManager always on |
 | A/B | Signal-only vs signal+policy in simulation |
 
-**Exit criteria:** Sim shows controlled max DD and non-pathological trade rate; policy never bypasses hard limits.
+**Exit criteria:** Sim shows controlled max DD and non-pathological trade rate; policy never bypasses hard limits. 🟢 **Both are now met** — the drawdown/trade-rate criterion by M3-2's tables, the risk criterion by M3-5, which routes every policy entry through `RiskManager` in every mode and asserts refusal on each hard limit in `risk_manager_test.exs`.
 
-**Status (2026-08-28):** the offline search is finished and the remaining work is measurement and integration, not modelling. The policy earns **+15.0 bps/trade net of a 14-bps taker round trip** in backtest (≈0.15% per trade, ~2.3 trades/day) but is **not certifiable** on 253 days holding ~220 independent ones, and **nothing is wired to the Executor**, which is still an 86-line stub. 🔴 **M3-4a found that 14-bps round trip is probably ~6 bps too pessimistic** — the touch spread is 0.01 bps on BTC with $402k resting at it, so crossing costs almost nothing at these sizes, and the maker rebate it was being compared against is worth at most ~4 bps round trip. Both are now pre-registered for measurement ([M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md)); the caveat is that only 22 days of order-book history exist to measure on. Next: M3-4 (run it), then M3-0b, then M3-5.
+**Status (2026-08-28):** the offline search is finished, execution costs are measured, and **the rule is wired up to paper-trade forward** (built and verified; ⚠️ not yet deployed to the always-on VM, which is the next action). The policy earned **+15.0 bps/trade net of a 14-bps taker round trip** in backtest (≈0.15% per trade, ~2.3 trades/day); M3-4 then measured the real crossing cost at **9.84 bps, not 14**, so the honest figure is nearer +19 — but it is **still not certifiable**, because 253 days holding ~220 independent ones cannot resolve an effect that size and no re-analysis of them ever will. What changed is that the **only** thing that can resolve it is now built and ready to run: `Trading.PolicyEngine` scores every bar, ranks the trailing 14 days, sizes on live BTC-volatility quintiles, holds four hours, and charges the measured per-pair cost, with a signal-only control arm beside it ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)). ⚠️ Expect a quiet start: the rank window needs seven days before it trades at all, and the served checkpoint has emitted no gated signal since 2026-06-29 because the market has been calm — `GET /api/health` now makes that silence legible as correct. Next: **M3-0b**; and before real money, the two blockers in [BACKLOG.md](./BACKLOG.md) (the fee tier is unverified, the `auto` order path is unsigned).
 
 **Full plan:** see [M3_PLAN.md](./M3_PLAN.md) — the sequence (backtester → protocol → rules baseline → learned policy), the constraints M2 hands over, and what to bring back at each step. No GPU is required for any of it.
 

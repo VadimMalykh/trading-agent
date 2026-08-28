@@ -28,35 +28,41 @@ you defer something, write down what would un-defer it.
 
 | item | owner doc | state |
 |---|---|---|
-| **M3-5** — wire the rule to the executor | [M3_PLAN.md](./M3_PLAN.md) §2 M3-5, §0.5.4 | 🔴 **The last blocking item in M3.** M3-4 decided its shape: build a **crossing** executor — no limit orders, no queue model, no fill simulation. Needs the 4h hold timer, regime sizing, per-pair measured cost, and the hard `RiskManager` path |
+| **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **This, and only this, starts the clock.** The code is built, tested (65 tests) and verified end to end on the local stack, but **the local Postgres is a throwaway dev DB** — a forward test that accumulates independent trading days has to run on the always-on VM. Until it is deployed, nothing is being collected. ⚠️ **B4's collector fixes are also awaiting deploy** ([BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §2 B4) — send them together rather than restarting the collector twice |
+| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🟡 **Ready, not started** — starts when the row above is done. Then it needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl <host>:4001/api/health`. ⚠️ It will not trade for the first **seven days** (the rank window must fill) and may then idle for weeks (see the volatility note below). Both are the strategy working |
+| **M3-0b** — price/funding side-table | [M3_PLAN.md](./M3_PLAN.md) §2 | 🔴 **The only remaining M3 build item**, and nothing blocks it: the data is already exported (`candles_5m.csv.gz`, `funding.csv.gz`, 2026-08-28). It is the only item that adds *new degrees of freedom* rather than re-slicing the same 253 days, and M3-5 added a fourth consumer — the `auto` path's stop/target brake is an unmeasured deviation from a fixed-hold policy and M3-0b's price path is what would price it. Build it on the existing `m3_4/` export, sharing one alignment with **B0** |
 
 **M3-4 completed 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), read via
 [M3_PLAN.md](./M3_PLAN.md) §0.8. Risk #2 closed.
+
+**M3-5 completed 2026-08-28** — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md). The policy is
+wired to a crossing executor, the hard `RiskManager` path is exercised on every entry, the
+signal-only A/B control runs beside it, and `/api/health` reports signal liveness. Risk #7
+closed; §6's last two exit criteria closed. It left two items open, both below.
+
+---
+
+## 🔴 Open — blockers on trading anything but paper
+
+*New 2026-08-28, from M3-5. Neither blocks the forward paper test; both block real money.*
+
+| item | why it matters | what to do | source |
+|---|---|---|---|
+| **Verify the Binance USDⓈ-M VIP fee tier** | Every M3 cost uses taker 4.0 / maker 2.0 bps per side because that is what `metrics.py`'s 14 and 5 decompose to. It has **never been checked against the account.** A wrong tier shifts every published M3 number by a constant, in a direction nobody has established | `docker compose exec app mix flux.fee_tier` — the task is written and signs `/fapi/v1/commissionRate` itself. It needs `BINANCE_API_KEY` / `BINANCE_API_SECRET` in the app container, which is the only reason it is still open. It fails loudly rather than printing an unverified number | [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) §2.5, [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §6 |
+| **The `auto` order path is unsigned** | `Binance.Client.post/2` sends neither the `X-MBX-APIKEY` header nor the HMAC-SHA256 signature Binance requires on every TRADE endpoint, so a real order returns 401. Before M3-5 this failed silently; the executor now logs it at boot | Implement request signing (the same HMAC the fee-tier task already does) plus `listenKey` / order-status reconciliation. **Not M3 work** — M3-5's deliverable is the paper A/B — but it is a hard prerequisite for anything beyond paper | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §6 |
 
 ---
 
 ## 🟡 Parked — M3
 
-| item | owner | why not now | what revives it | resume with |
-|---|---|---|---|---|
-| **M3-0b** — price/funding side-table | [M3_PLAN.md](./M3_PLAN.md) §2 | Ranked below M3-4, which can invalidate published numbers | Nothing blocks it — **the data is already exported** (`candles_5m.csv.gz`, `funding.csv.gz` landed 2026-08-28). It is the only remaining item that adds *new degrees of freedom* rather than re-slicing the same 253 days | build it on the existing `m3_4/` export; share one alignment with **B0** |
+*M3-0b moved to Active above: nothing blocks it any more.*
 
-**Two preconditions M3-4 surfaced, both owned by M3-5, both cheap:**
-
-1. **Verify the actual Binance USDⓈ-M VIP fee tier.** Every M3-4 cost uses taker 4.0 / maker
-   2.0 bps per side because that is what `metrics.py`'s 14 and 5 decompose to. It has **never
-   been checked against the account.** A wrong tier shifts every number by a constant.
-   M3_4_PROTOCOL §2.5 calls it a precondition of M3-5, not of M3-4.
-2. 🔴 **Expose signal liveness on `/health`.** The served checkpoint has emitted **no gated
-   signal since 2026-06-29** — correctly, because the market has been calm since July and this
-   strategy only fires in volatile conditions — but a silent system and a broken system look
-   identical from outside. Report bars seen and time since the last gated signal before
-   anything trades. See [M3_PLAN.md](./M3_PLAN.md) §0.8.
-
-⚠️ **A planning consequence of the same fact:** 2.3 trades/day is an average over a period that
-included volatile months. A forward paper test started now may idle for weeks, so **the
-calendar cost of accumulating the independent days the statistics need is longer than the trade
-rate suggests.**
+⚠️ **A planning consequence worth keeping in view:** 2.3 trades/day is an average over a period
+that included volatile months, and the served checkpoint has emitted **no gated signal since
+2026-06-29** because the market has been calm since July. A forward paper test may idle for
+weeks, so **the calendar cost of accumulating the independent days the statistics need is longer
+than the trade rate suggests.** `/api/health` now makes that silence legible as correct rather
+than as a fault.
 
 ---
 

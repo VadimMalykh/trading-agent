@@ -252,10 +252,21 @@ CLS_LABEL_SMOOTHING = float(os.environ.get("CLS_LABEL_SMOOTHING", "0.05"))
 # => the head emits no confidence spread". Default now matches what we serve, so the
 # label tells the truth. (Trap: an env default that differs from the incumbent
 # silently changes the experiment — see docs/NEXT_TRAINING_PLAN.md §0.4.2.)
-GATE_THRESHOLD = float(os.environ.get("GATE_THRESHOLD", "0.58"))
+#
+# An EMPTY value counts as unset, not as an error. docker-compose.yml passes
+# `GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-}` on purpose — an empty string there means
+# "no operator override, serve at the checkpoint's own measured gate" (C13) — and
+# `float("")` raised ValueError at import, so ml_inference crash-looped whenever the
+# override was left unset, i.e. in the default configuration.
+def _float_env(name: str, default: str) -> float:
+    raw = os.environ.get(name, "")
+    return float(raw) if raw.strip() else float(default)
+
+
+GATE_THRESHOLD = _float_env("GATE_THRESHOLD", "0.58")
 # Currently unreferenced (the Elixir app gates via ML_GATE_THRESHOLD and serve.py
 # reads GATE_THRESHOLD). Kept in sync so it cannot become a stale trap if wired up.
-CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.58"))
+CONFIDENCE_THRESHOLD = _float_env("CONFIDENCE_THRESHOLD", "0.58")
 
 # --- The served gate is a COVERAGE target, not a probability (C13) ---------------
 # GATE_THRESHOLD above is an ABSOLUTE confidence. That is not a well-defined

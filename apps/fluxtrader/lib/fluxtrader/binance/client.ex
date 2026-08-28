@@ -100,14 +100,26 @@ defmodule FluxTrader.Binance.Client do
   # collected in real time via the WebSocket !forceOrder@arr stream in
   # FluxTrader.Binance.WebSocket. There is no historical backfill.
 
+  @doc """
+  Place a MARKET order — i.e. cross the spread.
+
+  There is no limit-order variant on purpose. M3-4 measured resting against crossing and
+  found the maker arm's apparent saving to be a fee-rebate accounting gain that adverse
+  selection reverses in 16 of 16 cells (`docs/M3_4_RESULTS.md` §3), so the executor crosses.
+
+  `reduce_only: true` marks a closing order, which Binance then refuses to let flip into an
+  opposite position.
+  """
   def place_order(order_params) do
     body =
-      URI.encode_query(
+      [
         symbol: order_params.symbol,
         side: order_params.side,
         type: "MARKET",
         quantity: order_params.quantity
-      )
+      ]
+      |> maybe_put(:reduceOnly, if(Map.get(order_params, :reduce_only), do: "true"))
+      |> URI.encode_query()
 
     post("/fapi/v1/order", body)
   end

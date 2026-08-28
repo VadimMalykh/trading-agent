@@ -26,5 +26,7 @@ defmodule FluxTraderWeb.Router do
 
     get "/positions", PositionController, :index
     get "/signals", SignalController, :index
+    # Signal liveness, the policy's current coverage cut, and the paper A/B (M3_PLAN §0.8).
+    get "/health", HealthController, :index
   end
 end

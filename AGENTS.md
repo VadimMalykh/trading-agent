@@ -21,6 +21,8 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 | DB (psql) — REAL data (always-on VM) | `./scripts/gcp_data_collection_stats.sh` or SSH (see "Data lives on the always-on VM") |
 | ML train/backfill | `docker compose --profile ml run --rm ml_trainer python …` |
 | M3 offline policy analysis | `./scripts/m3.sh -m m3 validate` (torch-free `ml_analysis` image; see `docs/M3_PLAN.md` §0.0) |
+| Elixir tests | `docker compose run --rm -e MIX_ENV=test -e POSTGRES_HOST=postgres app mix test` (workers do not start under `MIX_ENV=test`, so a run never touches Binance) |
+| Live policy state | `curl -s localhost:4001/api/health \| jq` — signal liveness, the live coverage cut, named skip reasons, both A/B arms (`docs/M3_5_INTEGRATION.md` §2) |
 | Inference | `curl http://localhost:8001/…` (or exec into `ml_inference`) |
 | Restart after Elixir code change | `docker compose restart app` (code is bind-mounted; `_build` is a volume) |
 
@@ -28,7 +30,9 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 
 - Elixir/Phoenix: `apps/`, started as service `app` (bind-mount `.:/app`)
 - ML: `ml/train/`, services `ml_inference` + profile `ml` → `ml_trainer`, `ml_analysis`
-- M3 policy backtester: `ml/train/m3/`, run through `scripts/m3.sh`
+- M3 policy backtester (offline): `ml/train/m3/`, run through `scripts/m3.sh`
+- M3 policy, live: `apps/fluxtrader/lib/fluxtrader/trading/` — `policy.ex` is the rule and the
+  only place it exists; see `docs/M3_5_INTEGRATION.md`
 - DB: service `postgres` user/db `fluxtrader` / password `secret`
 
 If a tool is missing on the host, use the matching container — never install it locally.
