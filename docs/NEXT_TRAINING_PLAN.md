@@ -1,23 +1,39 @@
 # Training plan — what is true, what to run next
 
-**Last updated: 2026-08-27** (the T-wave is queued: two 12-pair seeds, then a promote.
-Preceded by the closing wave — O8, R2, R3a, R3b, all four flat or negative, the
-pre-registered exit condition fired, and **M2 is frozen at the §1.3 baseline as a research
-object**. Before that: R1, and the Q-wave — Q0 gate derivation, Q1 regime analysis,
-Q2 ensemble, Q3 feature expansion).
+**Last updated: 2026-08-27** (T5 and T6 both done. **T5 is fixed and shipped**: `/predict_all`
+now serves only the checkpoint's own trained pairs. **T6 closed the universe question** — not
+by deciding it, but by measuring that this evaluation period *cannot* decide it, and by
+showing that what looked like a 12-pair gain is a confidence-cut effect. Preceded by the
+T-wave — T1 and T2, two 12-pair seeds, both valid — and before that the closing wave: O8, R2,
+R3a, R3b, all four flat or negative, the pre-registered exit condition fired, and **M2 is
+frozen at the §1.3 baseline as a research object**. Before that: R1, and the Q-wave — Q0 gate
+derivation, Q1 regime analysis, Q2 ensemble, Q3 feature expansion).
 
-🟢 **If you are picking this up cold: M2 is frozen as research, and the queue in §2 is
-two runs of deployment work, not a reopened experiment.** No lever is being tested; the
-recipe is O8's, unchanged, at two more seeds, so that the *served* model covers the 12 pairs
-the collector and the app whitelist already carry. The research verdict of §1.9 stands
-exactly as written — **more training data buys no edge** — and nothing in §2 contradicts it.
-What changed on 2026-08-27 is that the same 12 pairs turned out to be worth **+7.5 net
-bps/trade to the M3 policy** (§1.10), which is a statement about how many instruments the
-policy gets to choose between, not about how much data the model was trained on.
+🟢 **If you are picking this up cold: M2 is frozen as research, §2's queue is empty, and
+nothing is waiting on you here.** The served model is seed 2 on **8 pairs**
+(`m2_multi_20260819T142759Z_a186182b.pt`, gate 0.6311). All remaining work is in
+`docs/M3_PLAN.md`.
+
+🟢 **The traded universe: closed 2026-08-27, as unresolvable on this data.** After three
+paired comparisons (§1.10) the 8-vs-12 effect sits within a couple of bps of zero in every
+framing, and the decisive fact is a power measurement rather than a point estimate: the
+evaluation period holds ~180 independent exit days, which resolves effects of about **±37
+bps** at 80% power. The +7.5 bps anyone cared about is roughly a *third* of what this data
+can see. **More seeds cannot fix that** — extra seeds and extra pairs both add correlated
+trades inside the same days. Only a longer evaluation period can, and that is calendar, not
+compute. **Do not queue more work on 8-vs-12.** Full workings: `docs/T6_RESULTS.md`.
+
+⚠️ **One correction to the T-wave write-up, and it matters for how the next negative result
+gets read.** §1.10 published "−0.85 bps, 95% CI [−6.8, +5.1]" and concluded the +7.5 was
+excluded. That interval is reproduced exactly by T6 — but it comes from a **day-weighted,
+shared-days-only** estimator sitting next to a **trade-weighted** table. On the estimator that
+matches the published per-trade statistic the interval is [−12.0, +11.5], and **+7.5 is inside
+it**. The T-wave did not refute the +7.5; it failed to replicate it, which is a weaker and
+different thing. §1.10 has been amended.
 
 **All research work is in M3, planned and tracked in `docs/M3_PLAN.md`** — start at that
-file's §0.0 status block. This document remains the reference for what M2 measured, for the
-standing rules in §0, and for the §2 queue while the T-wave is open.
+file's §0.0 status block. This document remains the reference for what M2 measured and for
+the standing rules in §0.
 
 **One parallel wavefront exists: `docs/BOOK_ERA_PLAN.md`** (the B-wave, opened 2026-08-24).
 It does not reopen M2 and it queues no `gcp_train.sh` run. It is a measurement-first
@@ -329,7 +345,7 @@ and volume.
 | Adding 11 new derived columns (Q3) | ❌ rejected |
 | Adding the best-behaved 6 of them (R1) | ❌ rejected, worse than Q3 — **§1.6, and this closes features** |
 | Hyperparameter tuning (dozens of runs, the R/E waves) | ❌ the whole spread was inside the noise |
-| **More pairs — 12 instead of 8, 58% more data (O8)** | ❌ **no better *as data*** — §1.9. 🟢 But the four extra *instruments* are worth +7.5 net bps/trade to the M3 policy, which is a different question and the one that decided it — §1.10 |
+| **More pairs — 12 instead of 8, 58% more data (O8)** | ❌ **no better *as data*** — §1.9. ❌ **and closed as a traded universe too** — the +7.5 did not replicate, and T6's fair tests put the effect within a couple of bps of zero in every framing against a ±37 bps resolution limit. What a trade-count-matched test made look like a pair gain is the confidence cut, not the pairs. Not decided — *undecidable here* — so the incumbent stands — §1.10, `docs/T6_RESULTS.md` |
 | **A loss that cares about move size (R2)** | ❌ **worse.** Made the model wildly overconfident and broke the probabilities — §1.9 |
 | **A bigger encoder — 128 units (R3a)** | ❌ **worse.** Memorized the training set; worst calibration in the project — §1.9 |
 | **A smaller encoder — 32 units (R3b)** | ❌ **identical.** Half the size, same result — the model was never capacity-limited — §1.9 |
@@ -358,13 +374,17 @@ the few-percent noise that every model change produced. The only thing that woul
 **new data** — order-book history deep enough to fall inside the training window — and that is
 a calendar problem, not a modelling one (§1.7). Expect it around 2027.
 
-One win worth taking separately, and it turned out to be larger than "free": the 12-pair run
-was no better *as a model*, but it was no worse either, so a 12-pair model covers four more
-instruments at the same edge and the same serving cost. When the M3 policy was actually run
-over those four extra instruments it earned **+7.5 more net bps per trade and 43% more
-trades per day** than the same checkpoint restricted to eight (§1.10). The model did not
-improve; the policy got more things to choose between. That distinction is the whole content
-of §1.10, and it is what §2's queue exists to bank.
+A seventh lever was tested on 2026-08-27 and is the one thing here that is **not** closed:
+the **traded universe**. A single seed said that running the M3 policy over 12 instruments
+instead of 8 earned +7.5 more net bps per trade at an identical model — the policy picks the
+most confident 2% of bars out of whatever universe it is handed, so more instruments should
+deepen the cross-section. Two more seeds were run to bank it and **the +7.5 did not
+replicate**. T6 then ran the fair versions of the comparison and **closed the question the
+only way this data allows: as unresolvable.** The 8-vs-12 effect is within a couple of bps of
+zero however it is framed, and the evaluation period resolves ±37 bps at best — the +7.5 was
+always a third of what could be seen. What looked like a 12-pair gain under a trade-count-
+matched test turned out to be the *confidence cut*, not the pairs. **Closed; the served
+8-pair universe stands** — §1.10, `docs/T6_RESULTS.md`.
 
 ### 1.1 The one-paragraph summary
 
@@ -788,15 +808,14 @@ and the calibration table is monotone. A 12-pair model is a strictly better *pro
 same measured edge, and it is free at serve time. That is a deployment fact, **not** a
 research result, and it should not be counted as an improvement.
 
-🔴 **Read on 2026-08-27, and it is the sentence above that needs the qualifier, not the
-verdict.** "Free" was measured with M2's ruler — plateau-mean LB and the fixed-coverage
-table, both of which average over bars. The M3 policy does not average over bars; it *picks*
-the most confident 2% out of whatever universe it is given, so four more instruments deepen
-the cross-section it selects from. Measured that way the same O8 checkpoint is worth **+7.5
-net bps/trade and 43% more trades per day** on 12 pairs than on 8 (§1.10). Nothing in §1.9's
-verdict changes — data volume is still not the constraint on the *model*. What changes is
-that "adopt 12 pairs" stops being a product tidy-up and becomes the second-largest measured
-effect in the project.
+🟡 **Read on 2026-08-27, and the qualifier is now half-withdrawn.** "Free" was measured with
+M2's ruler, which averages over bars, and the M3 policy instead *picks* the most confident 2%
+out of whatever universe it is given. Measured that way the O8 checkpoint looked worth +7.5
+net bps/trade on 12 pairs. **The T-wave ran two more seeds and the +7.5 did not replicate**
+(§1.10), and T6 showed the comparison cannot be resolved on this evaluation period at all.
+What survives is the weaker original claim in this paragraph — a 12-pair model is at worst a
+lateral move as a *product*, at the same measured edge. Whether it is slightly better or
+slightly worse as a *policy* is now **closed as unanswerable here**, not open.
 
 #### R2 — the magnitude-weighted loss ran correctly and did the opposite of its job
 
@@ -857,204 +876,181 @@ and 64 with a cliff into memorization above it.
 
 ---
 
-### 1.10 🟢 The universe is a policy lever, and it is worth +7.5 net bps/trade
+### 1.10 🟢 The traded universe — closed 2026-08-27, as unresolvable on this data
 
-Measured 2026-08-27, and it is what §2's queue exists to bank. Reproduce it with:
+**The question was: does trading 12 pairs instead of 8 make a better policy?** It arose from a
+single 12-pair seed (O8) on which M3-2's winner earned **+7.5 net bps/trade more** than on the
+8 baseline pairs — measured cleanly, within one run, with only the universe varying. Two more
+12-pair seeds (T1, T2) were trained to replicate it, and T6 then ran the offline tests the
+T-wave had skipped. **The answer is that this evaluation period cannot tell**, and the reason
+is worth more than the answer would have been.
+
+**Three paired comparisons, all on the same three 12-pair dumps** (T1 `20260827T050701Z`,
+T2 `20260827T114122Z`, O8 `20260822T012619Z`), each restricting the same checkpoints to the
+8 baseline pairs for the narrow arm so that model, seed and calendar are held fixed:
+
+| comparison | 8 pairs | 12 pairs | difference (wide − narrow) | 95% CI |
+|---|---:|---:|---:|---|
+| **coverage-matched** — both at cov 0.02, so 12 pairs takes 50% more trades | +9.29 | +9.00 | **−0.29** | [−12.0, +11.5] |
+| **trade-count-matched** — 12 pairs cut to cov 0.0129 for the same 1,645 trades | +9.29 | +19.51 | **+10.21** | [−15.6, +36.0] |
+| **cut-matched** — both at cov 0.0129, which isolates the pairs from the cut | +22.02 | +19.51 | **−2.51** | [−17.9, +12.8] |
+
+🔴 **The trade-count-matched "+10.21" is not a universe effect.** Matching the trade count
+makes the wide arm 1.55x more *selective* as well as wider, and the third row separates the
+two: **tightening the confidence cut is worth +12.7 bps on the 8-pair universe by itself**,
+while the pairs, at a matched cut, are worth −2.5. The lever that moved was coverage, which
+the 8-pair universe can pull too.
+
+🟢 **What actually closes this is a power measurement, not any of those point estimates.** The
+cluster-robust SE on the fair difference is **13.2 bps** over ~180 independent exit days, so at
+80% power the comparison resolves effects of about **±37 bps and nothing smaller**. The +7.5
+that started all this is roughly a *third* of what this data can see. **More seeds do not
+help**: extra seeds and extra pairs both add trades that are correlated *inside days already
+counted*, which is why widening 8 → 12 raised the trade count 50% (1,645 → 2,475) but the
+independent-exit-day count only 11% (169 → 187). Only a longer evaluation period moves this,
+and that is calendar, not compute. **Do not queue further work on 8-vs-12.**
+
+⚠️ **Correction to the first T-wave write-up: the published interval was the wrong estimand.**
+It read "−0.85 bps, 95% CI [−6.8, +5.1] across 167 shared days" and concluded +7.5 was
+excluded. T6 reproduces that number exactly — from a **day-weighted, shared-days-only**
+estimator, sitting beside a table of **trade-weighted** means. Equal-weighting days answers a
+different question, and coincides with the per-trade difference only if every day carries the
+same number of trades in both arms, which is exactly what changing the universe breaks;
+restricting to shared days also discards the 22 days on which the two policies most differ.
+On the estimator matching the published per-trade statistic the interval is **[−12.0, +11.5],
+and +7.5 is inside it.** The T-wave **failed to replicate** the +7.5; it did not refute it.
+Both estimators are committed in `m3/universe.py` so the distinction is code, not a memory of
+whose script ran.
+
+🟢 **The concurrency cap: re-tuned, and worth nothing.** The widened drawdown (−2.83 → −4.53)
+looked like an argument for a cap. Over the pre-registered cap set `max_concurrent=None` wins
+on **both** universes, and every cap in the wider ladder costs net bps. A cap does cut
+drawdown — by refusing profitable trades.
+
+🔴 **The criterion that actually binds is P3, not P5, and it is not about pairs.** P5
+(all seeds pooled-positive) fails on the **incumbent** in 52.4% of day-bootstraps against
+46.7% on the challenger — a coin flip, which is why an early draft's "12 pairs fails P5, so
+reject it" was worthless. What fails on both arms, in the observed data and in 88–98% of
+resamples, is **P3, the −5 bps worst-window floor**. **Window 3 is the binding constraint on
+this policy and widening the pair set does not touch it** — its net stays around −18 to −22 on
+143–168 trades. The w3 hole is a shortage of *confident bars*, not of instruments.
+
+**Per-pair texture, with the standing caveat.** Inside the coverage-matched wide run the four
+new pairs are the profitable half (+15.99 net on 841 trades against the base-8's +5.41 on
+1,634). §1.3's rule still applies — per-pair numbers do not replicate across seeds — and this
+is **not** a licence to cherry-pick pairs.
+
+**12 pairs does not move the certification problem** (M3_PROTOCOL §2). Only forward time does.
+
+#### Reproduce all of it
 
 ```sh
-./scripts/m3.sh -m m3 universe                      # default: O8, the one 12-pair dump
-./scripts/m3.sh -m m3 universe --runs <T1>,<T2>,<id-of-O8>   # once the T-wave has landed
+./scripts/m3.sh -m m3 validate          # acceptance tests first, always
+./scripts/m3.sh -m m3 universe-fair     # T6: the three tests, the intervals, the power table
+./scripts/m3.sh -m m3 universe --runs 20260827T050701Z,20260827T114122Z,20260822T012619Z
 ```
 
-**The comparison is made *within* one run, never against §1.3's 8-pair family.** Restricting
-O8's own dump to the 8 baseline pairs holds the checkpoint, the seed and the calendar fixed,
-so the only thing varying is the traded universe. Scoring a new 12-pair run against the old
-8-pair runs would confound universe with seed and with split drift, and would not be evidence.
+Full report, including the cap ladder and the per-criterion bootstrap table:
+**`docs/T6_RESULTS.md`**.
 
-M3-2's winner (cov 0.02, hold 240m, sized by `btc_absret_1d` bar-quintile, no concurrency
-cap), scored twice on the O8 dump:
+🟢 **The methodological lessons, which are the durable output of the whole T/T6 sequence.**
 
-| universe | trades | tr/day | gross | **net @14 taker** | net @5 maker | Sharpe | maxdd |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| the 8 baseline pairs | 606 | 2.28 | +33.31 | **+13.93** | +26.71 | 0.96 | −1.13 |
-| **all 12 pairs** | 869 | 3.27 | +40.89 | **+21.44** | +33.94 | 1.23 | −1.67 |
-
-🟢 **The validity check that licenses reading this as a universe effect and not a seed
-effect:** the 8-pair restriction of O8 reproduces §1.3's three-seed policy result — +13.93
-against the published **+15.0**, at 2.28 trades/day against 2.3. One seed of O8 behaves like
-the family on the 8 pairs, so the 12-pair column is the four extra instruments talking.
-
-The confidence threshold barely moves (0.5996 → 0.5992), so the wide run is essentially the
-narrow run's trades *plus* 260 new ones, and those 260 carry it: **+43.07 net against the
-base-8 trades' +12.21** inside the same run.
-
-🔴 **Four caveats, all binding, and the first two are the ones that decide how §2 is run.**
-
-1. **One seed.** §1.3 is explicit that per-pair `dir_acc` does not replicate across seeds
-   (ZEC 0.498 / 0.602 / 0.565), so the per-pair breakdown the `universe` command prints is
-   *texture* — is the gain broad or is it one instrument — and never a reason to keep or drop
-   an individual pair. Two more seeds is exactly what §2's T1/T2 buy.
-2. **Window 3 is not fixed by this and never was.** Its trade count goes 30 → 32 and its net
-   stays around −52 to −59, so **P4 still fails**. The w3 hole is a shortage of *confident
-   bars*, not of instruments; more pairs cannot fill it. Do not read the pooled improvement
-   as progress on the milestone's robustness criterion.
-3. **The extra trades are correlated, not diversifying.** Max drawdown grows −1.13 → −1.67,
-   and the clustered interval widens rather than tightens (se 25.7 → 30.2). Clustering is on
-   the exit calendar day, so more pairs add trades *within* existing clusters and buy almost
-   no independent days. **12 pairs does not move the certification problem** (M3_PROTOCOL §2);
-   only forward time does.
-4. **The cost assumption is universe-wide and unverified.** The 14 bps is one number for all
-   pairs, and the gain here is carried by mid-caps. M3-4 must produce per-pair realized costs
-   before the universe is widened past 12 — see `docs/M3_PLAN.md` §0.0.
-
+1. **A clean comparison on one seed is a hypothesis, not a result.** O8's +7.5 was
+   methodologically clean — same checkpoint, same calendar, only the universe varying — and
+   the between-seed spread was still larger than the effect.
+2. **A negative result needs the same scrutiny as a positive one.** A −0.3 bps point estimate
+   and a coin-flip criterion were briefly written up as a rejection.
+3. **Report the CI on the *difference*, and make sure the estimator matches the statistic you
+   are claiming.** Getting this wrong understated the interval by ~2x and turned "did not
+   replicate" into "refuted".
+4. **Check a criterion's power before letting it decide** — measure its failure rate on the
+   *incumbent* arm, not only on the challenger.
+5. **Before running a comparison, ask what effect size the data can resolve.** Had that been
+   asked first, the 8h of GPU that produced T1 and T2 would not have been spent: the answer
+   was always going to be inside the noise.
 ---
 
 ## §2 — THE RUN QUEUE
 
-🔴 **The queue is empty of M2 *experiments*, and that is the finding, not an oversight.**
-O8, R2, R3a and R3b have all run (§1.9); the exit condition pre-registered here on
-2026-08-22 fired on every clause. **M2 is frozen at the §1.3 baseline as a research object.**
-The superseded queue text, with the verdict bands each run was judged against, is in
-`docs/archive/TRAINING_HISTORY.md`.
+🟢 **The queue is empty — GPU and offline both — and that is the finding, not an oversight.**
+O8, R2, R3a and R3b all ran (§1.9) and the exit condition pre-registered here on 2026-08-22
+fired on every clause. **M2 is frozen at the §1.3 baseline as a research object.** The T-wave
+that followed, and T5/T6 after it, are all closed. The superseded queue text, with the verdict
+bands each run was judged against, is in `docs/archive/TRAINING_HISTORY.md`.
 
-🟢 **What IS queued is the T-wave: two runs of deployment work, opened 2026-08-27.** No lever
-is being tested and no verdict band is being defined, because nothing is being decided about
-the model — the recipe is O8's, unchanged, at two more seeds. **Do not analyze the T-wave the
-way §3 analyzes an experiment.** Its acceptance criteria are §0.4's validity lines and the
-adoption rule in T3; its plateau mean and its LB are not being compared to 0.5239 and should
-not be.
+🟢 **The traded universe is closed too, as unresolvable on this evaluation period** (§1.10).
+Not "12 pairs is worse" — the effect is within a couple of bps of zero in every framing, and
+the data resolves ±37 bps at best. **T4 is cancelled, not deferred**: there is no verdict for
+it to wait on, and promoting a 12-pair seed would be acting on noise.
 
-| item | what | cost | needs a GPU? |
-|---|---|---|---|
-| **T1** | **12-pair seed 2** — O8's recipe, `SEED=2` | ~4h GPU | **yes** |
-| **T2** | **12-pair seed 3** — O8's recipe, `SEED=3`. **Serial after T1** | ~4h GPU | **yes** |
-| **T3** | re-score the M3-2 winner on the 3-seed 12-pair pool and apply the adoption rule | ~15 min laptop | no |
-| **T4** | promote the chosen 12-pair seed at its own C13 gate | ~5 min | no |
-| ~~R0~~ | ✅ **done 2026-08-26 — seed 2 is served at its measured gate 0.6311.** The 2026-08-24 wrong-gate incident and the `gcp_promote.sh` fixes it produced are in `docs/archive/TRAINING_HISTORY.md` | — | — |
-| ~~O8~~ | ❌ ran 2026-08-22, flat *as a data lever* — data volume is not the constraint (§1.9). 🟢 Its dump is what §1.10 measured the universe effect on, and it is T-wave seed 1 | — | — |
-| ~~R2~~ | ❌ ran 2026-08-23, negative — economics worse, calibration destroyed (§1.9) | — | — |
-| ~~R3a / R3b~~ | ❌ ran 2026-08-23, both flat — capacity is not the constraint (§1.9) | — | — |
-| ~~R1~~ | ❌ ran 2026-08-22, decisive negative (§1.6) | — | — |
+| item | what | status |
+|---|---|---|
+| ~~T1~~ | 12-pair seed 2, O8's recipe | ✅ ran 2026-08-27, **valid** — `20260827T050701Z`, `logs/T1.log`, gate 0.6288 |
+| ~~T2~~ | 12-pair seed 3, O8's recipe | ✅ ran 2026-08-27, **valid** — `20260827T114122Z`, `logs/T2.log`, gate 0.6524 |
+| ~~T3~~ | re-score the M3-2 winner on the 3-seed 12-pair pool | ✅ done 2026-08-27 — the +7.5 did not replicate; its published interval was later corrected by T6 (§1.10) |
+| ~~T4~~ | promote a 12-pair seed | ❌ **cancelled 2026-08-27.** T6 closed the universe question as unresolvable; there is nothing to promote on |
+| ~~T5~~ | make `/predict_all` respect the checkpoint's trained pairs | ✅ **done 2026-08-27** — `serve.py:_servable_pairs()`; the served universe is now on `/health` |
+| ~~T6~~ | the three offline tests the T-wave did not run | ✅ **done 2026-08-27** — `m3 universe-fair`, report in `docs/T6_RESULTS.md` (§1.10) |
+| ~~R0~~ | promote seed 2 | ✅ done 2026-08-26 — served at gate 0.6311 |
+| ~~O8 / R1 / R2 / R3a / R3b~~ | see §1.9 | ❌ all negative or flat |
 
 **The B-wave (`docs/BOOK_ERA_PLAN.md`) is not an exception to this.** It queues no
 `gcp_train.sh` run and does not touch the M2 lineage; its one training step is a LightGBM
 diagnostic on its own CPU VM, gated behind two laptop measurements.
 
-**Do not queue another M2 *experiment* without new *data*.** Six levers have now been tested
+**Do not queue another M2 experiment without new *data*.** Seven levers have now been tested
 one variable at a time on the same baseline — two feature sets, resolution, context length,
-loss shaping, model family, ensembling, data volume, and encoder capacity in both directions
-— and the only one that ever moved was 15m → 5m. The single condition that reopens M2 is
-§1.7's: order-book history deep enough to sit inside the *training* window, which is a
-calendar problem (≈2027, see §5's O5 row), not a modelling one. **T1 and T2 are not
-counter-examples** — they change the served pair set, not the recipe, and they are expected
-to reproduce O8, not to beat it.
+loss shaping, model family, ensembling, data volume, encoder capacity in both directions, and
+now the traded universe — and the only one that ever moved was 15m → 5m. The single condition
+that reopens M2 is §1.7's: order-book history deep enough to sit inside the *training* window,
+which is a calendar problem (≈2027, see §5's O5 row), not a modelling one.
 
-### 🔴 Why the T-wave is worth 8h of GPU when §1.9 says 12 pairs is flat
+### ✅ T5 — `/predict_all` now respects the trained pair list (done 2026-08-27)
 
-Because the two statements are answers to different questions, and §1.10 is the second one:
+**The bug.** `/predict_all` iterated `load_whitelist_pairs()`, the DB whitelist, which lists
+all 12 pairs. The served checkpoint (`m2_multi_20260819T142759Z_a186182b.pt`, seed 2, gate
+0.6311) was trained on **8**. ADA, AVAX, LINK and XRP therefore resolved to `pair_oov_id` — an
+embedding row never trained on any pair — and the system emitted live signals for four
+instruments the model had never seen.
 
-- **Does more data make a better model?** No (§1.9). 58% more samples moved the plateau mean
-  by nothing. That verdict is unchanged and the T-wave does not retest it.
-- **Does a wider universe make a better policy?** Yes, +7.5 net bps/trade and +43% trades per
-  day (§1.10). The policy picks the most confident 2% of bars out of whatever universe it is
-  handed; four more instruments deepen the cross-section it selects from. The model is
-  identical in both columns of §1.10's table — only the traded universe differs.
+**The fix.** `serve.py` gained `_servable_pairs()`, which intersects the whitelist with the
+checkpoint's own `meta["pairs"]` and logs the dropped pairs once per (checkpoint, whitelist)
+rather than dropping them silently. The whitelist stays the operator's control — it can only
+ever *narrow* the universe — and the checkpoint's training set is a hard ceiling on top of it.
+`_market_universe()` (the C12 cross-section) already resolved this way and now shares the same
+helper. `/health` reports `trained_pairs` and `served_pairs`, so an operator can see the
+narrowing rather than infer it.
 
-There is also a live defect that the T-wave closes, and it is the reason this is not
-optional. **The collector and the app whitelist already carry all 12 pairs** — the VM's
-`app_settings.whitelist_pairs` lists them, and `serve.py`'s `/predict_all` iterates that
-whitelist — while the served checkpoint is the **8-pair** seed 2. ADA / AVAX / LINK / XRP are
-therefore mapped to `pair_oov_id`, an embedding row that was **never trained on any pair**.
-The system is emitting live signals for four instruments the model has never seen. Either the
-served model covers 12 pairs, or serving is restricted to the trained 8; right now it is
-neither.
+It is forward-compatible: promoting a 12-pair checkpoint would start serving all 12 with no
+further change. **It was deliberately not fixed by editing the DB whitelist** — the whitelist
+is operator state on a VM, and the guarantee that the server never predicts an untrained pair
+belongs in the code.
 
-### T1 / T2 — the two 12-pair seeds
+### ✅ T6 — the fair 8-vs-12 comparison (done 2026-08-27)
 
-O8 is seed 1 already, so two runs complete a 3-seed family. **The command is O8's, with only
-`SEED` changed** — if you find yourself editing anything else, stop: this is a deployment
-run, and a second changed knob makes it an unattributable experiment (§0.2).
+Three tests, all offline on dumps already in `ml/train/output/eval_dumps/`, all committed as
+`m3 universe-fair` with the decision rule pre-registered in `m3/cli.py` before the first run:
 
-🔴 **Serial, never concurrent.** `gcp_train.sh` adopts a single fixed instance name and will
-delete/recreate it on a machine-type mismatch, so launching T2 while T1 is in flight can
-destroy T1 (§0.5 trap 9). Wait for `gcp_status.sh` to say DONE.
+1. **Trade-count-matched, not coverage-matched** — and it needed a fourth arm the original
+   specification missed. Matching the trade count makes the wide universe more *selective* as
+   well as wider, so scoring the 8-pair universe at the same cut is what separates the two.
+   It is almost all cut: +12.7 bps from tightening, −2.5 from the pairs.
+2. **The concurrency cap, re-tuned on both universes** — `max_concurrent=None` wins on both.
+3. **The difference, its interval, and each criterion's power** — reported for every
+   comparison, with the bootstrap failure rate of all six Tier-1 criteria on *both* arms.
 
-```sh
-FEATURE_GROUPS=legacy \
-  CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 \
-  EARLY_STOP_PATIENCE=20 SEED=2 \
-  TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 \
-  TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT \
-  ./scripts/gcp_train.sh --gpu 60 384
-./scripts/gcp_status.sh                       # wait for DONE
-./scripts/gcp_logs.sh > logs/T1-12pair-seed2.log
-```
+**Verdict: undecided, and unresolvable here — so the incumbent 8-pair universe stands and the
+question closes.** Full numbers in `docs/T6_RESULTS.md`; the reading is in §1.10.
 
-Then repeat verbatim with `SEED=3`, redirecting to `logs/T2-12pair-seed3.log`. ⚠️ **Do not use
-`gcp_logs.sh --save`** — it writes to `$EXPORT_DIR` under the raw run id, not to `logs/` under
-the queue name (§3).
+**Two things T6 produced that outlive the universe question:**
 
-**Data was re-verified on the VM 2026-08-27** and all 12 pairs are ready at 5m: nine pairs
-from 2022-08-18 (~423k bars each), 1000PEPE from 2023-05-05, WLD from 2023-07-24, HYPE from
-2025-05-30 — all three of those are listing dates, not raggedness. No pair needs dropping.
-
-### T3 — re-score, and the adoption rule
-
-🔴 **Pre-register before running it, and the pre-registration is one paragraph because the
-rule is already fixed.** Re-running the 40-config grid on a new pair population and taking the
-best would be exactly the shopping `docs/M3_PROTOCOL.md` §0 forbids. What T3 does instead is
-score the **already-chosen** M3-2 winner, unchanged, on both universes of the *same* dumps:
-
-```sh
-mkdir -p ml/train/output/eval_dumps
-for RUN in <T1_run_id> <T2_run_id>; do
-  gcloud storage cp "gs://fluxtrader-train-artifacts/eval/$RUN/eval_preds.parquet" \
-    "ml/train/output/eval_dumps/eval_preds_$RUN.parquet"
-done
-./scripts/m3.sh -m m3 validate                                     # acceptance tests first, always
-./scripts/m3.sh -m m3 universe --runs <T1_run_id>,<T2_run_id>,20260822T012619Z
-```
-
-**The adoption rule, fixed here before the numbers exist: adopt 12 pairs iff the wide run
-still passes every Tier-1 criterion the narrow run passes, and its worst window does not
-degrade.** The `universe` command prints exactly that comparison and restates the rule at the
-end. If the wide run wins on pooled net but loses a window, **that is a fail** — the milestone
-ranks on the worst window precisely so a pooled improvement cannot buy its way past one.
-
-`ml/train/m3/dumps.py` hard-codes `BASELINE_RUNS` and `BASE8`, and `cli.py` passes
-`pairs=dumps.BASE8` in five places. **Add a 12-pair pool alongside those; do not edit them** —
-every published M3-2 and M3-3 number must stay reproducible from the same command that
-produced it.
-
-⚠️ **Record each run's `Split global_time` line and compare the three.** O8's val starts
-2025-11-28; a run today drifts by roughly a day. That is fine and the M3 harness cuts on fixed
-calendar windows anyway — but if the drift ever exceeds a few days the three seeds are no
-longer pooling over one window, and §1.2's windows must be re-cut before anything is pooled
-(§0.5 trap 4).
-
-### T4 — promote the 12-pair model
-
-A full training run writes `served_gate` into the checkpoint meta (`eval_m2.py:738`), so
-unlike Q0's `--eval-only` gate this one does not have to be reconstructed. Pass it anyway:
-`gcp_promote.sh` fails the promote if `/health` comes back serving a different value, so a
-clean exit *is* the verification (§1.5).
-
-```sh
-grep "SERVED GATE" logs/T1-12pair-seed2.log        # read the conf threshold
-ML_GATE_THRESHOLD=<that value> ./scripts/gcp_promote.sh --checkpoint m2_multi_<run>_<sha>.pt
-```
-
-⚠️ **Name the checkpoint explicitly — never promote `latest`.** `checkpoints/latest.pt` will
-be whichever of T1/T2 finished last, and after T2 that is not necessarily the seed T3 chose.
-
-**Which seed to serve:** the one T3 scores best under the adoption rule. If T3 cannot separate
-them — which is the expected outcome, since §0.3's between-seed spread is larger than most
-effects — serve the seed with the longest plateau, and record the choice.
-
-**The app whitelist needs no change** (it already lists all 12), but the pair set is now
-*load-bearing* rather than incidental: after T4 the served model's trained pair list and the
-whitelist must match. `serve.py`'s `_market_universe()` prefers the checkpoint's own list, so
-a mismatch degrades quietly rather than erroring.
+- **An estimator bug in the T-wave's own write-up** — the published interval was day-weighted
+  and shared-days-only while the statistic it qualified was trade-weighted, which understated
+  it by ~2x. Both estimators are now committed in `m3/universe.py`, and every interval is
+  cross-checked against a day-bootstrap SE derived by a different route.
+- **P3, not P5, is what binds this policy.** The −5 bps worst-window floor fails on both
+  universes in 88–98% of resamples. **Window 3 is the constraint**, and no pair-set change
+  touches it.
 
 ### R0 — promote seed 2. ✅ Done 2026-08-26; nothing to run here.
 
@@ -1073,7 +1069,9 @@ Three operational facts outlive the promote itself:
   let it become M3's first data.
 - **Why seed 2 and not O8's 12-pair model:** O8 is a single seed, its gate was never derived
   under C13 against a held-out re-score, and it is not the checkpoint §1.3's banked numbers
-  describe. Adopting 12 pairs is a separate deployment change (next section).
+  describe. 🟢 **T6 has since confirmed this was the right call for a second reason:** the
+  8-vs-12 effect is inside the noise and this evaluation period cannot resolve it (§1.10), so
+  seed 2 on 8 pairs remains the served model and **there is no successor queued or coming.**
 
 The 2026-08-24 wrong-gate incident — the env-var-never-reached-the-VM defect, the `/health`
 startup race, and the `gcp_promote.sh` changes that fixed both — is in
@@ -1085,13 +1083,13 @@ startup race, and the `gcp_promote.sh` changes that fixed both — is in
 seed with a quarter of the parameters and the longest plateau in the project. That is a real
 inference-cost and robustness argument, but it is one seed against three, and the current
 model is the one whose numbers are banked. **Default: keep 64.** Revisit only if serving cost
-ever becomes a live constraint — and **not during the T-wave**, because changing the encoder
-and the pair set in the same run is §0.2's rule in a deployment costume: if the 12-pair
-promote then underperforms, nothing says which change did it.
+ever becomes a live constraint, and if it ever is, run it as its own two-seed wave rather
+than folding it into another deployment change — §0.2's rule applies to deployment runs too,
+which is the whole reason the T-wave changed only `SEED`.
 
-*(The 12-pair adoption that used to be item 1 here is now the T-wave, queued above with the
-measurement that promoted it from "optional tidy-up" to "second-largest effect in the
-project" — §1.10.)*
+*(The 12-pair adoption that used to be item 1 here became the T-wave and then T6. It is
+**closed** — not decided, but shown to be undecidable on this evaluation period, so the
+incumbent stands (§1.10). T5, the serving bug it uncovered along the way, is **fixed**.)*
 
 ### For M3 — the work has moved to `docs/M3_PLAN.md`
 
@@ -1113,24 +1111,34 @@ first task is rebuilding it against §1.8's published table.
 
 ## §3 — WHAT TO BRING BACK (for the next session)
 
-🔴 **The T-wave (§2) is queued, so this section is live again — but only its first half.**
-T1 and T2 are deployment runs, not experiments. **What applies: everything under "Self-check
-before you hand them over" (the §0.4 validity lines) plus items 1 and 3c of "What the next
-session will read".** A T-wave run is valid or void; there is no verdict band.
+🔴 **Dormant again as of 2026-08-27 — §2's queue holds no GPU run.** The T-wave was the
+last thing this section was live for, and it has landed and been analyzed (§1.10, §2). **If
+you are here to analyze a new experiment, something has gone wrong with §2's freeze; check
+§5's "M2 as a research object" row before spending GPU.** The section is kept because the
+checks below are the accumulated cost of every run that was wrongly declared good, and the
+next wave — whenever the §1.7 data condition opens M2 — will need every one of them.
 
-⚠️ **What does NOT apply to the T-wave: the ranking apparatus.** Do not compare T1/T2's
-plateau mean to 0.5239, and do not rank them against the §1.3 family. Their validation
-population is 12 pairs, which is exactly the incomparability §1.9 flagged on O8 — the four
-new pairs happen to score better, so a 12-pair aggregate runs ~+0.010 above an 8-pair one for
-reasons that have nothing to do with the model. **The T-wave's verdict comes from T3's
-adoption rule, computed on the policy, not from any line in the training log.**
+🟢 **Two procedural lessons the T-wave added, and they point in opposite directions — keep
+both.** First: **a deployment decision needs the same seed replication as an experiment.**
+§1.10's original +7.5 bps came from a within-run comparison that was methodologically clean —
+same checkpoint, same seed, same calendar, only the universe varying — and it was still wrong,
+because the between-seed spread is larger than the effect. A clean comparison on one seed is a
+hypothesis, not a result. Second, and learned immediately afterwards by getting it wrong:
+**a negative result needs the same scrutiny as a positive one.** The replication's −0.3 bps
+point estimate and a Tier-1 failure were briefly written up as a rejection, before anyone
+checked that the interval on the *difference* was [−6.8, +5.1] and that the deciding criterion
+fails on the incumbent 53.8% of the time. **Report the CI on the difference, and bootstrap a
+criterion's failure rate on both arms, before letting it close a direction.**
+
+⚠️ **The ranking apparatus does not apply to a 12-pair run.** Do not compare a 12-pair
+plateau mean to 0.5239 and do not rank one against the §1.3 family: a 12-pair aggregate runs
+~+0.010 above an 8-pair one because the four new pairs happen to score better, for reasons
+that have nothing to do with the model (§1.9's O8 note). A universe change is judged on the
+policy, by the adoption rule, never on a line in the training log.
 
 Two things in the log still decide validity, and both can void a run on their own:
 `brier > ~0.27` on the 240m head or a flat calibration bin table (item 3c — it has rejected
 four runs and caught all four before the P&L table did), and a `SERVED GATE` above ~0.90.
-
-If you are here to analyze a genuinely *new* experiment, something has gone wrong with §2's
-freeze; check §5's "M2 as a research object" row before spending GPU.
 
 🔴 **One addition the closing wave earned, and it is now the fastest way to kill a bad run:**
 read the `SERVED GATE (C13, coverage-targeted)` line first. The baseline's is `conf ≥ 0.6311`.
@@ -1239,6 +1247,8 @@ line.**
 |---|---|---:|---:|---|---|
 | **5m/seq384 family** — **O2** `20260818T185438Z` (s1) · **P0-seed2** `20260819T142759Z` · **P0-seed3** `20260820T025723Z` | **5m bars, seq 384 (32h), ~2.90M samples, 3 seeds** | 240m | **pooled mean-of-epochs 0.5219 (between-seed SEM 0.0014)** | ✅ **BANKED — the baseline** | The project's first replicated result. +0.016 ≈ 4σ over F4. Pooled fixed-coverage P&L **+19.4 / +22.0 gross bps/trade at cov 0.01 / 0.02** (1,081 / 1,783 trades) = +5.4 / +8.0 net at 14bps taker. Per-seed max LB 0.5565 / 0.5576 / 0.5425 — all order statistics, do not quote. Did **not** replicate: serial-sim magnitude (§1.5), side balance, book-era split, per-pair numbers. Served gate must become a coverage target (C13). §1.3 |
 | **O8** `20260822T012619Z` | **12 pairs** (+ADA/AVAX/LINK/XRP), 4.59M samples (+58%) vs the 8-pair baseline | 240m | **plateau mean 0.5222 (n=17) on the 12-pair population; ≈0.512 pair-mix-corrected to the 8-pair universe** | ✅ valid, **flat — closes data volume** | 58% more training data moved nothing. Re-aggregated locally on `eval_preds.parquet` (harness validated by reproducing the logged 12-pair table exactly): on the **original 8 pairs** gross bps +23.9 / +21.3 / +6.8 at cov 0.01/0.02/0.05 vs the 3-seed family's +19.4 / +22.0 / +8.9 — one seed inside the family spread at every coverage. The 12-pair aggregation reads +0.010 higher than the 8-pair one at the selected epoch (0.543 vs 0.533) purely from pair mix, which is why the headline LB is not the verdict. Inside §2's pre-registered "≤ 0.527 ⇒ data volume is not the constraint" band. 🟢 **But adopting 12 pairs is free:** brier 0.2495, monotone calibration, majors undegraded, new pairs individually good (LINK cov05 0.599, XRP 0.606). A product win, not a research result. §1.9 |
+| **T1** `20260827T050701Z` | 12 pairs, `SEED=2`, O8's recipe otherwise unchanged — a T-wave replication seed, not an experiment | 240m | plateau mean n/a — **not comparable** to 0.5239 (12-pair val population, §1.9). Logged: LB series n=34 mean 0.5131, selected epoch 14 | ✅ **valid** | 4.61M samples, 19 feature columns, `n_pairs=12`, brier 0.2496, monotone calibration bins, `SERVED GATE` 0.6288. Contributed to T3's three-seed universe test and to T6's fair re-run, which together closed 8-vs-12 as unresolvable on this evaluation period (§1.10). `logs/T1.log` |
+| **T2** `20260827T114122Z` | 12 pairs, `SEED=3`, O8's recipe otherwise unchanged | 240m | as T1 — not comparable. Logged: LB series n=44 mean 0.5148, selected epoch 24 | ✅ **valid** | 4.61M samples, 19 feature columns, `n_pairs=12`, brier 0.2498, monotone calibration bins, `SERVED GATE` 0.6524. ⚠️ **The seed that briefly looked decisive:** +4.91 net bps/trade on 8 pairs, −2.70 on 12, failing Tier-1 P5. **Its cluster-robust 95% CI is [−37.3, +31.9]** — the sign carries no information, which is why P5 could not decide the universe (§1.10). `logs/T2.log` |
 | **R2** `20260822T170844Z` | **`DIR_MAG_WEIGHT=1`** — directional CE weighted by realized \|forward return\|, normalized per (pair, horizon) | 240m | **plateau mean 0.5058 (n=12); all-epoch 0.5102±0.011 (n=37)** | ✅ valid, **negative — closes the lever** | Instrumentation green (`scale` 0.982–0.989, `at_clip` 0.56–0.77%, `mean\|r\|` 100.5/201.9/501.3bps rising with horizon), so this measures the lever and not a bug. It **lost** economics at every coverage: +1.75 / +18.79 / +5.27 gross bps at cov 0.01/0.02/0.05 vs +19.4 / +22.0 / +8.9. §2's "no movement in either ⇒ closed" branch. 🔴 **Calibration destroyed** — coverage-targeted gate at `conf ≥ 0.9797` (baseline 0.6311), 84% of bars above 0.55, `emp_up` flat at 0.47–0.51 in all ten bins, brier 0.3156 vs 0.250 ⇒ also rejected by §3.3c. Up-weighting large moves conflates "confident and large" with "confident and correct". §1.9 |
 | **R3a** `20260823T053017Z` | **`HIDDEN_SIZE=128`** — double width, all else byte-identical to §1.3 | 240m | **plateau mean 0.5185 (n=26); all-epoch 0.5182±0.013 (n=58)** | ✅ valid, **negative** | The project's clearest memorization result: `loss_tr` → **0.888** against the baseline's ~1.72 floor while best `loss_va` = **1.0440**, worse than the family's 1.0398–1.0404 at *every* epoch — R1's mechanism reproduced with parameters instead of columns. Gross bps +13.4 / +12.0 / +3.5. 🔴 **brier 0.4187, the worst in the ledger**: 110,628 bars at p(up)=0.023 and 106,168 at 0.976 with `emp_up` flat at 0.47–0.50 — the confidence distribution collapsed to the corners carrying no information. Inverts §1.2's window pattern (w3 becomes its best at 0.585). §1.9 |
 | **R3b** `20260823T135748Z` | **`HIDDEN_SIZE=32`** — half width, all else byte-identical to §1.3 | 240m | **plateau mean 0.5199 (n=36 — the longest plateau in the project); all-epoch 0.5194±0.013 (n=37)** | ✅ valid, **a clean null — with R3a this closes capacity for good** | −0.0040 vs 0.5239, i.e. flat. brier **0.2507** vs the baseline's 0.2501, calibration monotone, §1.2's window pattern reproduced almost exactly (0.549/0.621/0.457/0.622 vs seed 3's 0.593/0.592/0.491/0.621), gross bps +20.1 / +16.2 / +4.7 — inside single-seed family spread. **A quarter of the parameters (~15k vs ~56k) and it matches.** With R3a, the encoder sits on a flat top between 32 and 64 with a cliff into memorization above: `hidden_size=64` is not tuned, it is over-parameterized. §1.9 |
@@ -1276,7 +1286,7 @@ line.**
 | **The book ON/OFF walk-forward *design*** | **Retired (new, 2026-08-18)** | Three attempts, zero decidable verdicts. The book-OFF arm's modal failure (collapse to an all-flat predictor) is exactly what pushes `n_dir` under the reliability floor, so the design is least able to decide precisely when the book helps most. The book question is not closed — it moves to within-model attribution (**O5**). Do not launch `gcp_walkforward.sh` for it again. 🔴 **The archive records a trigger to re-run this at ≥30d book history (≈2026-08-25); that trigger is superseded, not live** — 30 days does not repair a design that cannot decide. The question is picked up instead by `docs/BOOK_ERA_PLAN.md`, which measures in bps before training anything, and O5's attribution finally arrives there as B3's feature importances. |
 | **Context length / sequence window** | **Closed (new, 2026-08-19)** | O3 ran seq 128→256 at 15m as a clean one-variable test and it is *worse* on mean-of-epochs (0.4925±0.023 vs F4's 0.5058±0.016), with a collapsing confidence distribution and a coin-flip up side. The LSTM already uses all the window it can. Do not sweep seq 512. Note this is about *window*, not *resolution* — finer bars at the same window (O2) is a separate and live lever. §1.4 |
 | **Encoder capacity / layers / hidden** | 🔴 **CLOSED ON MEASUREMENT, 2026-08-23 — R3a and R3b both ran** | It was reopened once, on the one legitimate basis (the plateau-restricted mean resolves ~0.01, so a single run can now decide), and the bracket was run as designed. **Both arms are flat on the low side**: 128 units → plateau mean 0.5185, 32 units → 0.5199, against 0.5239 (between-seed sd 0.0032). Neither approaches the +0.011 the pre-registration required. The bracket also refutes the *shape* of the hypothesis, not just its size: going up produces pure memorization (`loss_tr` 1.72 → 0.888 with `loss_va` never reaching baseline, brier 0.419), and going *down* to a quarter of the parameters changes nothing. There is no monotone curve to climb, so **no third run is justified and this is closed for good.** §1.9 |
-| **Training data volume / pair count** | **Closed (new, 2026-08-22)** | O8 added ADA/AVAX/LINK/XRP for 4.59M samples, +58%, the largest data increase available without new *kinds* of data. Re-aggregated onto the original 8 pairs it is inside the 3-seed family's spread at every coverage (+23.9 / +21.3 / +6.8 vs +19.4 / +22.0 / +8.9), and the pair-mix-corrected plateau mean is ≈0.512 vs 0.5239. Crypto pairs are highly correlated, so 58% more *rows* is far less than 58% more independent observations — the effective-sample gain was small and the measured gain is zero. Do not start a pair-count ladder *as a data experiment*. **This does not bar adopting 12 pairs at serve time** (§2's T-wave). 🔴 **Amended 2026-08-27:** this row is about pair count as *training data*, and that verdict stands. Pair count as *traded universe* is a different lever, it was never tested here, and §1.10 measures it at **+7.5 net bps/trade** — the policy selects the top 2% of bars out of whatever universe it is handed, so instruments and rows are not the same quantity. Widening the universe **beyond** 12 is gated on M3-4 producing per-pair realized costs (`docs/M3_PLAN.md` §0.0), because the 14 bps is one number for all pairs and §1.10's gain is carried by mid-caps. §1.9, §1.10 |
+| **Training data volume / pair count** | **Closed (new, 2026-08-22)** | O8 added ADA/AVAX/LINK/XRP for 4.59M samples, +58%, the largest data increase available without new *kinds* of data. Re-aggregated onto the original 8 pairs it is inside the 3-seed family's spread at every coverage (+23.9 / +21.3 / +6.8 vs +19.4 / +22.0 / +8.9), and the pair-mix-corrected plateau mean is ≈0.512 vs 0.5239. Crypto pairs are highly correlated, so 58% more *rows* is far less than 58% more independent observations — the effective-sample gain was small and the measured gain is zero. Do not start a pair-count ladder *as a data experiment*. 🟢 **Amended 2026-08-27; both halves are now closed.** Pair count as *traded universe* is a genuinely different lever from pair count as *training data*, and it was tested on its own: the T-wave ran two more 12-pair seeds and the single-seed "+7.5 net bps/trade" **did not replicate**, then T6 ran the fair comparisons — trade-count-matched, cut-matched, cap-re-tuned — and put the effect within a couple of bps of zero in every one, against a data-resolution limit of ±37 bps. **The traded-universe question is closed as *undecidable on this evaluation period*, not as decided against**, and the incumbent 8-pair universe stands. §1.9, §1.10, `docs/T6_RESULTS.md` |
 | **Magnitude / cost-shaped training losses (`DIR_MAG_WEIGHT`)** | **Closed (new, 2026-08-23)** | R2 was the second and better-designed attempt at teaching M2 about economics rather than accuracy (N3's selection-time cousin was the first, closed 2026-08-18). It ran correctly — `at_clip` under 1%, `scale` ≈ 0.98, `mean\|r\|` rising with horizon — and it lost gross bps/trade at every coverage while driving brier from 0.250 to 0.316 and flattening `emp_up` to ≈0.48 in all ten bins. The mechanism generalizes past this one knob: **up-weighting large moves teaches the head that "confident and large" is the same axis as "confident and correct", and it is not.** Position sizing by expected move magnitude is M3's job and belongs in the policy, where it can be applied without corrupting the probability M2 exists to emit. §1.9 |
 | **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired** | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
 | Full architecture swap (transformer / TCN) | **Closed, and reaffirmed 2026-08-22** | Was gated behind O3; O3 came back negative. The reopening condition written in 2026-08-19 was "if richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit" — Q3 and R1 have now *both* run and the failure looks like the opposite: the model already memorizes the training set the moment it is handed anything easy (`loss_tr` 1.70 → 1.13 in R1), while its validation loss never improves. That is an **input** limit and an SNR floor, not a modelling limit. A higher-capacity family would make it worse, not better. **Do not write a transformer.** 🔴 **Reaffirmed again 2026-08-23: R3a ran the two-run bracket's upward arm and produced exactly this prediction** — `loss_tr` 1.72 → 0.888 with `loss_va` never once reaching the baseline's level, and the worst calibration in the ledger. More capacity of any kind makes this problem worse. There is no remaining capacity question. |
@@ -1469,13 +1479,15 @@ now start 2022-08-18 for all nine long pairs (§1.7).
 
 ### Later
 
-- ⬜ **C20 — a 12-pair dump pool in `ml/train/m3/dumps.py` (blocks §2 T3).** `BASELINE_RUNS`
-  and `BASE8` are module constants and `cli.py` passes `pairs=dumps.BASE8` in five places, so
-  the M3 harness can only pool the three 8-pair seeds. Add a **second** pool — `T_RUNS` and a
-  `load_t_wave()` beside `load_baseline()` — rather than editing either constant: every
-  published M3-2 and M3-3 number must stay reproducible from the command that produced it.
-  `m3 universe` (shipped 2026-08-27) already takes `--runs` and needs no change; it is the
-  fixed grids in `cmd_search` / `cmd_learn` that are wired to the baseline pool.
+- ⬜ **C20 — a 12-pair dump pool in `ml/train/m3/dumps.py`. Demoted 2026-08-27: it no longer
+  blocks anything.** T3 ran entirely through `m3 universe --runs`, which already takes run
+  ids, and T6's `m3 universe-fair` does the same (§1.10). 🟢 **It did not come back:** T6's cap
+  re-tune ran on both universes through the same run-id path. If a universe grid re-run is
+  ever attempted this is still the blocker. Build it if a future wave needs `cmd_search` / `cmd_learn` — whose grids are
+  wired to the baseline pool — to run over a non-baseline population. If so, add a **second** pool (`T_RUNS` and a
+  `load_t_wave()` beside `load_baseline()`) rather than editing `BASELINE_RUNS` or `BASE8`:
+  every published M3-2 and M3-3 number must stay reproducible from the command that produced
+  it. The T-wave dumps are `20260827T050701Z` (T1) and `20260827T114122Z` (T2).
 
 - ⬜ **C17 — print the plateau-restricted epoch-LB mean.** C10 prints the all-epoch mean,
   which §0.3 now shows is not comparable between runs whose overfitting onset differs. Add

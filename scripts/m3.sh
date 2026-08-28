@@ -29,7 +29,13 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   docker build -q -f "$REPO_ROOT/ml/train/Dockerfile.analysis" -t "$IMAGE" "$REPO_ROOT/ml/train" >/dev/null
 fi
 
-DOCKER_ARGS=(--rm -v "$REPO_ROOT/ml/train:/workspace/train" -w /workspace/train "$IMAGE")
+# M3_EXPORT_DIR lets `bookprep` point at an alternative export directory (a smoke-test
+# slice, say) without editing the module. Only forwarded when set, so the container keeps
+# its own default otherwise.
+ENV_ARGS=()
+[[ -n "${M3_EXPORT_DIR:-}" ]] && ENV_ARGS+=(-e "M3_EXPORT_DIR=$M3_EXPORT_DIR")
+
+DOCKER_ARGS=(--rm "${ENV_ARGS[@]+"${ENV_ARGS[@]}"}" -v "$REPO_ROOT/ml/train:/workspace/train" -w /workspace/train "$IMAGE")
 
 if [[ "${1:-}" == "--shell" ]]; then
   exec docker run -it "${DOCKER_ARGS[@]}" /bin/bash

@@ -3227,3 +3227,122 @@ gcloud compute instances delete fluxtrader-train --zone=me-central1-b --project=
 
 Do NOT just kill tmux: a non-zero exit triggers `finish FAILED` which only STOPs
 the VM (`scripts/gcp_train.sh:178-179`), leaving the boot disk billing.
+
+---
+
+## Superseded: §1.10 as written on 2026-08-27, before T6
+
+⚠️ **Read the current `NEXT_TRAINING_PLAN.md` §1.10 instead.** This is the T-wave's
+own write-up, kept because it is the worked example behind three of the project's
+standing methodological rules. **Its central interval is the wrong estimand**: the
+"−0.85 bps, 95% CI [−6.8, +5.1]" below is a day-weighted, shared-days-only statistic
+reported next to trade-weighted means, and on the matching trade-weighted estimator
+the interval is [−12.0, +11.5] — so the "+7.5 is outside that interval" conclusion
+below does not hold. Do not quote any number from this section.
+
+### 1.10 🟡 The universe: the +7.5 bps was one seed's luck, but 12 pairs is NOT refuted
+
+**Two amendments on 2026-08-27, and you need both.** The first replaced a single-seed "+7.5
+net bps/trade" headline with a three-seed replication that did not reproduce it. The second —
+written the same evening after the first over-reached — is that **failing to replicate a
+positive claim is not the same as showing the thing is worse**, and only the first of those
+is supported here.
+
+**Where it stands: the traded universe is an OPEN question, not a closed one.** The evidence
+below excludes the original +7.5 claim and does not exclude a real benefit of up to +5 bps.
+Nothing about the pair set should be closed on it, in either direction.
+
+M3-2's winner (cov 0.02, hold 240m, sized by `btc_absret_1d` bar-quintile, no concurrency
+cap), scored twice on the *same* three 12-pair dumps — T1, T2 and O8 — once restricted to
+the 8 baseline pairs and once on all 12:
+
+| universe | trades | tr/day | gross | **net @14 taker** | net @5 maker | Sharpe | maxdd | clusters |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| the 8 baseline pairs | 1,645 | 2.02 | +27.99 | **+9.29** | +21.31 | 0.67 | −2.83 | 169 |
+| all 12 pairs | 2,475 | 3.05 | +27.71 | **+9.00** | +21.03 | 0.55 | −4.53 | 187 |
+
+| seed | run | base-8 net@14 | 12-pair net@14 | universe effect |
+|---|---|---:|---:|---:|
+| O8 (was the only evidence) | `20260822T012619Z` | +13.93 | **+21.44** | **+7.5** |
+| T1 | `20260827T050701Z` | +7.81 | +5.94 | −1.9 |
+| T2 | `20260827T114122Z` | +4.91 | **−2.70** | −7.6 |
+
+#### 🔴 What this DOES establish
+
+**The +7.5 bps is dead.** Paired on the exit-day cluster — the only correct way to difference
+two policies scored on overlapping days — the effect is **−0.85 bps with a 95% CI of
+[−6.8, +5.1]** across 167 shared days. +7.5 is outside that interval. O8 reproduces its own
+published numbers exactly, so nothing was miscomputed; it was **one draw from a distribution
+far wider than the effect it appeared to show**, which is exactly what §0.3 keeps warning
+about. That is a real finding and it is what the 8h of GPU bought.
+
+#### 🔴 What this DOES NOT establish, and what an earlier version of this section wrongly claimed
+
+**It does not show 12 pairs is worse.** The interval spans [−6.8, +5.1]. A benefit half the
+size of the original claim is entirely compatible with this data.
+
+**The P5 failure that an earlier draft used to "reject" 12 pairs is a coin flip.** P5 asks
+that all three seeds be individually pooled-positive. Day-bootstrapped 2,000 times:
+
+| universe | P(at least one seed pooled-negative) |
+|---|---:|
+| the 8 baseline pairs — which **passed** P5 | **53.8%** |
+| all 12 pairs — which **failed** P5 | **58.6%** |
+
+**The incumbent fails this criterion more often than not.** Per-seed cluster-robust SEs are
+17.6–30.2 bps on 102–161 clusters, so a per-seed *sign* test is nearly uninformative. P5
+earns its place in M3_PROTOCOL as a screen against configurations that only work on one seed
+during a 40-config *search*; it does not have the power to arbitrate a deployment choice
+between two universes, and it should not have been used for that.
+
+**The comparison was also tilted toward 8 pairs.** M3-2's winning spec was searched on the
+8-pair universe (`cli.py`'s `cmd_search` passes `pairs=dumps.BASE8`), *including* its choice
+of `max_concurrent=None`. It was then applied verbatim to 12 pairs. The incumbent got tuning
+the challenger never got — so part of what is being measured is "does an 8-pair-tuned policy
+transfer", not "is a wider universe better".
+
+#### 🟡 The one effect that is structural rather than noise, and it is a risk finding
+
+Widening 8 → 12 pairs raised the pooled trade count 50% (1,645 → 2,475) but the number of
+independent exit days only 11% (169 → 187), while max drawdown grew **−2.83 → −4.53** and the
+clustered SE widened 20.5 → 23.2. **Extra pairs buy correlated trades inside existing
+clusters, not independent days.** The mechanism is plain: these instruments are highly
+correlated, the policy gates on a BTC-derived regime column, so it fires across the universe
+at the same moments — and the winner spec has **no concurrency cap**, so a wider universe
+means more simultaneous exposure to one move.
+
+🟢 **Read that as an argument about position sizing, not about the pair set.** It says a
+12-pair universe needs its concurrency cap re-examined; it does not say the four instruments
+are bad. **This is the most decision-relevant thing the T-wave produced.**
+
+#### What the per-pair texture says, with the standing caveat
+
+Inside the wide run, the four new pairs are the profitable half: **+15.99 net on 841 trades
+against the base-8's +5.41 on 1,634.** §1.3's rule still applies — per-pair numbers do not
+replicate across seeds, and this is **not** a licence to cherry-pick pairs. But it is not
+nothing either, and an honest reading is that the wide universe's problem is concentration
+and tuning, not the instruments.
+
+#### Two caveats that survive unchanged
+
+- **Window 3 is still not fixed.** Its net stays around −18 to −22 on 143–168 trades and P3
+  fails on both universes. The w3 hole is a shortage of *confident bars*, not of instruments.
+- **12 pairs does not move the certification problem** (M3_PROTOCOL §2). Only forward time does.
+
+#### Reproduce all of it
+
+```sh
+./scripts/m3.sh -m m3 validate     # acceptance tests first, always
+./scripts/m3.sh -m m3 universe --runs 20260827T050701Z,20260827T114122Z,20260822T012619Z
+```
+
+🟢 **The methodological lesson, which is the durable output of the T-wave — and it cuts both
+ways.** A headline "+7.5 bps, second-largest effect in the project" came from a within-run
+comparison that was methodologically clean (same checkpoint, same seed, same calendar, only
+the universe varying) and was still wrong, because the between-seed spread is larger than the
+effect. **A clean comparison on one seed is a hypothesis, not a result.** But the correction
+was then over-applied: a −0.3 bps point estimate and a coin-flip criterion were briefly
+written up as a rejection. **A negative result needs the same scrutiny as a positive one —
+report the CI on the *difference*, and check that a criterion has the power to decide before
+letting it decide.**
+

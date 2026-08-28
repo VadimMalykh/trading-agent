@@ -5,6 +5,8 @@
     ./scripts/m3.sh -m m3 fitprep             # M3-3 pre-registration facts (counts only)
     ./scripts/m3.sh -m m3 learn               # M3-3: fit and score the 14 learned runs
     ./scripts/m3.sh -m m3 universe            # T3: 8 pairs vs 12, on the same dumps
+    ./scripts/m3.sh -m m3 universe-fair       # T6: the fair version of that comparison
+    ./scripts/m3.sh -m m3 bookprep            # M3-4a data-quality facts (no fill number)
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -15,7 +17,8 @@ import os
 import numpy as np
 import pandas as pd
 
-from . import backtest, dumps, features, learn, metrics, regime, search, validate
+from . import (backtest, bookprep, dumps, features, learn, metrics, regime, search,
+               universe, validate)
 
 
 def cmd_validate(args) -> int:
@@ -431,8 +434,9 @@ WINNER_SPEC = dict(coverage=0.02, signal_horizon=240, hold_horizon=240,
                    size_by_regime=True, max_concurrent=None, sides="both", side_from="model")
 
 
-def _score_universe(label: str, ds: list, spec: backtest.PolicySpec) -> dict:
-    regimes = {d.seed: regime.build(d.df) for d in ds}
+def _score_universe(label: str, ds: list, spec: backtest.PolicySpec,
+                    regimes: dict | None = None) -> dict:
+    regimes = regimes if regimes is not None else {d.seed: regime.build(d.df) for d in ds}
     res = backtest.run(ds, spec, regimes)
     card = search.scorecard(label, res.trades, [d.seed for d in ds],
                             search.calendar_days(ds), spec)
@@ -517,6 +521,366 @@ def cmd_universe(args) -> int:
 
 
 
+
+# ---------------------------------------------------------------------------------------
+# T6 — the fair version of the 8-vs-12 comparison.
+#
+# THE DECISION RULE, PRE-REGISTERED HERE BEFORE THE FIRST RUN (NEXT_TRAINING_PLAN §2 T6,
+# M3_PROTOCOL §0's standing requirement that a rule is committed before it is applied):
+#
+#   * The FAIR TEST is the trade-count-matched comparison of M3-2's winner spec, each
+#     universe scored at its own best concurrency cap over the PRE-REGISTERED cap set
+#     {None, 3} — the two values the M3-2 grid already contains — ranked as M3_PROTOCOL
+#     §4.2 ranks, by worst-window net at taker.
+#   * ADOPT 12 pairs iff the paired 95% CI on (wide − narrow) lies entirely above 0.
+#   * CLOSE 12 pairs iff it lies entirely below 0.
+#   * Otherwise the question stays UNDECIDED and the incumbent 8-pair universe stands by
+#     default — and the interval, plus the effect this test could have detected, is what
+#     gets written down. "Undecided" is a real outcome here, not a failure to finish.
+#
+# The wider cap ladder {2, 4, 6, 8} is printed as TEXTURE and is excluded from the rule
+# above by construction: choosing a cap from it after seeing the numbers is the shopping
+# M3_PROTOCOL §0 forbids, and it would re-open a search on a new pair population.
+# ---------------------------------------------------------------------------------------
+
+# The three 12-pair dumps §1.10 measured on: T1, T2 and O8.
+T6_RUNS = ("20260827T050701Z", "20260827T114122Z", dumps.O8_RUN)
+
+CAPS_PREREGISTERED = (None, 3)          # GRID_MAX_CONC, verbatim
+CAPS_TEXTURE = (2, 4, 6, 8)             # printed, never chosen from
+
+_HEAD = ("| arm | trades | tr/day | gross | net @14 | worst window | Sharpe | maxdd | "
+         "clusters |")
+_RULE = "|---|---:|---:|---:|---:|---:|---:|---:|---:|"
+
+
+def _cap_label(cap) -> str:
+    return "none" if cap is None else str(cap)
+
+
+def _card_row(card: dict) -> str:
+    t, ci = card["taker14"], card["taker14_ci"]
+    return (f"| {card['label']} | {card['trades']:,} | {t['trades_per_day']:.2f} | "
+            f"{t['gross_bps']:+.2f} | **{t['net_bps']:+.2f}** | {card['worst_net']:+.2f} "
+            f"({card['worst_window']}) | {t['sharpe']:.2f} | {t['maxdd']:.4f} | "
+            f"{ci['clusters']} |")
+
+
+def cmd_universe_fair(args) -> int:
+    """T6 — trade-count-matched, cap-re-tuned, and reported with intervals and power."""
+    run_ids = [r.strip() for r in (args.runs or ",".join(T6_RUNS)).split(",") if r.strip()]
+    ds_all = [dumps.load(r, seed=f"s{i + 1}") for i, r in enumerate(run_ids)]
+    ds_8 = [dumps.load(r, seed=d.seed, pairs=dumps.BASE8) for r, d in zip(run_ids, ds_all)]
+    reg_all = {d.seed: regime.build(d.df) for d in ds_all}
+    reg_8 = {d.seed: regime.build(d.df) for d in ds_8}
+    seeds = [d.seed for d in ds_all]
+    cal = search.calendar_days(ds_all)
+    wide_pairs = sorted(set().union(*[set(d.df["pair"].unique()) for d in ds_all]))
+    spec = backtest.PolicySpec(label="winner", **WINNER_SPEC)
+
+    lines: list[str] = []
+
+    def emit(text: str = "") -> None:
+        print(text)
+        lines.append(text)
+
+    def table(rows: list[str]) -> None:
+        emit(_HEAD)
+        emit(_RULE)
+        for r in rows:
+            emit(r)
+
+    def diff_line(a_card: dict, b_card: dict, what: str) -> dict:
+        d = universe.paired_diff_bps(a_card["_trades"], b_card["_trades"])
+        bs = universe.bootstrap_diff_se(a_card["_trades"], b_card["_trades"],
+                                        draws=args.draws)
+        emit(f"**{what}: {d['diff_bps']:+.2f} bps**, 95% CI "
+             f"[{d['lo95_bps']:+.2f}, {d['hi95_bps']:+.2f}] "
+             f"(cluster-robust SE {d['se_bps']:.2f} over {d['clusters']} exit days, "
+             f"{d['shared_days']} of them shared; day-bootstrap SE {bs['se_bps']:.2f} on "
+             f"{bs['draws']:,} draws, as an independent check on the analytic one). At 80% "
+             f"power this comparison resolves effects of about ±{2.8 * d['se_bps']:.1f} bps "
+             f"and nothing smaller.")
+        return d
+
+    emit("# T6 — the fair 8-vs-12 comparison")
+    emit("")
+    emit(f"runs: {', '.join(run_ids)}  (seeds {', '.join(seeds)})")
+    emit(f"universe: {len(wide_pairs)} pairs, {len(dumps.BASE8)} of them the baseline; "
+         f"beyond it: {', '.join(p for p in wide_pairs if p not in dumps.BASE8)}")
+    emit(f"policy:   {spec}")
+    emit(f"calendar span: {cal:.1f} days;  costs: taker "
+         f"{metrics.TAKER_COST_BPS:.0f}bps, maker {metrics.MAKER_COST_BPS:.0f}bps "
+         f"round trip")
+    emit("")
+
+    # --- reference: the coverage-matched comparison §1.10 published ----------------------
+    emit("## 0. The coverage-matched comparison, for reference")
+    emit("")
+    emit("What `m3 universe` reports and what §1.10 published. It is NOT the fair test: at "
+         "a fixed 2% coverage the wider universe takes ~50% more trades, so it is spending "
+         "a bigger budget rather than picking better trades.")
+    emit("")
+    n_cov = _score_universe(f"8 pairs, cov {spec.coverage:g}", ds_8, spec, regimes=reg_8)
+    w_cov = _score_universe(f"12 pairs, cov {spec.coverage:g}", ds_all, spec, regimes=reg_all)
+    table([_card_row(n_cov), _card_row(w_cov)])
+    emit("")
+    d_cov = diff_line(w_cov, n_cov, "wide − narrow, coverage-matched")
+    emit("")
+    emit("### 0b. §1.10's published interval, re-derived — and it is a different estimand")
+    emit("")
+    emit("§1.10 reports this same comparison as **−0.85 bps, 95% CI [−6.79, +5.09] across "
+         "167 shared days**, and concludes from it that the original single-seed "
+         "\"+7.5 bps from 12 pairs\" is excluded. That number is reproduced exactly below — "
+         "but by a **day-weighted, shared-days-only** estimator, while the table it sits "
+         "beside reports **trade-weighted** means. The two answer different questions and "
+         "they do not agree about the +7.5.")
+    emit("")
+    dw_shared = universe.day_weighted_diff_bps(w_cov["_trades"], n_cov["_trades"])
+    dw_all = universe.day_weighted_diff_bps(w_cov["_trades"], n_cov["_trades"],
+                                            shared_only=False)
+    emit("| estimator | estimand | diff | 95% CI | is +7.5 excluded? |")
+    emit("|---|---|---:|---|---|")
+    emit(f"| trade-weighted, cluster-robust (`paired_diff_bps`) | the difference in net "
+         f"bps **per trade** — the statistic the table above reports | "
+         f"{d_cov['diff_bps']:+.2f} | [{d_cov['lo95_bps']:+.2f}, {d_cov['hi95_bps']:+.2f}] "
+         f"| **{'yes' if d_cov['hi95_bps'] < 7.5 else 'NO'}** |")
+    emit(f"| day-weighted, shared days only — **§1.10's** | the average **daily** "
+         f"difference in net bps per trade, over days both universes traded | "
+         f"{dw_shared['diff_bps']:+.2f} | [{dw_shared['lo95_bps']:+.2f}, "
+         f"{dw_shared['hi95_bps']:+.2f}] | "
+         f"{'yes' if dw_shared['hi95_bps'] < 7.5 else 'NO'} |")
+    emit(f"| day-weighted, all days | the same, but not dropping the "
+         f"{d_cov['clusters'] - dw_shared['days']} days only one universe traded | "
+         f"{dw_all['diff_bps']:+.2f} | [{dw_all['lo95_bps']:+.2f}, "
+         f"{dw_all['hi95_bps']:+.2f}] | "
+         f"{'yes' if dw_all['hi95_bps'] < 7.5 else 'NO'} |")
+    emit("")
+    emit("**The claim under test is a per-trade claim, so the first row governs it.** "
+         "Equally weighting days is a different estimand — it coincides with the per-trade "
+         "difference only if every day carries the same number of trades in both arms, "
+         "which is precisely what changing the universe breaks — and restricting to shared "
+         "days discards the days on which the two policies most differ. On the estimator "
+         "that matches the published statistic, **+7.5 bps is inside the interval**: the "
+         "T-wave did not exclude it either. The +7.5 remains an unreplicated single-seed "
+         "point estimate, which is reason enough not to bank it, but §1.10 should not be "
+         "read as having refuted it.")
+    emit("")
+
+    # --- TEST 1: trade-count-matched ----------------------------------------------------
+    emit("## 1. TEST 1 — the trade-count-matched comparison (the fair one)")
+    emit("")
+    target = n_cov["trades"]
+    cov_w, res_wm = universe.match_coverage(ds_all, spec, reg_all, target_trades=target)
+    emit(f"The 8-pair arm books **{target:,}** pooled trades at cov {spec.coverage:g}. "
+         f"Bisecting coverage on the 12-pair universe to the same budget lands at **cov "
+         f"{cov_w:.5f}** and {len(res_wm.trades):,} trades — the wide arm is now "
+         f"{spec.coverage / cov_w:.2f}x more selective, which is exactly the hypothesis: a "
+         f"deeper cross-section should let the policy pick better trades, not more of them.")
+    emit("")
+    w_matched = _score_universe(f"12 pairs, cov {cov_w:.5f} (count-matched)", ds_all,
+                                universe.with_fields(spec, coverage=cov_w), regimes=reg_all)
+    table([_card_row(n_cov), _card_row(w_matched)])
+    emit("")
+    d_matched = diff_line(w_matched, n_cov, "wide − narrow, TRADE-COUNT-MATCHED")
+    emit("")
+    emit("### 1b. The selectivity control — is the gain the universe, or just a tighter cut?")
+    emit("")
+    emit("Matching the trade count makes the wide arm **more selective as well as wider**, "
+         "and those are two different levers. Scoring the 8-pair universe at the SAME "
+         "coverage separates them: whatever a tighter cut is worth on its own shows up in "
+         "the narrow arm too.")
+    emit("")
+    n_sel = _score_universe(f"8 pairs, cov {cov_w:.5f} (same cut, fewer trades)", ds_8,
+                            universe.with_fields(spec, coverage=cov_w), regimes=reg_8)
+    table([_card_row(n_cov), _card_row(n_sel), _card_row(w_matched)])
+    emit("")
+    d_sel = universe.paired_diff_bps(n_sel["_trades"], n_cov["_trades"])
+    d_uni = universe.paired_diff_bps(w_matched["_trades"], n_sel["_trades"])
+    emit(f"- **tightening the cut alone** (8 pairs, cov {spec.coverage:g} → {cov_w:.5f}): "
+         f"{d_sel['diff_bps']:+.2f} bps, 95% CI [{d_sel['lo95_bps']:+.2f}, "
+         f"{d_sel['hi95_bps']:+.2f}]")
+    emit(f"- **widening the universe at that same cut** (8 → 12 pairs, both at cov "
+         f"{cov_w:.5f}): {d_uni['diff_bps']:+.2f} bps, 95% CI [{d_uni['lo95_bps']:+.2f}, "
+         f"{d_uni['hi95_bps']:+.2f}]")
+    emit(f"- **the two together**, which is the count-matched headline: "
+         f"{d_matched['diff_bps']:+.2f} bps")
+    emit("")
+    emit("⚠️ **Read TEST 1's headline through this decomposition, not on its own.** The "
+         "count-matched comparison confounds a wider universe with a tighter confidence "
+         "cut, and the second is a lever the 8-pair universe can pull too — at the cost of "
+         "trading less often, which is why the M3-2 grid did not choose it.")
+    emit("")
+
+    # --- TEST 2: the concurrency cap re-tune --------------------------------------------
+    emit("## 2. TEST 2 — re-tuning the concurrency cap")
+    emit("")
+    emit("⚠️ A **sizing re-tune on a fixed policy**, over the cap values the M3-2 grid "
+         "already contains (`GRID_MAX_CONC = (None, 3)`). It is not a re-search of the "
+         "40-config grid on a new pair population, which M3_PROTOCOL §0 forbids. The wider "
+         "ladder below is texture and nothing is chosen from it.")
+    emit("")
+    ladder: dict = {}
+    for cap in CAPS_PREREGISTERED + CAPS_TEXTURE:
+        ladder[("8", cap)] = _score_universe(
+            f"8 pairs, cap {_cap_label(cap)}", ds_8,
+            universe.with_fields(spec, max_concurrent=cap), regimes=reg_8)
+        ladder[("12", cap)] = _score_universe(
+            f"12 pairs, cap {_cap_label(cap)} (count-matched)", ds_all,
+            universe.with_fields(spec, coverage=cov_w, max_concurrent=cap), regimes=reg_all)
+    emit("**Pre-registered cap set — the decision is taken over these rows only.**")
+    emit("")
+    table([_card_row(ladder[(u, cap)])
+           for cap in CAPS_PREREGISTERED for u in ("8", "12")])
+    emit("")
+    emit("*Texture only — the wider ladder. Not eligible to be chosen (M3_PROTOCOL §0).*")
+    emit("")
+    table([_card_row(ladder[(u, cap)]) for cap in CAPS_TEXTURE for u in ("8", "12")])
+    emit("")
+
+    # M3_PROTOCOL §4.2's ranking rule, applied inside each universe over the
+    # pre-registered caps only.
+    def best_cap(uni: str):
+        cands = [(cap, ladder[(uni, cap)]) for cap in CAPS_PREREGISTERED]
+        return sorted(cands, key=lambda kv: (-kv[1]["worst_net"],
+                                             -kv[1]["taker14"]["net_bps"]))[0]
+
+    cap_8, best_8 = best_cap("8")
+    cap_12, best_12 = best_cap("12")
+    emit(f"Best pre-registered cap by worst-window net at taker: **8 pairs → "
+         f"`max_concurrent={_cap_label(cap_8)}`**, **12 pairs → "
+         f"`max_concurrent={_cap_label(cap_12)}`**.")
+    emit("")
+
+    # --- TEST 3: the difference, its interval, and the criterion's power -----------------
+    emit("## 3. TEST 3 — the fair difference, its interval, and each criterion's power")
+    emit("")
+    table([_card_row(best_8), _card_row(best_12)])
+    emit("")
+    d_fair = diff_line(best_12, best_8,
+                       "THE FAIR TEST — wide − narrow, count-matched, each universe at its "
+                       "own best pre-registered cap")
+    emit("")
+    arms = {
+        f"8 pairs (cap {_cap_label(cap_8)}) — the INCUMBENT":
+            universe.Arm(best_8["_trades"], seeds, cal),
+        f"12 pairs (cap {_cap_label(cap_12)}, count-matched)":
+            universe.Arm(best_12["_trades"], seeds, cal),
+    }
+    power = universe.criterion_power(arms, draws=args.draws)
+    emit("⚠️ **Whose Tier 1 is this?** These three dumps are the 12-pair checkpoints T1, "
+         "T2 and O8 — not the banked 8-pair family M3-2's winner was selected on. A Tier-1 "
+         "failure in the table below is a statement about this checkpoint population, and "
+         "is NOT the served policy failing its own certification.")
+    emit("")
+    emit(f"**Bootstrap failure rate of each Tier-1 criterion**, {args.draws:,} common "
+         f"day-resamples (`universe.criterion_power`, seed {universe.BOOTSTRAP_SEED}). "
+         f"Read the incumbent's row first: a criterion the incumbent also fails half the "
+         f"time cannot arbitrate between the two universes.")
+    emit("")
+    emit("| arm | | P1 | P2 | P3 | P4 | P5 | P6 | all six |")
+    emit("|---|---|---:|---:|---:|---:|---:|---:|---:|")
+    observed = {"8 pairs (cap %s) — the INCUMBENT" % _cap_label(cap_8): best_8,
+                "12 pairs (cap %s, count-matched)" % _cap_label(cap_12): best_12}
+    for _, r in power.iterrows():
+        # The point result first, then how often a resample of the same days would have
+        # flipped it. A criterion is only evidence where those two lines disagree.
+        obs = observed[r["arm"]]["tier1"]
+        emit(f"| {r['arm']} | observed | " + " | ".join(
+            ("Y" if obs[c] else "**N**") for c in ("P1", "P2", "P3", "P4", "P5", "P6", "PASS")) + " |")
+        emit(f"| | fails in | " + " | ".join(
+            f"{r[c]:.1%}" for c in ("P1", "P2", "P3", "P4", "P5", "P6", "PASS")) + " |")
+    emit("")
+
+    # --- the verdict, by the rule pre-registered at the top of this section --------------
+    emit("## Verdict, by the rule committed above before this ran")
+    emit("")
+    lo, hi = d_fair["lo95_bps"], d_fair["hi95_bps"]
+    if lo > 0:
+        verdict = ("**ADOPT 12 pairs.** The paired interval on the fair test lies entirely "
+                   "above zero.")
+    elif hi < 0:
+        verdict = ("**CLOSE 12 pairs.** The paired interval on the fair test lies entirely "
+                   "below zero.")
+    else:
+        verdict = ("**UNDECIDED — the incumbent 8-pair universe stands by default.** The "
+                   "paired interval on the fair test spans zero, so this data cannot "
+                   "separate the two universes in either direction.")
+    emit(f"{verdict} Fair-test difference **{d_fair['diff_bps']:+.2f} bps**, 95% CI "
+         f"[{lo:+.2f}, {hi:+.2f}], over {d_fair['clusters']} exit-day clusters.")
+    emit("")
+    emit(f"**And the fair test's point estimate is not a universe effect anyway.** §1b "
+         f"decomposes it: tightening the confidence cut is worth {d_sel['diff_bps']:+.2f} "
+         f"bps on the 8-pair universe by itself, while widening 8 → 12 pairs at that same "
+         f"cut is worth {d_uni['diff_bps']:+.2f} bps, 95% CI [{d_uni['lo95_bps']:+.2f}, "
+         f"{d_uni['hi95_bps']:+.2f}]. Almost all of the {d_fair['diff_bps']:+.2f} is the "
+         f"cut, not the pairs — and the universe term, cleanly separated, is a small "
+         f"NEGATIVE point estimate with an interval that still spans zero. Three "
+         f"comparisons (coverage-matched, count-matched, cut-matched) now put the universe "
+         f"effect within a couple of bps of zero in both directions.")
+    emit("")
+    emit("**What the concurrency cap turned out to be worth: nothing, on either universe.** "
+         "§1.10 read the widened drawdown (−2.83 → −4.53) as an argument for re-tuning the "
+         "cap. Re-tuned over the pre-registered set it is not: `max_concurrent=none` wins "
+         "on both universes, and every cap in the texture ladder costs net bps. A cap does "
+         "cut drawdown, and it buys that by refusing profitable trades.")
+    emit("")
+    emit("**The criterion-power table settles what §1.10 could only suspect.** P5 — the "
+         "all-seeds-positive check an earlier draft used to reject 12 pairs — fails on the "
+         "INCUMBENT in "
+         f"{power.loc[0, 'P5']:.1%} of resamples against {power.loc[1, 'P5']:.1%} on the "
+         "challenger. It cannot decide anything. The criterion that actually bites is "
+         "**P3, the −5 bps worst-window floor**, which fails on both arms in the observed "
+         f"data and in {power.loc[0, 'P3']:.1%} / {power.loc[1, 'P3']:.1%} of resamples. "
+         "**Window 3 is the binding constraint on this policy, and it is not a universe "
+         "problem** — widening the pair set does not touch it.")
+    emit("")
+    emit(f"**What this test could have detected.** The cluster-robust SE on the difference "
+         f"is {d_fair['se_bps']:.2f} bps, so at 80% power it resolves effects of about "
+         f"±{2.8 * d_fair['se_bps']:.1f} bps and nothing smaller. That bound is a property "
+         f"of the ~{d_fair['clusters']} independent exit days this evaluation period "
+         f"contains, not of the policy or of the number of seeds — pooling more seeds adds "
+         f"correlated trades inside the same days and does not move it (§1.10). **A real "
+         f"universe effect of the size anyone cared about (+7.5 bps) is roughly a third of "
+         f"what this evaluation period can resolve.** No further offline work on these "
+         f"dumps, and no further seeds, can settle 8-vs-12: only a longer evaluation "
+         f"period can, and that is calendar, not compute.")
+    emit("")
+    emit("### One observation that is NOT a recommendation")
+    emit("")
+    emit(f"On these three checkpoints the 8-pair universe scores {n_sel['taker14']['net_bps']:+.2f} "
+         f"net bps at cov {cov_w:.5f} against {n_cov['taker14']['net_bps']:+.2f} at cov "
+         f"{spec.coverage:g}, with a better worst window "
+         f"({n_sel['worst_net']:+.2f} vs {n_cov['worst_net']:+.2f}) and a higher Sharpe "
+         f"({n_sel['taker14']['sharpe']:.2f} vs {n_cov['taker14']['sharpe']:.2f}). **Do "
+         f"not act on that here.** Coverage is a searched dimension of the M3-2 grid, "
+         f"which chose 0.02 on the banked 8-pair family; re-picking it on a different "
+         f"checkpoint population after seeing the numbers is precisely the shopping "
+         f"M3_PROTOCOL §0 forbids. If coverage is to be revisited it goes through a fresh "
+         f"pre-registration on the population the decision will be served from.")
+    emit("")
+
+    path = os.path.join("output", "m3", "T6_RESULTS.md")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        fh.write(chr(10).join(lines) + chr(10))
+    print(f"{chr(10)}[report written to {path}] — copy it to its canonical home:")
+    print("  cp ml/train/output/m3/T6_RESULTS.md docs/T6_RESULTS.md")
+    return 0
+
+
+def cmd_bookprep(args) -> int:
+    """Print the facts M3-4's pre-registration rests on — DATA QUALITY ONLY.
+
+    The third in the line `power` / `fitprep` started, and the one with the most to correct:
+    M3_PLAN §2 M3-4 described the ladder as a 5s series and the tape as per-window high/low,
+    and neither is true (see the module docstring). No fill rate, queue drain, adverse
+    selection or effective cost appears here — those are the study, and
+    docs/M3_4_PROTOCOL.md is committed before any of them is computed.
+    """
+    return bookprep.audit()
+
+
 def cmd_policy(args) -> int:
     ds = dumps.load_baseline(pairs=dumps.BASE8)
     spec = backtest.PolicySpec(
@@ -580,6 +944,21 @@ def main() -> int:
                         "existing 12-pair dump). Pass the three 12-pair seeds once T1/T2 "
                         "have landed.")
     u.set_defaults(fn=cmd_universe)
+
+    f = sub.add_parser("universe-fair", help="T6: the fair 8-vs-12 comparison — trade-count "
+                       "matched, concurrency cap re-tuned, difference reported with its "
+                       "interval and each criterion's bootstrap power")
+    f.add_argument("--runs", default=None,
+                   help="comma-separated eval run ids to pool (default: the three 12-pair "
+                        "seeds T1, T2 and O8 — the population NEXT_TRAINING_PLAN §1.10 "
+                        "measured on)")
+    f.add_argument("--draws", type=int, default=universe.BOOTSTRAP_DRAWS,
+                   help="bootstrap draws for the criterion-power table")
+    f.set_defaults(fn=cmd_universe_fair)
+
+    sub.add_parser("bookprep", help="M3-4a pre-registration facts: ladder cadence, book "
+                   "staleness, tape censoring and coverage, touch spread and depth. "
+                   "No fill number.").set_defaults(fn=cmd_bookprep)
 
     p = sub.add_parser("policy", help="score one policy spec")
     p.add_argument("--coverage", type=float, default=0.05)

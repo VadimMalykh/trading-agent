@@ -245,6 +245,59 @@ def load_model():
     return True
 
 
+# --- the served universe ------------------------------------------------------
+# Two different questions, both answered from the checkpoint's own pair list:
+# which pairs may be PREDICTED (_servable_pairs, T5) and which pairs define the
+# cross-section a prediction is ranked against (_market_universe, C12).
+
+
+def _trained_pairs() -> list:
+    """The pair list the served checkpoint was actually trained on, upper-cased.
+
+    Empty for a pre-C12 checkpoint that records none — callers must treat that as "no
+    ceiling known" rather than as "no pairs".
+    """
+    return [p.upper() for p in ((_state.get("meta") or {}).get("pairs") or [])]
+
+
+# The set of pairs already reported as dropped, so the warning below is printed once per
+# (checkpoint, whitelist) rather than on every /predict_all request.
+_DROPPED_LOGGED: set = set()
+
+
+def _servable_pairs() -> list:
+    """The whitelist, intersected with the checkpoint's own training universe.
+
+    WHY THIS EXISTS. `/predict_all` used to iterate the DB whitelist directly. The
+    whitelist is operator state on a VM and lists 12 pairs; the served checkpoint
+    (seed 2) was trained on 8, so ADA/AVAX/LINK/XRP resolved to `pair_oov_id` — an
+    embedding row no pair ever trained — and the server emitted live signals for four
+    instruments the model has never seen (NEXT_TRAINING_PLAN §2, T5).
+
+    The whitelist stays the operator's control: it can only ever narrow the universe.
+    The checkpoint's own pair list is a hard ceiling on top of it, so promoting a
+    12-pair checkpoint starts serving all 12 with no further change here, and the
+    guarantee lives in code rather than in the state of a database row.
+    """
+    whitelist = [p.upper() for p in load_whitelist_pairs(fallback=PAIRS)]
+    trained = _trained_pairs()
+    if not trained:
+        return whitelist
+    trained_set = set(trained)
+    servable = [p for p in whitelist if p in trained_set]
+    dropped = [p for p in whitelist if p not in trained_set]
+    if dropped:
+        key = (tuple(whitelist), tuple(trained))
+        if key not in _DROPPED_LOGGED:
+            _DROPPED_LOGGED.add(key)
+            print(
+                f"  WARNING [universe] whitelist pairs not in the checkpoint's training "
+                f"universe, NOT served: {', '.join(dropped)} "
+                f"(checkpoint trained on {len(trained)}: {', '.join(trained)})"
+            )
+    return servable
+
+
 # --- cross-pair market context at serve time (C12) --------------------------------
 # Training computes these columns across the whole universe in one pass. Serving
 # predicts one symbol at a time, so the universe has to be loaded here too. The
@@ -261,9 +314,9 @@ def _market_universe() -> list:
     cross-sectional rank of a pair is only comparable to training if it is taken
     against the same set of pairs. Falls back to the live whitelist.
     """
-    trained = list((_state.get("meta") or {}).get("pairs") or [])
+    trained = _trained_pairs()
     if trained:
-        return [p.upper() for p in trained]
+        return trained
     return [p.upper() for p in load_whitelist_pairs(fallback=PAIRS)]
 
 
@@ -479,6 +532,12 @@ class Handler(BaseHTTPRequestHandler):
                         # columns constant (pre-2026-08-17 norm bug): they are now
                         # sanitized at load, but the model never learned from them.
                         "norm_degenerate_cols": _state.get("norm_degenerate_cols", 0),
+                        # The universe, so an operator can see at a glance whether the
+                        # whitelist is being narrowed by the checkpoint (T5). Empty
+                        # "trained_pairs" means a pre-C12 checkpoint that records none,
+                        # and then the whitelist is served unfiltered.
+                        "trained_pairs": _trained_pairs(),
+                        "served_pairs": _servable_pairs(),
                     },
                 )
 
@@ -487,7 +546,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, predict_symbol(symbol))
 
             if path == "/predict_all":
-                pairs = load_whitelist_pairs(fallback=PAIRS)
+                # The checkpoint's training universe is a hard ceiling on the whitelist:
+                # never emit a signal for a pair the model has never seen (T5).
+                pairs = _servable_pairs()
                 results = [predict_symbol(p) for p in pairs]
                 return self._json(200, {"ok": True, "signals": results, "pairs": pairs})
 
