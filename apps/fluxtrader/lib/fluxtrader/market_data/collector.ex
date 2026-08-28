@@ -51,6 +51,14 @@ defmodule FluxTrader.MarketData.Collector do
   # :fluxtrader, :book_depth_limit. See docs/DATA_COLLECTION_AUDIT.md.
   @default_book_depth_limit 100
 
+  # aggTrades to fetch per 5s tape poll. Binance returns the *most recent* N, so a limit
+  # below the pair's actual 5s trade count silently discards the OLDEST trades and the
+  # derived high/low/volume describe only what survived. M3-4a measured the old limit of
+  # 200 right-censoring 30.4% of BTC windows, 29.3% ZEC, 28.0% ETH — concentrated in
+  # exactly the busy windows that matter. 1000 is the endpoint's maximum. Tunable via
+  # config :fluxtrader, :trade_tape_limit. See docs/M3_4_PROTOCOL.md §1.2.
+  @default_trade_tape_limit 1000
+
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -247,8 +255,12 @@ defmodule FluxTrader.MarketData.Collector do
     Application.get_env(:fluxtrader, :book_depth_limit, @default_book_depth_limit)
   end
 
+  defp trade_tape_limit do
+    Application.get_env(:fluxtrader, :trade_tape_limit, @default_trade_tape_limit)
+  end
+
   defp collect_trades(symbol, last_id) do
-    opts = [limit: 200]
+    opts = [limit: trade_tape_limit()]
 
     case Client.agg_trades(symbol, opts) do
       {:ok, trades} when is_list(trades) and trades != [] ->
