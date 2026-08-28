@@ -28,12 +28,29 @@ you defer something, write down what would un-defer it.
 
 | item | owner doc | state |
 |---|---|---|
-| **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **This, and only this, starts the clock.** The code is built, tested (65 tests) and verified end to end on the local stack, but **the local Postgres is a throwaway dev DB** — a forward test that accumulates independent trading days has to run on the always-on VM. Until it is deployed, nothing is being collected. ⚠️ **B4's collector fixes are also awaiting deploy** ([BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §2 B4) — send them together rather than restarting the collector twice |
-| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🟡 **Ready, not started** — starts when the row above is done. Then it needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl <host>:4001/api/health`. ⚠️ It will not trade for the first **seven days** (the rank window must fill) and may then idle for weeks (see the volatility note below). Both are the strategy working |
+| **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** The clock has started |
+| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔵 **RUNNING since 2026-08-28.** It now needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). ⚠️ It will not trade for the first **seven days** (the rank window must fill: `warm: false` until 2,016 bars) and may then idle for weeks (see the volatility note below). Both are the strategy working |
 | **M3-0b** — price/funding side-table | [M3_PLAN.md](./M3_PLAN.md) §2 | 🔴 **The only remaining M3 build item**, and nothing blocks it: the data is already exported (`candles_5m.csv.gz`, `funding.csv.gz`, 2026-08-28). It is the only item that adds *new degrees of freedom* rather than re-slicing the same 253 days, and M3-5 added a fourth consumer — the `auto` path's stop/target brake is an unmeasured deviation from a fixed-hold policy and M3-0b's price path is what would price it. Build it on the existing `m3_4/` export, sharing one alignment with **B0** |
 
 **M3-4 completed 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), read via
 [M3_PLAN.md](./M3_PLAN.md) §0.8. Risk #2 closed.
+
+**Deploy day, 2026-08-28 — three defects were found and fixed by deploying.** Recorded here
+because each was invisible on the local stack and only the real VM exposed it:
+
+1. **The policy was ranking over 12 pairs, not 8.** `Settings.get_whitelist/0` is the
+   *collector's* pair list and the VM's copy still held the 12-pair 8-vs-12 era list; the
+   policy followed it, so the top-2% coverage cut was being taken over a population including
+   four pairs `ExecCost` has never measured. Fixed by giving the policy its own universe
+   (`config :fluxtrader, :trading, served_pairs`), reported at `policy.served_pairs`, with
+   unserved bars counted as the named skip `not_served`. 🔴 **Do not "fix" a future mismatch
+   by narrowing the collection whitelist** — see #2.
+2. **Narrowing the whitelist stopped collection.** The first attempt at #1 set the whitelist to
+   the served eight, which halted `orderbook_snapshots` on ADA/AVAX/LINK/XRP for ~18 minutes.
+   Collection gaps do not backfill. Restored, and the code now separates the two concerns.
+3. **The tape fix starved the book poll.** Raising the aggTrades limit ran inline in the same
+   GenServer as the book poll and cost 2.5x of the book snapshot rate (55.2 → 22.2 rows/min).
+   The sweep now runs under `Task.Supervisor`.
 
 **M3-5 completed 2026-08-28** — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md). The policy is
 wired to a crossing executor, the hard `RiskManager` path is exercised on every entry, the
@@ -75,11 +92,31 @@ effect already lives. Owner: **[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md)**.
 
 | item | what | gated on | note |
 |---|---|---|---|
-| **B4** | Collection fixes — ✅ **code written 2026-08-24, ⚠️ NOT deployed** | nothing | 🔴 **The most time-sensitive item in this file.** Until it is deployed to `fluxtrader-1` nothing has changed about what we collect, and collection gaps are **unrecoverable** — order-book history begins the day the collector is pointed at it and backfills never. See BOOK_ERA_PLAN §2 B4 for the deploy steps and its three acceptance checks |
+| ~~**B4**~~ | ✅ **DONE — deployed and verified 2026-08-28.** `event_time` filling 100%; `long_short_ratios` holding 116,073 rows over 12 symbols spanning ≈33 days (the one-shot ~30d backfill worked) | — | **B4.3 answered `DEPTH_OK`** — 586 `depthUpdate` frames in 60s from the VM's egress. See the new row below: this is a result, not just a closed chore |
 | **B0** | Book-era side-table → parquet | nothing | **Build as an extension of M3-0b, not separately** — one export, one alignment, two consumers. Has a mandatory acceptance test: `fwd_ret_240` must match the eval dump's `fwd_ret` on a `(pair, ts)` join, or nothing downstream is evidence |
 | **B1** | Economic information check (the fixed audit) | B0 | Replaces re-running the 2026-08-04 audit unchanged. Reports **basis points, not Spearman rho** — the earlier audit escalated on rho and the run it triggered was inconclusive |
 | **B2** | Book features as **M3 regime observables** | B0, M3-0a ✅ | 🔴 **The highest-expected-value item in the wave.** `spread_bps` was the earlier audit's strongest finding and was classified VOL-PROXY — useless to M2, which emits direction, but potentially very useful to M3, whose 4× effect *is* a volatility regime switch. A book-derived observable would be **contemporaneous** rather than trailing like `btc_absret_1d` |
 | **B3** | One book-era GBT, pre-registered | **B1 passing §4.1** | One CPU run on its own throwaway VM, not a search |
+
+### 🟢 New, from B4.3 — a WS depth consumer is now a real option
+
+**`@depth` is NOT egress-blocked.** The plan was written against the risk that it sat where
+`!forceOrder@arr` sits (upgrade + ACK, then silence — which is why `liquidations` has 0 rows).
+It does not: 586 depth frames arrived in a 60s window from `fluxtrader-1` itself.
+
+🟡 **Parked, with an explicit revival trigger.** Nothing needs it *today* — the 5s REST book
+poll is what every existing number was measured on, and swapping the source mid-flight would
+break comparability exactly as the tape change did (§7 of M3_4_PROTOCOL). What changed is that
+the pessimistic branch is closed: **the 5s cadence is a choice, not a ceiling**, and §1.2's
+fee-wall arithmetic is not the only lever left at short horizons.
+
+**What would revive it:** any result that is limited by book *resolution* rather than book
+*history* — most likely B2, if a book-derived regime observable looks promising at 5s and the
+question becomes whether finer sampling sharpens it. Build it then, not before.
+
+⚠️ Whoever builds it should first re-check the `@aggTrade` control: it reported **0 frames** in
+the same window on a continuously-trading pair, so the probe's control did not do its job. That
+does not affect the depth verdict, but do not assume the trade stream is reachable on its basis.
 
 **The wave's own exit condition (§4.4), so it cannot drift indefinitely:** if B1 fails §4.1 *and*
 B2 fails §4.2, the book question closes until **≥90 days of continuous book history on the 8
@@ -98,8 +135,7 @@ applied in advance.
 
 | item | why it matters | source |
 |---|---|---|
-| **Raise the trade-tape `limit: 200`** (or move the tape to the uncapped WebSocket stream) | 🔴 M3-4a found the tape is **right-censored**: Binance returns the *most recent* 200 aggTrades, so on busy pairs the oldest are silently discarded and `high`/`low`/`volume` describe only what survived — **BTC 30.4%, ZEC 29.3%, ETH 28.0%** of windows. Censoring concentrates in exactly the busy windows where a resting order fills | [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) §1.2 |
-| | **Worth doing regardless of what M3-4 concludes**, and it fixes the problem only *going forward* — the existing 22 days are censored for good. ⚠️ No number measured before the change may be compared to one measured after it (§7) | |
+| ~~**Raise the trade-tape `limit: 200`**~~ | ✅ **DONE 2026-08-28** — raised to 1000, the endpoint maximum, and verified request-weight-neutral (aggTrades costs 20 weight at every limit, measured). Post-change sampling over 25 clean minutes shows **3 of 861 windows at the new cap (0.35%)**, against the old **30.4% on BTC**. The residual is irreducible by this route — 1000 is the endpoint maximum — and would need the WS tape to close (see the B4.3 row). ⚠️ It fixes the tape only *going forward* — the existing history is censored for good, and per §7 **no number measured before the change may be compared to one measured after it** | [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) §1.2 |
 | **Disk budget** | `orderbook_levels` runs ~24 MB/pair/day → ~8.6 GB/month at 12 pairs, against 54 GB free on `fluxtrader-1`: about six months of headroom, under four if the universe grows to twenty | [M3_PLAN.md](./M3_PLAN.md) §2 M3-4 |
 
 ---

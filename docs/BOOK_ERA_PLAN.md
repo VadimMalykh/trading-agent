@@ -1,14 +1,16 @@
 # Book-era plan — the B-wave
 
-**Status:** 🟡 **PARKED, NOT DROPPED** — B4 implemented 2026-08-24 (⚠️ still awaiting deploy to
-the always-on VM); B0–B3 not started. Runs **in parallel with M3**, blocks nothing, and is
-blocked by nothing. Indexed in [BACKLOG.md](./BACKLOG.md), which carries the revival trigger
-for each step.
+**Status:** 🟡 **PARKED, NOT DROPPED** — ✅ **B4 is COMPLETE and deployed** (2026-08-28);
+B0–B3 not started. Runs **in parallel with M3**, blocks nothing, and is blocked by nothing.
+Indexed in [BACKLOG.md](./BACKLOG.md), which carries the revival trigger for each step.
 
-🔴 **B4 is the time-sensitive one and it is not deployed.** Until the collector change is on
-`fluxtrader-1`, nothing has changed about what we collect — and collection gaps are
-**unrecoverable**: order-book history begins the day the collector is pointed at a pair and
-never backfills. Everything else in this wave can wait for M3's attention; this cannot.
+🟢 **B4 is done, and B4.3 answered `DEPTH_OK` — the headline result of this wave so far.**
+The collector fixes were verified live on `fluxtrader-1` on 2026-08-28 (§2 B4 records the
+acceptance numbers), and the `@depth` WebSocket stream turns out to be **reachable** from the
+VM's egress: 586 `depthUpdate` frames in a 60s window. **The 5s REST cadence is therefore not
+the permanent fidelity ceiling this plan assumed it might be** — the pessimistic branch, in
+which §1.2's fee-wall arithmetic was the only lever left at short horizons, does not apply. A
+WS depth consumer is now a buildable option rather than a blocked one.
 
 🟢 **Two things that landed on 2026-08-28 make B0 much cheaper than this plan assumed.** The
 M3-4 export (`scripts/gcp_m3_export.sh`) already pulled, to `ml/train/output/m3_4/`, exactly
@@ -230,11 +232,10 @@ what to bring back.
 | **B1** | Economic information check (the fixed audit) | ~1 afternoon laptop | no | B0 |
 | **B2** | Book features as **M3 regime observables** | ~1 afternoon laptop | no | B0, M3-0a |
 | **B3** | One book-era GBT, pre-registered | ~1h on its own CPU VM | no | **B1 passing §4.1** |
-| **B4** | Collection fixes (unrecoverable if deferred) | small Elixir change | no | nothing — ✅ **code done 2026-08-24, needs deploy** |
+| **B4** | Collection fixes (unrecoverable if deferred) | small Elixir change | no | ✅ **DONE — deployed and verified 2026-08-28** |
 
-**B4 was independent of the rest and is now written** (see below). It still has to be *deployed* to
-the always-on VM to start accruing anything — until then nothing has changed about what we collect.
-Everything else can queue behind M3's attention.
+**B4 was independent of the rest and is complete** (see below): deployed, all three acceptance
+checks passed, and B4.3 returned `DEPTH_OK`. Everything else can queue behind M3's attention.
 
 ### B0 — the book-era side-table
 
@@ -380,14 +381,14 @@ calibration bin table, the loaded sample count and date window, and LightGBM's f
 the last is O5's within-model attribution, finally obtained, and is arguably the most durable output
 of the whole wave regardless of whether the P&L clears.
 
-### B4 — collection fixes ✅ implemented 2026-08-24, ⚠️ not yet deployed
+### B4 — collection fixes ✅ implemented 2026-08-24, ✅ deployed and verified 2026-08-28
 
 On the audit's unrecoverable list, none of it on the critical path for B0–B3. It matters because if
 this wave says "wait for the calendar", we want the calendar to be accumulating *better* data, not
 more of the same.
 
-**Code is written and verified; it is doing nothing until the VM runs it.** Deploy is the whole
-remaining task and it is small — see "What is left" below.
+**Deployed to `fluxtrader-1` on 2026-08-28; all three acceptance checks pass.** The numbers are
+recorded under "Acceptance, as measured" below. Nothing remains in B4.
 
 1. ✅ **Exchange event timestamps.** `orderbook_snapshots` now stores `event_time` (`E`),
    `transaction_time` (`T`) and `last_update_id`; `funding_rates` and `open_interest` store
@@ -409,31 +410,31 @@ remaining task and it is small — see "What is left" below.
    `startTime=30d ago, limit=500` with the newest ~42h, *not* the oldest 500. Forward paging would
    have silently captured 42h of a 30-day window we get one shot at.
 
-3. ⏳ **Is `@depth` egress-blocked?** `scripts/gcp_depth_ws_test.sh` (wrapping
-   `mix flux.depth_ws_test`) is written but **not yet run** — it has to run from the always-on VM,
-   because that host's egress is the thing being measured. It subscribes to `@depth`, `@aggTrade`
-   (control: does *any* market data arrive?) and `!forceOrder@arr` (known-blocked reference) on one
-   connection and counts frames. The control is the point: "no depth frames" alone cannot separate
-   "`@depth` is gated" from "this host gets no WS data at all", and those imply completely different
-   next steps. Writes nothing to the DB.
+3. ✅ **Is `@depth` egress-blocked? — NO. Verdict `DEPTH_OK`, measured 2026-08-28.**
+   `scripts/gcp_depth_ws_test.sh --seconds 60`, run from the always-on VM because that host's
+   egress is the thing being measured. The connection upgraded, stayed open for the full window,
+   the SUBSCRIBE was ACKed, and **586 `depthUpdate` frames arrived, first at 748ms**.
 
-**What is left, in order:**
+   🟢 **This is the good branch, and it changes what is possible.** The plan was written against
+   the risk that `@depth` sat on the same side of the line as `!forceOrder@arr` (upgrade + ACK,
+   then silence — which is why `liquidations` has 0 rows). It does not. **The 5s REST cadence is
+   not a hard fidelity ceiling**, so §1.2's fee-wall arithmetic is *not* the only lever left at
+   short horizons, and a WS depth consumer is worth building when something needs it.
 
-```sh
-# 1. Deploy the collector change to the always-on VM and run the two migrations.
-#    (The app container bind-mounts the checkout; migrations run on boot via the
-#    compose command, so updating the checkout and restarting `app` is enough.)
+   ⚠️ One oddity, recorded rather than chased: the `@aggTrade` control stream reported **0 frames**
+   in the same window, on a pair that trades continuously. That does not affect the verdict —
+   depth frames demonstrably arrive, which is the question B4.3 asked — but it means the control
+   did not do its job, and anyone building the WS consumer should re-check `@aggTrade` naming
+   before assuming the trade stream is reachable too.
 
-# 2. Confirm the new columns/table are actually filling — this is the acceptance test.
-./scripts/gcp_data_collection_stats.sh
-#    §2  with_event_time climbing from 0 on new rows
-#    §2b p50/p95 skew — the first real measurement of collection jitter we have ever had
-#    §9  long_short_ratios: ~30d of existence within minutes of boot (the backfill),
-#        then growing; missing_top/global/taker small
+### Acceptance, as measured on 2026-08-28
 
-# 3. Answer B4.3. One run, ~1 minute; a "blocked" verdict is a real answer, not a retry.
-./scripts/gcp_depth_ws_test.sh --seconds 60
-```
+| check | expected | measured |
+|---|---|---|
+| §2 `with_event_time` on new rows | climbing from 0 | **165,686 / 165,686 = 100%** over the last 2 days of `orderbook_snapshots` |
+| §9 `long_short_ratios` exists and backfilled | ~30d within minutes of boot, then growing | **116,073 rows, 12 symbols, 2026-07-26 → 2026-08-28** (≈33d — the backward paging worked) |
+| §9 missing columns small | small | `missing_top` 12, `missing_global` 12, **`missing_taker` 216** of 116,073 (0.19%) — the taker series running a bucket behind, exactly as predicted |
+| B4.3 verdict | any verdict is an answer | **`DEPTH_OK`** — 586 depth frames / 60s |
 
 **Bring back:** the §2b skew table (this is new information about our own data, not just a health
 check), the §9 row counts and date span, and B4.3's verdict line. Record the verdict here — if it is

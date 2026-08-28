@@ -98,17 +98,29 @@ ledger: it is a measurement arm and never produces an order (§4).
 
 ## §2 — How to run it, and how to read it
 
-⚠️ **It is verified locally and NOT deployed.** Everything below runs against the local stack,
-whose Postgres is a throwaway dev DB. The forward test only starts accumulating evidence once
-this is on the always-on VM `fluxtrader-1`, where the real data lives — and **B4's collector
-fixes are awaiting the same deploy** ([BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §2 B4), so send
-them together rather than restarting the collector twice. The migrations run at boot.
+✅ **Deployed to `fluxtrader-1` on 2026-08-28. The forward test is running and the clock has
+started.** B4's collector fixes went out with it and are verified
+([BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §2 B4). The migrations ran at boot.
+
+⚠️ **The host port differs between the two stacks.** Locally compose maps the app to **4001**;
+on `fluxtrader-1` it maps to **4000**. Both are container port 4000. Using 4001 on the VM gets
+a bare `Connection refused`, which reads exactly like a dead app.
 
 ```sh
-docker compose up -d postgres ml_inference app     # the whole stack; migrations run at boot
-curl -s http://localhost:4001/api/health | jq      # host port 4001, container 4000
+# on fluxtrader-1
+curl -s localhost:4000/api/health | jq
 docker compose logs -f app | grep -E "OPEN|CLOSE|RiskManager"
+
+# on the local stack
+docker compose up -d postgres ml_inference app     # migrations run at boot
+curl -s http://localhost:4001/api/health | jq
 ```
+
+⚠️ **Every `docker compose restart app` triggers the full historical kline backfill** (four
+intervals × every collected pair, `handle_info(:backfill_history, …)`), and while it runs it
+shares the collector's mailbox with the book poll: expect roughly **ten minutes** of degraded
+`orderbook_snapshots` cadence after any restart. Measure collection health only after
+`Historical backfill complete`, or you will diagnose the backfill as a regression.
 
 Tests — including the parity tests that pin the Elixir rule to `ml/train/m3/backtest.py`:
 
@@ -124,7 +136,8 @@ docker compose run --rm -e MIX_ENV=test -e POSTGRES_HOST=postgres app mix test
 | `signal_liveness.seconds_since_last_gated` | How long the system has been silent. `null` means never gated in the retained window — check it against §0's "no gated signal since 2026-06-29". |
 | `policy.warm` | `false` means the rank window is still filling; the policy cannot trade. |
 | `policy.confidence_threshold` | The live top-2% cut. Watch it drift — that is the thing a fixed threshold would have got wrong. |
-| `policy.skips` | Named reasons bars were not traded: `warming_up`, `below_coverage`, `position_open`, `no_regime`, `no_side`. **A silent system with a populated `skips` map is working.** |
+| `policy.served_pairs` | The eight pairs the policy may rank and trade. **This is not the collector's whitelist**, which is deliberately wider — see §3.4. If this ever shows more than the eight M3-4 measured, the coverage cut is being taken over the wrong population. |
+| `policy.skips` | Named reasons bars were not traded: `warming_up`, `below_coverage`, `position_open`, `no_regime`, `no_side`, `not_served`. **A silent system with a populated `skips` map is working.** `not_served` counts bars for collected-but-not-traded pairs and should be non-zero whenever the collector is wider than the served eight. |
 | `policy.risk_rejections` | Counted refusals by reason. A non-empty map means a hard limit is binding and the A/B is being throttled on one side only. |
 | `regime.p80_edge` vs `published_p80` | The live top quintile cut against §1.8's 4.31%. A large gap means the market is in a different volatility regime from the one the policy was measured in — as of 2026-08-28 the live p80 is **1.77%**, i.e. less than half. |
 | `ab` | Both arms: trades, net bps per trade, net bps per unit of notional, win rate, drawdown, trades/day. |
@@ -181,6 +194,31 @@ two overlapping four-hour holds on one pair — that is the mechanism by which a
 the same move twice and the P&L becomes fiction.
 
 ---
+
+### 3.5 The served universe is separate from the collection whitelist — found by deploying
+
+🔴 **This was a live defect for the first ~35 minutes of the forward test, and it is the kind
+that would have quietly invalidated the evidence rather than announcing itself.**
+
+`Trading.Policy` ranks whatever `SignalEngine` serves, and `SignalEngine` follows
+`Settings.get_whitelist/0` — which is the **collector's** pair list, stored in `app_settings`.
+On `fluxtrader-1` that row still held the twelve pairs of the 8-vs-12 era, so on deploy the
+policy was:
+
+* taking its **top-2% coverage cut over a 12-pair population**, when M3-2 selected the rule on
+  eight. "The top 2%" is a rank, so widening the population silently changes the rule; and
+* able to **enter AVAX/ADA/LINK/XRP**, which M3-4 never measured a crossing cost for. Those
+  fall back to `ExecCost`'s pooled 9.842 bps — a number pooled over the *other* eight pairs.
+
+The fix is a second, separate list: `config :fluxtrader, :trading, served_pairs`, pinned to the
+eight, filtered **before** `record_bars/2` so an unserved bar never joins the ranking
+population, and surfaced as `policy.served_pairs` with a `not_served` skip counter.
+
+⚠️ **The obvious fix is the wrong one and it was tried first.** Narrowing the *whitelist* to the
+served eight does make the policy correct — and stops the collector, which halted
+`orderbook_snapshots` on the four dropped pairs for ~18 minutes before it was caught. **Book
+history never backfills.** Collecting a pair is cheap; not collecting it is permanent. The two
+lists exist precisely so that the narrow one can be narrowed without touching the wide one.
 
 ## §4 — The A/B (this part IS pre-registered)
 
