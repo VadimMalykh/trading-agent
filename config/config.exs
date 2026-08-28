@@ -25,8 +25,25 @@ config :fluxtrader, :trading,
   take_profit_ratio: 2.0,
   leverage: 5,
   total_capital: 1000.0,
-  # The eight pairs M3-2 was measured on and M3-4 measured costs for. T6 closed the
-  # 8-vs-12 question: this is a settled scope, not a placeholder.
+  # The pairs the POLICY may rank and trade over: the eight M3-2 measured the rule on and
+  # M3-4 measured a crossing cost for. T6 closed the 8-vs-12 question, so this is a settled
+  # scope, not a placeholder.
+  #
+  # 🔴 This is NOT the collector's pair list. The collector follows
+  # `Settings.get_whitelist/0`, which is deliberately wider — collecting a pair is cheap and
+  # NOT collecting it is unrecoverable. Narrowing the whitelist to match this list stops
+  # collection and leaves a permanent hole. See PolicyEngine's moduledoc.
+  served_pairs: [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "DOGEUSDT",
+    "WLDUSDT",
+    "HYPEUSDT",
+    "ZECUSDT",
+    "1000PEPEUSDT"
+  ],
+  # The collector's default subscription list, used only when the DB holds no whitelist row.
   whitelist_pairs: [
     "BTCUSDT",
     "ETHUSDT",

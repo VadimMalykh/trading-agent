@@ -39,11 +39,33 @@ defmodule FluxTrader.Trading.PolicyEngine do
   the policy could never *widen* coverage — only ever see bars M2 had already approved.
   **The policy owns coverage.** The serve gate is recorded on every bar as a diagnostic and
   as the control arm's entry condition, and it filters nothing.
+
+  ## The served universe is NOT the collection whitelist
+
+  `Settings.get_whitelist/0` is the list of pairs the **collector** subscribes to, and it is
+  deliberately wider than the eight pairs M3 trades: collecting a pair costs a REST poll and
+  a few MB a day, while *not* collecting it is unrecoverable — order-book history begins the
+  day the collector is pointed at a pair and never backfills.
+
+  The policy's universe is a different thing and it is pinned here, to
+  `config :fluxtrader, :trading, served_pairs`. It must stay the eight pairs M3-2 measured
+  the rule on and M3-4 measured a crossing cost for (T6 closed the 8-vs-12 question). Two
+  distinct things break if the policy ranks over a wider set:
+
+    * **the coverage cut.** "The top 2%" is a rank over a population, so adding four
+      unmeasured pairs to that population silently changes the rule that M3-2 selected.
+    * **the cost charged.** `ExecCost.round_trip_bps/1` has no measurement outside the eight
+      and falls back to the pooled 9.842 — a number pooled over the *other* pairs.
+
+  🔴 Do not fix a mismatch here by narrowing the collection whitelist. That stops collection
+  on the excluded pairs, and the resulting gap cannot be backfilled. (Learned the hard way on
+  2026-08-28: narrowing the whitelist to the served eight halted `orderbook_snapshots` on
+  ADA/AVAX/LINK/XRP for ~18 minutes before it was caught.)
   """
   use GenServer
   require Logger
 
-  alias FluxTrader.Trading.{Executor, Ledger, Policy, Regime, RiskManager}
+  alias FluxTrader.Trading.{ExecCost, Executor, Ledger, Policy, Regime, RiskManager}
 
   @policy_arm "policy"
   @control_arm "signal_only"
@@ -131,6 +153,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
        last_error: state.last_error,
        last_tick_at: state.last_tick_at,
        coverage: state.spec.coverage,
+       served_pairs: served_pairs() |> Enum.sort(),
        hold_minutes: state.spec.hold_minutes,
        signal_horizon_m: state.spec.signal_horizon_m,
        confidence_threshold: state.threshold,
@@ -149,7 +172,17 @@ defmodule FluxTrader.Trading.PolicyEngine do
   defp run_tick(state) do
     now = DateTime.utc_now()
     regime = state.regime_fun.()
-    bars = state.signals_fun.() |> Enum.flat_map(&List.wrap(to_bar(&1, regime, now)))
+    served = served_pairs()
+
+    # Filtered BEFORE record_bars, not at entry: a bar that reaches policy_bars joins the
+    # population the 2% rank is taken over, so an unserved pair recorded here would move the
+    # cut even though it could never be traded.
+    {bars, unserved} =
+      state.signals_fun.()
+      |> Enum.flat_map(&List.wrap(to_bar(&1, regime, now)))
+      |> Enum.split_with(&served?(&1.pair, served))
+
+    state = count_skips(state, :not_served, length(unserved))
 
     record_bars(state, bars)
 
@@ -172,6 +205,19 @@ defmodule FluxTrader.Trading.PolicyEngine do
   catch
     :exit, _ -> []
   end
+
+  @doc """
+  The pairs the policy is allowed to rank and trade over — see the "served universe" note in
+  the moduledoc. Defaults to the eight M3-2/M3-4 pairs; the collector's whitelist is wider
+  and independent.
+  """
+  def served_pairs do
+    Application.get_env(:fluxtrader, :trading, [])
+    |> Keyword.get(:served_pairs, ExecCost.measured_pairs())
+    |> MapSet.new()
+  end
+
+  defp served?(pair, served), do: MapSet.member?(served, String.upcase(to_string(pair)))
 
   @doc false
   def default_regime do
@@ -398,6 +444,9 @@ defmodule FluxTrader.Trading.PolicyEngine do
   end
 
   defp count_skip(state, reason), do: %{state | skips: bump(state.skips, reason)}
+
+  defp count_skips(state, _reason, 0), do: state
+  defp count_skips(state, reason, n), do: %{state | skips: Map.update(state.skips, reason, n, &(&1 + n))}
   defp count_decision(state, key), do: %{state | decisions: bump(state.decisions, key)}
   defp bump(map, key), do: Map.update(map, key, 1, &(&1 + 1))
 end

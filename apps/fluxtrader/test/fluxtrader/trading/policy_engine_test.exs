@@ -112,6 +112,47 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     assert trade.notional
   end
 
+  test "a pair outside the served universe never reaches policy_bars or a trade" do
+    now = DateTime.utc_now()
+    warm_the_rank_window(now)
+
+    # ADAUSDT is collected but not served: it is not one of the eight M3-2 measured the rule
+    # on, and ExecCost has no crossing cost for it. It must not join the ranking population,
+    # because "the top 2%" is a rank over that population.
+    start_engine(
+      [
+        signal(symbol: "ADAUSDT", confidence: 0.99),
+        signal(symbol: "BTCUSDT", confidence: 0.95)
+      ],
+      regime(0.05)
+    )
+
+    :ok = PolicyEngine.refresh()
+    status = PolicyEngine.status()
+
+    assert status.skips[:not_served] == 1
+    refute Enum.any?(Ledger.open_trades("policy"), &(&1.pair == "ADAUSDT"))
+    refute Enum.any?(Ledger.open_trades("signal_only"), &(&1.pair == "ADAUSDT"))
+    assert Enum.any?(Ledger.open_trades("policy"), &(&1.pair == "BTCUSDT"))
+
+    # And it is absent from the ranking population itself, not merely refused at entry.
+    recorded = FluxTrader.Repo.all(FluxTrader.Trading.PolicyBar) |> Enum.map(& &1.pair)
+    refute "ADAUSDT" in recorded
+    assert "BTCUSDT" in recorded
+  end
+
+  test "the served universe is the eight measured pairs, and every one has a measured cost" do
+    served = PolicyEngine.served_pairs()
+
+    assert MapSet.size(served) == 8
+    assert MapSet.equal?(served, MapSet.new(FluxTrader.Trading.ExecCost.measured_pairs()))
+
+    # No served pair may fall back to the pooled cost — the fallback pools the OTHER pairs.
+    for pair <- served do
+      assert {:measured, _} = FluxTrader.Trading.ExecCost.round_trip_bps(pair)
+    end
+  end
+
   test "the policy stays cold, and says why, until the rank window has a week of bars" do
     # The distinction M3_PLAN §0.8 asks for: correct silence must be legible as correct.
     start_engine([signal(symbol: "BTCUSDT", confidence: 0.99)], regime(0.05))
