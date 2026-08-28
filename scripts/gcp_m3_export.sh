@@ -127,8 +127,24 @@ dump() {
   # file inside the container, so psql outlives the ssh channel and keeps going. After an
   # interrupted run the right move is to wait for the VM-side file to stop growing and then
   # re-run with COLLECT=1 — re-issuing the COPY would throw away hours of completed work.
+  #
+  # 🔴 The staged file is inside the POSTGRES CONTAINER, not on the VM host: `\copy ... TO
+  # PROGRAM` runs on psql's side. The normal path copies it out with `docker compose cp`
+  # immediately after the COPY, so an interrupted run leaves it stranded in the container and
+  # a bare scp from the host path finds nothing. Copy it out first when the host path is
+  # empty. The container original is deliberately NOT deleted here — after an interruption it
+  # is the only surviving copy of hours of work, and `fetch` may still reject the download.
   if [[ "${COLLECT:-0}" == "1" ]]; then
     echo "  -> $name (collect only)" >&2
+    gcloud compute ssh --zone "$GCP_ZONE" --project "$GCP_PROJECT" "$GCP_ALWAYS_ON" --quiet -- "
+      set -e
+      if [ ! -f $remote ]; then
+        cd ~/trading_agent
+        echo '     staging out of the postgres container…'
+        docker compose cp postgres:$remote $remote
+      fi
+      ls -lh $remote
+    " >&2
     fetch "$name" "$remote" "$dest"
     return
   fi

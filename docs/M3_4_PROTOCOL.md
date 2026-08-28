@@ -365,6 +365,61 @@ Note what the third line does: it is the only place the study can lose badly, an
 supposed to be. If passive orders fill only when price is running away from the fill, the
 unfilled branch carries a large positive cost and the maker arm loses on its own merits.
 
+### 2.7 — ADDENDUM: three mechanical choices, fixed before the first fill number
+
+**Added 2026-08-28, before `m3 execcost` was run for the first time and therefore before any
+fill number existed.** §0's no-editing rule bites once a fill number exists; it had not yet.
+This subsection is here rather than in the implementation's docstring because a choice that
+can move a result belongs in the pre-registration, and because §5.4 forbids revisiting any of
+them afterwards.
+
+Writing `ml/train/m3/execcost.py` surfaced three details §2 leaves open. Each is fixed below
+with its reason and **the direction of its bias**, per §0.2.
+
+**(1) Which tape rows fall inside a fill window.** §1.3 fixes what a row *covers* — the span
+*(previous row's `window_start`, this row's `window_start` + 5 s]* — but not what "attributed
+to (*T*, *T+W*]" means for a span that straddles an edge.
+
+> **Primary: OVERLAP.** A row counts if its covered span intersects the window.
+
+This is the volume-preserving reading, and it is the same argument §1.3 itself makes when it
+rejects the "5 s beginning at `window_start`" reading for discarding roughly half the tape.
+**Containment** — the row's whole span inside the window — is computed as a declared
+sensitivity. *Direction: overlap admits more tape, so it helps maker; the containment figure
+bounds how much.*
+
+**(2) The reference time for adverse selection.** §3 says "mid drift after the fill", but the
+fill time inside (*T*, *T+W*] is **unobservable** — the tape tells us a fill happened, never
+when.
+
+> **Drift is measured from the decision anchor *T*, against its mid *M_T*,** at 30/60/300/1800 s,
+> primary 60 s.
+
+Three reasons: it is the only reference the data pins down; it is the conservative one, because
+a fill at *T*+5 s has the preceding 5 s of drift counted against it, which **overstates**
+adverse selection and **hurts maker** as §0.2 requires; and it makes the primary horizon
+coincide exactly with *W*, which is what §3 says it should match. It also shares one reference
+with §2.6, which prices everything against *M_T*.
+
+**(3) How a round trip is built under L1/L2.** §2.6 says entries and exits are "sampled
+independently" in these layers and that the round trip is their sum.
+
+> **At each decision time both directions are priced, and the observation is
+> `cost(buy) + cost(sell)`** — one complete round trip, attributable to one UTC day.
+
+A round trip is one buy and one sell whichever side the trade is (a long is buy-then-sell, a
+short is sell-then-buy), so this is direction-agnostic. Pairing the two halves at a single *T*
+estimates the sum of the two means without assuming anything about their dependence, and keeps
+one row per decision for §4's day-clustered estimator. **L3 pairs the halves properly**, by
+trade, because there the entry and exit are the same trade's.
+
+**One consequence of §2.1 worth stating explicitly:** a decision is kept only if **both** its
+*T* anchor and its *T+W* anchor pass §2.4's 30 s staleness rule, so the two arms are priced
+over the identical decision set even though only the maker arm reads the *T+W* book. Dropping a
+decision from one arm only would reintroduce exactly the outcome-conditioning §2.1 exists to
+prevent.
+
+
 ---
 
 ## §3 — Adverse selection

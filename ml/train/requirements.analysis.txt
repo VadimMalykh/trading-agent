@@ -12,3 +12,10 @@
 numpy>=1.26.0,<3.0.0
 pandas>=2.1.0,<3.0.0
 pyarrow>=14.0.0
+
+# scipy is here for ONE thing: the Student-t quantile M3-4's estimator needs.
+# docs/M3_4_PROTOCOL.md §4 requires intervals on 22 day-clusters to use t with G-1 df
+# rather than the normal, because the cluster-robust normal approximation is not
+# trustworthy at G = 22. Hand-rolling an inverse-t is exactly the kind of numerical code
+# that is wrong in the tails, which is where this one is read.
+scipy>=1.11.0,<2.0.0

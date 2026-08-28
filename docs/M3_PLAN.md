@@ -1,10 +1,10 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** In progress — **M3-0a, M3-1, M3-2 and M3-3 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar and the learned policy did not beat it, so that rule stands as M3's policy. **The traded-universe question is closed** (T6, 2026-08-27): 8-vs-12 is not decidable on this evaluation period — the effect is within a couple of bps of zero in every framing and the data resolves ±37 bps at best — so the served 8-pair universe stands and no further work is queued on it (§0.6). **T5, the serving bug it uncovered, is fixed.** **M3-4a is committed** ([M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md), 2026-08-28) and it changed the shape of the question: the touch spread is **0.01 bps on BTC**, so the maker upside is a *fee* rebate worth ~4 bps round trip at most, while the **14-bps taker assumption looks far too pessimistic** and may be the larger error (§0.7). **Three items remain: M3-4 (run the study — next), M3-0b (price/funding side-table), and M3-5 (wire the rule to the executor).** Unblocked: R0 promoted 2026-08-26.
-**New to this document?** **§0.5** explains what we have in plain language — every term defined, the strategy in dollars, and a direct answer to "can it trade profitably yet?" (short version: the edge is real, but it is unproven at this size, half its economics rests on an untested fee assumption, and nothing is wired to the executor).
+**Status:** In progress — **M3-0a, M3-1, M3-2 and M3-3 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar and the learned policy did not beat it, so that rule stands as M3's policy. **The traded-universe question is closed** (T6, 2026-08-27): 8-vs-12 is not decidable on this evaluation period — the effect is within a couple of bps of zero in every framing and the data resolves ±37 bps at best — so the served 8-pair universe stands and no further work is queued on it (§0.6). **T5, the serving bug it uncovered, is fixed.** **M3-4a is committed** ([M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md), 2026-08-28) and it changed the shape of the question: the touch spread is **0.01 bps on BTC**, so the maker upside is a *fee* rebate worth ~4 bps round trip at most, while the **14-bps taker assumption looks far too pessimistic** and may be the larger error (§0.7). **M3-4 is now RUN** ([M3_4_RESULTS.md](./M3_4_RESULTS.md), 2026-08-28): crossing costs a measured **9.84 bps round trip, not 14** — every published M3 number was too pessimistic — while the maker arm's apparent +3.6 bps saving is a fee-rebate accounting gain that §3's adverse-selection panel contradicts in **16 of 16 cells**. **M3-5 should build a crossing executor and no limit-order machinery.** **Two items remain: M3-0b (price/funding side-table — its data is already exported) and M3-5 (wire the rule to the executor).** Every open and parked item across all wavefronts is indexed in [BACKLOG.md](./BACKLOG.md). Unblocked: R0 promoted 2026-08-26.
+**New to this document?** **§0.5** explains what we have in plain language — every term defined, the strategy in dollars, and a direct answer to "can it trade profitably yet?" (short version: the edge is real and **slightly better than published now that costs are measured**, but it is still unproven at this size, and **nothing is wired to the executor** — which is the only remaining blocker).
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
-**Related:** [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (**M3-3's own pre-registration — the fold structure and the 14 learned runs**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [M3_3_RESULTS.md](./M3_3_RESULTS.md) (**M3-3's full generated results — all 14 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
+**Related:** [BACKLOG.md](./BACKLOG.md) (**the index of every open and parked item — start here to see what exists**) · [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (**M3-3's own pre-registration — the fold structure and the 14 learned runs**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [M3_3_RESULTS.md](./M3_3_RESULTS.md) (**M3-3's full generated results — all 14 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
 
 *Written 2026-08-24, at the moment M2 froze. This document is the plan for the whole
 milestone; it holds only what is currently true and actionable. When a step's conclusions
@@ -20,11 +20,21 @@ done, what the next command is, and what to bring back. When a step closes, its 
 moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
 never left here contradicting a later result.*
 
-**Last updated: 2026-08-27 (M3-3 complete — the learned policy did not beat the rules
-baseline. Later the same day the traded universe looked like a policy lever worth +7.5 net
-bps/trade; the T-wave ran two more seeds and **it did not replicate**, and T6 then showed the
-comparison **cannot be resolved on this evaluation period at all**. M3 stays on 8 pairs and
-the universe question is **closed** — §0.6.)**
+**Last updated: 2026-08-28 — M3-4 is RUN and risk #2 is closed (§0.8).** Both execution
+assumptions were wrong, in opposite directions: **crossing costs 9.84 bps round trip, not 14**
+(every published M3 number was too pessimistic), and **the maker arm is not worth building**
+(the fee rebate is real, but the fills are adversely selected in 16 of 16 cells). That is the
+outcome §5.2 named as the one letting **M3-5 build a simple crossing executor and stop there**
+— so the remaining work got smaller, not larger. **M3-5 is now the last blocking item.**
+
+🔴 **One thing the run surfaced that nothing had asked:** the served checkpoint has produced
+**no gated signal since 2026-06-29**, because the market has been unusually calm since July and
+this strategy only fires in volatile conditions. Correct behaviour, but it means the M3-4 cost
+window contains **zero** of the policy's trades, and a forward paper test started now may idle
+for weeks. Both consequences are sized in §0.8.
+
+*Earlier: M3-3 complete — the learned policy did not beat the rules baseline; the traded
+universe question was closed as unresolvable on this evaluation period (§0.6).*
 
 👉 **New here, or want this without the jargon?** Read **§0.5** — it defines every term
 (what a "basis point" is, what "14 bps" means, maker vs taker), says what the strategy is
@@ -43,9 +53,9 @@ block assumes you have.
 | **T-wave + T6** — the 12-pair universe | 🟢 **Closed 2026-08-27, as unresolvable on this data.** The +7.5 did not replicate; T6's fair tests (trade-count-matched, cut-matched, cap-re-tuned) put the effect within a couple of bps of zero in every framing against a ±37 bps resolution limit, and what a count-matched test made look like a pair gain is the *confidence cut*. Served universe stays 8. [T6_RESULTS.md](./T6_RESULTS.md), §0.6 |
 | **T5** — `/predict_all` served untrained pairs | 🟢 **fixed 2026-08-27** — `serve.py` now intersects the DB whitelist with the checkpoint's own pair list and reports both on `/health` |
 | **M3-4a** — the maker study's pre-registration | ✅ **committed 2026-08-28 as [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md)**, before any fill number. It closes M3-4a's open cadence question and turns up **two data defects and one structural fact** that M3_PLAN had wrong — see §0.7 |
-| **M3-4** — the execution-cost study (§3.3) | 🔴 **the next M3 step, and now a two-sided one** — it measures what *crossing* costs as well as what *resting* gets. Ranked risk #2. **Scope: the 8 baseline pairs.** Pre-registered in [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) |
-| **M3-0b** — price/funding side-table | ⬜ not started — the only item that adds *new* evidence rather than re-slicing the same 253 days |
-| **M3-5** — wire the rule to the executor | ⬜ not started — the policy exists only offline; the live executor is an 86-line stub (§0.5.4) |
+| **M3-4** — the execution-cost study (§3.3) | ✅ **run 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), implemented as `ml/train/m3/execcost.py`, all nine §6 items published. **Q1: the 14 bps taker assumption is MIS-STATED — the real cost is 9.84.** **Q2: the maker arm is not worth building** (§0.8) |
+| **M3-0b** — price/funding side-table | ⬜ not started — the only item that adds *new* evidence rather than re-slicing the same 253 days. 🟢 **Its data is already on disk**: the M3-4 export pulled 5m candles and `funding_rates` to `ml/train/output/m3_4/` |
+| **M3-5** — wire the rule to the executor | ⬜ **now the last blocking item**, and M3-4 simplified it: build a **crossing** executor, no limit-order machinery (§0.8). The live executor is an 86-line stub (§0.5.4) |
 
 ### How to run anything in M3
 
@@ -62,11 +72,20 @@ and no GPU. `scripts/m3.sh` wraps it and builds it on first use:
 ./scripts/m3.sh -m m3 learn             # M3-3: fit and score the 14 learned runs (~3 min)
 ./scripts/m3.sh -m m3 universe          # T3: M3-2's winner on 8 pairs vs 12, same dumps
 ./scripts/m3.sh -m m3 universe-fair     # T6: the fair version — matched, re-tuned, with CIs
+./scripts/m3.sh -m m3 bookprep         # M3-4a: the data-quality audit (no fill number)
+./scripts/m3.sh -m m3 execcost         # M3-4: the execution-cost study itself
 ./scripts/m3.sh -m m3 policy --help     # score one policy spec
 ./scripts/m3.sh --shell                 # interactive
 ```
 
 `ml/train` is bind-mounted into the container, so host edits take effect with no rebuild.
+🔴 **The M3-4 book/tape export is ~2 hours of Postgres work and is easy to lose.**
+`\copy ... TO PROGRAM` writes inside the **postgres container**, so killing the script locally
+does NOT stop it and the finished file survives there. After an interruption, check the
+container (`docker compose exec postgres ls -lh /tmp/m3_export`), verify it with `gzip -t`, and
+re-run with `COLLECT=1 ONLY=<slice>` — never re-issue the COPY. `ONLY=` restricts the run to
+named slices so the cheap ones can be re-pulled without the ladder.
+
 The four prediction dumps live in `ml/train/output/eval_dumps/` (gitignored, ~125MB); if
 they are missing, re-fetch them:
 
@@ -403,12 +422,82 @@ either verdict may be applied, and — given a ~4 bps maker ceiling — says exp
 MDE exceeds it, the honest output is "22 days cannot resolve this" and the remedy is calendar
 time, not a bigger model. The ladder grows a day per day at no cost.
 
+### §0.8 — What M3-4 established (2026-08-28) — both assumptions were wrong, in opposite directions
+
+**Full results: [M3_4_RESULTS.md](./M3_4_RESULTS.md) — all nine items §6 of the protocol
+requires. Implementation: `ml/train/m3/execcost.py`, run with `./scripts/m3.sh -m m3 execcost`.**
+The short version, no statistics required:
+
+1. 🟢 **Crossing the spread costs 9.84 bps round trip, not 14.** Measured over 51,398
+   decisions on 23 day-clusters, walking the real 20-level ladder for a $10,000 order instead
+   of assuming 3 bps/side of slippage. The 95% interval is **[+9.75, +9.93]** and it excludes
+   14 by a wide margin, so the assumption is **MIS-STATED** in the pre-registered sense — and
+   it is wrong in the direction that made **every published M3 number too pessimistic**.
+   §1.6(b) predicted exactly this before the study ran.
+2. 🔴 **The maker arm is not worth building, and the reason is not the fee.** On the cost
+   arithmetic alone, resting saves +3.60 bps [+3.34, +3.86] against a ~5.6 bps ceiling — which
+   reads like a win. **§3's adverse-selection panel contradicts it in 16 of 16 (pair,
+   direction) cells.** The half-spread earned is 0.007–1.42 bps; the 60-second adverse drift
+   is 0.66–2.13 bps. A resting buy fills *because* the price came down through it, and it
+   keeps going. **The +3.60 is a fee-rebate accounting gain, not a trading gain.** §3 made
+   that panel a precondition of publishing a maker verdict precisely so this could not be
+   missed.
+3. 🟢 **This simplifies M3-5 rather than complicating it.** The conclusion is the one §5.2
+   named as "the outcome that lets M3-5 build a simple crossing executor and stop there" — a
+   useful result, not a failure. **No limit-order machinery, no queue modelling, no fill
+   logic.** That is days of work M3-5 does not have to do.
+4. 🔴 **The study was far better powered than the protocol feared, and the reason is
+   structural.** §4 worried that 22 day-clusters could not resolve a 4 bps effect. The
+   realized MDE is **0.13 bps for Q1 and 0.37 for Q2**. A *cost* is a nearly deterministic
+   function of the book — spread plus a constant fee — while a *P&L* is a return. Measuring a
+   cost on 23 days is not the same statistical problem as measuring an edge on 220, and the
+   stopping condition §5.3 pre-registered never came close to binding.
+5. 🔴 **The re-score re-orders the grid, and nothing may be promoted on it.** At the measured
+   cost `cov0.01_hold240_rq0.8_mcnone` shows a **+17.49** bps worst window against the
+   winner's **+2.43**. It remains **ineligible**: its thinnest window holds **23** trades
+   against P4's floor of 100, and a trade count does not move when the fee does. This is the
+   finding §5.4 says to report and pre-register, never to act on — *the hard regime filter
+   looks better at a truer cost and is still starved in window 3.* The winner's own worst
+   window improves **+0.25 → +2.43**, so it still clears the bar with more room.
+
+#### 🔴 The validity problem the run surfaced, which no protocol section anticipated
+
+**The M3-2 winner books ZERO trades inside the 22-day ladder window.** §2.4 had sized L3 at
+"~18 per pair". The winner's last entry anywhere is **2026-07-16**, three weeks before the
+ladder begins.
+
+The cause is not a bug, and it is the most operationally important thing in this section:
+**the model stops being confident when the market goes quiet, and the market has been quiet
+since July.** `btc_absret_1d` averages **0.0070** in August against 0.011–0.027 in every
+earlier month — the calmest stretch of the whole 253 days — and confidence dispersion collapses
+in step (sd **0.0127** in August against 0.023–0.047 earlier). No bar after 2026-07-16 reaches
+the top-2% cut on **any** of the three seeds, and
+
+> 🔴 **the served checkpoint (seed 2, gate 0.6311) has produced no gated signal since
+> 2026-06-29.**
+
+That is the policy correctly sitting out a regime it has no edge in — §1.8's whole finding is
+that the edge lives in volatile bars — but it has two consequences worth carrying forward:
+
+* **M3-4's cost is measured in the one regime the policy never trades in.** The study sizes
+  that gap rather than waving at it: cost by BTC-volatility quintile runs **9.77 → 10.09 bps**
+  from the calmest fifth to the most violent. The extrapolation is worth about **0.3 bps**
+  against a 4 bps gap to 14, so **the Q1 direction survives comfortably** — but treat 9.84 as
+  the optimistic end, not as the number to re-publish M3-2's economics with. (Note the maker
+  saving *shrinks* to 2.74 in the top quintile, which points the same way as the adverse
+  selection panel.)
+* **A live system that has been silent for two months is indistinguishable from a broken
+  one.** Before M3-5 goes anywhere near real money, `/health` should expose "bars seen since
+  last gated signal" so that silence is visibly *correct* rather than merely quiet.
+
+
 ### The plan from here, in order
 
-*Item 0 is closed and is kept only as the record of why; item 1 can invalidate published
-numbers; item 2 adds evidence item 1 cannot; item 3 is worthless until we know what a fill
-actually costs. Everything below is scoped to the 8 baseline pairs, which is what is served —
-and as of T6 that is a settled scope, not a placeholder.*
+*Updated 2026-08-28, after M3-4 ran. Item 0 is closed and kept only as the record of why;
+**item 1 is now DONE** and it did invalidate a published number, in the good direction; item 2
+adds evidence nothing else can; **item 3 is now the last blocking piece of M3, and M3-4 made it
+smaller.** Everything below is scoped to the 8 baseline pairs, which is what is served — and as
+of T6 that is a settled scope, not a placeholder.*
 
 #### 0. The 12-pair universe 🟢 **CLOSED 2026-08-27 — nothing further to run**
 
@@ -445,7 +534,16 @@ Two things this did close cleanly, both worth keeping:
 for a favourable result; it does **not** make an underpowered test informative. Before letting
 any Tier-1 clause close a direction, bootstrap its failure rate on **both** arms.
 
-#### 1. M3-4 — the execution-cost study 🔴 **THE NEXT M3 STEP** (§2 M3-4, ranked risk #2)
+#### 1. M3-4 — the execution-cost study 🟢 **DONE 2026-08-28** (§2 M3-4, was ranked risk #2)
+
+**Result: [M3_4_RESULTS.md](./M3_4_RESULTS.md); the reading is §0.8.** Crossing costs **9.84 bps
+round trip, not 14**; the maker arm is **not worth building** (adverse selection eats the fee
+rebate in 16 of 16 cells); **M3-5 should build a crossing executor and nothing else.** Risk #2
+is closed. The sub-section below is kept as the record of what the question was and why it was
+framed the way it was — it is history now, not a plan.
+
+<details><summary>The original framing, preserved</summary>
+
 
 **M3-4a is done** — [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) is committed, before any fill
 number, and `./scripts/m3.sh -m m3 bookprep` reproduces every fact it rests on. What remains is
@@ -522,7 +620,9 @@ Budget the disk first: `orderbook_levels` runs ~24 MB per pair per day (5.3 GB f
 rows currently held), so 12 pairs is ~8.6 GB/month against 55 GB free on `fluxtrader-1` — about
 six months of headroom, under four if the universe grows to twenty.
 
-#### 2. M3-0b — the price/funding side-table (§2 M3-0b)
+</details>
+
+#### 2. M3-0b — the price/funding side-table (§2 M3-0b) 🟡 **parked, and now cheap**
 
 The only remaining item that adds **degrees of freedom** rather than re-slicing the 253 days we
 have already spent. It unlocks barrier exits (the open C4b mismatch), the funding term — signed,
@@ -533,15 +633,29 @@ out of its vector for want of a price path.
 share one alignment rather than risking two. M3-4a's export overlaps this one, so pulling the 5m
 candles and `funding_rates` in the same pass costs almost nothing extra.
 
-#### 3. M3-5 — wire the rule to the executor (§2 M3-5)
+#### 3. M3-5 — wire the rule to the executor (§2 M3-5) 🔴 **NOW THE NEXT STEP**
 
 The M3-2 rule exists only inside `ml/train/m3/`. PLAN.md's M3 row has always listed "Elixir
 Executor + hard RiskManager always on" and "signal-only vs signal+policy A/B in simulation", and
 the last unchecked exit criterion (§6) is "the policy never bypasses hard `RiskManager` limits" —
 which cannot be checked while nothing calls the policy. See §2 M3-5 for what the stub is missing.
 
-**Sequence it last** because the fee study decides what the executor should even try to do
-(rest a maker quote versus cross), and building the order path twice is the expensive mistake.
+🟢 **M3-4 has now answered the question this was waiting on, and the answer makes it
+smaller.** The fee study decided what the executor should try to do: **cross**. There is no
+limit-order path to build, no queue model to implement, no fill simulation — §0.8 item 3. What
+M3-5 needs is the 4-hour hold timer, regime sizing, the measured per-pair cost, and the hard
+`RiskManager` path, against an executor that currently has none of them.
+
+**Two preconditions M3-4 surfaced, both cheap, both belonging here rather than to M3-4:**
+
+1. 🔴 **Verify the actual Binance USDⓈ-M VIP fee tier.** Every cost in M3-4 uses taker 4.0 /
+   maker 2.0 bps per side because that is what `metrics.py`'s 14 and 5 decompose to. It has
+   **never been checked against the account**. A wrong tier shifts every number by a constant.
+   One-line check; M3_4_PROTOCOL §2.5 calls it a precondition of M3-5.
+2. 🔴 **Expose signal liveness on `/health`.** The served checkpoint has emitted no gated
+   signal since **2026-06-29** (§0.8) — correctly, because the market has been calm — but a
+   silent system and a broken system look identical from outside. Report bars seen and time
+   since the last gated signal before anything trades.
 
 ### What M3-3 says NOT to do
 
@@ -667,22 +781,41 @@ this is the result of three separately-trained copies of the model pooled togeth
    nowhere near enough to prove a 0.15% edge against a 0.14% cost. This was written down in
    advance (M3_PROTOCOL §2) as something this dataset *cannot* do, and it turned out exactly
    as predicted. **More analysis of the same 253 days will not fix it — only more time will.**
-2. 🔴 **Half the economics rests on an untested assumption.** Every number roughly doubles at
-   maker fees (+15 → +27). We have never once checked whether a resting limit order on these
-   pairs actually gets filled at that price, or how often the fills we do get are the ones we
-   would rather not have had. That is the next piece of work (§0.5.5).
+2. 🟢 **This one is now MEASURED, and it moved in our favour** (M3-4, 2026-08-28 — §0.8).
+   It used to read "half the economics rests on an untested assumption". Both assumptions were
+   tested and both were wrong. **Crossing costs 9.84 bps round trip, not 14** — so the edge
+   after costs is nearer **+19 bps than +15**. And resting limit orders turn out **not** to be
+   worth it: the fills you get are the ones where price is running through you, and the
+   adverse move is larger than the fee rebate in every pair and direction tested. The
+   remaining caveat is that the cost was measured in the calmest month of the period, so treat
+   9.84 as the optimistic end (§0.8).
 3. 🔴 **Nothing is connected.** The policy exists only inside the offline backtester in
    `ml/train/m3/`. The live executor (`apps/fluxtrader/lib/fluxtrader/trading/executor.ex`)
    is an 86-line stub: it logs a mock position and has **no fees, no limit orders, no fill
    logic, no 4-hour hold timer, and no position sizing**. Even in paper mode, the system
    cannot currently execute the rule we just spent the milestone finding.
 
-**The honest verdict: we have a credible, well-tested candidate strategy and no way to run
-it.** The realistic next milestone is not "make the edge bigger" — it is "find out what the
-fills really cost, then wire the rule to the executor and let it paper-trade forward long
-enough to accumulate the independent days the statistics need."
+**The honest verdict: we have a credible, well-tested candidate strategy, slightly better
+economics than we thought, and still no way to run it.** We now know what the fills cost, so
+the remaining sentence of that plan is the whole of it: **wire the rule to a crossing executor
+and let it paper-trade forward long enough to accumulate the independent days the statistics
+need.** Nothing else on the list buys as much.
 
-#### 0.5.5 The one thing that could still change the picture — and it is not what we thought
+⚠️ **And a fact that changes what "paper-trade forward" will look like:** the served model has
+emitted **no gated signal since 2026-06-29**, because the market has been unusually calm and
+this strategy only fires in volatile conditions (§0.8). A forward test started today may sit
+idle for weeks. That is the strategy working as designed, but it means **the calendar cost of
+accumulating independent days is longer than the trade rate suggests** — 2.3 trades/day is an
+average over a period that included volatile months.
+
+#### 0.5.5 🟢 ANSWERED 2026-08-28 — what the fills actually cost
+
+**This subsection was the open question. M3-4 closed it; the result is §0.8 and the full
+workings are [M3_4_RESULTS.md](./M3_4_RESULTS.md).** The answer, in one line: **crossing is
+much cheaper than we assumed (9.84 bps, not 14) and resting is not worth it (the fills you get
+are the bad ones).** The reasoning below was written *before* the measurement and predicted
+both halves correctly, so it is kept as the argument — but read §0.8 for what was actually
+found.
 
 Until 2026-08-28 the answer here was "whether **maker fills are real**": rest limit orders,
 get filled at 5 bps instead of 14, and the strategy roughly doubles. **That hope is now
@@ -715,11 +848,17 @@ was computed against a cost roughly 6 bps too high — and it gets there by cros
 like a normal order, with no limit-order machinery to build. That is the outcome that most
 simplifies M3-5.
 
-Both numbers are now pre-registered as things to measure, in
-[M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md). **The honest caveat: the order-book history only
-starts 2026-08-05, so there are 22 days to measure on, and the protocol says up front that if
-22 days cannot resolve the question, the answer is "wait" — not "guess".** See §0.7 and
-**M3-4** in §2, which is the next step.
+🟢 **Both were measured, and the prediction above held.** Crossing a $10,000 order costs
+**9.84 bps round trip** — the assumed 3 bps/side of slippage was indeed almost entirely
+fictional on the majors. Resting saves 3.60 bps on the fee arithmetic, but the fills are
+adversely selected in **16 of 16 pair/direction cells**, so that saving is an accounting
+artifact rather than money.
+
+**The 22-day worry turned out not to bind, for a structural reason worth remembering:** a
+*cost* is nearly a deterministic function of the order book, while an *edge* is a return. The
+realized minimum detectable effect was **0.13 bps**, not the several bps §4 feared. Measuring
+what trading costs on 23 days is simply not the same statistical problem as measuring whether
+a strategy makes money on 220.
 
 ---
 

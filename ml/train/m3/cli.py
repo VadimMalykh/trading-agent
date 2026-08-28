@@ -7,6 +7,7 @@
     ./scripts/m3.sh -m m3 universe            # T3: 8 pairs vs 12, on the same dumps
     ./scripts/m3.sh -m m3 universe-fair       # T6: the fair version of that comparison
     ./scripts/m3.sh -m m3 bookprep            # M3-4a data-quality facts (no fill number)
+    ./scripts/m3.sh -m m3 execcost            # M3-4: the execution-cost study itself
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -17,8 +18,8 @@ import os
 import numpy as np
 import pandas as pd
 
-from . import (backtest, bookprep, dumps, features, learn, metrics, regime, search,
-               universe, validate)
+from . import (backtest, bookprep, dumps, execcost, features, learn, metrics, regime,
+               search, universe, validate)
 
 
 def cmd_validate(args) -> int:
@@ -881,6 +882,33 @@ def cmd_bookprep(args) -> int:
     return bookprep.audit()
 
 
+def cmd_execcost(args) -> int:
+    """M3-4 — run the execution-cost study docs/M3_4_PROTOCOL.md pre-registers.
+
+    The protocol is committed; this command only executes it. Two inputs are built here
+    rather than inside `execcost` so the module stays free of the grid's definition:
+
+      * the M3-2 winner's own trade ledger, for L3 and for §5.2 clause 2's re-score;
+      * the 40 pre-registered configurations, RE-SCORED at the measured cost.
+
+    🔴 Re-scoring is not re-searching (§5.4). `primary_grid()` is the same list M3-2 ran;
+    nothing is added, dropped or re-tuned, and if the measured cost changes which config
+    ranks first that is a finding to report, never a promotion.
+    """
+    ds = dumps.load_baseline(pairs=dumps.BASE8)
+    regimes = {d.seed: regime.build(d.df) for d in ds}
+
+    winner = backtest.run(ds, backtest.PolicySpec(label="M3-2 winner", **WINNER_SPEC),
+                          regimes).trades
+
+    grid = []
+    if not args.no_grid:
+        for spec in primary_grid():
+            grid.append((spec.label or str(spec), backtest.run(ds, spec, regimes).trades))
+
+    return execcost.run_study(winner, grid, levels=args.levels)
+
+
 def cmd_policy(args) -> int:
     ds = dumps.load_baseline(pairs=dumps.BASE8)
     spec = backtest.PolicySpec(
@@ -959,6 +987,15 @@ def main() -> int:
     sub.add_parser("bookprep", help="M3-4a pre-registration facts: ladder cadence, book "
                    "staleness, tape censoring and coverage, touch spread and depth. "
                    "No fill number.").set_defaults(fn=cmd_bookprep)
+
+    e = sub.add_parser("execcost", help="M3-4: run the pre-registered execution-cost "
+                       "study — measured taker slippage, maker fill rates, adverse "
+                       "selection, and the re-score of the M3-2 grid at the measured cost")
+    e.add_argument("--levels", type=int, default=20,
+                   help="ladder depth to walk; must not exceed the exported depth")
+    e.add_argument("--no-grid", action="store_true",
+                   help="re-score only the winner, not all 40 configs (faster smoke run)")
+    e.set_defaults(fn=cmd_execcost)
 
     p = sub.add_parser("policy", help="score one policy spec")
     p.add_argument("--coverage", type=float, default=0.05)

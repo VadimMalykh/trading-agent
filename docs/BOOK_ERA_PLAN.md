@@ -1,7 +1,21 @@
 # Book-era plan — the B-wave
 
-**Status:** B4 implemented 2026-08-24 (awaiting deploy to the always-on VM); B0–B3 not started.
-Runs **in parallel with M3**, blocks nothing, and is blocked by nothing.
+**Status:** 🟡 **PARKED, NOT DROPPED** — B4 implemented 2026-08-24 (⚠️ still awaiting deploy to
+the always-on VM); B0–B3 not started. Runs **in parallel with M3**, blocks nothing, and is
+blocked by nothing. Indexed in [BACKLOG.md](./BACKLOG.md), which carries the revival trigger
+for each step.
+
+🔴 **B4 is the time-sensitive one and it is not deployed.** Until the collector change is on
+`fluxtrader-1`, nothing has changed about what we collect — and collection gaps are
+**unrecoverable**: order-book history begins the day the collector is pointed at a pair and
+never backfills. Everything else in this wave can wait for M3's attention; this cannot.
+
+🟢 **Two things that landed on 2026-08-28 make B0 much cheaper than this plan assumed.** The
+M3-4 export (`scripts/gcp_m3_export.sh`) already pulled, to `ml/train/output/m3_4/`, exactly
+the slices B0 needs: the 20-level ladder, `orderbook_snapshots`, `market_trades`, 5m candles
+and `funding_rates`, over 2026-08-05..28 for all 12 pairs. **B0 is now an alignment job on
+data already on disk, not an export job** — and M3-0b shares that same pull, which is what
+this plan meant by "one alignment, two consumers".
 **GPU required:** **No, at any step.** B0–B2 are laptop `pandas`. B3 is LightGBM on CPU, on its own
 throwaway VM (`gcp_gbt.sh`), which is explicitly designed to run concurrently with anything else.
 **Keys required:** No.

@@ -14,6 +14,20 @@ nothing is waiting on you here.** The served model is seed 2 on **8 pairs**
 (`m2_multi_20260819T142759Z_a186182b.pt`, gate 0.6311). All remaining work is in
 `docs/M3_PLAN.md`.
 
+🔴 **One M2-relevant fact discovered on 2026-08-28, and it is not a defect.** The served
+checkpoint has produced **no gated signal since 2026-06-29**. Monthly maximum confidence falls
+from 0.66–0.80 (Dec–Jun) to 0.60–0.68 in July and **0.547–0.569 in August**, on all three
+baseline seeds *and* on O8 independently — so it is a property of the market, not of a model.
+It tracks volatility exactly: `btc_absret_1d` averages **0.0070** in August against 0.011–0.027
+in every earlier month, and confidence *dispersion* collapses with it (sd 0.0127 vs
+0.023–0.047). **The model is confident when the market moves, and the market has been quiet.**
+
+That is §1.8's finding restated — the edge lives in volatile bars — and it means the model is
+correctly sitting out. It is recorded here because (a) a two-month-silent live system is
+indistinguishable from a broken one without a liveness check, and (b) any future eval whose
+validation window lands in this calm stretch will look worse than the model is, for reasons
+that have nothing to do with the change under test. Workings: `docs/M3_PLAN.md` §0.8.
+
 🟢 **The traded universe: closed 2026-08-27, as unresolvable on this data.** After three
 paired comparisons (§1.10) the 8-vs-12 effect sits within a couple of bps of zero in every
 framing, and the decisive fact is a power measurement rather than a point estimate: the
@@ -30,6 +44,8 @@ shared-days-only** estimator sitting next to a **trade-weighted** table. On the 
 matches the published per-trade statistic the interval is [−12.0, +11.5], and **+7.5 is inside
 it**. The T-wave did not refute the +7.5; it failed to replicate it, which is a weaker and
 different thing. §1.10 has been amended.
+
+**Every open and parked item across all wavefronts is indexed in [`docs/BACKLOG.md`](./BACKLOG.md)** — read that first if you want to know what exists without reading five plan documents.
 
 **All research work is in M3, planned and tracked in `docs/M3_PLAN.md`** — start at that
 file's §0.0 status block. This document remains the reference for what M2 measured and for
