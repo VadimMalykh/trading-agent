@@ -1,7 +1,9 @@
 # Book-era plan — the B-wave
 
-**Status:** 🟡 **PARKED, NOT DROPPED** — ✅ **B4 is COMPLETE and deployed** (2026-08-28);
-B0–B3 not started. Runs **in parallel with M3**, blocks nothing, and is blocked by nothing.
+**Status:** 🟡 **PARKED, NOT DROPPED** — ✅ **B4 complete and deployed** (2026-08-28) and
+✅ **B0 complete** (2026-08-29, built as an extension of M3-0b exactly as this plan asked).
+**B1 and B2 are therefore UNBLOCKED**; B3 still waits on B1. Runs **in parallel with M3**,
+blocks nothing, and is blocked by nothing.
 Indexed in [BACKLOG.md](./BACKLOG.md), which carries the revival trigger for each step.
 
 🟢 **B4 is done, and B4.3 answered `DEPTH_OK` — the headline result of this wave so far.**
@@ -237,7 +239,32 @@ what to bring back.
 **B4 was independent of the rest and is complete** (see below): deployed, all three acceptance
 checks passed, and B4.3 returned `DEPTH_OK`. Everything else can queue behind M3's attention.
 
-### B0 — the book-era side-table
+### B0 — ✅ DONE (2026-08-29). The book-era side-table exists and passed its acceptance test.
+
+**Built as an extension of M3-0b, in one alignment, exactly as this section asked** — the code
+is `ml/train/m3/sidetable.py` and the command is `./scripts/m3.sh -m m3 bookera`. Full record:
+[M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §6.
+
+* `book_era_5m.parquet` — 79,488 rows x 12 pairs, 2026-08-05..27
+* `book_era_1m.parquet` — 423,130 rows x 12 pairs, 2026-08-05..29
+
+🔴 **The mandatory acceptance test passed** on all four eval dumps: `fwd_ret_240` matches each
+dump's own `fwd_ret` on a `(pair, ts)` join for every overlapping row (29,440 / 31,352 / 32,544
+/ 55,524), exactly rather than to a tolerance — the dumps store `fwd_ret` as float32, so exact
+equality after a float32 round-trip is the sharper test. It is run *separately* from M3-0b's
+own acceptance test because the two tables are built from different exports.
+
+**Bring-back, as this section required:** row counts per pair per interval and the non-stale
+fraction per feature are printed by the command. Book freshness is **0.9994 on the eight main
+pairs and 0.6028 on ADA/AVAX/LINK/XRP** at 5m — the expected reading, and a useful check: those
+four joined the collector on 2026-08-14, which is 14 of the window's 23 days (14/23 = 0.609).
+
+⚠️ **Nine of the eleven scalars are built. `oi` and `oi_chg` are missing** because
+`open_interest` is not one of the tables `scripts/gcp_m3_export.sh` pulls. That is a one-line
+export change, **not** an alignment change, and it is filed in [BACKLOG.md](./BACKLOG.md). B1
+and B2 can proceed on nine.
+
+<details><summary>The original B0 specification, kept for reference</summary>
 
 **Build this as an extension of M3-0b, not as a separate artifact.** M3-0b already calls for
 exporting 5m candles + `funding_rates` for the eight served pairs to local parquet, joined on
@@ -269,7 +296,11 @@ does not match, nothing downstream is evidence.
 **Bring back:** row counts per pair per interval, first/last book timestamp per pair, the fraction
 of rows where each feature is non-stale, and the acceptance-test diff.
 
+</details>
+
 ### B1 — the economic information check (replaces "re-run the audit")
+
+🟢 **UNBLOCKED 2026-08-29** — B0 is done and its acceptance test passed.
 
 Laptop, `pandas` only, on `book_era_5m.parquet` and `book_era_1m.parquet`. Three fixes to §1.4's
 three defects, and one new measurement:

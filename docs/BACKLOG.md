@@ -31,7 +31,7 @@ you defer something, write down what would un-defer it.
 | **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** The clock has started |
 | **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔵 **RUNNING. Restarted 2026-08-29** on the twelve-pair universe (see the row below). It needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). ⚠️ `warm: false` until the rank window holds 2,016 bars — that is **~14 hours at twelve pairs, NOT seven days**; the constant is a bar count pooled across served pairs, and every document said "seven days" until 2026-08-29. It may then idle for weeks (see the volatility note below). Both are the strategy working |
 | **Widen the served universe to 12** | [M3_PLAN.md](./M3_PLAN.md) §0.6 | ✅ **DONE 2026-08-29.** The four extras now carry their own measured crossing cost, so nothing served falls back to a pooled number. See "The twelve-pair widening" below |
-| **M3-0b** — price/funding side-table | [M3_PLAN.md](./M3_PLAN.md) §2 | 🔴 **The only remaining M3 build item**, and nothing blocks it: the data is already exported (`candles_5m.csv.gz`, `funding.csv.gz`, 2026-08-28). It is the only item that adds *new degrees of freedom* rather than re-slicing the same 253 days, and M3-5 added a fourth consumer — the `auto` path's stop/target brake is an unmeasured deviation from a fixed-hold policy and M3-0b's price path is what would price it. Build it on the existing `m3_4/` export, sharing one alignment with **B0** |
+| **M3-0b** — price/funding side-table | [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) | ✅ **DONE 2026-08-29. This was the last M3 build item — M3 now has none.** Acceptance passes on all four dumps (2,655,988 bar-comparisons, every one exact), and it carries **B0** in the same alignment, which closes B0 and unblocks B1. See "What M3-0b found" below — one of its three results is a live setting that needs a decision |
 
 **M3-4 completed 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), read via
 [M3_PLAN.md](./M3_PLAN.md) §0.8. Risk #2 closed.
@@ -147,6 +147,36 @@ fallback is not narrower than the served set. 74 tests green.
 
 ---
 
+## What M3-0b found, 2026-08-29 — and the one decision it hands over
+
+**[M3_0B_RESULTS.md](./M3_0B_RESULTS.md)** is the record. Three results, in descending order of
+how much they matter:
+
+1. 🔴 **The live 2% stop / 4% target costs ~10.5 gross bps per trade** — +33.76 → +23.24, on a
+   policy netting ~20. `RiskManager` attaches it to every `auto` entry
+   (`stop_loss_pct: 0.02`, `take_profit_ratio: 2.0`); the validated policy exits at a fixed
+   four hours. The stop fires three times as often as the target (34.1% vs 11.2%). **Filed as
+   an open decision below** — it is catastrophe insurance whose premium is now known, not a
+   defect, and turning it off is a live-trading choice rather than an offline correction.
+2. 🟢 **Funding is a rounding error: +0.14 bps/trade**, moving the headline +20.59 → +20.45. It
+   was an unquantified term for the whole project. ⚠️ **HYPEUSDT settles every 4 hours, not 8**
+   — the schedule is now read per pair from the data, never assumed; a hardcoded 8h calendar
+   would have halved it on a pair the policy trades.
+3. 🟢 **C4b is answered.** Every barrier setting tried loses to the fixed 4h hold (best +9.2
+   against +19.8 net bps), improving monotonically as the band widens back toward it. The
+   label/booking mismatch is real and points *away* from barriers, so accepting it costs
+   nothing. ⚠️ This is a slice, not a search — six (stop, target) pairs at one horizon on one
+   entry rule. Trailing stops, vol-scaled bands and regime-conditional barriers stay untested,
+   and stay that way until someone writes a pre-registration.
+
+⚠️ **Two corrections to what the plans asserted**, both caught by the acceptance test rather
+than by review: M3-0b's data was **not** "already on disk" (the M3-4 export is the 23-day book
+era, and 96% of the policy's trades fall outside it — the price path is now its own export over
+2025-11-15..2026-08-30), and funding is **not** "a real term in the P&L, not a rounding error"
+at a 4h hold. Both assertions were reasonable; measuring is what settled them.
+
+---
+
 ## 🔴 Open — blockers on trading anything but paper
 
 *New 2026-08-28, from M3-5. Neither blocks the forward paper test; both block real money.*
@@ -160,10 +190,12 @@ fallback is not narrower than the served set. 74 tests green.
 
 ## 🟡 Parked — M3
 
-*M3-0b moved to Active above: nothing blocks it any more.*
+*M3-0b is done (see above). Its results opened one decision and one chore, both below.*
 
 | item | what | gated on | revival trigger |
 |---|---|---|---|
+| 🔴 **Decide what to do about the live stop/target** | The deployed 2%/4% brake costs **10.5 gross bps/trade**, about a third of the edge ([M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §4). The options are: keep it and accept the premium, widen it, or make it regime-conditional. **Not a bug — it bounds single-position catastrophe loss, which a fixed-hold backtest has never had to price** | a decision, not work | 🔴 **Two things gate it, and they pull opposite ways.** Changing it changes the served rule, and the standing rule is not to do that while the forward test accumulates trades — **but the test has not yet booked a trade**, so the window is open now and closes at the first fill. Whoever decides should also note that the offline measurement is on a fixed 4h hold with no catastrophe in the sample; it prices the premium, not the insurance |
+| **Export `open_interest`** | B0 builds **nine of its eleven** scalars; `oi` and `oi_chg` are missing because `open_interest` is not one of the tables `scripts/gcp_m3_export.sh` pulls | nothing | A one-line export change plus a re-run of `m3 bookera` — **not** an alignment change. Do it if B1 or B2 wants OI; they can proceed on nine without it |
 | **Re-pre-register the served coverage** | The universe went 8 → 12 on 2026-08-29 at an unchanged cov 0.02, which takes **more** trades (3.05/day vs 2.02), not better ones. T6's count-matched cut on twelve is **0.01288**, and on the 8-pair arm tightening the cut alone was worth **+12.72 bps** while widening the universe at a fixed cut was worth **−2.51**. So the cut, not the pairs, is where T6's signal lived | nothing technical | 🔴 **Blocked by protocol, not by work.** M3_PROTOCOL §0 forbids re-picking a searched dimension after seeing results; this needs a fresh pre-registration on the population it will be served from, written before anything is scored. Revive it when someone is prepared to write that document first — **not** by re-scoring the grid and picking the winner |
 
 ⚠️ **A planning consequence worth keeping in view:** 2.3 trades/day is an average over a period
@@ -185,9 +217,9 @@ effect already lives. Owner: **[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md)**.
 | item | what | gated on | note |
 |---|---|---|---|
 | ~~**B4**~~ | ✅ **DONE — deployed and verified 2026-08-28.** `event_time` filling 100%; `long_short_ratios` holding 116,073 rows over 12 symbols spanning ≈33 days (the one-shot ~30d backfill worked) | — | **B4.3 answered `DEPTH_OK`** — 586 `depthUpdate` frames in 60s from the VM's egress. See the new row below: this is a result, not just a closed chore |
-| **B0** | Book-era side-table → parquet | nothing | **Build as an extension of M3-0b, not separately** — one export, one alignment, two consumers. Has a mandatory acceptance test: `fwd_ret_240` must match the eval dump's `fwd_ret` on a `(pair, ts)` join, or nothing downstream is evidence |
-| **B1** | Economic information check (the fixed audit) | B0 | Replaces re-running the 2026-08-04 audit unchanged. Reports **basis points, not Spearman rho** — the earlier audit escalated on rho and the run it triggered was inconclusive |
-| **B2** | Book features as **M3 regime observables** | B0, M3-0a ✅ | 🔴 **The highest-expected-value item in the wave.** `spread_bps` was the earlier audit's strongest finding and was classified VOL-PROXY — useless to M2, which emits direction, but potentially very useful to M3, whose 4× effect *is* a volatility regime switch. A book-derived observable would be **contemporaneous** rather than trailing like `btc_absret_1d` |
+| ~~**B0**~~ | ✅ **DONE 2026-08-29** — built as an extension of M3-0b exactly as planned, one export and one alignment. `book_era_5m.parquet` (79,488 rows x 12 pairs) and `book_era_1m.parquet` (423,130 rows), by `./scripts/m3.sh -m m3 bookera`. **The mandatory acceptance test passes on all four dumps**, every overlapping row exact. ⚠️ Nine of eleven scalars — `oi`/`oi_chg` need an export change (filed above) | — | **B1 and B2 are unblocked** |
+| **B1** | Economic information check (the fixed audit) | ~~B0~~ ✅ **nothing** | 🟢 **Unblocked 2026-08-29.** Replaces re-running the 2026-08-04 audit unchanged. Reports **basis points, not Spearman rho** — the earlier audit escalated on rho and the run it triggered was inconclusive |
+| **B2** | Book features as **M3 regime observables** | ~~B0~~ ✅, M3-0a ✅ — **unblocked** | 🔴 **The highest-expected-value item in the wave.** `spread_bps` was the earlier audit's strongest finding and was classified VOL-PROXY — useless to M2, which emits direction, but potentially very useful to M3, whose 4× effect *is* a volatility regime switch. A book-derived observable would be **contemporaneous** rather than trailing like `btc_absret_1d` |
 | **B3** | One book-era GBT, pre-registered | **B1 passing §4.1** | One CPU run on its own throwaway VM, not a search |
 
 ### 🟢 New, from B4.3 — a WS depth consumer is now a real option

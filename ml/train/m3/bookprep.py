@@ -53,18 +53,23 @@ TRADE_LIMIT = 200
 ERA_SPLIT = pd.Timestamp("2026-08-14", tz="UTC")
 
 
-def _csv(name: str, parse: list[str]) -> pd.DataFrame:
+def _csv(name: str, parse: list[str], export_dir: str | None = None) -> pd.DataFrame:
     """Read one exported slice, caching a parquet next to it.
 
     The CSVs are ~300 MB gzipped and re-parsing them on every invocation dominates the
     runtime of everything downstream, so the first read writes a parquet and later reads
     use it. Deleting the parquet is the way to force a re-parse after a fresh export — and
     it is REQUIRED after one, since the cache is keyed only on the filename.
+
+    `export_dir` selects which export to read. It exists because M3-0b's price slice spans
+    the whole validation window while M3-4's book slices span only the book era, so the two
+    live in different directories (see m3/sidetable.py); it defaults to M3-4's.
     """
-    pq = os.path.join(EXPORT_DIR, f"{name}.parquet")
+    base = export_dir or EXPORT_DIR
+    pq = os.path.join(base, f"{name}.parquet")
     if os.path.exists(pq):
         return pd.read_parquet(pq)
-    csv = os.path.join(EXPORT_DIR, f"{name}.csv.gz")
+    csv = os.path.join(base, f"{name}.csv.gz")
     if not os.path.exists(csv):
         raise FileNotFoundError(
             f"{csv} not found — run ./scripts/gcp_m3_export.sh first (it pulls from the VM)"

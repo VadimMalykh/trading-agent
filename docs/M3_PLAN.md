@@ -1,11 +1,11 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** In progress — **M3-0a, M3-1, M3-2, M3-3, M3-4 and M3-5 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar, the learned policy did not beat it, so that rule stands as M3's policy — and as of 2026-08-28 **it is wired to the executor, deployed to `fluxtrader-1`, and paper-trading — the forward test started 2026-08-28** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md); deploying it exposed three defects invisible on the local stack, all fixed — see §3.5 and [BACKLOG.md](./BACKLOG.md)). **The traded-universe question is closed** (T6, 2026-08-27): 8-vs-12 is not decidable on this evaluation period — the effect is within a couple of bps of zero in every framing and the data resolves ±37 bps at best. ⚠️ That is a verdict of *undecidable*, **not** a verdict against twelve, and it was being misread as one: **the served universe is 12 as of 2026-08-29**, once M3-4's already-measured per-pair costs for XRP/LINK/AVAX/ADA were promoted so nothing served falls back to a pooled number ([BACKLOG.md](./BACKLOG.md), "The twelve-pair widening"). **T5 is fixed.** **M3-4 measured execution costs** ([M3_4_RESULTS.md](./M3_4_RESULTS.md), 2026-08-28): crossing costs **9.84 bps round trip, not 14** — every published M3 number was too pessimistic — while the maker arm's apparent +3.6 bps saving is a fee-rebate accounting gain that §3's adverse-selection panel contradicts in **16 of 16 cells**, so M3-5 built a crossing executor and no limit-order machinery. **One item remains: M3-0b** (price/funding side-table — its data is already exported). **The served universe widened to 12 on 2026-08-29**, deliberately in the window before the forward test booked its first trade, because changing the universe changes the coverage rank and therefore the rule. **Two preconditions M3-5 could not close are open and filed:** the Binance fee tier is still unverified against the account, and the `auto` order path is unsigned so nothing beyond paper can trade. Every open and parked item across all wavefronts is indexed in [BACKLOG.md](./BACKLOG.md). Unblocked: R0 promoted 2026-08-26.
+**Status:** **Every M3 build item is complete — M3-0a, M3-1, M3-2, M3-3, M3-4, M3-5 and M3-0b** (§0.0). What remains is calendar time on the forward paper test, not work. A rules baseline clears the pre-registered Tier-1 bar, the learned policy did not beat it, so that rule stands as M3's policy — and as of 2026-08-28 **it is wired to the executor, deployed to `fluxtrader-1`, and paper-trading — the forward test started 2026-08-28** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md); deploying it exposed three defects invisible on the local stack, all fixed — see §3.5 and [BACKLOG.md](./BACKLOG.md)). **The traded-universe question is closed** (T6, 2026-08-27): 8-vs-12 is not decidable on this evaluation period — the effect is within a couple of bps of zero in every framing and the data resolves ±37 bps at best. ⚠️ That is a verdict of *undecidable*, **not** a verdict against twelve, and it was being misread as one: **the served universe is 12 as of 2026-08-29**, once M3-4's already-measured per-pair costs for XRP/LINK/AVAX/ADA were promoted so nothing served falls back to a pooled number ([BACKLOG.md](./BACKLOG.md), "The twelve-pair widening"). **T5 is fixed.** **M3-4 measured execution costs** ([M3_4_RESULTS.md](./M3_4_RESULTS.md), 2026-08-28): crossing costs **9.84 bps round trip, not 14** — every published M3 number was too pessimistic — while the maker arm's apparent +3.6 bps saving is a fee-rebate accounting gain that §3's adverse-selection panel contradicts in **16 of 16 cells**, so M3-5 built a crossing executor and no limit-order machinery. **M3-0b is DONE (2026-08-29) and M3 now has NO build items left** ([M3_0B_RESULTS.md](./M3_0B_RESULTS.md)): the price/funding side-table passes its acceptance test on all four dumps and carries BOOK_ERA_PLAN B0 in the same alignment. 🔴 It found that **the live 2%/4% brake costs ~10.5 gross bps/trade, about a third of the edge**; funding is a rounding error (+0.14) and **C4b is answered — barrier exits all lose to the fixed 4h hold**. **The served universe widened to 12 on 2026-08-29**, deliberately in the window before the forward test booked its first trade, because changing the universe changes the coverage rank and therefore the rule. **Two preconditions M3-5 could not close are open and filed:** the Binance fee tier is still unverified against the account, and the `auto` order path is unsigned so nothing beyond paper can trade. Every open and parked item across all wavefronts is indexed in [BACKLOG.md](./BACKLOG.md). Unblocked: R0 promoted 2026-08-26.
 
 **New to this document?** **§0.5** explains what we have in plain language — every term defined, the strategy in dollars, and a direct answer to "can it trade profitably yet?" (short version: the edge is real and **slightly better than published now that costs are measured**, but it is still unproven at this size — and as of 2026-08-28 it is **wired up to paper-trade forward** — the only thing that can ever change that — though not yet deployed to the always-on VM).
 **GPU required:** **No — not for any step in this document.** See §0.3.
 **Keys required:** No.
-**Related:** [BACKLOG.md](./BACKLOG.md) (**the index of every open and parked item — start here to see what exists**) · [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) (**what actually runs live, how to read `/api/health`, and every place the live rule differs from the backtested one**) · [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (**M3-3's own pre-registration — the fold structure and the 14 learned runs**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [M3_3_RESULTS.md](./M3_3_RESULTS.md) (**M3-3's full generated results — all 14 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
+**Related:** [BACKLOG.md](./BACKLOG.md) (**the index of every open and parked item — start here to see what exists**) · [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) (**M3-0b's results — the side-table, the funding term, and the price of the live brake**) · [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) (**what actually runs live, how to read `/api/health`, and every place the live rule differs from the backtested one**) · [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (**M3-3's own pre-registration — the fold structure and the 14 learned runs**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [M3_3_RESULTS.md](./M3_3_RESULTS.md) (**M3-3's full generated results — all 14 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
 
 *Written 2026-08-24, at the moment M2 froze. This document is the plan for the whole
 milestone; it holds only what is currently true and actionable. When a step's conclusions
@@ -21,36 +21,43 @@ done, what the next command is, and what to bring back. When a step closes, its 
 moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
 never left here contradicting a later result.*
 
-**Last updated: 2026-08-28 — M3-5 is BUILT: the policy is connected and paper-trading. ⚠️ Not yet deployed to `fluxtrader-1`.**
-[M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) is the record of what runs. The M3-2 SIZED rule
-now exists once, in `Trading.Policy`; `PolicyEngine` ranks bars on a trailing 14-day window,
-sizes on the live BTC-volatility quintiles, holds four hours and closes; every trade is charged
-M3-4's **measured per-pair** crossing cost; and every policy order passes through
-`RiskManager`'s hard limits, which closes §6's last exit criterion. A **signal-only control
-arm** runs beside it on the same bars, which is PLAN.md's M3 A/B. `GET /api/health` reports
-signal liveness, the live coverage cut, named skip reasons and both arms.
+**Last updated: 2026-08-29 — M3-0b is DONE, and with it M3 HAS NO BUILD ITEMS LEFT.**
+[M3_0B_RESULTS.md](./M3_0B_RESULTS.md) is the record. The price/funding side-table exists
+(`ml/train/m3/sidetable.py`), its acceptance test passes on all four eval dumps — 2,655,988
+bar-comparisons, every one exact after a float32 round-trip — and it carries
+[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md)'s **B0** in the same alignment, which closes B0 and
+unblocks B1. Everything M3 planned to build is built. **From here the milestone advances on
+calendar time, not on work**, because the binding constraint is independent trading days.
 
-🔴 **It is built and verified, but NOT yet deployed, so the clock is not yet running.** The
-whole path was exercised end to end on the local stack and the suite is 65 tests green — but the
-local Postgres is a throwaway dev DB, and a forward test that accumulates independent trading
-days has to run on the always-on VM. **Deploying to `fluxtrader-1` is the next action**, and
-B4's collector fixes are awaiting the same deploy ([BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §2 B4)
-— send them together rather than restarting the collector twice.
+🔴 **M3-0b's headline is a live setting, not a measurement: the deployed 2% stop / 4% target
+costs ~10.5 gross bps per trade — about a third of the edge.** `RiskManager` attaches that
+brake to every `auto` entry, the validated policy exits at a fixed four hours, and until now
+nothing could price the difference because pricing it needs the intra-hold price path. It is
+**not** a licence to switch the brake off: it is catastrophe insurance whose premium is now
+known, and it is a live-trading decision filed in [BACKLOG.md](./BACKLOG.md). ⚠️ Changing it
+also changes the served rule, and the standing rule is not to do that while the forward test
+accumulates trades — the test has not yet booked one, so a window exists, but it closes.
 
-🔴 **What it does and does not mean once deployed.** It does not make the edge certifiable —
-nothing could, on 253 days holding ~220 independent ones. What it does is start the **only**
-mechanism that manufactures new independent days. Expect a quiet start: the rank window needs
-**2,016 bars** before the policy may trade at all — that is ~14 hours at twelve served pairs,
-**not** the seven days this document claimed until 2026-08-29 (the constant is a bar count
-pooled across pairs, not a calendar span) — and the market has been the calmest of the whole
-period since July, so it may then idle for weeks. That silence is the strategy working, and it
-is now *legible* as such on `/api/health` rather than indistinguishable from a dead process.
+🟢 **Two open terms closed, both as "small", which is the useful kind of negative result.**
+Funding costs **+0.14 bps/trade** on the policy's own 1,773 trades and moves the headline
++20.59 → +20.45 — an unquantified term for the whole project, now quantified. And **C4b is
+answered**: every barrier setting tried loses to the fixed 4h hold (best +9.2 against +19.8
+net bps), monotonically improving as the band widens back toward it. The label/booking
+mismatch C4b filed is real and points *away* from barriers, so accepting it costs nothing.
+
+**The forward paper test is running on `fluxtrader-1`** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)),
+restarted 2026-08-29 on the twelve-pair universe. It needs no work, only calendar time. Check
+it with `curl localhost:4000/api/health` **on the VM**; `warm: false` until the rank window
+holds 2,016 bars, which is ~14 hours at twelve pairs, **not** seven days.
 
 🔴 **Two preconditions M3-5 could not close, both filed in [BACKLOG.md](./BACKLOG.md):** the
 Binance fee tier is **still unverified** (`mix flux.fee_tier` performs the check and needs
-account keys the container does not have), and the `auto` order path is **unsigned** — 
+account keys the container does not have), and the `auto` order path is **unsigned** —
 `Binance.Client.post/2` sends no API key header and no HMAC signature, so nothing beyond paper
 can trade until request signing exists.
+
+*Earlier: M3-5 built, deployed 2026-08-28 and paper-trading; the served universe widened to 12
+on 2026-08-29 (see [BACKLOG.md](./BACKLOG.md), "The twelve-pair widening").*
 
 *Earlier: M3-4 run — both execution assumptions were wrong in opposite directions: crossing
 costs 9.84 bps round trip, not 14, and the maker arm is not worth building (§0.8).*
@@ -76,7 +83,7 @@ block assumes you have.
 | **T5** — `/predict_all` served untrained pairs | 🟢 **fixed 2026-08-27** — `serve.py` now intersects the DB whitelist with the checkpoint's own pair list and reports both on `/health` |
 | **M3-4a** — the maker study's pre-registration | ✅ **committed 2026-08-28 as [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md)**, before any fill number. It closes M3-4a's open cadence question and turns up **two data defects and one structural fact** that M3_PLAN had wrong — see §0.7 |
 | **M3-4** — the execution-cost study (§3.3) | ✅ **run 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), implemented as `ml/train/m3/execcost.py`, all nine §6 items published. **Q1: the 14 bps taker assumption is MIS-STATED — the real cost is 9.84.** **Q2: the maker arm is not worth building** (§0.8) |
-| **M3-0b** — price/funding side-table | ⬜ not started — the only item that adds *new* evidence rather than re-slicing the same 253 days. 🟢 **Its data is already on disk**: the M3-4 export pulled 5m candles and `funding_rates` to `ml/train/output/m3_4/` |
+| **M3-0b** — price/funding side-table | ✅ **DONE 2026-08-29** — [M3_0B_RESULTS.md](./M3_0B_RESULTS.md), implemented as `ml/train/m3/sidetable.py`. Acceptance passes on all four dumps (2,655,988 bar-comparisons, every one exact). **It carries BOOK_ERA_PLAN B0 in the same alignment**, which closes B0 and unblocks B1. 🔴 **Headline: the live executor's 2%/4% brake costs 10.5 gross bps/trade — about a third of the edge** (§4 of the results). Funding is a rounding error (+0.14 bps/trade). **C4b is answered: barrier exits all lose to the fixed 4h hold.** ⚠️ "Its data is already on disk" was wrong — the M3-4 export is the 23-day book era, and 96% of the policy's trades fall outside it |
 | **M3-5** — wire the rule to the executor | ✅ **built and verified 2026-08-28, ⚠️ not deployed to `fluxtrader-1`** — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md). Crossing executor, 4h hold, regime sizing, measured per-pair cost, hard `RiskManager` path, signal-only A/B control, `/api/health` liveness. No limit orders, as M3-4 decided. Open: the fee tier is unverified and the `auto` path is unsigned (both in [BACKLOG.md](./BACKLOG.md)) |
 
 ### How to run anything in M3
@@ -96,6 +103,9 @@ and no GPU. `scripts/m3.sh` wraps it and builds it on first use:
 ./scripts/m3.sh -m m3 universe-fair     # T6: the fair version — matched, re-tuned, with CIs
 ./scripts/m3.sh -m m3 bookprep         # M3-4a: the data-quality audit (no fill number)
 ./scripts/m3.sh -m m3 execcost         # M3-4: the execution-cost study itself
+./scripts/m3.sh -m m3 sidetable        # M3-0b: the price/funding table, its acceptance
+                                        #        test, the funding term and the live brake
+./scripts/m3.sh -m m3 bookera          # B0: the book-era table, on the same alignment
 ./scripts/m3.sh -m m3 policy --help     # score one policy spec
 ./scripts/m3.sh --shell                 # interactive
 ```
@@ -655,20 +665,32 @@ six months of headroom, under four if the universe grows to twenty.
 
 </details>
 
-#### 2. M3-0b — the price/funding side-table (§2 M3-0b) 🔴 **now the only remaining M3 item**
+#### 2. M3-0b — the price/funding side-table 🟢 **DONE 2026-08-29**
 
-The only remaining item that adds **degrees of freedom** rather than re-slicing the 253 days we
-have already spent. It unlocks barrier exits (the open C4b mismatch), the funding term — signed,
-and a real term in the P&L at a 4h hold — and the position-state observations M3-3 had to leave
-out of its vector for want of a price path. **M3-5 added a fourth consumer:** the live executor
-attaches a stop and a target on the `auto` path as a catastrophe brake, and that brake is an
-unmeasured deviation from a policy scored on a fixed 4h hold. M3-0b's price path is what would
-let it be priced.
+**Result: [M3_0B_RESULTS.md](./M3_0B_RESULTS.md)**, implemented as `ml/train/m3/sidetable.py`
+and run by `./scripts/m3.sh -m m3 sidetable`. It was built in one pass with the book columns
+`BOOK_ERA_PLAN.md` B0 needs, as planned — one alignment, two consumers — so **B0 is closed and
+B1 is unblocked** (`./scripts/m3.sh -m m3 bookera`).
 
-**Build it in one pass with the book columns `BOOK_ERA_PLAN.md` B0 needs**, so the two wavefronts
-share one alignment rather than risking two. M3-4a's export overlaps this one, so pulling the 5m
-candles and `funding_rates` in the same pass costs almost nothing extra — and it is already on
-disk (`ml/train/output/m3_4/`).
+Its four consumers, and what each turned out to be worth:
+
+1. **The live brake** (M3-5's addition) — 🔴 **the finding.** The deployed 2% stop / 4% target
+   costs **10.5 gross bps/trade**, +33.76 → +23.24, on a policy netting ~20. The stop fires
+   three times as often as the target. It is catastrophe insurance whose premium is now known,
+   not a defect to switch off, and the decision is filed in [BACKLOG.md](./BACKLOG.md).
+2. **Barrier exits / C4b** — 🟢 **answered.** Every setting tried loses to the fixed 4h hold
+   (best +9.2 vs +19.8 net bps), improving monotonically as the band widens back toward it.
+   The mismatch C4b filed is real and points away from barriers, so accepting it costs nothing.
+3. **The funding term** — 🟢 **+0.14 bps/trade**, a rounding error at a 4h hold; the headline
+   moves +20.59 → +20.45. Lumpy rather than proportional: 45% of trades cross no settlement.
+   ⚠️ HYPEUSDT settles every 4h, not 8 — the schedule is read per pair, never assumed.
+4. **Position-state observations** — now possible, still un-run, and gated on a
+   pre-registration rather than on data (§7 of the results).
+
+⚠️ **This section said the data was "already on disk". That was wrong**, and the acceptance
+test is what caught it: the M3-4 export covers the 23-day book era, and **96% of the policy's
+trades fall outside it**. The price path was re-exported over 2025-11-15 .. 2026-08-30 into
+`ml/train/output/m3_0b/`; `scripts/gcp_m3_export.sh` now documents the two windows explicitly.
 
 #### 3. M3-5 — wire the rule to the executor 🟢 **DONE 2026-08-28**
 
@@ -1056,37 +1078,34 @@ and 2026-08-27 settled that they should not be: §5 now records that their extra
 correlated with the existing ones rather than additive, so they are a replication check across
 instruments and not added power.
 
-### M3-0b — The price/funding side-table (item 2 of the remaining three)
+### M3-0b — ✅ DONE (2026-08-29). The price/funding side-table exists and is proven.
 
-Export **once** from the always-on VM to local parquet: 5m candles and `funding_rates` for
-the eight served pairs over the validation window. Join on `(pair, ts)`.
+**Result: [M3_0B_RESULTS.md](./M3_0B_RESULTS.md).** Implemented as `ml/train/m3/sidetable.py`;
+run with `./scripts/m3.sh -m m3 sidetable`. The 5m price path plus the funding rate, over
+2025-11-15 .. 2026-08-30 for all twelve pairs, on the dumps' own `(pair, ts)` grid — and,
+built by the same module in the same alignment, `BOOK_ERA_PLAN.md`'s **B0**
+(`./scripts/m3.sh -m m3 bookera`). One alignment, two consumers, exactly as planned.
 
-This unlocks three things that are impossible in M3-0a:
+**The acceptance test is what makes it usable, and it passed on all four dumps:** 2,655,988
+bar-comparisons, **every one exact** after a float32 round-trip (the dumps store `fwd_ret` as
+float32, so exactness is a sharper test than any tolerance), with nothing unmatched. B0's
+table passes the same test independently over the book-era overlap.
 
-- **Barrier-aware exits** — walk forward to the first take-profit/stop-loss touch, else time
-  out. This is the already-open task **C4b** in NEXT_TRAINING_PLAN §6, filed there as
-  "under triple-barrier labels the model predicts a TP/SL outcome but `simulate_pnl` books
-  `fwd_ret` at a fixed `hold_bars` — a policy mismatch". M3 is where that mismatch stops
-  being theoretical.
-- **Funding cost.** `funding_rates` is the one microstructure source with real history
-  (2y9mo–3y11mo). At a 4h primary horizon, funding is a real term in the P&L, not a rounding
-  error, and it is *signed* — it can pay you.
-- **Slippage / fill realism** beyond a flat per-trade constant.
+**What the four consumers turned out to be worth** is in §0.0 and in the results document.
+The short form: the live 2%/4% brake costs **10.5 gross bps/trade**; funding is **+0.14
+bps/trade**, a rounding error; **C4b is answered** — barrier exits all lose to the fixed 4h
+hold; and position-state observations are now buildable but gated on a pre-registration.
 
-**Do not start here — but it is no longer far off.** A fixed-hold policy that works is worth
-more than a barrier policy that cannot be validated, and M3-0a's acceptance test is only
-expressible in fixed-hold terms. That condition is now met: M3-2 produced a fixed-hold policy
-that works, so this is item 2 of the three remaining (§0.0), behind M3-4 only.
+**Two things this step corrected in this document:**
 
-🔴 **Do the export in the same pass as M3-4a's.** M3-4 needs the book/tape slice, M3-0b needs
-5m candles and `funding_rates`, and `BOOK_ERA_PLAN.md` B0 needs the 11 microstructure scalars —
-all on the same `(pair, ts)` grid with the same staleness caps. One pass, three consumers, one
-alignment.
-
-**When you do build it, add the book columns in the same pass.** `docs/BOOK_ERA_PLAN.md` B0
-needs exactly this export plus the 11 microstructure scalars over the book era, joined on the
-same `(pair, ts)` grid with the same staleness caps. Building it once serves both wavefronts;
-building it twice risks two different alignments and neither being evidence about the other.
+* ⚠️ **"The data is already on disk" was false.** The M3-4 export is the 23-day book era,
+  because the ladder does not exist before 2026-08-05 — but M3-0b's price path must span the
+  eval validation window, and **96% of the policy's trades fall outside the book era**. The
+  price/funding slice is now its own export into `ml/train/output/m3_0b/`, and
+  `scripts/gcp_m3_export.sh` documents the two windows and the two invocations.
+* ⚠️ **Funding is not "a real term in the P&L, not a rounding error"** at a 4h hold, which is
+  what this section asserted. It is +0.14 bps/trade. The assertion was reasonable and it was
+  wrong; measuring it is what settled it.
 
 ### M3-1 — ✅ DONE (2026-08-27). The protocol is pre-registered.
 
@@ -1562,13 +1581,13 @@ grows a day per day at no cost — that is the remedy, not a bigger model.
 
 ---
 
-*Updated: 2026-08-28 — M3-0a, M3-1, M3-2, M3-3 and **M3-4a** complete. The learned policy did
-not beat the rules baseline, so M3-2's rule is M3's policy. M3-4a's audit found the touch
-spread to be ~0.01 bps on the majors, which kills the "maker roughly doubles it" hope and
-raises a better one: the 14-bps taker assumption looks ~6 bps too pessimistic (§0.7). Three
-items remain, in order: **M3-4** (run the pre-registered study — next), **M3-0b** (the
-price/funding side-table), and
-**M3-5** (wiring the rule to the executor, which is what starts producing new independent
-trading days). Both existing protocols stay frozen. §0.0 is the live status block and the only
+*Updated: 2026-08-29 — **every M3 build item is complete**: M3-0a, M3-1, M3-2, M3-3, M3-4a,
+M3-4, M3-5 and M3-0b. The learned policy did not beat the rules baseline, so M3-2's rule is
+M3's policy; it is wired to a crossing executor and paper-trading on `fluxtrader-1`. **No
+build item remains — the milestone now advances on calendar time**, because the binding
+constraint is independent trading days and only forward time manufactures them. The open
+items are decisions and preconditions, not construction: the price of the live 2%/4% brake
+([M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §4), the unverified fee tier, and the unsigned order
+path — all indexed in [BACKLOG.md](./BACKLOG.md). All existing protocols stay frozen. §0.0 is the live status block and the only
 place that needs reading to resume; **§0.5 is the same thing in plain language, with the
 vocabulary defined and the "can it trade profitably yet?" question answered directly.***

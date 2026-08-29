@@ -7,9 +7,22 @@
 # (docs/M3_4_PROTOCOL.md §2). So the reduction happens IN SQL on the VM and only the
 # reduced, gzipped CSV crosses the wire — a ~40x saving over pulling the ladder.
 #
-# It exports FIVE slices in one pass because M3_PLAN.md §2 M3-4 says to: M3-4 needs the
-# book and the tape, M3-0b needs 5m candles and funding, and BOOK_ERA_PLAN B0 needs the
-# book columns. One alignment, three consumers.
+# It exports SIX slices because M3_PLAN.md §2 M3-4 says to: M3-4 needs the book and the
+# tape, M3-0b needs 5m candles and funding, and BOOK_ERA_PLAN B0 needs the book columns on
+# a 1m grid as well. One alignment, three consumers.
+#
+# 🔴 THE SLICES DO NOT ALL WANT THE SAME WINDOW, so this is not one invocation. The book and
+# tape exist only from 2026-08-05; M3-0b's price path has to span the whole eval validation
+# window (2025-12-10 .. 2026-08-18), because its whole job is to price the trades M3-2 scored
+# and those live across all four calendar windows. Exporting the candles only over the book
+# era — which is what the first pass did — yields a side-table that cannot see 96% of them.
+# Run two passes into two directories:
+#
+#   # M3-4 / B0, the book era (~2h, the ladder dominates):
+#   ./scripts/gcp_m3_export.sh
+#   # M3-0b, the price path over the validation window (~2 min, no ladder):
+#   OUT=ml/train/output/m3_0b FROM=2025-12-01 TO=2026-08-30 \
+#     ONLY=candles_5m,funding ./scripts/gcp_m3_export.sh
 #
 # 🔴 NO `ORDER BY` on the three big tables, and that is not an oversight. Sorting 1.8M ladder
 # rows forces Postgres to materialise the whole result before emitting a byte: the first
@@ -101,6 +114,14 @@ FROM market_trades WHERE window_start >= '$FROM' AND window_start < '$TO'"
 # 4. + 5. M3-0b's side-table: the price path between entry and exit, and the funding term.
 Q_candles_5m="SELECT symbol, interval, open_time, open, high, low, close, volume, close_time \
 FROM candles WHERE interval = '5m' AND open_time >= '$FROM' AND open_time < '$TO' ORDER BY symbol, open_time"
+
+# 5b. The 1m grid BOOK_ERA_PLAN.md B0 asks for alongside the 5m one. It is exported as its
+#     own slice rather than folded into the query above because the two want different
+#     windows: M3-0b's 5m price path has to span the whole eval validation window (~270
+#     days), while a 1m grid over that span is 23M rows and B0 only ever reads it over the
+#     ~25-day book era. Run the two with different FROM/TO via ONLY=.
+Q_candles_1m="SELECT symbol, interval, open_time, open, high, low, close, volume, close_time \
+FROM candles WHERE interval = '1m' AND open_time >= '$FROM' AND open_time < '$TO' ORDER BY symbol, open_time"
 
 Q_funding="SELECT symbol, ts, mark_price, index_price, last_funding_rate \
 FROM funding_rates WHERE ts >= '$FROM' AND ts < '$TO' ORDER BY symbol, ts"
@@ -211,13 +232,14 @@ wanted() {
   [[ ",$ONLY," == *",$1,"* ]]
 }
 
-for slice in "book_top${LEVELS}" snapshots trades candles_5m funding; do
+for slice in "book_top${LEVELS}" snapshots trades candles_5m candles_1m funding; do
   wanted "$slice" || continue
   case "$slice" in
     book_top*)  dump "$slice" "$Q_book" ;;
     snapshots)  dump "$slice" "$Q_snapshots" ;;
     trades)     dump "$slice" "$Q_trades" ;;
     candles_5m) dump "$slice" "$Q_candles_5m" ;;
+    candles_1m) dump "$slice" "$Q_candles_1m" ;;
     funding)    dump "$slice" "$Q_funding" ;;
   esac
 done

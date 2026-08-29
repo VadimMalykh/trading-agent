@@ -8,6 +8,8 @@
     ./scripts/m3.sh -m m3 universe-fair       # T6: the fair version of that comparison
     ./scripts/m3.sh -m m3 bookprep            # M3-4a data-quality facts (no fill number)
     ./scripts/m3.sh -m m3 execcost            # M3-4: the execution-cost study itself
+    ./scripts/m3.sh -m m3 sidetable           # M3-0b: the price/funding side-table
+    ./scripts/m3.sh -m m3 bookera             # B0: the book-era table, same alignment
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -19,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from . import (backtest, bookprep, dumps, execcost, features, learn, metrics, regime,
-               search, universe, validate)
+               search, sidetable, universe, validate)
 
 
 def cmd_validate(args) -> int:
@@ -951,6 +953,238 @@ def cmd_policy(args) -> int:
     return 0
 
 
+# The live executor's catastrophe brake, read off apps/fluxtrader .. risk_manager.ex:
+# `stop_loss_pct: 0.02` and `take_profit_ratio: 2.0`. Restated here as the numbers M3-0b
+# has to price, because they are the deviation M3-5 shipped and nothing has measured.
+LIVE_STOP, LIVE_TARGET = 0.02, 0.04
+
+# M3-4's measured pooled round trip (M3_4_RESULTS.md §1), used here only as the reference
+# line for "what the winner nets today". Funding is ADDITIVE and independent of the cost
+# line, so the delta this section reports would be the same against 14 bps or against the
+# per-pair costs — the constant only sets the number it is a delta from.
+MEASURED_POOLED_BPS = 9.842
+
+
+def _winner_trades():
+    """The M3-2 winner's pooled trade ledger — the population every M3-0b number lands on."""
+    ds = dumps.load_baseline(pairs=dumps.BASE8)
+    regimes = {d.seed: regime.build(d.df) for d in ds}
+    res = backtest.run(ds, backtest.PolicySpec(label="M3-2 winner", **WINNER_SPEC), regimes)
+    return ds, res.trades
+
+
+def cmd_sidetable(args) -> int:
+    """M3-0b — build the price/funding side-table, prove it, and price what it unlocks."""
+    print("=" * 88)
+    print("M3-0b — THE PRICE/FUNDING SIDE-TABLE")
+    print("=" * 88)
+
+    st = sidetable.build_price_table("5m")
+    t = pd.to_datetime(st["ts"], unit="ns", utc=True)
+    print(f"grid: {len(st):,} bars x {st['pair'].nunique()} pairs, "
+          f"{t.min():%Y-%m-%d} .. {t.max():%Y-%m-%d}")
+
+    print("\n" + "=" * 88)
+    print("A. ACCEPTANCE TEST — the gate. Rebuilt fwd_ret_240 vs each dump's own fwd_ret.")
+    print("   The dumps store fwd_ret as float32, so the test is EXACT EQUALITY after a")
+    print("   float32 round-trip, not a tolerance: a rebuild that merely rounds close would")
+    print("   pass a 1e-6 check while quietly describing a different series.")
+    print("=" * 88)
+    runs = dict(dumps.BASELINE_RUNS)
+    runs["o8"] = dumps.O8_RUN
+    failed = False
+    for seed, run_id in runs.items():
+        d = dumps.load(run_id, seed=seed)
+        h = d.at(240)[["ts", "pair", "fwd_ret"]]
+        m = h.merge(st[["pair", "ts", "fwd_ret_240"]], on=["pair", "ts"], how="left")
+        miss = int(m["fwd_ret_240"].isna().sum())
+        ok = m.dropna(subset=["fwd_ret_240"])
+        exact = int((ok["fwd_ret"].to_numpy() ==
+                     ok["fwd_ret_240"].to_numpy().astype(np.float32)).sum())
+        diff = float((ok["fwd_ret"] - ok["fwd_ret_240"]).abs().max())
+        bad = miss or exact != len(ok)
+        failed |= bool(bad)
+        print(f"  {seed} {run_id}: bars={len(m):>7,}  unmatched={miss:>5,}  "
+              f"exact={exact:,}/{len(ok):,}  max|diff|={diff:.3e}  "
+              f"{'FAIL' if bad else 'PASS'}")
+    if failed:
+        print("\n  🔴 ACCEPTANCE FAILED — nothing below is evidence.")
+        return 1
+    print("\n  ✅ ACCEPTANCE PASSED — the side-table describes the same series the dumps do.")
+
+    print("\n" + "=" * 88)
+    print("B. COVERAGE — what the table holds, per pair")
+    print("=" * 88)
+    g = st.groupby("pair")
+    cov = pd.DataFrame({
+        "bars": g.size(),
+        "first": g["ts"].min().map(lambda v: f"{pd.Timestamp(v, tz='UTC'):%Y-%m-%d}"),
+        "last": g["ts"].max().map(lambda v: f"{pd.Timestamp(v, tz='UTC'):%Y-%m-%d}"),
+        "fwd240_ok": g["fwd_ret_240"].apply(lambda c: 1.0 - c.isna().mean()),
+        "funding_fresh": g["has_funding"].mean(),
+    })
+    print(cov.to_string(float_format=lambda v: f"{v:.4f}"))
+
+    ev = sidetable.funding_settlements(sidetable.load_funding())
+    per = ev.groupby("pair").size()
+    days = (t.max() - t.min()).total_seconds() / 86400.0
+    print("\n  funding settlements per pair (per day, over the window):")
+    print("   " + "  ".join(f"{p}={n / days:.2f}" for p, n in per.items()))
+    odd = per[per > per.median() * 1.5]
+    for p in odd.index:
+        print(f"  ⚠️  {p} settles ~2x as often as the rest — a 4h funding cycle, not 8h. "
+              f"A hardcoded 8h schedule would halve its funding.")
+
+    ds, tr = _winner_trades()
+    span = metrics.span_days(tr)
+    print("\n" + "=" * 88)
+    print("C. THE FUNDING TERM — M3's first non-zero funding number")
+    print("   Every M3 result to date sets funding to zero. It is charged here on the M3-2")
+    print("   winner's own trades: positive = a cost. It is LUMPY, not proportional to the")
+    print("   hold — a 4h position pays only if a settlement instant falls inside it.")
+    print("=" * 88)
+    fund = sidetable.funding_cost_bps(tr, ev)
+    crossed = (fund != 0).mean()
+    tt = pd.to_datetime(tr["entry_ts"], unit="ns", utc=True)
+    dense = int((tt >= pd.Timestamp("2026-07-01", tz="UTC")).sum())
+    print(f"  trades={len(tr):,}  crossing a settlement: {crossed:.1%}  "
+          f"(a 4h hold against a mostly-8h cycle)")
+    print(f"  last entry {tt.max():%Y-%m-%d}; only {dense} trades ({dense / len(tr):.1%}) fall "
+          f"after 2026-07-01, which is\n  where the collector's dense mark-price poll begins "
+          f"— so the settlement-detection rule matters\n  for very few of these trades, and "
+          f"the market being calm since July is why.")
+    print(f"  funding bps/trade: mean={fund.mean():+.3f}  "
+          f"median={fund.median():+.3f}  p5={fund.quantile(.05):+.3f}  "
+          f"p95={fund.quantile(.95):+.3f}  max cost={fund.max():+.2f}")
+    paid = fund[fund > 0].sum() / len(tr)
+    earned = -fund[fund < 0].sum() / len(tr)
+    print(f"  it PAYS as often as it costs: earned {earned:.3f} bps/trade, "
+          f"paid {paid:.3f} bps/trade  ->  net {fund.mean():+.3f}")
+    base = metrics.summarise(tr, MEASURED_POOLED_BPS, span, n_seeds=len(ds))
+    print(f"\n  the winner's net bps/trade moves {base['net_bps']:+.2f} -> "
+          f"{base['net_bps'] - fund.mean():+.2f} once funding is charged "
+          f"({-fund.mean():+.3f} bps).")
+    print("  🟢 VERDICT: funding is a rounding error at a 4h hold — well inside the noise")
+    print("     on a per-trade sd of ~250 bps. It does not change any M3 conclusion, which")
+    print("     is itself the finding: it was an unquantified open term until now, and the")
+    print("     honest reason to charge it was that nobody had shown it was small.")
+
+    print("\n" + "=" * 88)
+    print("D. THE LIVE BRAKE — M3-5's stop/target, priced for the first time")
+    print(f"   The deployed executor attaches SL {LIVE_STOP:.0%} / TP {LIVE_TARGET:.0%} to")
+    print("   every `auto` entry. The policy was scored on a FIXED 4h hold, so that brake is")
+    print("   an unmeasured deviation from the rule that was validated. This is the measure.")
+    print("=" * 88)
+    ent = tr[["pair", "entry_ts", "side", "size", "signed_ret"]].copy()
+    for touch in ("intrabar", "close"):
+        b = sidetable.barrier_exit(st, ent, tp=LIVE_TARGET, sl=LIVE_STOP,
+                                   max_bars=48, touch=touch)
+        _report_barrier(b, touch, span, len(ds))
+
+    print("\n" + "=" * 88)
+    print("E. A BARRIER LADDER — DESCRIPTIVE ONLY, NOT A POLICY SEARCH")
+    print("   🔴 M3_PROTOCOL §0 forbids re-picking a searched dimension after seeing results.")
+    print("   Nothing here is promoted and no winner is chosen: the point is to show the")
+    print("   SHAPE of the barrier response, so that a future pre-registration can be")
+    print("   written knowing what it is choosing between. Choosing a row of this table")
+    print("   because it is the best row is precisely what the protocol prohibits.")
+    print("=" * 88)
+    rows = []
+    for sl in (0.005, 0.01, 0.02):
+        for ratio in (1.0, 2.0):
+            b = sidetable.barrier_exit(st, ent, tp=sl * ratio, sl=sl, max_bars=48,
+                                       touch="intrabar")
+            v = b.dropna(subset=["barrier_ret"])
+            net = (v["barrier_ret"] * v["size"]).mean() * metrics.BPS - metrics.TAKER_COST_BPS
+            rows.append({
+                "sl": f"{sl:.1%}", "tp": f"{sl * ratio:.1%}",
+                "tp_hit": (v["barrier_exit"] == "tp").mean(),
+                "sl_hit": (v["barrier_exit"] == "sl").mean(),
+                "timeout": (v["barrier_exit"] == "timeout").mean(),
+                "mean_bars": v["barrier_bars"].mean(),
+                "net_bps@14": net,
+            })
+    print(pd.DataFrame(rows).to_string(index=False, float_format=lambda v: f"{v:.3f}"))
+    fixed_net = (tr["signed_ret"].mean() * metrics.BPS) - metrics.TAKER_COST_BPS
+    print(f"\n  the fixed 4h hold, same trades, same cost line: {fixed_net:+.2f} bps")
+
+    out = os.path.join(sidetable.EXPORT_DIR, "side_5m.parquet")
+    st.to_parquet(out, index=False)
+    print(f"\n  wrote {out}  ({len(st):,} rows)")
+    return 0
+
+
+def _report_barrier(b: pd.DataFrame, touch: str, span: float, n_seeds: int) -> None:
+    v = b.dropna(subset=["barrier_ret"])
+    lost = len(b) - len(v)
+    fixed = (b["signed_ret"].mean()) * metrics.BPS
+    got = (v["barrier_ret"] * v["size"]).mean() * metrics.BPS
+    print(f"\n  --- touch={touch} " + "-" * 52)
+    if lost:
+        print(f"      {lost} entries had no matching grid bar and are excluded")
+    print(f"      exits: tp={(v['barrier_exit'] == 'tp').mean():.1%}  "
+          f"sl={(v['barrier_exit'] == 'sl').mean():.1%}  "
+          f"timeout={(v['barrier_exit'] == 'timeout').mean():.1%}  "
+          f"mean hold={v['barrier_bars'].mean() * 5:.0f}m of 240m")
+    print(f"      gross bps/trade: fixed-hold {fixed:+.2f}  ->  with the brake {got:+.2f}  "
+          f"({got - fixed:+.2f})")
+
+
+def _bookera_acceptance(df: pd.DataFrame) -> None:
+    """B0's own acceptance test — 🔴 'not optional' in BOOK_ERA_PLAN §B0.
+
+    Run separately from M3-0b's even though the code path is shared, because the two tables
+    are built from DIFFERENT exports: M3-0b's candles span the validation window and live in
+    m3_0b/, B0's span the book era and live in m3_4/. A pass on one is not a pass on the
+    other, and the whole point of the test is that the side-table describes the same series
+    the dumps do.
+    """
+    print("  acceptance (B0 §B0, mandatory): fwd_ret_240 vs the dumps over the overlap")
+    for seed, run_id in list(dumps.BASELINE_RUNS.items()) + [("o8", dumps.O8_RUN)]:
+        d = dumps.load(run_id, seed=seed)
+        h = d.at(240)[["ts", "pair", "fwd_ret"]]
+        m = h.merge(df[["pair", "ts", "fwd_ret_240"]], on=["pair", "ts"], how="inner")
+        m = m.dropna(subset=["fwd_ret_240"])
+        if m.empty:
+            print(f"    {seed}: no overlap with the book era")
+            continue
+        exact = int((m["fwd_ret"].to_numpy() ==
+                     m["fwd_ret_240"].to_numpy().astype(np.float32)).sum())
+        print(f"    {seed}: overlap={len(m):>7,}  exact={exact:,}/{len(m):,}  "
+              f"{'PASS' if exact == len(m) else '🔴 FAIL'}")
+
+
+def cmd_bookera(args) -> int:
+    """BOOK_ERA_PLAN B0 — the same alignment, with the book/tape columns, over the book era."""
+    print("=" * 88)
+    print("B0 — THE BOOK-ERA SIDE-TABLE (built on M3-0b's alignment, as the plan requires)")
+    print("=" * 88)
+    for interval in ("5m", "1m"):
+        df = sidetable.build_book_era(interval)
+        t = pd.to_datetime(df["ts"], unit="ns", utc=True)
+        print(f"\n--- book_era_{interval} " + "-" * 50)
+        print(f"  {len(df):,} rows x {df['pair'].nunique()} pairs, "
+              f"{t.min():%Y-%m-%d} .. {t.max():%Y-%m-%d}")
+        g = df.groupby("pair")
+        cov = pd.DataFrame({
+            "bars": g.size(),
+            "book_fresh": g["has_book"].mean(),
+            "tape_fresh": g["has_trades"].mean(),
+            "funding_fresh": g["has_funding"].mean(),
+            "fwd240_ok": g["fwd_ret_240"].apply(lambda c: 1.0 - c.isna().mean()),
+        })
+        print(cov.to_string(float_format=lambda v: f"{v:.4f}"))
+        if interval == "5m":
+            _bookera_acceptance(df)
+        out = os.path.join(sidetable.BOOK_DIR, f"book_era_{interval}.parquet")
+        df.to_parquet(out, index=False)
+        print(f"  wrote {out}")
+    print("\n  ⚠️ nine of B0's eleven scalars are built. `oi` and `oi_chg` are absent because")
+    print("     `open_interest` is not one of the tables scripts/gcp_m3_export.sh pulls;")
+    print("     adding it is a one-line export change, not an alignment change.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="m3", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -983,6 +1217,13 @@ def main() -> int:
     f.add_argument("--draws", type=int, default=universe.BOOTSTRAP_DRAWS,
                    help="bootstrap draws for the criterion-power table")
     f.set_defaults(fn=cmd_universe_fair)
+
+    sub.add_parser("sidetable", help="M3-0b: build the price/funding side-table, run its "
+                   "acceptance test, and price the funding term and the live stop/target "
+                   "brake that a fixed-hold backtest cannot see").set_defaults(fn=cmd_sidetable)
+
+    sub.add_parser("bookera", help="BOOK_ERA_PLAN B0: the book-era side-table, built on "
+                   "M3-0b's alignment").set_defaults(fn=cmd_bookera)
 
     sub.add_parser("bookprep", help="M3-4a pre-registration facts: ladder cadence, book "
                    "staleness, tape censoring and coverage, touch spread and depth. "
