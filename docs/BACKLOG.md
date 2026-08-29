@@ -152,12 +152,14 @@ fallback is not narrower than the served set. 74 tests green.
 **[M3_0B_RESULTS.md](./M3_0B_RESULTS.md)** is the record. Three results, in descending order of
 how much they matter:
 
-1. 🔴 **The live 2% stop / 4% target costs ~10.5 gross bps per trade** — +33.76 → +23.24, on a
-   policy netting ~20. `RiskManager` attaches it to every `auto` entry
+1. 🔴 **The `auto` path's 2% stop / 4% target costs ~10.5 gross bps per trade** — +33.76 →
+   +23.24, on a policy netting ~20. `RiskManager` attaches it to every `auto` entry
    (`stop_loss_pct: 0.02`, `take_profit_ratio: 2.0`); the validated policy exits at a fixed
-   four hours. The stop fires three times as often as the target (34.1% vs 11.2%). **Filed as
-   an open decision below** — it is catastrophe insurance whose premium is now known, not a
-   defect, and turning it off is a live-trading choice rather than an offline correction.
+   four hours. The stop fires three times as often as the target (34.1% vs 11.2%). 🟢 **The
+   running paper test is NOT affected** — `Executor`'s paper arms ignore both barriers and
+   close on the timer, and the `auto` path cannot trade because it is unsigned. Filed with the
+   **real-money blockers**, which is where the executor's own moduledoc said this belonged:
+   the brake "must be priced before real money goes near this", and now it is.
 2. 🟢 **Funding is a rounding error: +0.14 bps/trade**, moving the headline +20.59 → +20.45. It
    was an unquantified term for the whole project. ⚠️ **HYPEUSDT settles every 4 hours, not 8**
    — the schedule is now read per pair from the data, never assumed; a hardcoded 8h calendar
@@ -184,17 +186,18 @@ at a 4h hold. Both assertions were reasonable; measuring is what settled them.
 | item | why it matters | what to do | source |
 |---|---|---|---|
 | **Verify the Binance USDⓈ-M VIP fee tier** | Every M3 cost uses taker 4.0 / maker 2.0 bps per side because that is what `metrics.py`'s 14 and 5 decompose to. It has **never been checked against the account.** A wrong tier shifts every published M3 number by a constant, in a direction nobody has established | `docker compose exec app mix flux.fee_tier` — the task is written and signs `/fapi/v1/commissionRate` itself. It needs `BINANCE_API_KEY` / `BINANCE_API_SECRET` in the app container, which is the only reason it is still open. It fails loudly rather than printing an unverified number | [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) §2.5, [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §6 |
+| **Decide what to do about the `auto` path's stop/target** | The 2%/4% brake costs **10.5 gross bps/trade**, about a third of the edge — now measured ([M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §4). 🟢 **Not urgent and not a bug.** The paper arms ignore both barriers and close on the timer, so the running A/B is unaffected; the brake bites only on the `auto` path, which cannot trade anyway. But it bounds single-position catastrophe loss, and the offline measurement contains no catastrophe — **it prices the premium, not the insurance** | Keep it and accept the premium, widen it, or make it regime-conditional. The one thing not to do is drop it *because* the backtest says it costs money: a fixed-hold backtest has never had to survive a 60% overnight move. Decide it alongside the two rows below, as part of going live | [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §4, `executor.ex` moduledoc |
 | **The `auto` order path is unsigned** | `Binance.Client.post/2` sends neither the `X-MBX-APIKEY` header nor the HMAC-SHA256 signature Binance requires on every TRADE endpoint, so a real order returns 401. Before M3-5 this failed silently; the executor now logs it at boot | Implement request signing (the same HMAC the fee-tier task already does) plus `listenKey` / order-status reconciliation. **Not M3 work** — M3-5's deliverable is the paper A/B — but it is a hard prerequisite for anything beyond paper | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §6 |
 
 ---
 
 ## 🟡 Parked — M3
 
-*M3-0b is done (see above). Its results opened one decision and one chore, both below.*
+*M3-0b is done (see above). Its stop/target decision is filed with the real-money
+blockers, not here, because it does not affect the running paper test.*
 
 | item | what | gated on | revival trigger |
 |---|---|---|---|
-| 🔴 **Decide what to do about the live stop/target** | The deployed 2%/4% brake costs **10.5 gross bps/trade**, about a third of the edge ([M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §4). The options are: keep it and accept the premium, widen it, or make it regime-conditional. **Not a bug — it bounds single-position catastrophe loss, which a fixed-hold backtest has never had to price** | a decision, not work | 🔴 **Two things gate it, and they pull opposite ways.** Changing it changes the served rule, and the standing rule is not to do that while the forward test accumulates trades — **but the test has not yet booked a trade**, so the window is open now and closes at the first fill. Whoever decides should also note that the offline measurement is on a fixed 4h hold with no catastrophe in the sample; it prices the premium, not the insurance |
 | **Export `open_interest`** | B0 builds **nine of its eleven** scalars; `oi` and `oi_chg` are missing because `open_interest` is not one of the tables `scripts/gcp_m3_export.sh` pulls | nothing | A one-line export change plus a re-run of `m3 bookera` — **not** an alignment change. Do it if B1 or B2 wants OI; they can proceed on nine without it |
 | **Re-pre-register the served coverage** | The universe went 8 → 12 on 2026-08-29 at an unchanged cov 0.02, which takes **more** trades (3.05/day vs 2.02), not better ones. T6's count-matched cut on twelve is **0.01288**, and on the 8-pair arm tightening the cut alone was worth **+12.72 bps** while widening the universe at a fixed cut was worth **−2.51**. So the cut, not the pairs, is where T6's signal lived | nothing technical | 🔴 **Blocked by protocol, not by work.** M3_PROTOCOL §0 forbids re-picking a searched dimension after seeing results; this needs a fresh pre-registration on the population it will be served from, written before anything is scored. Revive it when someone is prepared to write that document first — **not** by re-scoring the grid and picking the winner |
 

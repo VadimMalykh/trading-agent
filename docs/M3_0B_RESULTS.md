@@ -32,12 +32,14 @@ one at a set gain. A *fixed hold* means we simply exit after four hours regardle
 
 **The three answers, in order of how much they matter:**
 
-1. 🔴 **The stop and target the live system is running right now cost about a third of the
-   edge.** The deployed executor attaches a 2% stop and a 4% target to every order as a
-   catastrophe brake. Nobody had ever measured what that does, because measuring it needs
-   exactly the price path this step built. It turns **+33.8 gross bps per trade into +23.2** —
-   a loss of **10.5 bps per trade**, where the whole edge is about 20 bps net. The brake is
-   not free insurance; it is roughly a third of the profit.
+1. 🔴 **The stop and target that would apply to real orders cost about a third of the edge.**
+   The executor attaches a 2% stop and a 4% target to every `auto`-path order as a catastrophe
+   brake. Nobody had ever measured what that does, because measuring it needs exactly the price
+   path this step built. It turns **+33.8 gross bps per trade into +23.2** — a loss of **10.5
+   bps per trade**, where the whole edge is about 20 bps net. The brake is not free insurance;
+   it is roughly a third of the profit. ⚠️ **This does not affect the paper test now running**:
+   the paper arms ignore both barriers and close on the four-hour timer. It is a prerequisite
+   for real money, alongside the unverified fee tier and the unsigned order path.
 
 2. 🟢 **Funding is a rounding error, and now we know instead of assuming.** Charged properly
    on the policy's own 1,773 trades it costs **0.14 bps per trade** — against a per-trade
@@ -53,9 +55,10 @@ one at a set gain. A *fixed hold* means we simply exit after four hours regardle
    flattering artifact.
 
 **Bottom line:** this changes nothing about whether the strategy works — it still cannot be
-certified on 253 days, and only forward time fixes that. What it does change is that a live
-setting nobody had priced turns out to be expensive, and that is an actionable finding rather
-than a measurement.
+certified on 253 days, and only forward time fixes that. **Nothing here needs acting on today**
+and the running paper test is unaffected. What it changes is that three questions which were
+*unanswerable* are now answered, and one real-money prerequisite that the executor itself said
+"must be priced before real money goes near this" has been priced.
 
 ---
 
@@ -185,11 +188,18 @@ bounds the loss on a single position in a way a fixed-hold backtest, which has n
 per trade — not that the insurance is unwanted. That trade-off is a decision, and it is filed
 in [BACKLOG.md](./BACKLOG.md) rather than taken here.
 
-🔴 **And changing it now would break the A/B.** BACKLOG's standing rule is that the served
-rule must not change while the forward test accumulates trades, or the two arms span two
-different policies. The forward test has **not yet booked a trade** (it is still warming up),
-so a window exists — but it is a live-trading decision and it needs to be made deliberately,
-not as a side effect of an offline measurement.
+🟢 **And it is NOT urgent — the forward paper test is unaffected.** `Executor`'s own
+docstring says so and the code agrees: **the paper arms ignore the stop and the target and
+close on the timer.** The brake is attached only on the `auto` path, which is the real-order
+path, and that path is unsigned and cannot trade. So the running A/B is measuring the pure
+fixed-hold rule, exactly as intended; there is no comparability risk and no window closing at
+the first fill.
+
+**This measurement therefore discharges a precondition rather than opening a decision.** The
+executor's docstring stated the requirement — the brake "is an **unmeasured** deviation from
+the backtest: it must be priced before real money goes near this." It is now priced. The
+choice of what to do about it belongs with the other real-money prerequisites (the unverified
+fee tier, the unsigned order path), not with anything running today.
 
 ---
 
