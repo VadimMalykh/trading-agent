@@ -42,20 +42,34 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
   ## The served universe is NOT the collection whitelist
 
-  `Settings.get_whitelist/0` is the list of pairs the **collector** subscribes to, and it is
-  deliberately wider than the eight pairs M3 trades: collecting a pair costs a REST poll and
-  a few MB a day, while *not* collecting it is unrecoverable — order-book history begins the
-  day the collector is pointed at a pair and never backfills.
+  `Settings.get_whitelist/0` is the list of pairs the **collector** subscribes to. The
+  policy's universe is a different thing and is pinned to
+  `config :fluxtrader, :trading, served_pairs`. Since 2026-08-29 both hold the same twelve
+  pairs, and they are still not the same setting: the whitelist must stay free to be WIDER,
+  because collecting a pair costs a REST poll and a few MB a day while *not* collecting it
+  is unrecoverable — order-book history begins the day the collector is pointed at a pair
+  and never backfills.
 
-  The policy's universe is a different thing and it is pinned here, to
-  `config :fluxtrader, :trading, served_pairs`. It must stay the eight pairs M3-2 measured
-  the rule on and M3-4 measured a crossing cost for (T6 closed the 8-vs-12 question). Two
-  distinct things break if the policy ranks over a wider set:
+  Two distinct things move when the policy's universe changes, and both are why this is a
+  deliberate, documented edit rather than a tuning knob:
 
-    * **the coverage cut.** "The top 2%" is a rank over a population, so adding four
-      unmeasured pairs to that population silently changes the rule that M3-2 selected.
-    * **the cost charged.** `ExecCost.round_trip_bps/1` has no measurement outside the eight
-      and falls back to the pooled 9.842 — a number pooled over the *other* pairs.
+    * **the coverage cut.** "The top 2%" is a rank over a population, so adding pairs to
+      that population changes the rule itself. At a fixed coverage a wider universe takes
+      MORE trades, not better ones — T6 measured 3.05/day at twelve against 2.02 at eight.
+      Whether the served coverage should instead be tightened to hold the trade count fixed
+      (T6's count-matched cut is 0.01288) is a **separate question that needs its own
+      pre-registration** under M3_PROTOCOL §0; it was deliberately not bundled into the
+      universe change.
+    * **the cost charged.** Every served pair must carry its own measured crossing cost, or
+      `ExecCost.round_trip_bps/1` falls back to a number pooled over *other* pairs. This is
+      what kept the universe at eight until 2026-08-29; M3-4's run had in fact measured all
+      twelve, and ADAUSDT at 13.733 bps against the pooled 9.842 shows the fallback was a
+      real 3.89 bps error and not a formality.
+
+  🔴 **Do not change `served_pairs` while a forward test is accumulating trades.** It changes
+  the rule, so the A/B would span two different policies — the same comparability break
+  `docs/M3_4_PROTOCOL.md` §7 records for the trade-tape change. The 2026-08-29 widening was
+  done deliberately before the first trade fired.
 
   🔴 Do not fix a mismatch here by narrowing the collection whitelist. That stops collection
   on the excluded pairs, and the resulting gap cannot be backfilled. (Learned the hard way on
@@ -92,7 +106,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
     # `:autotick` and the two source functions exist so an integration test can drive the
     # whole path — bar to ledger row — without a live inference service and without waiting
-    # out the seven-day rank-window warmup. In production all three take their defaults.
+    # out the rank-window warmup. In production all three take their defaults.
     if Keyword.get(opts, :autotick, true), do: Process.send_after(self(), :tick, 10_000)
 
     {:ok,
@@ -208,8 +222,9 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
   @doc """
   The pairs the policy is allowed to rank and trade over — see the "served universe" note in
-  the moduledoc. Defaults to the eight M3-2/M3-4 pairs; the collector's whitelist is wider
-  and independent.
+  the moduledoc. Defaults to every pair M3-4 measured a crossing cost for, which is the
+  invariant that actually matters: a served pair without its own cost is charged a pooled
+  number measured on other pairs. The collector's whitelist is a separate setting.
   """
   def served_pairs do
     Application.get_env(:fluxtrader, :trading, [])

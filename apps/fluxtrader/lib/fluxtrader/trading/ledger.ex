@@ -17,7 +17,22 @@ defmodule FluxTrader.Trading.Ledger do
   # can only be bars already seen. 14 days over 8 pairs is ~32k bars, which resolves a 2%
   # cut to ~640 bars — enough that the threshold does not jump around from day to day.
   @rank_window_days 14
-  # Below this the top-2% cut is a handful of bars and the policy stays cold. 7 days.
+  # Below this the top-2% cut is a handful of bars and the policy stays cold: 2,016 bars
+  # makes the cut 40 bars wide.
+  #
+  # 🔴 It is a BAR COUNT, not a calendar span, and the `7 * 288` spelling is misleading about
+  # how long it takes to clear. The count is pooled across served pairs, so the population
+  # grows at (pairs x 288)/day: eight pairs clear it in ~21 hours and twelve in ~14, not in
+  # seven days. Every document that described this as "a seven-day wait" was wrong, and the
+  # 2026-08-28 deploy was mis-forecast on that basis.
+  #
+  # ⚠️ OPEN QUESTION, deliberately not changed while widening the universe on 2026-08-29:
+  # whether a bar count is the right floor at all. It guarantees the cut is statistically
+  # wide enough, but says nothing about the cut being drawn from more than one market
+  # regime — at twelve pairs the threshold can be derived from a single 14-hour stretch. A
+  # calendar floor alongside the count would fix that, and would make the constant mean what
+  # its original spelling claimed. It is a change to the cold-start rule, so it wants its own
+  # decision rather than being smuggled in with a universe change.
   @min_rank_bars 7 * 288
   # Bars older than this are dropped. Two rank windows, so there is always a full window
   # available plus room to widen it without losing history.

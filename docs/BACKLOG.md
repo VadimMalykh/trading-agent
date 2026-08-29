@@ -29,7 +29,8 @@ you defer something, write down what would un-defer it.
 | item | owner doc | state |
 |---|---|---|
 | **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** The clock has started |
-| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔵 **RUNNING since 2026-08-28.** It now needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). ⚠️ It will not trade for the first **seven days** (the rank window must fill: `warm: false` until 2,016 bars) and may then idle for weeks (see the volatility note below). Both are the strategy working |
+| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔵 **RUNNING. Restarted 2026-08-29** on the twelve-pair universe (see the row below). It needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). ⚠️ `warm: false` until the rank window holds 2,016 bars — that is **~14 hours at twelve pairs, NOT seven days**; the constant is a bar count pooled across served pairs, and every document said "seven days" until 2026-08-29. It may then idle for weeks (see the volatility note below). Both are the strategy working |
+| **Widen the served universe to 12** | [M3_PLAN.md](./M3_PLAN.md) §0.6 | ✅ **DONE 2026-08-29.** The four extras now carry their own measured crossing cost, so nothing served falls back to a pooled number. See "The twelve-pair widening" below |
 | **M3-0b** — price/funding side-table | [M3_PLAN.md](./M3_PLAN.md) §2 | 🔴 **The only remaining M3 build item**, and nothing blocks it: the data is already exported (`candles_5m.csv.gz`, `funding.csv.gz`, 2026-08-28). It is the only item that adds *new degrees of freedom* rather than re-slicing the same 253 days, and M3-5 added a fourth consumer — the `auto` path's stop/target brake is an unmeasured deviation from a fixed-hold policy and M3-0b's price path is what would price it. Build it on the existing `m3_4/` export, sharing one alignment with **B0** |
 
 **M3-4 completed 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), read via
@@ -57,6 +58,79 @@ wired to a crossing executor, the hard `RiskManager` path is exercised on every 
 signal-only A/B control runs beside it, and `/api/health` reports signal liveness. Risk #7
 closed; §6's last two exit criteria closed. It left two items open, both below.
 
+### The twelve-pair widening, 2026-08-29
+
+**The served universe is now twelve.** This is not a reversal of T6 and not a new result. T6's
+verdict was **"UNDECIDED — the incumbent 8-pair universe stands by default"**: the cleanly
+separated universe effect is **−2.51 bps, 95% CI [−17.85, +12.83]**, on a period that resolves
+nothing under ±37 bps. Eight was the conservative default while the four extras had no measured
+crossing cost. That reason is now gone, and the standing intent has always been twelve for the
+long run — so the default was retired rather than left to be re-derived from a results file that
+reads like a closed decision.
+
+🔴 **The case for twelve is throughput and diversification, NOT per-trade edge.** T6's point
+estimate for the universe term is slightly negative. What twelve buys is more trades per day
+against a milestone whose binding constraint is the number of independent trading days. Do not
+quote this widening as evidence that twelve earns more.
+
+**What made it safe, and what it cost:**
+
+1. **Every served pair now carries its own measured crossing cost.** M3-4's run had in fact
+   measured all twelve; the protocol reported the four added 2026-08-14 as "texture only" and
+   excluded them from Q1's verdict, because pooling 14 days of ladder with 23 into a decision
+   quantity is what M3_4_PROTOCOL §1.5 forbids. **That exclusion governs the verdict, not the
+   charging** — a cost used to charge a trade is not a decision quantity, and a pair's own
+   14-day number beats a constant pooled from eight *other* pairs. The study was re-run
+   2026-08-29 and reproduced byte-identically before any constant was copied.
+2. **ADAUSDT is why this was a real blocker and not a formality:** it measures **13.733 bps**
+   against the pooled **9.842** it would otherwise have been charged — 3.89 bps light, about
+   40%. Its spread alone (4.901 bps) is 1.7× the widest of the original eight.
+   Full table: XRP 9.075, LINK 10.754, AVAX 11.401, ADA 13.733, each on 14 days / ~3,960 obs.
+3. **`@pooled` was deliberately NOT re-pooled over twelve.** It stays the eight-pair,
+   23-day number, per §1.5. Nothing served is charged it any more; it survives only as the
+   flagged fallback for a pair that has never been measured at all.
+4. **`max_positions` went 8 → 12.** T6 re-tuned the concurrency cap on both universes and
+   `max_concurrent=none` won on both — every cap tried cost net bps. On twelve pairs a cap of 8
+   is no longer "one slot per pair"; it is the binding cap T6 measured at **+13.21** against
+   **+19.51** uncapped. Widening the universe without widening the cap would have silently
+   imposed the constraint T6 said not to use.
+5. **The bar log was reset.** The top-2% cut is a rank over whatever population is recorded, so
+   an 8-pair era sitting inside the 14-day window would have made the live cut a mixture of two
+   rules. 753 bars and **zero trades in either arm** were discarded — which is exactly why the
+   change was made now. Backed up on the VM before truncation.
+
+🔴 **Coverage was deliberately NOT changed, and that is an open pre-registration.** At a fixed
+cov 0.02 a wider universe takes **more** trades, not better ones — T6 measured **3.05/day at
+twelve against 2.02 at eight**. Whether the served coverage should instead tighten to hold the
+trade count fixed (T6's count-matched cut is **0.01288**) is a separate question. M3_PROTOCOL §0
+forbids re-picking a searched dimension after seeing results, so it needs its own
+pre-registration on the population it will be served from. It was not bundled into the universe
+change. **Filed as parked below.**
+
+🔴 **Do not change `served_pairs` again while the forward test is accumulating trades.** It
+changes the rule, so the A/B would span two different policies — the same comparability break
+M3_4_PROTOCOL §7 records for the trade-tape change. This widening was done deliberately in the
+window before the first trade fired, and that window is now closing.
+
+**Two defects found and fixed on the way, both latent:**
+
+1. **"Seven days" was never true.** `Ledger.@min_rank_bars` is `7 * 288 = 2016` **bars**, and
+   the count is pooled across served pairs — so it clears in ~21 hours at eight pairs and ~14 at
+   twelve, never in seven days. Every document repeated the seven-day reading and the
+   2026-08-28 deploy was mis-forecast on it. Corrected in `ledger.ex`, M3_PLAN §0.0, PLAN.md,
+   M3_5_INTEGRATION §2 and this file.
+2. **The collector whitelist fallback was narrower than what was being collected.** The DB row
+   held twelve, but `config/config.exs` and `runtime.exs` both defaulted to eight (and
+   `Settings.@default_pairs` to three). One lost row and collection on XRP/LINK/AVAX/ADA would
+   have stopped, unrecoverably — deploy-day defect #2's failure mode with a different trigger.
+   Both defaults now hold twelve, and `config_test.exs` asserts the fallback can never be
+   narrower than the served universe.
+
+**New invariant tests** (`apps/fluxtrader/test/fluxtrader/trading/config_test.exs`) assert the
+three relationships that were individually plausible and jointly wrong: every served pair has
+its own measured cost, the position cap is not narrower than the universe, and the whitelist
+fallback is not narrower than the served set. 74 tests green.
+
 ---
 
 ## 🔴 Open — blockers on trading anything but paper
@@ -73,6 +147,10 @@ closed; §6's last two exit criteria closed. It left two items open, both below.
 ## 🟡 Parked — M3
 
 *M3-0b moved to Active above: nothing blocks it any more.*
+
+| item | what | gated on | revival trigger |
+|---|---|---|---|
+| **Re-pre-register the served coverage** | The universe went 8 → 12 on 2026-08-29 at an unchanged cov 0.02, which takes **more** trades (3.05/day vs 2.02), not better ones. T6's count-matched cut on twelve is **0.01288**, and on the 8-pair arm tightening the cut alone was worth **+12.72 bps** while widening the universe at a fixed cut was worth **−2.51**. So the cut, not the pairs, is where T6's signal lived | nothing technical | 🔴 **Blocked by protocol, not by work.** M3_PROTOCOL §0 forbids re-picking a searched dimension after seeing results; this needs a fresh pre-registration on the population it will be served from, written before anything is scored. Revive it when someone is prepared to write that document first — **not** by re-scoring the grid and picking the winner |
 
 ⚠️ **A planning consequence worth keeping in view:** 2.3 trades/day is an average over a period
 that included volatile months, and the served checkpoint has emitted **no gated signal since
@@ -136,7 +214,7 @@ applied in advance.
 | item | why it matters | source |
 |---|---|---|
 | ~~**Raise the trade-tape `limit: 200`**~~ | ✅ **DONE 2026-08-28** — raised to 1000, the endpoint maximum, and verified request-weight-neutral (aggTrades costs 20 weight at every limit, measured). Post-change sampling over 25 clean minutes shows **3 of 861 windows at the new cap (0.35%)**, against the old **30.4% on BTC**. The residual is irreducible by this route — 1000 is the endpoint maximum — and would need the WS tape to close (see the B4.3 row). ⚠️ It fixes the tape only *going forward* — the existing history is censored for good, and per §7 **no number measured before the change may be compared to one measured after it** | [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) §1.2 |
-| **Disk budget** | `orderbook_levels` runs ~24 MB/pair/day → ~8.6 GB/month at 12 pairs, against 54 GB free on `fluxtrader-1`: about six months of headroom, under four if the universe grows to twenty | [M3_PLAN.md](./M3_PLAN.md) §2 M3-4 |
+| **Disk budget** | `orderbook_levels` runs ~24 MB/pair/day → ~8.6 GB/month at 12 pairs, against **53 GB free** on `fluxtrader-1` (46% used, checked 2026-08-29): about six months of headroom, under four if the universe grows to twenty. ⚠️ Now that all twelve collected pairs are also *traded*, adding an instrument means adding it to both lists — and the disk cost is what bounds how many | [M3_PLAN.md](./M3_PLAN.md) §2 M3-4 |
 
 ---
 
@@ -144,7 +222,7 @@ applied in advance.
 
 | question | verdict | where |
 |---|---|---|
-| **The 12-pair traded universe (8-vs-12)** | **Closed as UNRESOLVABLE on this evaluation period** — not "12 is worse". The effect is within a couple of bps of zero in every fair framing and the data resolves ±37 bps at 80% power. More seeds cannot help; only a longer evaluation period can, and that is calendar, not compute. Served universe stays **8** | [T6_RESULTS.md](./T6_RESULTS.md), [M3_PLAN.md](./M3_PLAN.md) §0.6 |
+| **The 12-pair traded universe (8-vs-12)** | **Closed as UNRESOLVABLE on this evaluation period** — not "12 is worse". The effect is within a couple of bps of zero in every fair framing and the data resolves ±37 bps at 80% power. More seeds cannot help; only a longer evaluation period can, and that is calendar, not compute. ⚠️ **This tombstone said "served universe stays 8" until 2026-08-29 and was being read as a decision against twelve. It is not one.** Eight was the default while the four extras had no measured crossing cost; they have one now, and **the served universe is twelve** — see "The twelve-pair widening" in Active. What stays closed is the *question*: this data cannot rank the two universes, and re-opening it offline is what is forbidden, not trading twelve | [T6_RESULTS.md](./T6_RESULTS.md), [M3_PLAN.md](./M3_PLAN.md) §0.6 |
 | **T4 — promote a 12-pair seed** | **Cancelled**, not deferred. There is no verdict for it to wait on | [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2 |
 | **A learned M3 policy** | All 14 pre-registered runs lost to the hand-written rule; none passed Tier 1, and a one-feature ablation beat both fitted models. **Do not widen the grid, extend the feature list, or reach for a bigger model class** — pre-registered in advance as not-evidence-for-a-bigger-model | [M3_3_RESULTS.md](./M3_3_RESULTS.md), [M3_PLAN.md](./M3_PLAN.md) |
 | **T5 — `/predict_all` served untrained pairs** | **Fixed and shipped** — `serve.py:_servable_pairs()` intersects the whitelist with the checkpoint's own pair list; `/health` reports both | [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2 |

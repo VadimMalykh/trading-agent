@@ -31,12 +31,17 @@ defmodule FluxTraderWeb.HealthController do
       ab: safe(fn -> Ledger.ab_summary() end, %{error: "database unavailable"}),
       exec_cost: %{
         # The numbers every paper trade is charged, and where they came from.
-        source: "M3_4_RESULTS.md §1 (measured, 23 days of book history, $10k order)",
+        source: "M3_4_RESULTS.md §1 (measured, $10k order)",
         pooled_round_trip_bps: ExecCost.pooled_bps(),
         superseded_assumption_bps: 14.0,
         assumed_taker_fee_bps_per_side: ExecCost.assumed_taker_fee_bps_per_side(),
         fee_tier_verified: false,
-        measured_pairs: ExecCost.measured_pairs()
+        measured_pairs: ExecCost.measured_pairs(),
+        # Two depths of evidence behind the same table, reported rather than averaged away.
+        long_window_pairs: ExecCost.long_window_pairs(),
+        short_window_pairs: ExecCost.short_window_pairs(),
+        long_window_days: 23,
+        short_window_days: 14
       }
     })
   end
@@ -47,7 +52,13 @@ defmodule FluxTraderWeb.HealthController do
       source: "docs/M3_2_RESULTS.md §D1",
       coverage: Policy.coverage(),
       hold_minutes: Policy.hold_minutes(),
-      signal_horizon_m: Policy.signal_horizon_m()
+      signal_horizon_m: Policy.signal_horizon_m(),
+      # Reported next to `served_pairs` because the two are different settings and reading
+      # one as the other has already cost a production defect (2026-08-28). `served_pairs`
+      # is what the policy ranks and trades; this is what the collector subscribes to, and
+      # it is allowed to be wider. `inference.pairs` elsewhere in this payload is a third
+      # thing again: how many pairs the model returned a signal for on the last run.
+      collector_pairs: safe(fn -> Enum.sort(FluxTrader.Settings.get_whitelist()) end, [])
     }
 
     Map.merge(base, safe(fn -> FluxTrader.Trading.PolicyEngine.status() end, %{ok: false}))

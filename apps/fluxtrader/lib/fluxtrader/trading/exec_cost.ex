@@ -22,6 +22,20 @@ defmodule FluxTrader.Trading.ExecCost do
   So the executor crosses, always, and this module carries no queue model, no fill
   probability and no maker branch. That is a decision M3-4 paid for; see M3_PLAN §0.8.
 
+  ## All twelve served pairs carry their own measurement
+
+  M3-4's run measured twelve pairs, not eight. Under the protocol the four added on
+  2026-08-14 were reported as "texture only" and excluded from Q1's verdict, because
+  pooling 14 days of ladder with 23 into a single decision quantity is what
+  M3_4_PROTOCOL §1.5 forbids. **That exclusion governs the verdict, not the charging.**
+  A per-pair cost used to charge a trade is not a decision quantity, and using the pair's
+  own 14-day number is strictly better than charging it a constant pooled from eight
+  *other* pairs.
+
+  ADAUSDT is the case that makes this concrete: it measures **13.733** bps against the
+  pooled 9.842, so serving it on the fallback would have understated its cost by 3.89 bps
+  — about 40%. Its spread alone (4.901 bps) is 1.7x the widest of the original eight.
+
   ## Two caveats that belong on every number this module returns
 
     1. **Regime.** The 23-day measurement window is the calmest month of the evaluation
@@ -33,9 +47,18 @@ defmodule FluxTrader.Trading.ExecCost do
        slippage. That fee is the published Binance USDⓈ-M VIP-0 rate, **not** a figure read
        off this account. `mix flux.fee_tier` checks it; a different tier shifts every number
        here by a constant. M3_4_PROTOCOL §2.5 makes that check a precondition of M3-5.
+    3. **Window depth.** XRP, LINK, AVAX and ADA rest on 14 days and ~3,960 observations
+       against the others' 23 days and ~6,400. `round_trip_bps/1` tags them
+       `:measured_short_window` so the difference is visible at the call site rather than
+       buried here.
   """
 
   # Per-pair measured crossing cost, round trip, bps — M3_4_RESULTS.md §1 (`C_taker`).
+  #
+  # The first eight rest on 23 days of ladder; the last four on 14 (they were added to the
+  # collector on 2026-08-14). Both blocks come from the same run of the same study, and the
+  # split is recorded in `@short_window` rather than by keeping two maps, so there is exactly
+  # one place a number lives.
   @measured %{
     "BTCUSDT" => 8.017,
     "ETHUSDT" => 8.057,
@@ -44,30 +67,63 @@ defmodule FluxTrader.Trading.ExecCost do
     "ZECUSDT" => 9.448,
     "DOGEUSDT" => 9.538,
     "1000PEPEUSDT" => 11.263,
-    "WLDUSDT" => 14.060
+    "WLDUSDT" => 14.060,
+    "XRPUSDT" => 9.075,
+    "LINKUSDT" => 10.754,
+    "AVAXUSDT" => 11.401,
+    "ADAUSDT" => 13.733
   }
 
-  # Pooled over the eight served pairs, day-clustered (M3_4_RESULTS.md §2, Q1).
+  # The four measured on the shorter ladder. They are charged exactly like the other eight —
+  # a cost is a cost — but `round_trip_bps/1` tags them so a caller that cares about the
+  # depth of the evidence can see it, and so `/api/health` can report the split.
+  @short_window MapSet.new(["XRPUSDT", "LINKUSDT", "AVAXUSDT", "ADAUSDT"])
+
+  # Pooled over the eight LONG-WINDOW pairs, day-clustered (M3_4_RESULTS.md §2, Q1). It is
+  # deliberately NOT re-pooled over twelve: Q1 is a pre-registered decision quantity measured
+  # on 23 days, and re-pooling it across two depths of evidence is what M3_4_PROTOCOL §1.5
+  # forbids. Since every served pair now carries its own measurement, nothing the policy
+  # trades is charged this number any more — it survives as the fallback for a pair that has
+  # never been measured at all.
   @pooled 9.842
 
   # The taker fee per side the measurement decomposes to. Published VIP-0; unverified
   # against the account until `mix flux.fee_tier` says otherwise.
   @assumed_taker_fee_bps_per_side 4.0
 
-  @doc "The eight pairs M3-4 measured, which are also the eight served pairs (T6)."
+  @doc "Every pair M3-4 measured a crossing cost for — all twelve served pairs."
   def measured_pairs, do: Map.keys(@measured) |> Enum.sort()
+
+  @doc "The eight measured on 23 days of ladder."
+  def long_window_pairs,
+    do: Map.keys(@measured) |> Enum.reject(&MapSet.member?(@short_window, &1)) |> Enum.sort()
+
+  @doc "The four measured on 14 days of ladder (collected from 2026-08-14)."
+  def short_window_pairs, do: MapSet.to_list(@short_window) |> Enum.sort()
 
   @doc """
   Round-trip crossing cost for `pair`, in bps.
 
-  An unmeasured pair falls back to the pooled 9.842 and is flagged, because silently
-  charging BTC's 8.0 bps on a pair whose spread was never measured is the kind of default
-  that makes a backtest look better than the market.
+  Returns `{provenance, bps}`:
+
+    * `:measured` — 23 days of ladder;
+    * `:measured_short_window` — 14 days, the four pairs added 2026-08-14;
+    * `:pooled_fallback` — no measurement at all, charged the pooled 9.842 and flagged.
+
+  The fallback is flagged rather than silent because charging BTC's 8.0 bps on a pair whose
+  spread was never measured is the kind of default that makes a backtest look better than the
+  market. ADAUSDT is the standing example of why: it measures **13.733** bps, 3.89 above the
+  pooled number it would otherwise have been charged.
   """
   def round_trip_bps(pair) when is_binary(pair) do
-    case Map.fetch(@measured, String.upcase(pair)) do
-      {:ok, bps} -> {:measured, bps}
-      :error -> {:pooled_fallback, @pooled}
+    up = String.upcase(pair)
+
+    case Map.fetch(@measured, up) do
+      {:ok, bps} ->
+        if MapSet.member?(@short_window, up), do: {:measured_short_window, bps}, else: {:measured, bps}
+
+      :error ->
+        {:pooled_fallback, @pooled}
     end
   end
 
@@ -83,7 +139,7 @@ defmodule FluxTrader.Trading.ExecCost do
   """
   def side_bps(pair), do: cost_bps(pair) / 2.0
 
-  @doc "Pooled round-trip crossing cost over the eight served pairs, bps."
+  @doc "Pooled round-trip crossing cost over the eight long-window pairs, bps."
   def pooled_bps, do: @pooled
 
   @doc "The taker fee per side the measurement assumes, bps. Unverified against the account."

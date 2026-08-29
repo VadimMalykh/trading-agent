@@ -33,9 +33,9 @@ if config_env() == :prod do
 
   config :fluxtrader, :trading,
     mode: System.get_env("TRADING_MODE", "simulation"),
-    # Defaults mirror config.exs; see there for why the position cap is 8 and why
-    # min_confidence is 0.0.
-    max_positions: String.to_integer(System.get_env("MAX_POSITIONS") || "8"),
+    # Defaults mirror config.exs; see there for why the position cap tracks the served
+    # universe and why min_confidence is 0.0.
+    max_positions: String.to_integer(System.get_env("MAX_POSITIONS") || "12"),
     max_position_pct: String.to_float(System.get_env("MAX_POSITION_PCT") || "0.10"),
     max_notional_pct: String.to_float(System.get_env("MAX_NOTIONAL_PCT") || "0.20"),
     max_daily_loss_pct: String.to_float(System.get_env("MAX_DAILY_LOSS_PCT") || "0.05"),
@@ -45,10 +45,12 @@ if config_env() == :prod do
     take_profit_ratio: String.to_float(System.get_env("TAKE_PROFIT_RATIO") || "2.0"),
     leverage: String.to_integer(System.get_env("LEVERAGE") || "5"),
     total_capital: String.to_float(System.get_env("TOTAL_CAPITAL") || "1000.0"),
+    # See config.exs: this fallback must never be narrower than what is actually collected.
     whitelist_pairs:
       System.get_env(
         "WHITELIST_PAIRS",
-        "BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT"
+        "BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT," <>
+          "XRPUSDT,LINKUSDT,AVAXUSDT,ADAUSDT"
       )
       |> String.split(",", trim: true)
 end

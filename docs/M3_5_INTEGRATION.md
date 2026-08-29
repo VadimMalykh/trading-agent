@@ -27,7 +27,7 @@ Before this, M3's output was a rule in a Python file. Nothing in the running sys
 so we could not tell whether it obeyed the risk limits, and we were not accumulating any new
 evidence about whether it works. Now:
 
-Every five minutes the model scores each of the eight pairs we trade. Each score is written
+Every five minutes the model scores each of the twelve pairs we trade (eight until 2026-08-29). Each score is written
 down. Once a week of scores has accumulated, the system takes **the most confident 2% of
 them**, goes long or short as the model says, sizes the trade between **one third and five
 thirds** of a base position depending on how violent the last 24 hours of Bitcoin have been,
@@ -52,7 +52,7 @@ machine that collects them. What M3-5 delivers is the collection, not the verdic
 
 1. **It will not trade for at least a week after any fresh deployment.** Entry is by rank —
    "the top 2% of recent bars" — so it needs a population to rank against. The rank window
-   needs 2,016 bars (seven days) before the policy will place anything. `/api/health` says
+   needs 2,016 bars before the policy will place anything — a bar count pooled across served pairs, so ~14 hours at twelve, NOT seven days. `/api/health` says
    `"warm": false` until then.
 2. **It may then not trade for weeks more.** The strategy only fires in volatile markets, and
    the market has been the calmest of the whole evaluation period since July — **the served
@@ -136,8 +136,8 @@ docker compose run --rm -e MIX_ENV=test -e POSTGRES_HOST=postgres app mix test
 | `signal_liveness.seconds_since_last_gated` | How long the system has been silent. `null` means never gated in the retained window — check it against §0's "no gated signal since 2026-06-29". |
 | `policy.warm` | `false` means the rank window is still filling; the policy cannot trade. |
 | `policy.confidence_threshold` | The live top-2% cut. Watch it drift — that is the thing a fixed threshold would have got wrong. |
-| `policy.served_pairs` | The eight pairs the policy may rank and trade. **This is not the collector's whitelist**, which is deliberately wider — see §3.4. If this ever shows more than the eight M3-4 measured, the coverage cut is being taken over the wrong population. |
-| `policy.skips` | Named reasons bars were not traded: `warming_up`, `below_coverage`, `position_open`, `no_regime`, `no_side`, `not_served`. **A silent system with a populated `skips` map is working.** `not_served` counts bars for collected-but-not-traded pairs and should be non-zero whenever the collector is wider than the served eight. |
+| `policy.served_pairs` | The twelve pairs the policy may rank and trade (eight until 2026-08-29). **This is not the collector's whitelist** — see §3.4; the two now hold the same twelve but remain separate settings, and the whitelist stays free to be wider. The invariant to check is not a count: **if this ever shows a pair `ExecCost` has not measured, the coverage cut is being taken over a population containing a trade we cannot price.** `exec_cost.measured_pairs` is the list to compare against, and `config_test.exs` asserts it. |
+| `policy.skips` | Named reasons bars were not traded: `warming_up`, `below_coverage`, `position_open`, `no_regime`, `no_side`, `not_served`. **A silent system with a populated `skips` map is working.** `not_served` counts bars for collected-but-not-traded pairs; since 2026-08-29 the collector and the served set hold the same twelve, so it should now be **zero** — a non-zero value means the two lists have drifted apart. |
 | `policy.risk_rejections` | Counted refusals by reason. A non-empty map means a hard limit is binding and the A/B is being throttled on one side only. |
 | `regime.p80_edge` vs `published_p80` | The live top quintile cut against §1.8's 4.31%. A large gap means the market is in a different volatility regime from the one the policy was measured in — as of 2026-08-28 the live p80 is **1.77%**, i.e. less than half. |
 | `ab` | Both arms: trades, net bps per trade, net bps per unit of notional, win rate, drawdown, trades/day. |
@@ -181,7 +181,7 @@ floor is not a risk limit: it could only narrow what the policy chose.
 M3-2 searched this exact knob over 36 configurations and `max_concurrent=3` was **worse than
 its uncapped twin in every one**, on both pooled and worst-window net. The cap does not select
 trades, it drops whichever ones arrive while three are open. Held serially per pair — which the
-policy enforces independently — eight slots is a real 8-pair portfolio, not leverage.
+policy enforces independently — one slot per served pair is a real portfolio, not leverage. The cap moved 8 → 12 with the universe on 2026-08-29; it must track `served_pairs`, because a cap below the universe size is the binding concurrency constraint T6 measured as costing net bps.
 
 It also has to be 8 for the A/B to mean anything: the control arm is a ledger and cannot be
 refused, so a cap that throttles only the policy arm would show up as the policy losing.
@@ -210,15 +210,30 @@ policy was:
 * able to **enter AVAX/ADA/LINK/XRP**, which M3-4 never measured a crossing cost for. Those
   fall back to `ExecCost`'s pooled 9.842 bps — a number pooled over the *other* eight pairs.
 
-The fix is a second, separate list: `config :fluxtrader, :trading, served_pairs`, pinned to the
-eight, filtered **before** `record_bars/2` so an unserved bar never joins the ranking
-population, and surfaced as `policy.served_pairs` with a `not_served` skip counter.
+The fix is a second, separate list: `config :fluxtrader, :trading, served_pairs`, filtered
+**before** `record_bars/2` so an unserved bar never joins the ranking population, and surfaced
+as `policy.served_pairs` with a `not_served` skip counter.
 
 ⚠️ **The obvious fix is the wrong one and it was tried first.** Narrowing the *whitelist* to the
 served eight does make the policy correct — and stops the collector, which halted
 `orderbook_snapshots` on the four dropped pairs for ~18 minutes before it was caught. **Book
 history never backfills.** Collecting a pair is cheap; not collecting it is permanent. The two
 lists exist precisely so that the narrow one can be narrowed without touching the wide one.
+
+🟢 **Postscript, 2026-08-29: the served list was widened to those same twelve — deliberately
+this time.** It is worth being precise about why that is not a reversal, because the two look
+identical from the outside and are opposite in kind. On deploy day the policy ranked twelve
+pairs **by accident**, following the wrong list, charging four of them a cost pooled from the
+other eight. The fix was not "eight is correct" — it was "the policy must own its universe, and
+may only serve a pair it can price." The second condition has since been met: M3-4 had already
+measured all twelve, ADAUSDT at 13.733 bps against the pooled 9.842 (so the accidental version
+really was mispricing it by 40%), and promoting those four constants is what made the deliberate
+widening safe.
+
+The two lists still exist and still mean different things. What changed is that the narrow one
+is no longer narrower. The invariant that replaced "it must be the eight" is the one that was
+doing the real work all along: **every served pair carries its own measured crossing cost**,
+now asserted in `config_test.exs` rather than maintained by hand.
 
 ## §4 — The A/B (this part IS pre-registered)
 

@@ -73,7 +73,12 @@ defmodule FluxTrader.Trading.RiskManager do
     config = Application.get_env(:fluxtrader, :trading, [])
 
     state = %{
-      max_positions: Keyword.get(config, :max_positions, 8),
+      # The fallback derives from the priced universe rather than repeating a literal: a
+      # cap narrower than the number of pairs we can charge a measured cost for is the
+      # binding concurrency constraint T6 measured as costing net bps, and hard-coding 8
+      # here would quietly reintroduce it the moment the config went missing.
+      max_positions:
+        Keyword.get(config, :max_positions, length(FluxTrader.Trading.ExecCost.measured_pairs())),
       # Base notional as a fraction of capital, before the policy's size multiplier.
       max_position_pct: Keyword.get(config, :max_position_pct, 0.10),
       # The ceiling the multiplier may not push a position through. 5/3 x 0.10 = 0.167 fits;

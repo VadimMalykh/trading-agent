@@ -6,8 +6,8 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
   measured crossing cost.
 
   Driven with injected signal and regime sources so the path can be exercised without a live
-  inference service and without waiting out the seven-day rank-window warmup. Everything
-  between the injection points is the production code.
+  inference service and without waiting out the rank-window warmup. Everything between the
+  injection points is the production code.
   """
   use FluxTrader.DataCase, async: false
 
@@ -21,7 +21,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
     Application.put_env(:fluxtrader, :trading,
       mode: "simulation",
-      max_positions: 8,
+      max_positions: 12,
       max_position_pct: 0.10,
       max_notional_pct: 0.20,
       max_daily_loss_pct: 0.05,
@@ -116,12 +116,14 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     now = DateTime.utc_now()
     warm_the_rank_window(now)
 
-    # ADAUSDT is collected but not served: it is not one of the eight M3-2 measured the rule
-    # on, and ExecCost has no crossing cost for it. It must not join the ranking population,
-    # because "the top 2%" is a rank over that population.
+    # BNBUSDT is neither served nor measured: ExecCost has no crossing cost for it, so it
+    # would be charged a number pooled from other pairs. It must not join the ranking
+    # population, because "the top 2%" is a rank over that population.
+    #
+    # (This test used ADAUSDT until 2026-08-29, when ADA became one of the served twelve.)
     start_engine(
       [
-        signal(symbol: "ADAUSDT", confidence: 0.99),
+        signal(symbol: "BNBUSDT", confidence: 0.99),
         signal(symbol: "BTCUSDT", confidence: 0.95)
       ],
       regime(0.05)
@@ -131,29 +133,33 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     status = PolicyEngine.status()
 
     assert status.skips[:not_served] == 1
-    refute Enum.any?(Ledger.open_trades("policy"), &(&1.pair == "ADAUSDT"))
-    refute Enum.any?(Ledger.open_trades("signal_only"), &(&1.pair == "ADAUSDT"))
+    refute Enum.any?(Ledger.open_trades("policy"), &(&1.pair == "BNBUSDT"))
+    refute Enum.any?(Ledger.open_trades("signal_only"), &(&1.pair == "BNBUSDT"))
     assert Enum.any?(Ledger.open_trades("policy"), &(&1.pair == "BTCUSDT"))
 
     # And it is absent from the ranking population itself, not merely refused at entry.
     recorded = FluxTrader.Repo.all(FluxTrader.Trading.PolicyBar) |> Enum.map(& &1.pair)
-    refute "ADAUSDT" in recorded
+    refute "BNBUSDT" in recorded
     assert "BTCUSDT" in recorded
   end
 
-  test "the served universe is the eight measured pairs, and every one has a measured cost" do
+  test "the served universe is exactly the measured pairs, and none falls back to pooled" do
     served = PolicyEngine.served_pairs()
 
-    assert MapSet.size(served) == 8
+    assert MapSet.size(served) == 12
     assert MapSet.equal?(served, MapSet.new(FluxTrader.Trading.ExecCost.measured_pairs()))
 
-    # No served pair may fall back to the pooled cost — the fallback pools the OTHER pairs.
+    # This is the invariant the universe width actually turns on: no served pair may fall
+    # back to the pooled cost, because that number is pooled over the OTHER pairs. Both
+    # measured tags are acceptable — a pair's own 14-day measurement beats a constant
+    # borrowed from eight different pairs — but `:pooled_fallback` is not.
     for pair <- served do
-      assert {:measured, _} = FluxTrader.Trading.ExecCost.round_trip_bps(pair)
+      assert {tag, _} = FluxTrader.Trading.ExecCost.round_trip_bps(pair)
+      assert tag in [:measured, :measured_short_window]
     end
   end
 
-  test "the policy stays cold, and says why, until the rank window has a week of bars" do
+  test "the policy stays cold, and says why, until the rank window has enough bars" do
     # The distinction M3_PLAN §0.8 asks for: correct silence must be legible as correct.
     start_engine([signal(symbol: "BTCUSDT", confidence: 0.99)], regime(0.05))
     :ok = PolicyEngine.refresh()

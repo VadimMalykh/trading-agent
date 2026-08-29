@@ -1,6 +1,6 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** In progress — **M3-0a, M3-1, M3-2, M3-3, M3-4 and M3-5 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar, the learned policy did not beat it, so that rule stands as M3's policy — and as of 2026-08-28 **it is wired to the executor, deployed to `fluxtrader-1`, and paper-trading — the forward test started 2026-08-28** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md); deploying it exposed three defects invisible on the local stack, all fixed — see §3.5 and [BACKLOG.md](./BACKLOG.md)). **The traded-universe question is closed** (T6, 2026-08-27): 8-vs-12 is not decidable on this evaluation period — the effect is within a couple of bps of zero in every framing and the data resolves ±37 bps at best — so the served 8-pair universe stands (§0.6). **T5 is fixed.** **M3-4 measured execution costs** ([M3_4_RESULTS.md](./M3_4_RESULTS.md), 2026-08-28): crossing costs **9.84 bps round trip, not 14** — every published M3 number was too pessimistic — while the maker arm's apparent +3.6 bps saving is a fee-rebate accounting gain that §3's adverse-selection panel contradicts in **16 of 16 cells**, so M3-5 built a crossing executor and no limit-order machinery. **One item remains: M3-0b** (price/funding side-table — its data is already exported). **Two preconditions M3-5 could not close are open and filed:** the Binance fee tier is still unverified against the account, and the `auto` order path is unsigned so nothing beyond paper can trade. Every open and parked item across all wavefronts is indexed in [BACKLOG.md](./BACKLOG.md). Unblocked: R0 promoted 2026-08-26.
+**Status:** In progress — **M3-0a, M3-1, M3-2, M3-3, M3-4 and M3-5 are complete** (§0.0). A rules baseline clears the pre-registered Tier-1 bar, the learned policy did not beat it, so that rule stands as M3's policy — and as of 2026-08-28 **it is wired to the executor, deployed to `fluxtrader-1`, and paper-trading — the forward test started 2026-08-28** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md); deploying it exposed three defects invisible on the local stack, all fixed — see §3.5 and [BACKLOG.md](./BACKLOG.md)). **The traded-universe question is closed** (T6, 2026-08-27): 8-vs-12 is not decidable on this evaluation period — the effect is within a couple of bps of zero in every framing and the data resolves ±37 bps at best. ⚠️ That is a verdict of *undecidable*, **not** a verdict against twelve, and it was being misread as one: **the served universe is 12 as of 2026-08-29**, once M3-4's already-measured per-pair costs for XRP/LINK/AVAX/ADA were promoted so nothing served falls back to a pooled number ([BACKLOG.md](./BACKLOG.md), "The twelve-pair widening"). **T5 is fixed.** **M3-4 measured execution costs** ([M3_4_RESULTS.md](./M3_4_RESULTS.md), 2026-08-28): crossing costs **9.84 bps round trip, not 14** — every published M3 number was too pessimistic — while the maker arm's apparent +3.6 bps saving is a fee-rebate accounting gain that §3's adverse-selection panel contradicts in **16 of 16 cells**, so M3-5 built a crossing executor and no limit-order machinery. **One item remains: M3-0b** (price/funding side-table — its data is already exported). **The served universe widened to 12 on 2026-08-29**, deliberately in the window before the forward test booked its first trade, because changing the universe changes the coverage rank and therefore the rule. **Two preconditions M3-5 could not close are open and filed:** the Binance fee tier is still unverified against the account, and the `auto` order path is unsigned so nothing beyond paper can trade. Every open and parked item across all wavefronts is indexed in [BACKLOG.md](./BACKLOG.md). Unblocked: R0 promoted 2026-08-26.
 
 **New to this document?** **§0.5** explains what we have in plain language — every term defined, the strategy in dollars, and a direct answer to "can it trade profitably yet?" (short version: the edge is real and **slightly better than published now that costs are measured**, but it is still unproven at this size — and as of 2026-08-28 it is **wired up to paper-trade forward** — the only thing that can ever change that — though not yet deployed to the always-on VM).
 **GPU required:** **No — not for any step in this document.** See §0.3.
@@ -39,8 +39,10 @@ B4's collector fixes are awaiting the same deploy ([BOOK_ERA_PLAN.md](./BOOK_ERA
 
 🔴 **What it does and does not mean once deployed.** It does not make the edge certifiable —
 nothing could, on 253 days holding ~220 independent ones. What it does is start the **only**
-mechanism that manufactures new independent days. Expect a quiet start: the rank window needs **seven days**
-of bars before the policy may trade at all, and the market has been the calmest of the whole
+mechanism that manufactures new independent days. Expect a quiet start: the rank window needs
+**2,016 bars** before the policy may trade at all — that is ~14 hours at twelve served pairs,
+**not** the seven days this document claimed until 2026-08-29 (the constant is a bar count
+pooled across pairs, not a calendar span) — and the market has been the calmest of the whole
 period since July, so it may then idle for weeks. That silence is the strategy working, and it
 is now *legible* as such on `/api/health` rather than indistinguishable from a dead process.
 
@@ -70,7 +72,7 @@ block assumes you have.
 | **M3-1** — pre-registered protocol | ✅ **committed 2026-08-27 as [M3_PROTOCOL.md](./M3_PROTOCOL.md)**, before any search ran |
 | **M3-2** — rules baseline | ✅ **run 2026-08-27, all 40 configurations** — [M3_2_RESULTS.md](./M3_2_RESULTS.md). A baseline passes Tier 1 |
 | **M3-3** — learned policy | ✅ **run 2026-08-27, all 14 configurations** — [M3_3_RESULTS.md](./M3_3_RESULTS.md). **None beat the baseline; M3-2's rule stands as M3's policy** |
-| **T-wave + T6** — the 12-pair universe | 🟢 **Closed 2026-08-27, as unresolvable on this data.** The +7.5 did not replicate; T6's fair tests (trade-count-matched, cut-matched, cap-re-tuned) put the effect within a couple of bps of zero in every framing against a ±37 bps resolution limit, and what a count-matched test made look like a pair gain is the *confidence cut*. Served universe stays 8. [T6_RESULTS.md](./T6_RESULTS.md), §0.6 |
+| **T-wave + T6** — the 12-pair universe | 🟢 **Closed 2026-08-27, as unresolvable on this data.** The +7.5 did not replicate; T6's fair tests (trade-count-matched, cut-matched, cap-re-tuned) put the effect within a couple of bps of zero in every framing against a ±37 bps resolution limit, and what a count-matched test made look like a pair gain is the *confidence cut*. ⚠️ **"Unresolvable" is not "12 is worse", and this row said "served universe stays 8" until 2026-08-29, when the served universe became 12** — the eight were a default held only while the four extras lacked a measured crossing cost. The closed question is whether this *data* can rank the universes; it cannot, and that is not a reason to trade eight. [T6_RESULTS.md](./T6_RESULTS.md), [BACKLOG.md](./BACKLOG.md) |
 | **T5** — `/predict_all` served untrained pairs | 🟢 **fixed 2026-08-27** — `serve.py` now intersects the DB whitelist with the checkpoint's own pair list and reports both on `/health` |
 | **M3-4a** — the maker study's pre-registration | ✅ **committed 2026-08-28 as [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md)**, before any fill number. It closes M3-4a's open cadence question and turns up **two data defects and one structural fact** that M3_PLAN had wrong — see §0.7 |
 | **M3-4** — the execution-cost study (§3.3) | ✅ **run 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), implemented as `ml/train/m3/execcost.py`, all nine §6 items published. **Q1: the 14 bps taker assumption is MIS-STATED — the real cost is 9.84.** **Q2: the maker arm is not worth building** (§0.8) |
@@ -616,11 +618,21 @@ M3-4a must resolve whether the collector is dropping polls or the write is condi
 state the sampling interval it assumes, before any fill number is quoted.
 
 **Scope it to the 8 baseline pairs — that is what is served** — but produce per-pair numbers
-for all 12 wherever the stored ladders allow at no extra cost, though with the universe closed nothing depends on it and re-running
-this study would be expensive (§0.6). If 12 pairs were adopted, the four new ones
-have 13 days of ladder against the majors' 22. Export all 12, but **pre-register the primary
-result on the pairs with the full window and report the short-window four separately** — do
-not silently pool two depths of evidence, and do not let a 13-day sample decide a pair's cost.
+for all 12 wherever the stored ladders allow at no extra cost. If 12 pairs were adopted, the
+four new ones have 13 days of ladder against the majors' 22. Export all 12, but **pre-register
+the primary result on the pairs with the full window and report the short-window four
+separately** — do not silently pool two depths of evidence, and do not let a 13-day sample
+decide a pair's cost.
+
+🟢 **This instruction is why the 2026-08-29 widening cost one afternoon instead of a re-export.**
+The run followed it exactly: all 12 measured, the primary pre-registered on the 8, the short
+four reported separately and excluded from Q1's verdict. When the universe *was* adopted, the
+numbers were already on disk and the study re-ran byte-identically. Note the distinction that
+made them usable: **the §1.5 exclusion governs the VERDICT, not the CHARGING.** A per-pair cost
+used to charge a trade is not a decision quantity, and a pair's own 14-day number beats a
+constant pooled from eight *other* pairs — ADAUSDT measures 13.733 bps against that pooled
+9.842. What remains forbidden is re-pooling the two depths into a single decision number, and
+`@pooled` was left at the eight-pair value for exactly that reason.
 
 Take it in the milestone's established two-step order:
 
