@@ -96,8 +96,22 @@ quote this widening as evidence that twelve earns more.
    imposed the constraint T6 said not to use.
 5. **The bar log was reset.** The top-2% cut is a rank over whatever population is recorded, so
    an 8-pair era sitting inside the 14-day window would have made the live cut a mixture of two
-   rules. 753 bars and **zero trades in either arm** were discarded — which is exactly why the
-   change was made now. Backed up on the VM before truncation.
+   rules. 1,161 bars and **zero trades in either arm** were discarded — which is exactly why the
+   change was made now. Backed up first to `~/policy_bars_8pair_20260829.csv` on the VM.
+
+**Deployed and verified on `fluxtrader-1`, 2026-08-29 05:00 UTC** (commit `5815789`):
+
+* `policy.served_pairs` and the new `policy.collector_pairs` both show the twelve;
+* `exec_cost.measured_pairs` shows twelve, split `long_window_pairs` (8, 23d) /
+  `short_window_pairs` (4, 14d);
+* `risk.max_positions` is 12;
+* `skips` holds only `warming_up` — **`not_served` is gone**, which is the expected reading now
+  that the collector and the served set coincide, and is the signal to watch: a non-zero
+  `not_served` from here means the two lists have drifted apart again;
+* `orderbook_snapshots` kept flowing evenly on all twelve pairs across the restart (36 rows per
+  pair in the following 8 minutes) — the deploy-day-defect-#2 failure mode did **not** recur;
+* the rank window restarted at 0 and refills at **12 pairs x 288 = 3,456 bars/day**, so
+  `warm: true` is expected around **2026-08-29 19:00 UTC**, ~14 hours after the reset.
 
 🔴 **Coverage was deliberately NOT changed, and that is an open pre-registration.** At a fixed
 cov 0.02 a wider universe takes **more** trades, not better ones — T6 measured **3.05/day at
