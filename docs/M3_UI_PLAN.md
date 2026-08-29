@@ -1,10 +1,11 @@
 # M3 dashboard panel — what to build
 
-**Status:** ⬜ **NOT STARTED.** Specified 2026-08-29, to be built in a fresh session.
+**Status:** ✅ **BUILT 2026-08-29.** Not yet deployed to `fluxtrader-1` — see §9.
 **GPU required:** No. **Keys required:** No. **Touches trading logic:** **No — read-only.**
 
 **Owner files:** `apps/fluxtrader_web/lib/fluxtrader_web/live/dashboard_live.ex` (the only
-file that must change), plus a new test.
+file that changed in `lib/`), plus the web app's first tests. Nothing in `apps/fluxtrader/`
+changed, as §5 required: every number the panel shows already existed.
 
 **Related:** [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) (what runs live, and how to read
 `/api/health`) · [BACKLOG.md](./BACKLOG.md) (the index) · [M3_PLAN.md](./M3_PLAN.md) §0.0
@@ -243,3 +244,62 @@ its guard), and `dashboard_live.ex` (the conventions to match). Then build §2.
 **What to bring back:** the suite result, a screenshot or rendered-text sample of the panel in
 the **empty/warming** state (the state that matters most), and confirmation of acceptance
 items 2 and 3 in §6.
+
+---
+
+## §9 — What was built, and what it was verified against
+
+**Built 2026-08-29, entirely as specified.** No item in §7 was widened into, and no function
+was added to `Ledger`, `PolicyEngine` or any other trading module.
+
+| file | change |
+|---|---|
+| `apps/fluxtrader_web/lib/fluxtrader_web/live/dashboard_live.ex` | the panel: the `m3` assign, the separate `@m3_refresh_ms 60_000` loop, four guards (`safe_policy/0`, `safe_liveness/0`, `safe_ab/0`, `safe_collector_pairs/0`), the markup, and the formatting helpers |
+| `apps/fluxtrader_web/test/fluxtrader_web/live/dashboard_live_test.exs` | **new** — five LiveView tests, all of them empty states |
+| `apps/fluxtrader_web/test/test_helper.exs`, `test/support/conn_case.ex` | **new** — `fluxtrader_web` had no test tree at all. `ConnCase` takes the sandbox in **shared** mode, because a connected LiveView runs in its own process and would otherwise be unable to read the bar log |
+| `apps/fluxtrader_web/mix.exs`, `mix.lock` | `{:floki, ">= 0.36.0", only: :test}` — `Phoenix.LiveViewTest` parses rendered HTML with it. ⚠️ A deps change means the `app_deps` / `app_build` volumes must be recreated on deploy, or the dev server 500s until restarted (it did, once, during this build) |
+
+### Acceptance, §6
+
+1. ✅ **Suite green: 79 tests, 0 failures** (74 existing + 5 new). No existing test changed.
+2. ✅ **Renders with an empty ledger**, showing the warmup explainer and `—` for every
+   unmeasured number. The test asserts the string `0.00` does **not** appear.
+3. ✅ **Renders with Postgres down.** `docker compose stop postgres`, reload: HTTP 200, the
+   M3 panel degraded to "the bar log cannot be read", the rest of the dashboard intact.
+4. ✅ **Checked against the real VM state.** `fluxtrader-1`'s `/api/health` at build time was
+   `warm: false`, 1,644 / 2,016 bars, 12 served / 12 collected, `skips: {warming_up: 16188}`,
+   last bar 184s ago, no gated signal ever, both arms at zero trades. That state was
+   reproduced in a throwaway test and the panel rendered it correctly, including the ETA
+   ("about 3 more hours at 12 pairs").
+
+### Three decisions taken while building, that the spec left open
+
+1. 🔴 **`cum_net_bps` and `max_drawdown_bps` also render as `—` when an arm has no trades.**
+   §2.3 names only `gross_bps` / `net_bps` / `win_rate` as `nil`, but `arm_summary/2` returns
+   a *structural* `0.0` for the cumulative pair when `n == 0`. That zero means "no trades",
+   not "measured, and it is zero" — which is the exact confusion §2.3 exists to prevent, so
+   it gets the same dash. `trades` and `open` stay as real integers.
+2. **"unknown" is distinguished from "never".** When the ledger is unreadable the two `ago`
+   badges say `unknown`, not `never`: "never" is a fact about the ledger, "unknown" is a fact
+   about this page's ability to read it, and reporting the second as the first would claim a
+   silence that was never observed.
+3. **A ledger blip does not wipe the panel, but it does say so.** `liveness` and `ab` carry
+   the previous good values forward per §4, and an amber line then states that they are the
+   last good values rather than current ones. `policy` is *not* carried forward — a stale
+   `warm` badge over a dead engine would be a lie, and engine liveness is itself the reading.
+
+### Not done: the deploy
+
+The panel is built and verified locally; `fluxtrader-1` still serves the M2-era dashboard.
+Deploying is a separate, deliberate act because **this deploy changes dependencies**, so it
+needs the volume recreation named in the table above:
+
+```sh
+gcloud compute ssh --zone me-central1-b --project fluxtrader fluxtrader-1 -- \
+  "cd ~/trading_agent && git pull && docker compose down && \
+   docker volume rm trading_agent_app_deps trading_agent_app_build && docker compose up -d"
+```
+
+🟢 **It cannot disturb the forward paper test's comparability** — the panel reads and changes
+nothing the policy uses. But the restart itself pauses collection for as long as the app is
+down, and collection gaps never backfill (deploy-day defect #2), so do it deliberately.

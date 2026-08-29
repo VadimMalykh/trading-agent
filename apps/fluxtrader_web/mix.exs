@@ -36,7 +36,10 @@ defmodule FluxTraderWeb.MixProject do
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.1"},
       {:jason, "~> 1.4"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      # Test-only: Phoenix.LiveViewTest parses rendered HTML with Floki, and the M3 panel's
+      # empty/nil states are exactly what a manual click-through on a populated box misses.
+      {:floki, ">= 0.36.0", only: :test}
     ]
   end
 
