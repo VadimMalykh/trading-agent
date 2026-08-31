@@ -1,6 +1,12 @@
 # M3 dashboard panel — what to build
 
-**Status:** ✅ **BUILT 2026-08-29.** Not yet deployed to `fluxtrader-1` — see §9.
+**Status:** ✅ **BUILT 2026-08-29, deployed 2026-08-31, and REVISED the same day by the
+coverage-cut freeze** ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6).
+
+🔴 **Read §0.1 before using this document as a spec.** Its warmup requirements described a
+mechanism that no longer exists. Everything else in it — the empty-state doctrine, the `nil`
+vs `0.00` rule, the degraded-Postgres requirement — stands unchanged and is the reason the
+panel earned its keep.
 **GPU required:** No. **Keys required:** No. **Touches trading logic:** **No — read-only.**
 
 **Owner files:** `apps/fluxtrader_web/lib/fluxtrader_web/live/dashboard_live.ex` (the only
@@ -10,6 +16,35 @@ changed, as §5 required: every number the panel shows already existed.
 **Related:** [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) (what runs live, and how to read
 `/api/health`) · [BACKLOG.md](./BACKLOG.md) (the index) · [M3_PLAN.md](./M3_PLAN.md) §0.0
 (current status) · [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) (the most recent results)
+
+---
+
+## §0.1 — 🔴 What the freeze changed in this spec, 2026-08-31
+
+The panel was specified around a **warmup**: the served cut was re-ranked over a trailing 14
+days of `policy_bars`, so the policy could not trade until 2,016 bars had accumulated, and the
+single most useful thing the panel could say was how far along that was.
+
+That rule was measured and retired the day after this panel was deployed. The cut is now the
+constant `backtest.py` derives over the whole evaluation split, so **there is no warmup and
+never will be** — `warm` is true from the first bar. Every warmup requirement below is
+therefore superseded:
+
+| specified below | what was built instead |
+|---|---|
+| "Rank window" badge, `n / 2,016 bars` | **Cut (frozen)** — the cut the running engine is deciding with (0.632), red if it differs from this build's constant — and **Confidence vs cut**, the drift diagnostic |
+| the warmup explainer and its ETA sentence | a plain-language drift sentence: whether the top 2% of recent bars clears the cut, and by how much it falls short if not |
+| `warm: false` as the panel's headline fact | `confidence_threshold == frozen_threshold` as the headline fact. `warm` is still rendered, but it no longer distinguishes anything |
+| the LiveView assertion on `n / 2016` | an assertion that the retired warmup vocabulary **cannot come back**, plus one that a mismatched running cut renders as a fault |
+
+🟢 **The doctrine survives intact, and it is what made this panel worth building.** §0's rule —
+*every empty state must say why it is empty and what would change it* — is exactly why the
+drift diagnostic was kept rather than deleted with the trailing cut. A policy silent because
+the market is calm and a policy silent because it is broken still look identical, and the panel
+still has to tell them apart. Only the specific emptiness changed.
+
+⚠️ This panel is also what surfaced the defect it is now revised for: it made the served-vs-
+scored threshold gap visible, which is [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md).
 
 ---
 
@@ -46,10 +81,11 @@ with "0 trades" is **worse than no panel** — it will be read as a fault, and s
 
 So every empty state must say **why** it is empty and **what would change it**. Concretely:
 
-* warming up → *"Warming up: 1,044 / 2,016 bars. The policy may not trade until the rank window
-  fills — about 8 more hours at 12 pairs."*
-* warm, no signal → *"Warm. No gated signal for 14 days. Expected: the policy trades the top 2%
-  of bars by confidence and the market has been calm. Last bar seen 3 minutes ago."*
+* ⚫ *superseded by §0.1:* warming up → *"Warming up: 1,044 / 2,016 bars…"* — there is no
+  warmup any more; the equivalent state is a thin bar log, which delays only the diagnostic.
+* no signal → *"The policy trades any bar at or above a FIXED confidence of 0.632… Right now
+  even the top 2% of recent bars only reaches 0.548 — 0.084 below the cut — so the policy is
+  correctly taking nothing."*
 * never *"No data"* on its own.
 
 ---
@@ -61,8 +97,8 @@ So every empty state must say **why** it is empty and **what would change it**. 
 
 | what is missing | why it matters now |
 |---|---|
-| **warm / not warm, and progress** | The single fact that says whether the policy is *allowed* to trade yet. `warm: false` until the rank window holds 2,016 bars |
-| **the A/B arms side by side** | `policy` vs `signal_only` is PLAN.md's M3 A/B and the whole point of the forward test |
+| ⚫ *superseded by §0.1:* **warm / not warm, and progress** | Was "the single fact that says whether the policy is allowed to trade yet". Replaced by **the cut in force vs this build's constant**, which is the fact that now decides whether the panel is describing the rule the engine is running |
+| **the A/B arms side by side** | `policy` vs the control is PLAN.md's M3 A/B and the whole point of the forward test. ⚠️ The control was `signal_only` when this was written and is `flat_size` since 2026-08-31 — the panel reads whatever `Ledger.ab_summary/0` returns, so no UI change was needed |
 | **named skip reasons** | The difference between "correctly quiet" and "broken" |
 | **time since last bar / last gated signal** | Liveness. A stalled `PolicyEngine` and a calm market look identical without this |
 | **the live coverage cut and served universe** | A non-empty `not_served` skip means the served and collector lists have drifted apart — the exact production defect of 2026-08-28 |
@@ -102,7 +138,7 @@ across served pairs, so it clears in ~14 hours at twelve pairs.
 
 ### 2.3 Row three: the A/B table
 
-Two rows, `policy` and `signal_only`, from `Ledger.ab_summary/0`. Columns:
+Two rows, `policy` and `flat_size` (`signal_only` before 2026-08-31), from `Ledger.ab_summary/0`. Columns:
 
 `arm · trades · trades/day · net bps · gross bps · win rate · cum net bps · max drawdown · open`
 

@@ -13,7 +13,8 @@ defmodule FluxTraderWeb.HealthController do
   silence visible as correct.
 
   The A/B block is the live counterpart of `docs/M3_2_RESULTS.md`: `policy` against
-  `signal_only`, both paper, both charged M3-4's measured per-pair crossing cost.
+  `flat_size`, both paper, both charged M3-4's measured per-pair crossing cost. The two take
+  the same entries and differ only in size, so the block measures the regime ladder.
   """
 
   alias FluxTrader.Trading.{ExecCost, Ledger, Policy, Regime, RiskManager}

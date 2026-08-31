@@ -10,7 +10,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
       SignalEngine broadcast
         -> floor to the 5-minute bar grid          (one decision per bar, not one per poll)
-        -> record in policy_bars                   (the population the 2% rank is taken over)
+        -> record in policy_bars                   (forward evidence + the drift diagnostic)
         -> Policy.decide/3                         (the rule, expressed once)
         -> RiskManager.check/1                     (hard limits — never bypassed)
         -> Executor.open/3                         (crossing; paper in simulation mode)
@@ -24,13 +24,44 @@ defmodule FluxTrader.Trading.PolicyEngine do
     * **`policy`** — the top 2% by confidence rank, regime-sized 1/3..5/3, 4h hold. It goes
       through `RiskManager` on every mode including `simulation`, so the risk path is
       exercised continuously rather than only on the day someone flips to `auto`.
-    * **`signal_only`** — every bar M2's own gate approves, flat size, same 4h hold, same
-      measured crossing cost. It is a **measurement arm**: it never produces an order and
-      never consumes risk budget, because a control that could be refused for lack of a slot
-      would make the policy look better than it is by throttling only its competitor.
+    * **`flat_size`** — **the same bars, at size 1.0**, same 4h hold, same measured crossing
+      cost. It is a **measurement arm**: it never produces an order and never consumes risk
+      budget, because a control that could be refused for lack of a slot would make the policy
+      look better than it is by throttling only its competitor.
 
-  Both are charged the same per-pair cost, so the only difference between the two ledgers is
-  coverage selection and sizing — which is exactly what the policy claims to add.
+  Both are charged the same per-pair cost and both take their entry decision from the *same
+  function*, so the only difference between the two ledgers is **the size ladder** — which is
+  the thing M3-2 says is worth +8.6 bps on the worst window, and the difference between
+  failing Tier 1 and passing it.
+
+  ⚠️ The control was `signal_only` — every bar M2's own gate approves — until 2026-08-31. It
+  was re-registered because it could not produce data: no bar had been gated since
+  2026-06-29, so it stood at 0 trades against the policy arm's 12 with no end in sight. The
+  full reasoning, and why this is a recorded re-registration rather than a quiet edit, is on
+  `Policy.decide_flat/3`.
+
+  ## The cut and the ladder are constants — read this before touching either
+
+  🔴 Since **2026-08-31** this engine decides against `Policy.frozen_threshold/0` and
+  `Policy.frozen_regime_edges/0`, both derived offline over the SERVED CHECKPOINT's whole
+  evaluation split. It previously re-derived both live, over a trailing 14-day rank and a
+  trailing 30-day quintile, and `docs/M3_FIDELITY_RESULTS.md` measured what that cost: the
+  trailing cut took 2,316 trades against 1,773, **56% of them on bars the fixed cut
+  rejects**, dropped net taker bps from **+15.03 to +8.62**, and took the worst window —
+  the number M3-1 scores on — from **+0.25 to −8.88**.
+
+  Two consequences that will look like faults and are not:
+
+    * **There is no warmup.** A constant cut needs no population to rank against, so `warm`
+      is true from the first bar and stays true. The old ~14-hour wait is gone.
+    * **The policy will be silent for long stretches.** August 2026's confidence never
+      exceeded 0.569 against a cut of 0.6319, so the rule takes nothing in a calm market —
+      by design, since the edge lives in volatile bars. `skips.below_coverage` climbing while
+      `decisions` stays empty is the system working.
+
+  `Ledger.rolling_coverage_threshold/3` and `Regime`'s trailing edges still run, reported on
+  `/api/health` as drift diagnostics. **Nothing routes either into a decision**, and
+  `refresh_rolling_threshold/2` below carries the note about keeping it that way.
 
   ## Coverage lives here, and only here
 
@@ -82,7 +113,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
   alias FluxTrader.Trading.{ExecCost, Executor, Ledger, Policy, Regime, RiskManager}
 
   @policy_arm "policy"
-  @control_arm "signal_only"
+  @control_arm "flat_size"
   @tick_ms 30_000
   @prune_every_ticks 2_880
   # A mark older than this is not good enough to close a position against.
@@ -115,8 +146,14 @@ defmodule FluxTrader.Trading.PolicyEngine do
        autotick: Keyword.get(opts, :autotick, true),
        signals_fun: Keyword.get(opts, :signals_fun, &__MODULE__.default_signals/0),
        regime_fun: Keyword.get(opts, :regime_fun, &__MODULE__.default_regime/0),
-       threshold: nil,
-       threshold_bars: 0,
+       # The cut in force. A constant since the 2026-08-31 freeze, held in state rather than
+       # read at each decision only so `status/0` reports the value this process is actually
+       # deciding with, not the one its source says it should be.
+       threshold: Policy.frozen_threshold(),
+       # DIAGNOSTIC: the trailing-14d rank, which used to BE `threshold`. Never routed into
+       # `Policy.decide/3`. See `Ledger.rolling_coverage_threshold/3`.
+       rolling_threshold: nil,
+       rolling_threshold_bars: 0,
        threshold_at: nil,
        prices: %{},
        decisions: %{},
@@ -170,8 +207,18 @@ defmodule FluxTrader.Trading.PolicyEngine do
        served_pairs: served_pairs() |> Enum.sort(),
        hold_minutes: state.spec.hold_minutes,
        signal_horizon_m: state.spec.signal_horizon_m,
+       # The cut in force, and the constant it must equal. Reported separately so a deployed
+       # binary can be checked without reading its source.
        confidence_threshold: state.threshold,
-       rank_window_bars: state.threshold_bars,
+       frozen_threshold: Policy.frozen_threshold(),
+       # DIAGNOSTIC: what the retired trailing rank would say today. The gap is the drift
+       # signal — see `Ledger.rolling_coverage_threshold/3` for how to read it. `nil` while
+       # the diagnostic window is thin, which no longer holds anything up.
+       rolling_threshold: state.rolling_threshold,
+       rank_window_bars: state.rolling_threshold_bars,
+       # 🔴 Always true since the freeze: a constant cut has no warmup, so the policy is
+       # live from its first bar. Kept in the payload because dashboards and the deploy
+       # checklist read it, and a field that vanishes reads as a broken endpoint.
        warm: state.threshold != nil,
        # Named skip counts since boot. A policy that is correctly sitting out a calm market
        # and a policy that is broken produce the same silence otherwise (§0.8).
@@ -202,7 +249,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
     state =
       state
-      |> refresh_threshold(now)
+      |> refresh_rolling_threshold(now)
       |> close_due(now)
       |> open_new(bars)
       |> maybe_prune(now)
@@ -244,8 +291,10 @@ defmodule FluxTrader.Trading.PolicyEngine do
     :exit, _ -> nil
   end
 
-  # Record every bar, gated or not. The ranking population must be *all* bars, otherwise
-  # "the top 2%" is the top 2% of the bars M2 already liked, which is a different rule.
+  # Record every bar, gated or not. Two reasons, and the first outlived the freeze: this is
+  # the forward test's raw evidence, and it is the population the drift diagnostic ranks
+  # over. That population must be *all* bars, otherwise the diagnostic is the top 2% of the
+  # bars M2 already liked and is not comparable to the split the constant came from.
   defp record_bars(state, bars) do
     Enum.each(bars, fn bar ->
       Ledger.record_bar(%{
@@ -261,15 +310,18 @@ defmodule FluxTrader.Trading.PolicyEngine do
     end)
   end
 
-  defp refresh_threshold(state, now) do
-    case Ledger.coverage_threshold(state.spec.coverage, state.spec.signal_horizon_m, now) do
+  # 🔴 This refreshes the DIAGNOSTIC only. `state.threshold` is the frozen constant and is
+  # never written here — if a future change makes this function assign to it, the served rule
+  # has silently become the one `docs/M3_FIDELITY_RESULTS.md` measured at -18.43 net bps.
+  defp refresh_rolling_threshold(state, now) do
+    case Ledger.rolling_coverage_threshold(state.spec.coverage, state.spec.signal_horizon_m, now) do
       {:ok, thr, n} ->
-        %{state | threshold: thr, threshold_bars: n, threshold_at: now}
+        %{state | rolling_threshold: thr, rolling_threshold_bars: n, threshold_at: now}
 
       {:error, :cold, n} ->
-        # Cold is a state, not an error: the rank window needs a week of bars before the top
-        # 2% of it means anything, and until then the policy must not trade.
-        %{state | threshold: nil, threshold_bars: n, threshold_at: now}
+        # A thin window makes the diagnostic meaningless, not the policy cold. Nothing waits
+        # on this.
+        %{state | rolling_threshold: nil, rolling_threshold_bars: n, threshold_at: now}
     end
   end
 
@@ -338,10 +390,21 @@ defmodule FluxTrader.Trading.PolicyEngine do
     end
   end
 
+  # 🔴 The ctx here must be the SAME SHAPE as the policy arm's, and for the same reason
+  # `Policy.decide_flat/3` delegates rather than restating the rule: the two arms are supposed
+  # to differ in size and in nothing else. The one field that legitimately differs is
+  # `open_pairs`, which is per-arm — see `decide_flat/3` on how risk refusals can put the two
+  # out of step.
   defp try_control_arm(state, bar, open) do
-    ctx = %{open_pairs: open[@control_arm], regime: bar.regime}
+    ctx = %{
+      threshold: state.threshold,
+      regime: bar.regime,
+      regime_edges: bar.regime_edges,
+      open_pairs: open[@control_arm],
+      open_count: MapSet.size(open[@control_arm])
+    }
 
-    case Policy.decide_signal_only(state.spec, bar, ctx) do
+    case Policy.decide_flat(state.spec, bar, ctx) do
       {:skip, _reason} ->
         {state, open}
 

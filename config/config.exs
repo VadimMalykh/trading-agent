@@ -48,9 +48,17 @@ config :fluxtrader, :trading,
   # to match this list stops collection and leaves a permanent hole — that is not
   # hypothetical, it happened on 2026-08-28. See PolicyEngine's moduledoc.
   #
-  # 🔴 Changing this list changes the RULE, because the top-2% cut is a rank over whatever
-  # population is recorded. Do not edit it while a forward test is accumulating trades; the
-  # A/B would then span two different policies.
+  # 🔴 Changing this list changes the RULE, and since the 2026-08-31 freeze it also
+  # INVALIDATES TWO CONSTANTS. `Policy.frozen_threshold/0` is the top-2% cut of the served
+  # run's whole evaluation split over exactly these twelve pairs, and
+  # `Policy.frozen_regime_edges/0` comes from the same split. A rank is meaningless against a
+  # different population, so adding or dropping a pair means re-deriving both
+  # (`./scripts/m3.sh -m m3 fidelity --universe <n>`, arm A) before deploying.
+  # `test/fluxtrader/trading/config_test.exs` fails if this list and the derivation universe
+  # diverge — do not relax that test, re-derive.
+  #
+  # Do not edit this while a forward test is accumulating trades either; the A/B would then
+  # span two different policies.
   served_pairs: [
     "BTCUSDT",
     "ETHUSDT",

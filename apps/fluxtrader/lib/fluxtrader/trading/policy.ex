@@ -24,27 +24,61 @@ defmodule FluxTrader.Trading.Policy do
 
   ## The three invariants, which are findings and not preferences
 
-    1. **Entry is by coverage rank, never by a confidence constant.** The same probability
-       is 1.2% / 2.5% / 1.7% coverage across the three trained seeds, so `conf > 0.63` means
-       something different on every checkpoint. `coverage_threshold/2` derives the cut from
-       a population of bars.
+    1. **Entry is by coverage rank taken over the SCORING population, and that rank is then
+       frozen to a number.** The same probability is 1.2% / 2.5% / 1.7% coverage across the
+       three trained seeds, so `conf > 0.63` means something different on every checkpoint —
+       which is why the cut is *derived* by `coverage_threshold/2` rather than guessed. But
+       it is derived **once, offline, on the checkpoint and universe being served**, and the
+       resulting constant is what runs. Re-deriving it live against a trailing window is a
+       different rule; §"What differs live" says what that cost.
     2. **Positions are serial per pair.** While a position is open on a pair, new signals on
        that pair are ignored. Overlapping 4h entries book the same move several times.
     3. **Sizing buckets against the distribution of BARS, not of trades.** The regime cut has
        to be a statement about the market, derivable without knowing which bars the model
        gated. A quantile taken over already-selected trades is conditioned on the model.
 
-  ## What differs live, and why
+  ## What differs live, and why — the 2026-08-31 freeze
 
-  The backtest derives its coverage threshold from the whole evaluation split, which is
-  lookahead it can afford because it is scoring, not trading. Live, the threshold comes from
-  a **trailing window of bars already seen**. That is strictly more conservative, and it is
-  also the behaviour §1.3.3 actually wants: it holds coverage at 2% while the model's
-  confidence scale drifts, instead of freezing a number that silently changes meaning.
+  🔴 **Nothing differs any more, and that is the point of this section.** Until 2026-08-31 it
+  did, in two places, and both were wrong:
 
-  Everything else — tie handling, the bucket edges, the size ladder, the hold — is the same
-  arithmetic as `backtest.py`, and `test/fluxtrader/trading/policy_test.exs` pins it to the
-  values that file produces.
+    * the coverage cut was re-derived live as the top 2% of a **trailing 14 days** of recorded
+      bars (now `Ledger.rolling_coverage_threshold/3`); and
+    * the sizing ladder's quintile edges were re-derived live over a **trailing 30 days** of
+      BTC klines (`Regime`).
+
+  The reasoning written here before the measurement was that a trailing rank is "strictly more
+  conservative". **It is not, and `m3 fidelity` measured it.** A trailing rank admits 2% of
+  bars in *every* window **by construction** — including a window the fixed cut would have sat
+  out completely. It is regime-adaptive in the wrong direction: it lowers the bar precisely
+  when the model has nothing to say, which is exactly where the edge is known to be absent
+  (NEXT_TRAINING_PLAN §1.8 — the edge lives in volatile bars).
+
+  On the served checkpoint's own family — the three banked seeds M3-2 chose on — the rolling
+  cut sat below the fixed one on **66% / 72% / 69%** of warm bars, took **2,316 trades against
+  1,773**, and **56% of them were on bars the fixed cut rejects**. Net taker bps went
+  **+15.03 → +8.62**, and the number M3-1 actually scores on, the worst window, went
+  **+0.25 → −8.88**: the served rule fails the criterion the policy was selected against. On
+  the wider O8 population the same substitution changes the edge's *sign*, +21.44 → −18.43.
+  The ladder is the same class of defect and costs about 1.5 bps alone, so it was frozen in
+  the same change rather than left for a second clock reset. Full result:
+  `docs/M3_FIDELITY_RESULTS.md`.
+
+  So both quantities are now **constants, derived offline on the served checkpoint's own
+  evaluation split**, and `decide/3` runs the arithmetic `backtest.py` runs. Everything else —
+  tie handling, the bucket convention, the 1/3..5/3 ladder, the hold — was already identical,
+  and `test/fluxtrader/trading/policy_test.exs` pins all of it to the values that file
+  produces.
+
+  ⚠️ **The freeze has a consequence, and it is intended: the policy goes silent when the
+  market is calm.** August 2026's confidence never exceeded 0.569 against a cut of 0.6319, so
+  the validated rule would have taken **zero** trades all month. That is correct silence, not
+  a fault, and it is what `/api/health` was built to make visible.
+
+  🔴 **The constants belong to a CHECKPOINT.** A confidence cut is a statement about one
+  model's confidence scale and does not transfer to another — see `frozen_threshold/0`, which
+  records what happened when this freeze first tried to take the cut from a different run.
+  Promoting a new checkpoint invalidates both.
   """
 
   @coverage 0.02
@@ -52,6 +86,63 @@ defmodule FluxTrader.Trading.Policy do
   @signal_horizon_m 240
   @bar_seconds 300
   @size_buckets 5
+
+  # ---------------------------------------------------------------- the frozen constants
+  #
+  # Both are derived offline by `backtest.py` over the WHOLE evaluation split of the served
+  # run, which is the population M3-2's numbers are measured on. They are restated here as
+  # literals because there is no import across the two runtimes;
+  # `test/fluxtrader/trading/config_test.exs` is where this side asserts its copies, and a
+  # change on either side has to be made on both.
+  #
+  # Provenance — **seed 2, run 20260819T142759Z**: the SERVED checkpoint
+  # (`m2_multi_20260819T142759Z_a186182b.pt`). 579,539 bars in the 240m head over the eight
+  # pairs it was evaluated on. Re-derive with:
+  #
+  #     ./scripts/m3.sh -m m3 fidelity --universe 8
+  #
+  # whose arm A is this rule. Recomputing the two lines below reproduces seed 2's arm A
+  # exactly: 483 trades, mean size 1.362, entry confidence 0.6320 .. 0.7820.
+  #
+  # 🔴 THE CUT BELONGS TO A CHECKPOINT, NOT JUST TO A UNIVERSE. A first attempt at this
+  # freeze took the cut from O8 (run 20260822T012619Z), because O8 is the only run evaluated
+  # over all twelve served pairs. O8 is a DIFFERENT TRAINED MODEL, and NEXT_TRAINING_PLAN
+  # §1.5 closed absolute-threshold-across-checkpoints as "not a lever, a defect": the same
+  # probability is 1.2% / 2.5% / 1.7% coverage across three seeds of one configuration.
+  # Measured here: **O8's 0.5992 applied to seed 2's bars realizes 4.01% coverage**, double
+  # the 0.02 M3-2 searched. Serving another model's cut would have doubled the trade rate —
+  # a smaller version of the very defect this freeze exists to fix.
+  #
+  # ⚠️ KNOWN GAP, deliberate and recorded. These come from seed 2's **8-pair** split, and
+  # twelve pairs are served. A fixed threshold stays well-defined on a wider universe — it is
+  # a statement about this model's confidence scale, which does not change when pairs are
+  # added — but the *realized coverage* will not be exactly 2%. Closing that properly needs
+  # seed 2 re-evaluated over twelve pairs, for which no dump exists, and doing so would also
+  # settle the parked "coverage at twelve pairs" pre-registration (T6's count-matched cut is
+  # 0.01288) as a side effect. M3_PROTOCOL §0 says that question needs its own
+  # pre-registration, so it is left open rather than answered by accident.
+
+  # `coverage_threshold(conf, 0.02)` over the split — the k-th largest confidence,
+  # k = round(n * 0.02). Selection is `conf >= threshold`, tie-inclusive.
+  @frozen_threshold 0.6318973898887634
+
+  # `r["btc_absret_1d"].quantile([0.2, 0.4, 0.6, 0.8])` over BARS, not over trades — the
+  # ladder has to be a statement about the market (invariant 3).
+  #
+  # 🟢 Unlike the cut, this one is near-transferable, and the reason is worth stating: it is a
+  # quantile of BITCOIN'S trailing 24-hour move, which is a fact about the market rather than
+  # about a checkpoint — O8's split puts the same four edges within 2% of these. It is still
+  # taken from the served checkpoint's own split, because there is no reason to mix sources.
+  #
+  # ⚠️ The p80 here is 0.0252, NOT the 0.0431 NEXT_TRAINING_PLAN §1.8 published. Both are
+  # correct: §1.8 measured on an earlier window. The health endpoint compares the live
+  # trailing p80 against THIS number, because this is the ladder in force.
+  @frozen_regime_edges [
+                         0.00391214806586504,
+                         0.008861115202307701,
+                         0.015078878961503506,
+                         0.025166796520352364
+                       ]
 
   defstruct coverage: @coverage,
             hold_minutes: @hold_minutes,
@@ -71,6 +162,36 @@ defmodule FluxTrader.Trading.Policy do
   def hold_minutes, do: @hold_minutes
   def signal_horizon_m, do: @signal_horizon_m
   def bar_seconds, do: @bar_seconds
+
+  @doc """
+  The confidence cut in force: **the constant `backtest.py` derived on the served run**.
+
+  🔴 **This belongs to a CHECKPOINT.** It is the top-2% cut of the served checkpoint's own
+  evaluation split, and a confidence threshold does not transfer between checkpoints: §1.5
+  measured the same probability as 1.2% / 2.5% / 1.7% coverage across three seeds of one
+  configuration, and O8's cut applied to this checkpoint realizes 4.01% rather than 2%.
+  Promoting a different checkpoint invalidates this number outright — re-derive it first, and
+  reset the forward clock, because the A/B would otherwise span two rules.
+
+  ⚠️ Nothing currently *fails* when the checkpoint changes. `served_pairs` is guarded by
+  `config_test.exs`; the served weights are not, because the app has no handle on what
+  `ml_inference` loaded. That gap is filed in `docs/M3_FIDELITY_RESULTS.md` §6.5.
+
+  Coverage itself stays 0.02. Freezing the cut is **not** re-picking a searched dimension —
+  M3_PROTOCOL §0 forbids that — it is making the served code compute the dimension the way
+  the scoring code did.
+  """
+  def frozen_threshold, do: @frozen_threshold
+
+  @doc """
+  The sizing ladder's quintile edges in force, from the same split as `frozen_threshold/0`.
+
+  Frozen for the same reason and in the same change: a trailing ladder re-sizes the same
+  market state differently from month to month, so `size_multiplier/2` would not be the
+  function that was scored. It costs less than the cut did (~1.5 bps, arm C of the fidelity
+  replay) but a separate fix would have cost a second clock reset.
+  """
+  def frozen_regime_edges, do: @frozen_regime_edges
 
   @doc """
   Floor a timestamp onto the 5-minute bar grid the model is scored on.
@@ -94,6 +215,12 @@ defmodule FluxTrader.Trading.Policy do
 
   Returns `{:error, :empty}` rather than a number when the population selects no bars, so a
   caller can never mistake a cold start for a threshold of zero.
+
+  ⚠️ **This is the derivation, not the cut in force.** Since the 2026-08-31 freeze the served
+  cut is `frozen_threshold/0`, produced by running exactly this arithmetic offline over the
+  whole evaluation split. This function survives because that is where the constant comes
+  from, and because `Ledger.rolling_coverage_threshold/3` still computes a trailing one as a
+  **drift diagnostic** on `/api/health`. Nothing routes a value from either into `decide/3`.
   """
   def coverage_threshold([], _coverage), do: {:error, :empty}
 
@@ -116,6 +243,10 @@ defmodule FluxTrader.Trading.Policy do
 
   Uses linear interpolation between order statistics, matching pandas' default
   `quantile()`, which is what `backtest.py` calls to build these edges.
+
+  ⚠️ Same standing as `coverage_threshold/2`: this is how `frozen_regime_edges/0` was
+  produced, and `Regime` still runs it over a trailing 30 days as a drift diagnostic, but the
+  ladder in force is the frozen one.
   """
   def quintile_edges([]), do: {:error, :empty}
 
@@ -159,8 +290,10 @@ defmodule FluxTrader.Trading.Policy do
 
   `ctx` carries everything the rule needs that is not in the bar:
 
-    * `:threshold` — the coverage cut from `coverage_threshold/2`, or `nil` while cold
-    * `:regime_edges` — quintile edges of `btc_absret_1d`, or `nil` while cold
+    * `:threshold` — the coverage cut. Since the freeze the engine always passes
+      `frozen_threshold/0`, so the `:warming_up` branch below is unreachable in production;
+      it is kept because the function is pure and a test may drive it with `nil`.
+    * `:regime_edges` — the ladder, likewise always `frozen_regime_edges/0` live
     * `:regime` — the current `btc_absret_1d`, or `nil` if unavailable
     * `:open_pairs` — a MapSet of pairs already holding a position (invariant 2)
     * `:open_count` — how many positions are open across all pairs
@@ -217,37 +350,58 @@ defmodule FluxTrader.Trading.Policy do
   end
 
   @doc """
-  The signal-only control arm: enter on every bar M2's own gate approves, flat size.
+  The control arm: **the same bars as the policy, at flat size 1.0.**
 
-  This is the A/B's other side (M3_PLAN §2 M3-5 item 4). It shares the hold, the serial-per-
-  pair rule and the measured crossing cost with the policy arm, so the only thing that
-  differs between the two ledgers is **coverage selection and sizing** — which is exactly
-  what the policy claims to add.
+  ## Why this is `decide/3` and not a second rule
+
+  It delegates. Every entry condition — the frozen cut, the side, serial-per-pair, the regime
+  being present — is whatever `decide/3` says it is, and the only thing this function changes
+  is the size. That is deliberate and is the entire point of the arm: **the two ledgers then
+  differ in exactly one dimension**, so any difference between them is attributable to the
+  1/3..5/3 regime ladder and to nothing else. Two independently written entry rules could
+  drift apart under a later edit and quietly turn the comparison into a two-variable one.
+
+  Note it keeps the `:no_regime` skip even though a flat size does not need a regime value.
+  That looks redundant and is not: dropping it would let the control enter bars the policy
+  refuses, which is precisely the divergence this arm is built to avoid.
+
+  ## What replaced, and why — 2026-08-31
+
+  🔴 This used to be `decide_signal_only/3`: *every bar M2's own serve gate approves*, flat
+  size. It was pre-registered in `docs/M3_5_INTEGRATION.md` §4 and it **structurally could not
+  produce data.** `bar.gated` requires M2's gate, and no bar had been gated across 8,184 bars
+  since 2026-06-29 — the control sat at 0 trades against the policy arm's 12, and would have
+  stayed there for as long as the calm lasted, which is open-ended. An A/B with one arm is not
+  an A/B.
+
+  The question that arm asked — *what does the M3-2 rule add over M2's raw gated signal?* — is
+  already answered offline, and the live version of it was waiting on a gate nobody controls.
+  The question this arm asks instead is the one the policy actually claims to answer: **is the
+  regime sizing worth anything?** M3-2 says it is worth +8.6 bps on the worst window, which is
+  the whole difference between failing Tier 1 and passing it, and that claim has never been
+  checked forward.
+
+  ⚠️ This is a **re-registration**, dated and recorded, not a quiet edit — see
+  `docs/M3_5_INTEGRATION.md` §4. It was made before any comparable live evidence existed
+  (twelve trades, all of which are discarded in the same change), so it cannot be a choice
+  made after seeing which control looked better.
+
+  ## The one way the arms can still diverge, and why it is left alone
+
+  The policy arm passes through `RiskManager`; this one never does, because a control that
+  could be refused for lack of a slot would flatter the policy by throttling only its
+  competitor. So if risk refuses a policy entry, that pair is held here and not there, and the
+  two arms' `:position_open` skips fall out of step until both are flat again. That is the
+  honest behaviour — the alternative, mirroring executions rather than decisions, reintroduces
+  exactly the bias the separation exists to prevent. `risk_rejections` on `/api/health` is
+  where a reader sees it happening.
   """
-  def decide_signal_only(%__MODULE__{} = spec \\ spec(), bar, ctx) do
-    cond do
-      not bar.gated ->
-        {:skip, :not_gated}
+  def decide_flat(spec \\ spec(), bar, ctx)
 
-      bar.side == 0 ->
-        {:skip, :no_side}
-
-      MapSet.member?(ctx[:open_pairs] || MapSet.new(), bar.pair) ->
-        {:skip, :position_open}
-
-      true ->
-        {:enter,
-         %{
-           pair: bar.pair,
-           side: bar.side,
-           size: 1.0,
-           confidence: bar.confidence,
-           threshold: nil,
-           regime: ctx[:regime],
-           entry_price: bar.price,
-           entry_ts: bar.ts,
-           exit_after_ts: DateTime.add(bar.ts, spec.hold_minutes * 60, :second)
-         }}
+  def decide_flat(%__MODULE__{} = spec, bar, ctx) do
+    case decide(spec, bar, ctx) do
+      {:enter, decision} -> {:enter, %{decision | size: 1.0}}
+      {:skip, _} = skip -> skip
     end
   end
 end

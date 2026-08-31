@@ -13,9 +13,17 @@ defmodule FluxTrader.Trading.ConfigTest do
   """
   use ExUnit.Case, async: true
 
-  alias FluxTrader.Trading.{ExecCost, PolicyEngine}
+  alias FluxTrader.Trading.{ExecCost, Policy, PolicyEngine}
 
   defp trading, do: Application.get_env(:fluxtrader, :trading, [])
+
+  # The eight pairs the served checkpoint (seed 2, run 20260819T142759Z) was evaluated on,
+  # and therefore the population its frozen cut was ranked over. Restated here because the
+  # served universe is TWELVE, and that gap is a known, deliberate one rather than a mistake
+  # — see the test below, which is written to describe it rather than to forbid it.
+  @derivation_universe ~w(
+    1000PEPEUSDT BTCUSDT DOGEUSDT ETHUSDT HYPEUSDT SOLUSDT WLDUSDT ZECUSDT
+  )
 
   test "every served pair carries its own measured crossing cost" do
     # The invariant that gates how wide the universe may be. A served pair without its own
@@ -58,5 +66,64 @@ defmodule FluxTrader.Trading.ConfigTest do
     # served_pairs changes the coverage rank and therefore the rule.
     assert Keyword.has_key?(trading(), :served_pairs)
     assert Keyword.has_key?(trading(), :whitelist_pairs)
+  end
+
+  test "the served universe still contains every pair the frozen cut was derived on" do
+    # 🔴 The invariant behind the 2026-08-31 freeze, in the only form that is actually true.
+    #
+    # `Policy.frozen_threshold/0` is the top-2% cut of the SERVED CHECKPOINT's (seed 2) own
+    # evaluation split, which covers these eight pairs. Twelve are served. That is a known
+    # gap: a fixed threshold stays well-defined on a wider universe — it describes this
+    # model's confidence scale, not the pair list — but the realized coverage is no longer
+    # exactly 2%. Closing it needs seed 2 re-evaluated on twelve pairs, which no dump exists
+    # for, and which would also settle a parked pre-registration as a side effect.
+    #
+    # So this asserts the direction that MATTERS: the derivation universe must remain a
+    # subset of what is served. Dropping one of these eight would mean the cut was ranked
+    # over bars the policy can no longer trade, which is a different rule and not merely an
+    # approximation of one.
+    served = PolicyEngine.served_pairs()
+
+    assert MapSet.subset?(MapSet.new(@derivation_universe), served),
+           "the frozen cut was ranked over pairs that are no longer served: " <>
+             inspect(MapSet.difference(MapSet.new(@derivation_universe), served))
+  end
+
+  test "the frozen constants are the ones backtest.py derived, to the last bit" do
+    # Copied from a run of `backtest.py` over seed 2's split — the SERVED checkpoint,
+    # `m2_multi_20260819T142759Z_a186182b.pt` — which reproduces that seed's arm A exactly:
+    # 483 trades, mean size 1.362, entry confidence 0.6320 .. 0.7820.
+    #
+    # 🔴 Asserted as literals, and specifically NOT as a range. These are transcriptions
+    # across two runtimes, and the failure modes worth catching are a typo, a well-meaning
+    # round, and — the one that actually happened during this change — a constant taken from
+    # a DIFFERENT CHECKPOINT. O8's cut of 0.5992 looks entirely plausible next to 0.6319 and
+    # realizes 4.01% coverage on this model instead of 2%. Only an exact literal catches that.
+    assert Policy.frozen_threshold() == 0.6318973898887634
+
+    assert Policy.frozen_regime_edges() == [
+             0.00391214806586504,
+             0.008861115202307701,
+             0.015078878961503506,
+             0.025166796520352364
+           ]
+
+    # Monotone, which `size_multiplier/2`'s `searchsorted` assumes and does not check.
+    assert Policy.frozen_regime_edges() == Enum.sort(Policy.frozen_regime_edges())
+  end
+
+  test "the frozen cut spans every size bucket, so the ladder is not degenerate" do
+    # backtest.py warns that a hard regime filter collapses sizing to a flat 5/3 and buys
+    # nothing. The SIZED variant is only a distinct policy while all five buckets are
+    # reachable, so assert the ladder still maps to 1/3 .. 5/3 across the frozen edges.
+    edges = Policy.frozen_regime_edges()
+    below = [hd(edges) / 2]
+    above = [List.last(edges) * 2]
+    probes = below ++ edges ++ above
+
+    sizes = probes |> Enum.map(&Policy.size_multiplier(&1, edges)) |> Enum.uniq()
+    assert length(sizes) == Policy.size_buckets()
+    assert Enum.min(sizes) == 1 / 3
+    assert Enum.max(sizes) == 5 / 3
   end
 end

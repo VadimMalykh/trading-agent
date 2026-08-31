@@ -43,7 +43,7 @@ defmodule FluxTrader.Trading.Executor do
 
   # The A/B's control arm is a measurement ledger and must never reach the exchange: it
   # exists to say what M2's raw gate would have earned, not to trade it.
-  @paper_only_arms ["signal_only"]
+  @paper_only_arms ["flat_size"]
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 

@@ -45,10 +45,21 @@ answered**: every barrier setting tried loses to the fixed 4h hold (best +9.2 ag
 net bps), monotonically improving as the band widens back toward it. The label/booking
 mismatch C4b filed is real and points *away* from barriers, so accepting it costs nothing.
 
-**The forward paper test is running on `fluxtrader-1`** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)),
-restarted 2026-08-29 on the twelve-pair universe. It needs no work, only calendar time. Check
-it with `curl localhost:4000/api/health` **on the VM**; `warm: false` until the rank window
-holds 2,016 bars, which is ~14 hours at twelve pairs, **not** seven days.
+🔴 **The forward paper test's first twelve trades were not the scored rule, and the clock
+restarts.** The served code re-derived the coverage cut from a trailing 14-day rank and the
+sizing ladder from a trailing 30-day quintile; both were measured on 2026-08-31 and the cut
+alone turns **+21.44 into −18.43** net taker bps on the served universe. Both are now frozen to
+the constants `backtest.py` derives over **the served checkpoint's own split** — cut
+**0.6319**, ladder p80 **0.0252** — and the twelve trades are discarded. ⚠️ A first attempt
+took the cut from O8 instead, because O8 is the only run evaluated on all twelve served pairs;
+O8 is a **different model**, and its cut realizes 4.01% coverage on the served checkpoint
+rather than 2% — §1.5's closed defect, one level down. Full account and the manual restart
+procedure: [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6.
+
+**The test itself** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)) still needs no work, only
+calendar time. Check it with `curl localhost:4000/api/health` **on the VM**. ⚠️ `warm` is now
+`true` immediately — the 2,016-bar rank window no longer gates anything — and the first line to
+read is `confidence_threshold` against `frozen_threshold`: they must be equal.
 
 🔴 **Two preconditions M3-5 could not close, both filed in [BACKLOG.md](./BACKLOG.md):** the
 Binance fee tier is **still unverified** (`mix flux.fee_tier` performs the check and needs
@@ -84,7 +95,7 @@ block assumes you have.
 | **M3-4a** — the maker study's pre-registration | ✅ **committed 2026-08-28 as [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md)**, before any fill number. It closes M3-4a's open cadence question and turns up **two data defects and one structural fact** that M3_PLAN had wrong — see §0.7 |
 | **M3-4** — the execution-cost study (§3.3) | ✅ **run 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), implemented as `ml/train/m3/execcost.py`, all nine §6 items published. **Q1: the 14 bps taker assumption is MIS-STATED — the real cost is 9.84.** **Q2: the maker arm is not worth building** (§0.8) |
 | **M3-0b** — price/funding side-table | ✅ **DONE 2026-08-29** — [M3_0B_RESULTS.md](./M3_0B_RESULTS.md), implemented as `ml/train/m3/sidetable.py`. Acceptance passes on all four dumps (2,655,988 bar-comparisons, every one exact). **It carries BOOK_ERA_PLAN B0 in the same alignment**, which closes B0 and unblocks B1. 🔴 **Headline: the live executor's 2%/4% brake costs 10.5 gross bps/trade — about a third of the edge** (§4 of the results). Funding is a rounding error (+0.14 bps/trade). **C4b is answered: barrier exits all lose to the fixed 4h hold.** ⚠️ "Its data is already on disk" was wrong — the M3-4 export is the 23-day book era, and 96% of the policy's trades fall outside it |
-| **M3-5** — wire the rule to the executor | ✅ **built and verified 2026-08-28, ⚠️ not deployed to `fluxtrader-1`** — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md). Crossing executor, 4h hold, regime sizing, measured per-pair cost, hard `RiskManager` path, signal-only A/B control, `/api/health` liveness. No limit orders, as M3-4 decided. Open: the fee tier is unverified and the `auto` path is unsigned (both in [BACKLOG.md](./BACKLOG.md)) |
+| **M3-5** — wire the rule to the executor | ✅ **built and verified 2026-08-28, ⚠️ not deployed to `fluxtrader-1`** — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md). Crossing executor, 4h hold, regime sizing, measured per-pair cost, hard `RiskManager` path, A/B control arm, `/api/health` liveness. No limit orders, as M3-4 decided. Open: the fee tier is unverified and the `auto` path is unsigned (both in [BACKLOG.md](./BACKLOG.md)) |
 
 ### How to run anything in M3
 
@@ -698,7 +709,8 @@ trades fall outside it**. The price path was re-exported over 2025-11-15 .. 2026
 in `Trading.Policy`, and runs: `PolicyEngine` records every bar, ranks the trailing 14 days,
 sizes on live BTC-volatility quintiles, holds four hours, and closes — every policy entry
 through `RiskManager`'s hard limits in **every** mode, which closes §6's last exit criterion.
-A signal-only control arm runs beside it, which is PLAN.md's M3 A/B. Costs charged are M3-4's
+A flat-size control arm runs beside it, which is PLAN.md's M3 A/B (it was a *signal-only*
+control until 2026-08-31 — see §4 of the integration doc for the re-registration). Costs charged are M3-4's
 measured per-pair round trips, and there is no limit-order machinery, exactly as §0.8 item 3
 directed.
 
@@ -1292,18 +1304,31 @@ could not be checked while nothing called the policy. All three are now closed.
 
 | what M3-5 had to add | delivered |
 |---|---|
-| **1. The M3-2 rule, expressed once** — top-2% confidence rank, side from M2, the ⅓..5/3 regime multiplier, a 4-hour hold, no concurrency cap. §1.3.3 binds: the coverage condition is **rank-based**, so it needs a trailing distribution, never a fixed threshold | `Trading.Policy`, pure and stateless. `Trading.Regime` supplies `btc_absret_1d` and its trailing quintile edges from Binance klines. The rank window is the trailing 14 days of `policy_bars`. Parity with `ml/train/m3/backtest.py` is pinned by fixtures generated from that file |
+| **1. The M3-2 rule, expressed once** — top-2% confidence rank, side from M2, the ⅓..5/3 regime multiplier, a 4-hour hold, no concurrency cap. ⚫ *This row read "§1.3.3 binds: the coverage condition is **rank-based**, so it needs a trailing distribution, never a fixed threshold." **That inference was wrong and is corrected below.*** | `Trading.Policy`, pure and stateless. ⚫ *As built, the cut was ranked over a trailing 14 days of `policy_bars` and the ladder over trailing klines; **both were frozen to constants on 2026-08-31** ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md)).* Parity with `ml/train/m3/backtest.py` is pinned by fixtures generated from that file |
+
+🔴 **The correction to row 1, because the reasoning matters more than the line of code.**
+§1.3.3 says a *condition* must be rank-based rather than thresholding an absolute predicted
+edge — the level of the edge swings 25.9 bps across windows, so an ordering survives what a
+level does not. That is right, and it is why the cut is *derived* as a rank instead of guessed.
+It does **not** follow that the rank must be re-taken live over a trailing window. `backtest.py`
+takes it **once, over the whole split**, and that single number is what every published M3
+figure measures. Re-ranking live produces a different rule: a trailing rank admits 2% of bars in
+every window **by construction**, including windows the scored rule sits out entirely. The
+lesson is narrower than "rank, never level" — it is **rank over the scoring population, then
+freeze**, and the population is part of the rule.
 | **2. The coverage decision from §3.1** — the policy owns coverage, the serve gate becomes a diagnostic | Done, and one gate more than §3.1 counted: `RiskManager`'s hard-coded `confidence < 0.65` was a **fourth** gate and is now `min_confidence`, default `0.0` |
 | **3. A real fill and fee path**, using whatever M3-4 measured | `Trading.ExecCost` carries the measured per-pair round trips. **No maker branch, no queue model, no fill simulation** — M3-4's adverse-selection panel removed all of it |
-| **4. The A/B**, scored on M3_PROTOCOL §4's metrics | Both arms live on the same bars; `Ledger.ab_summary/1` and `/api/health`'s `ab` block. Pre-registered in [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §4 |
+| **4. The A/B**, scored on M3_PROTOCOL §4's metrics | Both arms live on the same bars; `Ledger.ab_summary/1` and `/api/health`'s `ab` block. Pre-registered in [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §4 — ⚫ *re-registered 2026-08-31; the original is kept verbatim at §4.2 there* |
 | **5. The risk-limit assertion** | `risk_manager_test.exs` (refusal on each hard limit) and `policy_engine_test.exs` (the engine opens nothing when refused). 65 tests, all passing |
 
 **Why this mattered beyond tidiness, and still does:** §0.5.4 and risk #4 land on the same wall —
 ~220 independent trading days is not enough to certify a 15-bps edge, and no re-analysis of the
 same 253 days relieves it. **Paper trading forward is the only mechanism that manufactures new
-independent days.** That clock is now running. It will run slowly: the rank window needs seven
-days before the policy may trade at all, and the market has been the calmest of the period since
-July, so an idle month would be the strategy working rather than failing.
+independent days.** That clock is running, and it was **reset on 2026-08-31** when the twelve
+trades it had collected turned out to belong to a different rule. It will run slowly — not
+because of a warmup (the frozen cut has none) but because the market has been the calmest of the
+period since July and the validated rule takes nothing in a calm market. An idle month is the
+strategy working rather than failing.
 
 ## §3 — DESIGN DECISIONS TO SETTLE BEFORE WRITING CODE
 
@@ -1316,8 +1341,10 @@ decision variable.
 
 `/predict` already returns raw confidences next to `gated`, so the app can ignore the serve
 gate with no serve-side change. **Decided and implemented: the policy owns coverage; `serve.py`'s
-gate is a reported diagnostic, not a filter** — it is recorded on every bar and is the A/B
-control arm's entry condition. M3-5 also found a **fourth** gate this section had not counted:
+gate is a reported diagnostic, not a filter** — it is recorded on every bar. ⚠️ It was *also*
+the A/B control arm's entry condition until 2026-08-31, when the control was re-registered
+because that gate had not fired since 2026-06-29 and the arm could not produce data; `gated`
+is now purely a diagnostic. M3-5 also found a **fourth** gate this section had not counted:
 `RiskManager` refused anything under `confidence < 0.65`. That is not a risk limit — it could
 only ever narrow what the policy chose — and it is now `min_confidence`, defaulting to `0.0`.
 
@@ -1461,7 +1488,11 @@ From PLAN.md, sharpened with what M2 measured:
       than only on the day someone flips to `auto`.
       `apps/fluxtrader/test/fluxtrader/trading/risk_manager_test.exs` asserts refusal on each
       hard limit and `policy_engine_test.exs` asserts the engine opens nothing when refused.
-- [x] **The signal-only vs signal+policy A/B runs in paper simulation** — started 2026-08-28.
+- [x] **The A/B runs in paper simulation** — started 2026-08-28, ⚠️ **re-registered and its
+      clock reset on 2026-08-31.** The control was *signal-only* and could not fire (M2's gate
+      has been shut since 2026-06-29, so it stood at 0 trades against 12); it is now
+      **flat-size on the policy's own bars**, which measures the regime ladder — the policy's
+      own central claim. Compare the arms on net bps per unit of NOTIONAL, not per trade.
       Both arms are live on the same bars, charged the same measured per-pair cost, held the
       same four hours; `GET /api/health`'s `ab` block and `Ledger.ab_summary/1` score them on
       M3_PROTOCOL §4's metrics. The pre-registration is

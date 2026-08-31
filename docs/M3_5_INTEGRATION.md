@@ -27,11 +27,11 @@ Before this, M3's output was a rule in a Python file. Nothing in the running sys
 so we could not tell whether it obeyed the risk limits, and we were not accumulating any new
 evidence about whether it works. Now:
 
-Every five minutes the model scores each of the twelve pairs we trade (eight until 2026-08-29). Each score is written
-down. Once a week of scores has accumulated, the system takes **the most confident 2% of
-them**, goes long or short as the model says, sizes the trade between **one third and five
-thirds** of a base position depending on how violent the last 24 hours of Bitcoin have been,
-holds for **four hours**, and closes. Every trade is charged the **real** cost of crossing the
+Every five minutes the model scores each of the twelve pairs we trade (eight until 2026-08-29).
+Each score is written down. Any score at or above **0.6319** — a fixed number, which is where
+the most confident 2% of the evaluation period began — is traded: long or short as the model
+says, sized between **one third and five thirds** of a base position depending on how violent
+the last 24 hours of Bitcoin have been, held for **four hours**, then closed. Every trade is charged the **real** cost of crossing the
 spread on that specific pair, as measured in M3-4 — 8.0 bps round trip on Bitcoin, 14.1 on
 WLDUSDT. Nothing is sent to Binance: it is all paper.
 
@@ -50,15 +50,23 @@ machine that collects them. What M3-5 delivers is the collection, not the verdic
 
 ### Two things to expect that look like faults and are not
 
-1. **It will not trade for at least a week after any fresh deployment.** Entry is by rank —
-   "the top 2% of recent bars" — so it needs a population to rank against. The rank window
-   needs 2,016 bars before the policy will place anything — a bar count pooled across served pairs, so ~14 hours at twelve, NOT seven days. `/api/health` says
-   `"warm": false` until then.
-2. **It may then not trade for weeks more.** The strategy only fires in volatile markets, and
-   the market has been the calmest of the whole evaluation period since July — **the served
-   checkpoint has produced no gated signal since 2026-06-29**. That is the strategy correctly
-   sitting out, and it is exactly why `/api/health` now reports bars seen and time since the
-   last gated signal: so that correct silence is visible as correct.
+*Rewritten 2026-08-31 by the freeze — the first item used to say the opposite.*
+
+1. **It trades from its first bar; there is no warmup.** Entry is by a **fixed** confidence
+   cut (0.6319), derived offline over the served checkpoint's whole evaluation split, so it needs no
+   population to rank against. `/api/health` reports `"warm": true` immediately and always.
+   ⚠️ Until 2026-08-31 entry was by a *trailing* rank and the policy did sit out its first
+   ~2,016 bars; that rule was measured, cost the edge its sign, and was retired
+   ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md)). Any document still describing a
+   warmup is stale.
+2. **It may then not trade for weeks.** The strategy only fires in volatile markets, and the
+   market has been the calmest of the whole evaluation period since July — **the served
+   checkpoint has produced no gated signal since 2026-06-29**, and August's confidence never
+   exceeded 0.569 against the 0.6319 cut, so the validated rule takes **nothing** all month.
+   That is the strategy correctly sitting out. It is exactly why `/api/health` and the
+   dashboard report the cut in force beside a trailing diagnostic: so that correct silence is
+   visible as correct, and so a reader can see *how far* below the cut the market is rather
+   than guessing.
 
 ---
 
@@ -68,8 +76,8 @@ machine that collects them. What M3-5 delivers is the collection, not the verdic
 |---|---|
 | `Trading.Policy` | The rule, pure and stateless: the coverage cut, the quintile edges, the 1/3..5/3 size ladder, the 4h hold, and `decide/3`. **The rule exists here and nowhere else.** |
 | `Trading.ExecCost` | M3-4's measured per-pair crossing cost. No maker branch, no queue model — see §3. |
-| `Trading.Regime` | `btc_absret_1d` and its trailing 30-day quintile edges, rebuilt from Binance klines so a redeploy costs no warmup. |
-| `Trading.Ledger` | `policy_bars` (the ranking population and the forward evidence) and `paper_trades` (both arms of the A/B), plus the scoring. |
+| `Trading.Regime` | `btc_absret_1d`, rebuilt from Binance klines so a redeploy costs no warmup. ⚠️ Since 2026-08-31 the quintile edges it serves are **frozen constants**, not its trailing 30-day ones; the trailing ones remain as a drift diagnostic. |
+| `Trading.Ledger` | `policy_bars` (the forward evidence, and the population the drift diagnostic ranks over — no longer the rule's own population) and `paper_trades` (both arms of the A/B), plus the scoring. |
 | `Trading.PolicyEngine` | The loop: bar → rank → decide → risk check → order → 4h timer → close. |
 | `Trading.RiskManager` | The hard limits, rewritten. Position cap, notional ceiling, daily loss, leverage. |
 | `Trading.Executor` | The order path. Crossing only. Paper in `simulation` mode. |
@@ -91,7 +99,7 @@ SignalEngine polls inference every 30s
      -> Executor.close/2 -> RiskManager.release/0 + record_close/1
 ```
 
-The control arm branches off after `Policy.decide_signal_only/3` and goes straight to the
+The control arm branches off after `Policy.decide_flat/3` and goes straight to the
 ledger: it is a measurement arm and never produces an order (§4).
 
 ---
@@ -134,12 +142,14 @@ docker compose run --rm -e MIX_ENV=test -e POSTGRES_HOST=postgres app mix test
 |---|---|
 | `signal_liveness.bars_last_24h` | Is the model being scored at all? Should be ~288 x pairs. |
 | `signal_liveness.seconds_since_last_gated` | How long the system has been silent. `null` means never gated in the retained window — check it against §0's "no gated signal since 2026-06-29". |
-| `policy.warm` | `false` means the rank window is still filling; the policy cannot trade. |
-| `policy.confidence_threshold` | The live top-2% cut. Watch it drift — that is the thing a fixed threshold would have got wrong. |
+| `policy.warm` | Always `true` since the 2026-08-31 freeze — a fixed cut has no warmup. Kept in the payload because the dashboard and this checklist read it; `false` now means only that the engine has not ticked yet. |
+| `policy.confidence_threshold` vs `policy.frozen_threshold` | The cut the running engine is deciding with, beside this build's constant. 🔴 **They must be equal.** A difference means the VM is running a pre-freeze binary or the trailing rank has been wired back in, and its trades belong to neither rule. This is the single most important line on the page. |
+| `policy.rolling_threshold` | 🟢 DIAGNOSTIC, decides nothing. What the retired trailing-14d rank would say today. Read it *against* the cut: below it means even the top 2% of recent bars does not clear the bar, so the policy is correctly taking nothing; above it means bars are clearing. Not an alarm in either direction. |
 | `policy.served_pairs` | The twelve pairs the policy may rank and trade (eight until 2026-08-29). **This is not the collector's whitelist** — see §3.4; the two now hold the same twelve but remain separate settings, and the whitelist stays free to be wider. The invariant to check is not a count: **if this ever shows a pair `ExecCost` has not measured, the coverage cut is being taken over a population containing a trade we cannot price.** `exec_cost.measured_pairs` is the list to compare against, and `config_test.exs` asserts it. |
-| `policy.skips` | Named reasons bars were not traded: `warming_up`, `below_coverage`, `position_open`, `no_regime`, `no_side`, `not_served`. **A silent system with a populated `skips` map is working.** `not_served` counts bars for collected-but-not-traded pairs; since 2026-08-29 the collector and the served set hold the same twelve, so it should now be **zero** — a non-zero value means the two lists have drifted apart. |
+| `policy.skips` | Named reasons bars were not traded: `below_coverage`, `position_open`, `no_regime`, `no_side`, `not_served`. ⚠️ `warming_up` should **never appear again** — if it does, the running binary predates the freeze. **A silent system with a populated `skips` map is working.** `not_served` counts bars for collected-but-not-traded pairs; since 2026-08-29 the collector and the served set hold the same twelve, so it should now be **zero** — a non-zero value means the two lists have drifted apart. |
 | `policy.risk_rejections` | Counted refusals by reason. A non-empty map means a hard limit is binding and the A/B is being throttled on one side only. |
-| `regime.p80_edge` vs `published_p80` | The live top quintile cut against §1.8's 4.31%. A large gap means the market is in a different volatility regime from the one the policy was measured in — as of 2026-08-28 the live p80 is **1.77%**, i.e. less than half. |
+| `regime.quintile_edges` / `regime.frozen_p80` | The sizing ladder in force. Constants since 2026-08-31; `frozen_p80` is **0.0252**. ⚠️ Not §1.8's published 4.31% — that was measured on an earlier window. |
+| `regime.trailing_p80` vs `frozen_p80` | 🟢 DIAGNOSTIC. The trailing-30d top quintile against the frozen one. A trailing value far below means nearly everything sizes into the bottom buckets — correct in a calm market, and worth being able to see rather than infer. It no longer affects sizing. |
 | `ab` | Both arms: trades, net bps per trade, net bps per unit of notional, win rate, drawdown, trades/day. |
 
 `net_bps` and `net_bps_per_notional` are **two different readings** and both are reported for
@@ -237,31 +247,94 @@ now asserted in `config_test.exs` rather than maintained by hand.
 
 ## §4 — The A/B (this part IS pre-registered)
 
-**Question.** What does the M3-2 rule add over trading M2's raw gated signal?
+**⚠️ RE-REGISTERED 2026-08-31.** The original registration is kept verbatim in §4.2 below,
+because a pre-registration that can be edited without trace is not one. §4.1 is what runs.
 
-**Arms.** Both paper, both live at once on the same bars, both charged M3-4's measured per-pair
-crossing cost, both held four hours, both serial per pair.
+### 4.1 The registration in force, from 2026-08-31
 
-| | `policy` | `signal_only` |
+**Question.** **Is the regime sizing worth anything?** M3-2 says the 1/3..5/3 ladder is worth
+**+8.6 bps on the worst window** — the whole difference between failing Tier 1 and passing it
+(M3_PLAN §0 item 4, which holds the entry set constant bar for bar and is the strongest form of
+that claim). It has never been checked forward.
+
+**Arms.** Both paper, both live at once, both charged M3-4's measured per-pair crossing cost,
+both held four hours, both serial per pair, **and both taking their entry decision from the
+same function** — `Policy.decide_flat/3` delegates to `Policy.decide/3` and overrides the size.
+
+| | `policy` | `flat_size` |
 |---|---|---|
-| entry | top 2% by confidence rank over the trailing 14 days | every bar M2's serve gate approves |
+| entry | confidence ≥ the frozen cut 0.6319 | **identical, by delegation** |
 | side | the model's 240m direction | the same |
-| size | 1/3..5/3 by BTC 24h-move quintile | flat 1.0 |
+| size | 1/3..5/3 by BTC 24h-move quintile | **flat 1.0** |
 | risk path | through `RiskManager` | none — a measurement arm, never an order |
 
-**Metrics**, committed here before any live number exists, and matching M3_PROTOCOL §4 so the
-live table can sit next to `docs/M3_2_RESULTS.md`: trades, net bps/trade, net bps per unit of
-notional, win rate, cumulative net bps, max drawdown, trades/day. Reported per arm by
+🟢 **The two ledgers differ in exactly one dimension.** That is enforced structurally rather
+than by discipline: there is one entry rule, in one function, and the control cannot drift away
+from it under a later edit. `policy_test.exs` asserts the arms agree on every skip reason and on
+every entry field except `size`.
+
+**Metrics**, unchanged from §4.2 and matching M3_PROTOCOL §4: trades, net bps/trade, net bps per
+unit of notional, win rate, cumulative net bps, max drawdown, trades/day. Reported per arm by
 `/api/health`'s `ab` block and by `Ledger.ab_summary/1`.
 
-**What would count as the policy working:** the `policy` arm's net bps per unit of notional
-above the `signal_only` arm's, on a trade count large enough to resolve the difference. It will
-be a long time before that count exists — §5 sizes it.
+**What would count as the sizing working:** the `policy` arm's net bps **per unit of notional**
+above the `flat_size` arm's, on a trade count large enough to resolve it. Per-trade net bps is
+the wrong column for this comparison and will mislead — the policy arm varies size, so its
+per-trade mean is size-weighted and is flattered by exactly the thing under test. Offline the
+same policy is +15.03 per trade against +11.24 per unit of notional.
+
+**One acknowledged divergence.** The policy arm passes through `RiskManager` and the control
+does not, so a risk refusal leaves a pair held on one arm and not the other until both are flat.
+That is deliberate: a control that could be refused for lack of a slot would flatter the policy
+by throttling only its competitor. `risk_rejections` on `/api/health` is where it shows up, and
+a non-empty map is the signal to discount the comparison over that period.
 
 🔴 **Read this before quoting any live number.** The forward test cannot be certified any
 faster than the offline one could. M3-2's pooled per-trade standard deviation is 259 bps; at
-2.3 trades/day the arms will not separate at 15 bps for a very long time. The A/B's near-term
+~2.7 trades/day the arms will not separate at 8.6 bps for a very long time. The A/B's near-term
 value is **that the pipeline is provably running and obeying its limits**, not its P&L column.
+
+### 4.2 ⚫ The original registration, 2026-08-28 — superseded, kept for the record
+
+> **Question.** What does the M3-2 rule add over trading M2's raw gated signal?
+>
+> | | `policy` | `signal_only` |
+> |---|---|---|
+> | entry | top 2% by confidence rank over the trailing 14 days | every bar M2's serve gate approves |
+> | side | the model's 240m direction | the same |
+> | size | 1/3..5/3 by BTC 24h-move quintile | flat 1.0 |
+> | risk path | through `RiskManager` | none — a measurement arm, never an order |
+>
+> **What would count as the policy working:** the `policy` arm's net bps per unit of notional
+> above the `signal_only` arm's, on a trade count large enough to resolve the difference.
+
+**Why it was replaced.** It could not produce data. `signal_only` required `bar.gated`, and
+**no bar was gated across all 8,184 bars** from the 2026-08-29 reset onward — the served
+checkpoint has emitted no gated signal since **2026-06-29**, because the edge lives in volatile
+bars and the market has been the calmest of the whole period. The control stood at **0 trades
+against the policy arm's 12**, and would have stayed there for as long as the calm lasted, which
+nobody controls and nobody can date. An A/B with one arm is not an A/B.
+
+The question it asked is not lost: *what the rule adds over M2's raw gate* is answered offline
+in `docs/M3_2_RESULTS.md`. What was missing was any forward check of the policy's own central
+claim, and §4.1 is that.
+
+**Why this is a legitimate re-registration and not a result-driven edit** — the test
+M3_PROTOCOL §0 exists to apply:
+
+1. **No comparable evidence existed when it was made.** The control had zero trades. There was
+   no "which control looks better" to choose between.
+2. **The policy arm's twelve trades were discarded in the same change**, for an unrelated
+   reason (they ran a different rule — [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md)), so
+   no live P&L survives that could have motivated the choice.
+3. **The change was forced by a structural defect, not by a number.** The trigger is "this arm
+   cannot fire", which is verifiable from `last_gated_at: null` without reference to any result.
+4. **It is dated, and the original is above.**
+
+⚠️ **The `signal_only` comparison is not measured live any more.** If M2's gate ever starts
+firing again, reviving it as a third arm is small — `decide_signal_only/3` was deleted rather
+than left as dead code, and git has it — but it should not be revived on the assumption the
+gate will reopen.
 
 ---
 

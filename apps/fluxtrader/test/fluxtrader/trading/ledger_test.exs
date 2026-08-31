@@ -51,10 +51,10 @@ defmodule FluxTrader.Trading.LedgerTest do
     end
   end
 
-  describe "coverage_threshold/3" do
+  describe "rolling_coverage_threshold/3 — the drift diagnostic" do
     test "stays cold until the rank window holds a week of bars" do
       seed_bars(List.duplicate(0.5, 100))
-      assert {:error, :cold, 100} = Ledger.coverage_threshold(0.02, @horizon, now())
+      assert {:error, :cold, 100} = Ledger.rolling_coverage_threshold(0.02, @horizon, now())
     end
 
     test "agrees with Policy.coverage_threshold/2 on the same population" do
@@ -64,7 +64,7 @@ defmodule FluxTrader.Trading.LedgerTest do
 
       seed_bars(confs)
 
-      assert {:ok, sql_thr, n} = Ledger.coverage_threshold(0.02, @horizon, now())
+      assert {:ok, sql_thr, n} = Ledger.rolling_coverage_threshold(0.02, @horizon, now())
       assert n == length(confs)
       assert {:ok, pure_thr} = Policy.coverage_threshold(confs, 0.02)
       assert_in_delta sql_thr, pure_thr, 1.0e-12
@@ -85,7 +85,7 @@ defmodule FluxTrader.Trading.LedgerTest do
           gated: true
         })
 
-      assert {:ok, thr, n} = Ledger.coverage_threshold(0.02, @horizon, now())
+      assert {:ok, thr, n} = Ledger.rolling_coverage_threshold(0.02, @horizon, now())
       assert n == length(inside)
       assert thr == 0.5
     end
@@ -122,9 +122,9 @@ defmodule FluxTrader.Trading.LedgerTest do
 
     test "the two arms hold positions on the same pair independently" do
       assert {:ok, _} = Ledger.open_trade("policy", decision("BTCUSDT"))
-      assert {:ok, _} = Ledger.open_trade("signal_only", decision("BTCUSDT"))
+      assert {:ok, _} = Ledger.open_trade("flat_size", decision("BTCUSDT"))
       assert MapSet.member?(Ledger.open_pairs("policy"), "BTCUSDT")
-      assert MapSet.member?(Ledger.open_pairs("signal_only"), "BTCUSDT")
+      assert MapSet.member?(Ledger.open_pairs("flat_size"), "BTCUSDT")
     end
 
     test "a closed position can be re-entered" do
@@ -176,7 +176,7 @@ defmodule FluxTrader.Trading.LedgerTest do
     end
 
     test "an arm with no closed trades reports zero rather than crashing" do
-      s = Ledger.arm_summary("signal_only")
+      s = Ledger.arm_summary("flat_size")
       assert s.trades == 0
       assert s.net_bps == nil
       assert s.cum_net_bps == 0.0

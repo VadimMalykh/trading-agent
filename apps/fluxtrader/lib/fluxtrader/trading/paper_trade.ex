@@ -2,11 +2,22 @@ defmodule FluxTrader.Trading.PaperTrade do
   @moduledoc """
   One paper position, on one arm of the A/B. Columns mirror `backtest.py`'s trade frame so
   the live ledger scores with the same arithmetic as the offline one.
+
+  The two arms are `policy` (frozen cut, regime-sized 1/3..5/3) and `flat_size` (the same
+  bars, size 1.0). They differ in exactly one dimension by construction — see
+  `Policy.decide_flat/3`, which delegates its entry decision to `Policy.decide/3` rather than
+  restating it.
   """
   use Ecto.Schema
   import Ecto.Changeset
 
-  @arms ~w(policy signal_only)
+  # 🔴 The control arm was renamed `signal_only` -> `flat_size` on 2026-08-31, when it was
+  # re-registered to mean "the same bars as the policy, at flat size" rather than "every bar
+  # M2's gate approves" (see `Policy.decide_flat/3`). The rename is not cosmetic: the old name
+  # names an entry condition the arm no longer has, and a stale name on a live column is how a
+  # future reader mis-reads a whole results table. Safe to change because `paper_trades` is
+  # truncated in the same deploy — no row carries the old value.
+  @arms ~w(policy flat_size)
 
   schema "paper_trades" do
     field(:arm, :string)

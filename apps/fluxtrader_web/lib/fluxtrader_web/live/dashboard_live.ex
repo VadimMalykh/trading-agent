@@ -145,9 +145,11 @@ defmodule FluxTraderWeb.DashboardLive do
 
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <.status_badge label="Policy" value={policy_state(@m3)} color={policy_state_color(@m3)} />
-          <.status_badge label="Rank window" value={rank_window_label(@m3)} color={rank_window_color(@m3)} />
+          <.status_badge label="Cut (frozen)" value={cut_label(@m3)} color={cut_color(@m3)} />
+          <.status_badge label="Confidence vs cut" value={drift_label(@m3)} color={drift_color(@m3)} />
           <.status_badge label="Rule" value={@m3.rule} color="#533483" />
           <.status_badge label="Universe" value={universe_label(@m3)} color={universe_color(@m3)} />
+          <.status_badge label="Bars logged" value={bars_logged_label(@m3)} color="#533483" />
           <.status_badge label="Last bar" value={ago_badge(@m3, :seconds_since_last_bar)} color={last_bar_color(@m3)} />
           <.status_badge label="Last gated" value={ago_badge(@m3, :seconds_since_last_gated)} color="#533483" />
         </div>
@@ -474,23 +476,63 @@ defmodule FluxTraderWeb.DashboardLive do
     end
   end
 
+  # Bars recorded in the trailing window. This used to be a progress bar towards being
+  # allowed to trade; with the cut frozen it is simply how much forward evidence has
+  # accumulated, which is what the paper test is for. Never a gate, so never a warning colour.
   defp rank_bars(m3), do: m3.liveness[:bars_in_rank_window] || m3.policy[:rank_window_bars]
 
-  defp rank_needed(m3),
-    do: m3.liveness[:min_rank_bars] || FluxTrader.Trading.Ledger.min_rank_bars()
-
-  defp rank_window_label(m3) do
+  defp bars_logged_label(m3) do
     case rank_bars(m3) do
       nil -> "unknown"
-      n -> "#{format_count(n)} / #{format_count(rank_needed(m3))} bars"
+      n -> "#{format_count(n)} in 14d"
     end
   end
 
-  defp rank_window_color(m3) do
+  # The cut in force. Read from the engine rather than from `Policy.frozen_threshold/0` so
+  # the page shows what the RUNNING binary is deciding with — the whole failure this panel
+  # now exists to catch is a served rule that is not the one the source says.
+  defp served_cut(m3), do: m3.policy[:confidence_threshold]
+
+  defp cut_label(m3) do
+    case served_cut(m3) do
+      nil -> "unknown"
+      c -> format_conf(c)
+    end
+  end
+
+  # Red on a mismatch between the running cut and this build's constant: that means the
+  # deployed binary is older than the freeze, or someone re-wired the trailing rank.
+  defp cut_color(m3) do
+    frozen = FluxTrader.Trading.Policy.frozen_threshold()
+
     cond do
-      is_nil(rank_bars(m3)) -> "#666"
-      m3.policy[:warm] == true -> "#2ecc71"
-      true -> "#f39c12"
+      is_nil(served_cut(m3)) -> "#666"
+      served_cut(m3) == frozen -> "#2ecc71"
+      true -> "#e74c3c"
+    end
+  end
+
+  # The drift diagnostic, rendered as the thing a reader actually wants to know: is the
+  # model scoring high enough these days to clear the cut at all? The trailing top-2% rank
+  # is that question's answer — if the top 2% of recent bars is below the cut, the policy is
+  # correctly taking nothing.
+  defp drift_label(m3) do
+    case {m3.policy[:rolling_threshold], served_cut(m3)} do
+      {nil, _} -> "window still thin"
+      {_, nil} -> "unknown"
+      {rolling, cut} when rolling >= cut -> "top 2% clears the cut"
+      {rolling, cut} -> "top 2% is #{format_conf(cut - rolling)} short"
+    end
+  end
+
+  # Never red. A market whose top 2% falls short of the cut is the strategy sitting out, and
+  # this panel's standing rule is that correct silence is not an alarm.
+  defp drift_color(m3) do
+    case {m3.policy[:rolling_threshold], served_cut(m3)} do
+      {nil, _} -> "#666"
+      {_, nil} -> "#666"
+      {rolling, cut} when rolling >= cut -> "#2ecc71"
+      _ -> "#f39c12"
     end
   end
 
@@ -554,44 +596,47 @@ defmodule FluxTraderWeb.DashboardLive do
           "A/B below are unknown. The policy keeps its own rank window and is unaffected " <>
           "by this page."
 
-      m3.policy[:warm] != true ->
-        bars = rank_bars(m3) || 0
-        need = rank_needed(m3)
-        pairs = length(m3.served_pairs)
-
-        "Warming up: #{format_count(bars)} / #{format_count(need)} bars. The policy may " <>
-          "not trade until the rank window fills — #{warm_eta(need - bars, pairs)}. " <>
-          "The window is a bar COUNT pooled across the served pairs" <>
-          bars_per_day_clause(pairs) <> ", not a calendar week."
+      cut_color(m3) == "#e74c3c" ->
+        "🔴 The running engine's cut is #{cut_label(m3)}, but this build's constant is " <>
+          "#{format_conf(FluxTrader.Trading.Policy.frozen_threshold())}. The deployed " <>
+          "binary is not serving the rule this page describes — either it predates the " <>
+          "2026-08-31 freeze, or the trailing rank has been wired back into the decision. " <>
+          "Trades taken in this state belong to neither rule and should not be scored."
 
       true ->
         cov = :erlang.float_to_binary(m3.coverage * 100.0, decimals: 0)
 
-        "Warm — the rank window is full and the policy is free to trade. " <>
-          gated_sentence(m3) <>
-          " Expected: it takes only the top #{cov}% of bars by confidence, the edge lives " <>
-          "in volatile bars, and the market has been calm, so weeks with no trade are the " <>
-          "strategy working rather than a fault. " <> last_bar_sentence(m3)
+        "The policy trades any bar at or above a FIXED confidence of #{cut_label(m3)} — the " <>
+          "top #{cov}% of the evaluation split it was scored on, frozen on 2026-08-31 so " <>
+          "that the served rule is the one that was measured. There is no warmup. " <>
+          drift_sentence(m3) <> " " <> gated_sentence(m3) <>
+          " Expected: the edge lives in volatile bars and the market has been calm, so " <>
+          "weeks with no trade are the strategy working rather than a fault. " <>
+          last_bar_sentence(m3)
     end
   end
 
-  defp bars_per_day_clause(0), do: ""
+  # The reason the policy is or is not firing, in one sentence, without asking the reader to
+  # compare two four-decimal numbers themselves.
+  defp drift_sentence(m3) do
+    case {m3.policy[:rolling_threshold], served_cut(m3)} do
+      {nil, _} ->
+        "The drift diagnostic needs a fuller bar log before it can say how close recent " <>
+          "confidence is to the cut."
 
-  defp bars_per_day_clause(pairs),
-    do: " (#{pairs} pairs x 288 = #{format_count(pairs * 288)} bars/day)"
+      {_, nil} ->
+        ""
 
-  defp warm_eta(remaining, _pairs) when remaining <= 0, do: "it should clear on the next tick"
+      {rolling, cut} when rolling >= cut ->
+        "Right now the top #{:erlang.float_to_binary(m3.coverage * 100.0, decimals: 0)}% of " <>
+          "recent bars reaches #{format_conf(rolling)}, at or above the cut, so bars are " <>
+          "clearing it."
 
-  defp warm_eta(_remaining, 0),
-    do: "the engine reported no served pairs, so the time to fill cannot be estimated"
-
-  defp warm_eta(remaining, pairs) do
-    hours = remaining / (288 * pairs) * 24.0
-
-    cond do
-      hours < 1 -> "about #{max(round(hours * 60), 1)} more minutes at #{pairs} pairs"
-      hours < 48 -> "about #{round(hours)} more hours at #{pairs} pairs"
-      true -> "about #{Float.round(hours / 24.0, 1)} more days at #{pairs} pairs"
+      {rolling, cut} ->
+        "Right now even the top #{:erlang.float_to_binary(m3.coverage * 100.0, decimals: 0)}% " <>
+          "of recent bars only reaches #{format_conf(rolling)} — #{format_conf(cut - rolling)} " <>
+          "below the cut — so the policy is correctly taking nothing. That is the calm " <>
+          "market, not a fault, and it resolves when volatility returns."
     end
   end
 

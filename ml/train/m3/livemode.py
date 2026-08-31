@@ -58,9 +58,18 @@ from . import backtest, dumps, metrics
 from .dumps import NS
 
 # ---------------------------------------------------------------------------------------
-# The live constants, read off the Elixir. Restated here rather than imported because there
-# is no import across the two runtimes; `test/fluxtrader/trading/config_test.exs` is where
-# the app asserts its own copies, and a change on either side has to be made on both.
+# The live constants as they stood WHEN THIS WAS MEASURED, read off the Elixir.
+#
+# 🔴 HISTORICAL as of 2026-08-31. The finding below was acted on: `apps/fluxtrader` now
+# serves `Policy.frozen_threshold/0` and `Policy.frozen_regime_edges/0`, both derived by
+# `backtest.py` over the served run's whole split, so arms B/C/D no longer describe anything
+# that runs. The trailing rank and the trailing quintiles survive there only as drift
+# diagnostics on `/api/health`.
+#
+# This module is kept, and kept runnable, for two reasons: it is the evidence for the freeze,
+# and it is the harness that must be re-run if the trailing window is ever revived or if the
+# served checkpoint changes. Its arm A is the rule now in force, and its acceptance test is
+# what proves arm A is `backtest.run()`.
 # ---------------------------------------------------------------------------------------
 RANK_WINDOW_DAYS = 14          # Ledger.@rank_window_days
 MIN_RANK_BARS = 7 * 288        # Ledger.@min_rank_bars — a BAR COUNT pooled across pairs

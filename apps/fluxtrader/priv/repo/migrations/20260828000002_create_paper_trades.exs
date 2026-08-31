@@ -14,7 +14,8 @@ defmodule FluxTrader.Repo.Migrations.CreatePaperTrades do
 
   def change do
     create table(:paper_trades) do
-      # "policy" | "signal_only"
+      # "policy" | "flat_size"  (was "signal_only" until the 2026-08-31 re-registration;
+      # not migrated, because the table is truncated in the same deploy)
       add :arm, :string, null: false
       add :pair, :string, null: false
       add :side, :integer, null: false

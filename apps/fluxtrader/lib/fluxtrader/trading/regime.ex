@@ -24,15 +24,28 @@ defmodule FluxTrader.Trading.Regime do
     * it does not depend on our collector having been up, which decouples the policy's
       sizing from a data-collection outage.
 
-  The quintile **edges** are taken over the trailing 30 days of bars — a distribution of
-  market states, never of the bars the model happened to gate (`backtest.py` is emphatic
-  about this: a quantile over selected trades is conditioned on the model and is not a
-  statement about the market).
+  ## The ladder is FROZEN; the trailing quintiles are a diagnostic
 
-  §1.8's published 80th-percentile cut was **4.31%** over the evaluation period. `edges/0`
-  will not reproduce that today and is not supposed to — August 2026 is the calmest stretch
-  of the whole period, with `btc_absret_1d` averaging 0.0070 against 0.011-0.027 earlier —
-  but a top edge far away from 4.31% is worth noticing, and `/api/health` reports it.
+  🔴 Until 2026-08-31 the quintile **edges** were taken over a trailing 30 days of bars, and
+  `size_multiplier/2` therefore sized the same market state differently from month to month.
+  That is not the function `backtest.py` scored, which takes its edges once over the whole
+  evaluation split. The edges served now are `Policy.frozen_regime_edges/0`; this module
+  supplies only the **value**, `btc_absret_1d` itself.
+
+  Both quantiles are over a distribution of **market states**, never of the bars the model
+  happened to gate — `backtest.py` is emphatic about this, and freezing does not change it: a
+  quantile over selected trades is conditioned on the model and is not a statement about the
+  market.
+
+  The trailing edges are still computed every minute and reported on `/api/health`, because
+  they are the **drift signal**: the frozen p80 is 0.0252 and August 2026 is the calmest
+  stretch of the whole period, with `btc_absret_1d` averaging 0.0070. A trailing p80 far below
+  the frozen one means the ladder is sizing almost everything into the bottom buckets — which
+  is the correct behaviour, and worth being able to see rather than infer.
+
+  ⚠️ NEXT_TRAINING_PLAN §1.8's published p80 was **4.31%**, and that is *not* the frozen
+  number. Both are right: §1.8 measured on an earlier window. The health endpoint compares
+  against the frozen one, because that is the ladder actually in force.
   """
   use GenServer
   require Logger
@@ -44,16 +57,32 @@ defmodule FluxTrader.Trading.Regime do
   @history_days 30
   @symbol "BTCUSDT"
   @refresh_ms 60_000
-  # Below this many samples the quintile edges are noise, so the policy stays cold rather
-  # than sizing off four points. 7 days of bars.
+  # 🔴 The cold-start floor collapsed with the freeze, and this is the reason why.
+  #
+  # It used to be 7 days of bars, because the quintile EDGES were derived here and four
+  # points make a noisy ladder. The edges are now constants, so the only thing this module
+  # still has to produce is `btc_absret_1d` itself — one number needing exactly a 24-hour
+  # lookback. Requiring a week of klines to compute a 24-hour return was warmup the frozen
+  # rule does not owe.
+  #
+  # `@min_samples` therefore now floors the **diagnostic** trailing edges only, and readiness
+  # (`ready?/1`) asks for the value's lookback and nothing more.
   @min_samples 7 * @bars_per_day
-  @published_p80 0.0431
+  # The value needs close(t) and close(t - 24h); a margin above the bare minimum so a
+  # truncated fetch cannot present a single stale reading as ready.
+  @min_value_bars @bars_per_day + 12
+  @frozen_p80 0.025166796520352364
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc """
-  Current `btc_absret_1d`, the quintile edges, and whether there is enough history to size
-  on. `{:ok, %{value: float, edges: [float], samples: n}}` or `{:error, :cold}`.
+  Current `btc_absret_1d` and the ladder to bucket it against.
+  `{:ok, %{value: float, edges: [float], samples: n}}` or `{:error, :cold}`.
+
+  `edges` is `Policy.frozen_regime_edges/0` — a constant, returned here rather than read
+  directly by the caller so that `PolicyEngine` keeps taking the value and the ladder from
+  one place and cannot end up pairing a live value with a stale ladder. `:cold` now means
+  only "no `btc_absret_1d` yet", i.e. under 24 hours of BTC closes.
   """
   def state, do: GenServer.call(__MODULE__, :state, 10_000)
 
@@ -76,7 +105,12 @@ defmodule FluxTrader.Trading.Regime do
   def handle_call(:state, _from, state) do
     reply =
       if ready?(state) do
-        {:ok, %{value: state.value, edges: state.edges, samples: map_size(state.closes)}}
+        {:ok,
+         %{
+           value: state.value,
+           edges: Policy.frozen_regime_edges(),
+           samples: map_size(state.closes)
+         }}
       else
         {:error, :cold}
       end
@@ -89,13 +123,21 @@ defmodule FluxTrader.Trading.Regime do
      %{
        ready: ready?(state),
        btc_absret_1d: state.value,
-       quintile_edges: state.edges,
-       # The p80 edge against §1.8's published 4.31%: a large gap means the market is in a
-       # different volatility regime from the one the policy was measured in.
-       p80_edge: state.edges && List.last(state.edges),
-       published_p80: @published_p80,
+       # The ladder in force. Constant, and reported so a deployed binary can be checked
+       # against `Policy.frozen_regime_edges/0` without reading its source.
+       quintile_edges: Policy.frozen_regime_edges(),
+       frozen_p80: @frozen_p80,
+       # DIAGNOSTIC ONLY — the trailing-30d edges, which used to be the ladder. The gap
+       # between `trailing_p80` and `frozen_p80` is how far the market has drifted from the
+       # regime the sizing was measured in; a trailing p80 far below the frozen one means
+       # nearly everything sizes into the bottom buckets, which is correct and not a fault.
+       trailing_quintile_edges: state.edges,
+       trailing_p80: state.edges && List.last(state.edges),
        close_bars: map_size(state.closes),
-       min_bars: @min_samples + @bars_per_day,
+       # What readiness costs now (24h of closes) and what the DIAGNOSTIC needs before its
+       # edges mean anything (8 days). The first no longer gates trading; the second never did.
+       min_bars: @min_value_bars,
+       min_bars_for_trailing_edges: @min_samples + @bars_per_day,
        last_error: state.last_error
      }, state}
   end
@@ -117,9 +159,10 @@ defmodule FluxTrader.Trading.Regime do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
+  # Readiness is about the VALUE only. The edges are constants, so a week of klines is no
+  # longer owed before the policy may size a trade — see @min_value_bars.
   defp ready?(state) do
-    state.edges != nil and state.value != nil and
-      map_size(state.closes) >= @min_samples + @bars_per_day
+    state.value != nil and map_size(state.closes) >= @min_value_bars
   end
 
   defp refresh(state, want_bars) do
@@ -128,14 +171,25 @@ defmodule FluxTrader.Trading.Regime do
         merged = state.closes |> Map.merge(closes) |> prune()
         series = absret_series(merged)
 
-        case Policy.quintile_edges(Map.values(series)) do
-          {:ok, edges} ->
-            value = latest_value(series)
-            %{state | closes: merged, edges: edges, value: value, last_error: nil}
+        # A refresh that yields no complete 24h lookback must not WIPE a value we already
+        # have — the old code only assigned inside its success branch and so never could.
+        # Sizing off `nil` is a `:no_regime` skip, i.e. the policy silently stops trading.
+        value = latest_value(series) || state.value
 
-          {:error, :empty} ->
-            %{state | closes: merged, last_error: "no absret samples yet"}
-        end
+        # The trailing edges are a diagnostic, so failing to build them must not stop the
+        # value from being served — that would reintroduce the warmup the freeze removed.
+        edges =
+          if map_size(series) >= @min_samples do
+            case Policy.quintile_edges(Map.values(series)) do
+              {:ok, edges} -> edges
+              {:error, :empty} -> state.edges
+            end
+          else
+            state.edges
+          end
+
+        error = if value == nil, do: "no absret samples yet"
+        %{state | closes: merged, edges: edges, value: value, last_error: error}
 
       {:ok, _empty} ->
         %{state | last_error: "klines returned no bars"}

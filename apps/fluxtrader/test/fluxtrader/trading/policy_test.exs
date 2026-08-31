@@ -159,37 +159,105 @@ defmodule FluxTrader.Trading.PolicyTest do
     end
   end
 
-  describe "decide_signal_only/3 — the A/B control" do
+  describe "decide_flat/3 — the A/B control, re-registered 2026-08-31" do
     setup do
       %{
         bar: %{
           pair: "ETHUSDT",
-          confidence: 0.41,
+          # Above the frozen cut, so the policy arm takes this bar too. The control is
+          # defined as "the same bars", so a control test that entered on a bar the policy
+          # rejects would be testing the wrong arm.
+          confidence: 0.70,
           side: -1,
           price: 3_000.0,
           ts: ~U[2026-08-28 10:05:00Z],
-          gated: true
+          gated: false
         },
-        ctx: %{open_pairs: MapSet.new(), regime: 0.05}
+        ctx: %{
+          threshold: Policy.frozen_threshold(),
+          regime_edges: Policy.frozen_regime_edges(),
+          regime: 0.05,
+          open_pairs: MapSet.new(),
+          open_count: 0
+        }
       }
     end
 
-    test "enters on M2's own gate, at flat size", %{bar: bar, ctx: ctx} do
-      assert {:enter, d} = Policy.decide_signal_only(bar, ctx)
-      assert d.size == 1.0
-      assert d.side == -1
-      # Same hold as the policy arm, so the only difference between the ledgers is coverage
-      # selection and sizing.
-      assert d.exit_after_ts == ~U[2026-08-28 14:05:00Z]
+    test "takes the policy's bar at flat size", %{bar: bar, ctx: ctx} do
+      assert {:enter, policy} = Policy.decide(Policy.spec(), bar, ctx)
+      assert {:enter, control} = Policy.decide_flat(bar, ctx)
+
+      # The claim the whole arm exists to test: identical entry, different size.
+      assert control.size == 1.0
+      assert policy.size == 5 / 3
+      assert Map.delete(control, :size) == Map.delete(policy, :size)
     end
 
-    test "ignores ungated bars however confident they look", %{bar: bar, ctx: ctx} do
-      assert {:skip, :not_gated} = Policy.decide_signal_only(%{bar | gated: false}, ctx)
+    test "does NOT need M2's gate — that is the point of the re-registration" do
+      # The old control required `bar.gated`, and nothing had gated in 8,184 bars, so it
+      # stood at 0 trades. This bar is ungated and confident, and the control takes it.
+      bar = %{
+        pair: "ETHUSDT",
+        confidence: 0.70,
+        side: -1,
+        price: 3_000.0,
+        ts: ~U[2026-08-28 10:05:00Z],
+        gated: false
+      }
+
+      ctx = %{
+        threshold: Policy.frozen_threshold(),
+        regime_edges: Policy.frozen_regime_edges(),
+        regime: 0.05,
+        open_pairs: MapSet.new(),
+        open_count: 0
+      }
+
+      assert {:enter, _} = Policy.decide_flat(bar, ctx)
     end
 
-    test "is serial per pair too", %{bar: bar, ctx: ctx} do
-      ctx = %{ctx | open_pairs: MapSet.new(["ETHUSDT"])}
-      assert {:skip, :position_open} = Policy.decide_signal_only(bar, ctx)
+    test "skips exactly what the policy skips, and names the same reason", %{bar: bar, ctx: ctx} do
+      # 🔴 The invariant that keeps this a ONE-variable comparison. Each case below is a
+      # reason the policy declines; the control must decline for the identical reason, or the
+      # two ledgers stop being taken on the same bars and the size difference is no longer
+      # the only difference between them.
+      cases = [
+        {%{bar | confidence: 0.55}, ctx, :below_coverage},
+        {%{bar | side: 0}, ctx, :no_side},
+        {bar, %{ctx | open_pairs: MapSet.new(["ETHUSDT"])}, :position_open},
+        # Kept even though a flat size needs no regime: dropping it would let the control
+        # enter bars the policy refuses.
+        {bar, %{ctx | regime: nil}, :no_regime},
+        {bar, %{ctx | threshold: nil}, :warming_up}
+      ]
+
+      for {b, c, reason} <- cases do
+        assert {:skip, ^reason} = Policy.decide(Policy.spec(), b, c)
+        assert {:skip, ^reason} = Policy.decide_flat(Policy.spec(), b, c)
+      end
+    end
+
+    test "is flat at every regime the ladder would have sized differently", %{bar: bar, ctx: ctx} do
+      # Sweep the whole ladder. The policy's size moves 1/3 -> 5/3 across these; the
+      # control's must not move at all, since that spread IS the quantity being measured.
+      edges = Policy.frozen_regime_edges()
+      probes = [hd(edges) / 2] ++ edges ++ [List.last(edges) * 2]
+
+      sizes =
+        for r <- probes do
+          assert {:enter, d} = Policy.decide_flat(bar, %{ctx | regime: r})
+          d.size
+        end
+
+      assert Enum.uniq(sizes) == [1.0]
+
+      policy_sizes =
+        for r <- probes do
+          assert {:enter, d} = Policy.decide(Policy.spec(), bar, %{ctx | regime: r})
+          d.size
+        end
+
+      assert length(Enum.uniq(policy_sizes)) == Policy.size_buckets()
     end
   end
 end

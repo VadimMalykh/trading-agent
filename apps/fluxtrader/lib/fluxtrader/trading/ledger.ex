@@ -12,27 +12,32 @@ defmodule FluxTrader.Trading.Ledger do
   alias FluxTrader.Repo
   alias FluxTrader.Trading.{ExecCost, PaperTrade, PolicyBar}
 
-  # How far back the coverage rank looks. The backtest ranks over its whole split, which is
-  # lookahead it can afford because it is scoring rather than trading; live, the population
-  # can only be bars already seen. 14 days over 8 pairs is ~32k bars, which resolves a 2%
-  # cut to ~640 bars — enough that the threshold does not jump around from day to day.
+  # How far back the DIAGNOSTIC coverage rank looks.
+  #
+  # 🔴 Since 2026-08-31 this window drives nothing. The cut in force is
+  # `Policy.frozen_threshold/0`, derived offline over the whole evaluation split, and the
+  # trailing rank below survives only so `/api/health` can report how far the live confidence
+  # distribution has drifted from the population the constant was taken over. See
+  # `docs/M3_FIDELITY_RESULTS.md` for what it cost while it *was* the rule: on the served
+  # universe it sat below the fixed cut on 72% of warm bars and turned +21.44 net taker bps
+  # into -18.43.
+  #
+  # The window and the floor are unchanged from when they were load-bearing, deliberately:
+  # a diagnostic is only readable against the thing it used to be.
   @rank_window_days 14
-  # Below this the top-2% cut is a handful of bars and the policy stays cold: 2,016 bars
-  # makes the cut 40 bars wide.
+  # Below this the trailing top-2% cut is a handful of bars and is reported as cold rather
+  # than as a number; 2,016 bars makes the cut 40 bars wide.
   #
-  # 🔴 It is a BAR COUNT, not a calendar span, and the `7 * 288` spelling is misleading about
-  # how long it takes to clear. The count is pooled across served pairs, so the population
-  # grows at (pairs x 288)/day: eight pairs clear it in ~21 hours and twelve in ~14, not in
-  # seven days. Every document that described this as "a seven-day wait" was wrong, and the
-  # 2026-08-28 deploy was mis-forecast on that basis.
+  # It is a BAR COUNT, not a calendar span, and the `7 * 288` spelling is misleading about how
+  # long it takes to clear: the count is pooled across served pairs, so the population grows
+  # at (pairs x 288)/day — twelve pairs clear it in ~14 hours, not seven days. This mattered
+  # when it gated trading and mis-forecast the 2026-08-28 deploy. It no longer gates
+  # anything: **the frozen cut has no warmup, and the policy can trade from its first bar.**
   #
-  # ⚠️ OPEN QUESTION, deliberately not changed while widening the universe on 2026-08-29:
-  # whether a bar count is the right floor at all. It guarantees the cut is statistically
-  # wide enough, but says nothing about the cut being drawn from more than one market
-  # regime — at twelve pairs the threshold can be derived from a single 14-hour stretch. A
-  # calendar floor alongside the count would fix that, and would make the constant mean what
-  # its original spelling claimed. It is a change to the cold-start rule, so it wants its own
-  # decision rather than being smuggled in with a universe change.
+  # ⚠️ The old open question — whether a bar count is the right floor, given that at twelve
+  # pairs it can be filled by a single 14-hour stretch of one market regime — is now MOOT for
+  # the policy and applies only to the diagnostic's readability. It is recorded here rather
+  # than dropped so nobody re-derives it from scratch if the trailing cut is ever revived.
   @min_rank_bars 7 * 288
   # Bars older than this are dropped. Two rank windows, so there is always a full window
   # available plus room to widen it without losing history.
@@ -55,17 +60,27 @@ defmodule FluxTrader.Trading.Ledger do
   end
 
   @doc """
-  The coverage cut: the k-th largest confidence over the trailing window, `k = round(n*c)`.
+  🔴 **A DIAGNOSTIC, not the rule.** The trailing-window top-c% cut, reported on
+  `/api/health` beside `Policy.frozen_threshold/0` so the gap between them is visible.
 
-  This is the same definition as `Policy.coverage_threshold/2` and is deliberately expressed
-  as `ORDER BY confidence DESC OFFSET k-1 LIMIT 1` rather than by pulling the window into
-  the VM — the arithmetic is identical, and selection stays `conf >= threshold`, which is
-  tie-inclusive.
+  This is deliberately named for what it is. It used to be the served cut, under the name
+  `coverage_threshold/3`, and the rename is the point: a future reader must not be able to
+  wire it back into `PolicyEngine` believing it is "the" threshold. What it costs to serve is
+  measured in `docs/M3_FIDELITY_RESULTS.md`.
 
-  Returns `{:error, :cold, n}` while the window holds too few bars to rank against, so a
-  cold start is never mistaken for a threshold of zero.
+  What it is still good for: **the drift signal.** The frozen cut was taken over a population
+  with a particular confidence distribution. If this number wanders far below the frozen one
+  the model is scoring systematically lower than it did in the split — the policy will sit
+  out, correctly, and this says why. If it wanders far above, the split's population was
+  unusually easy. Either reading is worth having; neither may change the rule without a
+  pre-registration.
+
+  The arithmetic is identical to `Policy.coverage_threshold/2` and is expressed as
+  `ORDER BY confidence DESC OFFSET k-1 LIMIT 1` rather than by pulling the window into the
+  VM. Returns `{:error, :cold, n}` while the window holds too few bars to rank against, so a
+  thin window is never reported as a threshold of zero.
   """
-  def coverage_threshold(coverage, horizon_m, now \\ DateTime.utc_now()) do
+  def rolling_coverage_threshold(coverage, horizon_m, now \\ DateTime.utc_now()) do
     since = DateTime.add(now, -@rank_window_days * 86_400, :second)
 
     n =

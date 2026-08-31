@@ -6,8 +6,13 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
   measured crossing cost.
 
   Driven with injected signal and regime sources so the path can be exercised without a live
-  inference service and without waiting out the rank-window warmup. Everything between the
-  injection points is the production code.
+  inference service. Everything between the injection points is the production code.
+
+  Since the 2026-08-31 freeze the coverage cut is `Policy.frozen_threshold/0`, so a test's
+  confidences are compared against **that constant** rather than against whatever the fixture
+  bars happened to rank to. `warm_the_rank_window/1` therefore no longer gates anything; it
+  survives because the trailing rank is still computed as a drift diagnostic and one test
+  reads it.
   """
   use FluxTrader.DataCase, async: false
 
@@ -36,10 +41,10 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     :ok
   end
 
-  # A week of bars spread evenly over 0.40..0.89, so the rank window is warm and its top-2%
-  # cut lands near 0.89 — above anything M2's own gate would call ordinary, below the very
-  # confident bars the tests inject.
-  defp warm_the_rank_window(now) do
+  # A week of bars spread evenly over 0.40..0.89. Before the freeze this made the engine warm
+  # and set the cut near 0.89; now it only populates the DIAGNOSTIC trailing rank, and no
+  # test's entry decision depends on it.
+  defp fill_the_diagnostic_window(now) do
     rows =
       for i <- 1..(Ledger.min_rank_bars() + 50) do
         %{
@@ -83,13 +88,15 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     )
   end
 
+  # The ladder in force, not an invented one: `Regime.state/0` returns exactly this, so a
+  # test that injected round numbers would be sizing against a ladder nothing serves.
   defp regime(value) do
-    %{value: value, edges: [0.01, 0.02, 0.03, 0.04], samples: 8640}
+    %{value: value, edges: Policy.frozen_regime_edges(), samples: 8640}
   end
 
   test "a top-2% bar becomes an approved, risk-checked, correctly sized paper position" do
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     start_engine([signal(symbol: "BTCUSDT", confidence: 0.95)], regime(0.05))
     :ok = PolicyEngine.refresh()
@@ -114,7 +121,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
   test "a pair outside the served universe never reaches policy_bars or a trade" do
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     # BNBUSDT is neither served nor measured: ExecCost has no crossing cost for it, so it
     # would be charged a number pooled from other pairs. It must not join the ranking
@@ -134,7 +141,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
     assert status.skips[:not_served] == 1
     refute Enum.any?(Ledger.open_trades("policy"), &(&1.pair == "BNBUSDT"))
-    refute Enum.any?(Ledger.open_trades("signal_only"), &(&1.pair == "BNBUSDT"))
+    refute Enum.any?(Ledger.open_trades("flat_size"), &(&1.pair == "BNBUSDT"))
     assert Enum.any?(Ledger.open_trades("policy"), &(&1.pair == "BTCUSDT"))
 
     # And it is absent from the ranking population itself, not merely refused at entry.
@@ -159,20 +166,73 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     end
   end
 
-  test "the policy stays cold, and says why, until the rank window has enough bars" do
-    # The distinction M3_PLAN §0.8 asks for: correct silence must be legible as correct.
+  test "the frozen cut has no warmup: the very first bar can trade" do
+    # 🔴 This test asserts the OPPOSITE of the one it replaced, and that is the 2026-08-31
+    # freeze. A cut re-derived from a trailing rank needs a population to rank against, so
+    # the policy used to sit out its first ~14 hours; a constant needs nothing. No bars are
+    # seeded here at all.
     start_engine([signal(symbol: "BTCUSDT", confidence: 0.99)], regime(0.05))
     :ok = PolicyEngine.refresh()
 
     status = PolicyEngine.status()
-    refute status.warm
-    assert status.skips[:warming_up] == 1
+    assert status.warm
+    assert status.confidence_threshold == Policy.frozen_threshold()
+    refute Map.has_key?(status.skips, :warming_up)
+    assert [%{pair: "BTCUSDT"}] = Ledger.open_trades("policy")
+  end
+
+  test "the cut in force is the constant, and the trailing rank is only reported" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    # The seeded bars rank to a cut near 0.89 — far above the frozen 0.6319. If the trailing
+    # rank were still deciding, a 0.70 bar would be skipped as `below_coverage`.
+    start_engine([signal(symbol: "BTCUSDT", confidence: 0.70)], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    status = PolicyEngine.status()
+    assert status.confidence_threshold == Policy.frozen_threshold()
+    assert status.rolling_threshold > 0.80
+    assert status.rolling_threshold != status.confidence_threshold
+    assert status.rank_window_bars >= Ledger.min_rank_bars()
+
+    # The constant decided, not the window.
+    assert [%{pair: "BTCUSDT"}] = Ledger.open_trades("policy")
+  end
+
+  test "a thin diagnostic window reports nil and holds nothing up" do
+    # Cold used to mean "do not trade". It now means "this one number is not meaningful yet".
+    start_engine([signal(symbol: "BTCUSDT", confidence: 0.99)], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    status = PolicyEngine.status()
+    assert status.rolling_threshold == nil
+    assert status.warm
+    assert length(Ledger.open_trades("policy")) == 1
+  end
+
+  test "a calm market is silent, and the silence is legible as correct" do
+    # M3_PLAN §0.8's distinction, restated for the frozen rule. August 2026's confidence
+    # never exceeded 0.569 against a cut of 0.6319, so the validated policy takes NOTHING all
+    # month. That must not look like a broken engine: the bar is recorded, the skip is named
+    # and counted, and the endpoint still reports the cut being applied.
+    start_engine([signal(symbol: "BTCUSDT", confidence: 0.5616)], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    status = PolicyEngine.status()
+    assert status.skips[:below_coverage] == 1
+    assert status.warm
+    assert status.confidence_threshold == Policy.frozen_threshold()
     assert Ledger.open_trades("policy") == []
+
+    # 0.5616 is the highest confidence the live ledger's first twelve trades entered on. Every
+    # one of them was below the fixed cut, which is what made them trades of a different rule.
+    assert 0.5616 < Policy.frozen_threshold()
   end
 
   test "an unremarkable bar is recorded but not traded" do
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     start_engine([signal(symbol: "BTCUSDT", confidence: 0.42)], regime(0.05))
     :ok = PolicyEngine.refresh()
@@ -186,33 +246,84 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
            ) == 1
   end
 
-  test "the control arm trades M2's gate while the policy arm ignores it, and vice versa" do
+  test "the two arms take the same bars and differ only in size" do
+    # 🔴 The re-registered A/B, end to end. This test replaces one that asserted each arm
+    # took bars the other refused — which was the OLD control, keyed off M2's gate. That arm
+    # could not produce data (nothing gated in 8,184 bars), so the comparison it defined was
+    # never going to happen. The control now answers the question the policy actually claims
+    # to answer: is the regime ladder worth anything?
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     signals = [
-      # Gated by M2 but nowhere near the top 2%: the control takes it, the policy does not.
-      signal(symbol: "ETHUSDT", confidence: 0.60, gated: true),
-      # Top 2% but M2's gate said no: the policy takes it, the control does not. This is the
-      # coverage-widening §3.1 exists to make possible.
-      signal(symbol: "BTCUSDT", confidence: 0.97, gated: false)
+      # Above the frozen cut. M2's gate is OFF on both, which used to mean the control took
+      # neither; now the gate is irrelevant to entry and both arms take both.
+      signal(symbol: "BTCUSDT", confidence: 0.97, gated: false),
+      signal(symbol: "ETHUSDT", confidence: 0.70, gated: false),
+      # Below the cut. Neither arm may take it — a control that took this would be trading
+      # bars the policy rejects, and the ledgers would stop being comparable.
+      signal(symbol: "SOLUSDT", confidence: 0.55, gated: true)
     ]
 
     start_engine(signals, regime(0.025))
     :ok = PolicyEngine.refresh()
 
-    assert Ledger.open_pairs("policy") == MapSet.new(["BTCUSDT"])
-    assert Ledger.open_pairs("signal_only") == MapSet.new(["ETHUSDT"])
-    # The control is flat-sized by definition; the policy is regime-sized.
-    assert [control] = Ledger.open_trades("signal_only")
-    assert control.size == 1.0
-    assert [policy] = Ledger.open_trades("policy")
-    assert_in_delta policy.size, 1.0, 1.0e-9
+    both = MapSet.new(["BTCUSDT", "ETHUSDT"])
+    assert Ledger.open_pairs("policy") == both
+    assert Ledger.open_pairs("flat_size") == both
+
+    # The control is flat by definition; the policy is regime-sized. regime 0.025 sits in the
+    # frozen ladder's fourth bucket, just below the 0.0252 top edge.
+    for t <- Ledger.open_trades("flat_size"), do: assert(t.size == 1.0)
+    for t <- Ledger.open_trades("policy"), do: assert_in_delta(t.size, 4 / 3, 1.0e-9)
+
+    # Same entries, right down to the price and the exit deadline: size is the ONLY thing
+    # that may differ, and asserting it field by field is what keeps this a one-variable
+    # comparison as the code changes around it.
+    p = Ledger.open_trades("policy") |> Enum.sort_by(& &1.pair)
+    c = Ledger.open_trades("flat_size") |> Enum.sort_by(& &1.pair)
+
+    for {a, b} <- Enum.zip(p, c) do
+      assert a.pair == b.pair
+      assert a.side == b.side
+      assert a.entry_price == b.entry_price
+      assert a.entry_ts == b.entry_ts
+      assert a.exit_after_ts == b.exit_after_ts
+      assert a.confidence == b.confidence
+      refute a.size == b.size
+    end
+  end
+
+  test "the control arm never consumes risk budget" do
+    # It is a measurement arm. A control that could be refused for lack of a slot would
+    # flatter the policy by throttling only its competitor, so the control must open its
+    # position even when every slot is gone.
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    Application.put_env(
+      :fluxtrader,
+      :trading,
+      Keyword.put(Application.get_env(:fluxtrader, :trading), :max_positions, 0)
+    )
+
+    stop_supervised!(RiskManager)
+    start_supervised!({RiskManager, []})
+
+    start_engine([signal(symbol: "BTCUSDT", confidence: 0.97)], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    assert PolicyEngine.status().risk_rejections[:max_positions] == 1
+    assert Ledger.open_trades("policy") == []
+    # ...and the control took it anyway.
+    assert [c] = Ledger.open_trades("flat_size")
+    assert c.size == 1.0
+    assert %{open_positions: 0} = RiskManager.get_stats()
   end
 
   test "a second bar on an open pair is ignored — no overlapping 4h holds" do
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     start_engine([signal(symbol: "BTCUSDT", confidence: 0.95)], regime(0.05))
     :ok = PolicyEngine.refresh()
@@ -224,7 +335,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
   test "the hold expires, the position closes at the marked price, and the slot comes back" do
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     # The signal is served once, so the second tick closes without re-entering. (Re-entering
     # on the same bar as the exit is what `backtest.py` does — it retires expired positions
@@ -269,7 +380,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
   test "when the risk manager refuses, nothing is opened and the refusal is counted" do
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     Application.put_env(
       :fluxtrader,
@@ -289,7 +400,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
   test "a bar with no 240-minute head is dropped rather than run on another horizon" do
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     wrong_horizon = %{
       symbol: "BTCUSDT",
@@ -312,7 +423,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
   test "the policy will not size on a cold regime" do
     now = DateTime.utc_now()
-    warm_the_rank_window(now)
+    fill_the_diagnostic_window(now)
 
     start_engine([signal(symbol: "BTCUSDT", confidence: 0.95)], nil)
     :ok = PolicyEngine.refresh()
