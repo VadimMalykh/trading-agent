@@ -10,6 +10,9 @@
     ./scripts/m3.sh -m m3 execcost            # M3-4: the execution-cost study itself
     ./scripts/m3.sh -m m3 sidetable           # M3-0b: the price/funding side-table
     ./scripts/m3.sh -m m3 bookera             # B0: the book-era table, same alignment
+    ./scripts/m3.sh -m m3 bookaudit           # B1: is there tradeable information? (bps)
+    ./scripts/m3.sh -m m3 bookregime          # B2: does it work as an M3 regime observable?
+    ./scripts/m3.sh -m m3 fidelity            # is the SERVED rule the one that was scored?
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -20,8 +23,8 @@ import os
 import numpy as np
 import pandas as pd
 
-from . import (backtest, bookprep, dumps, execcost, features, learn, metrics, regime,
-               search, sidetable, universe, validate)
+from . import (backtest, bookaudit, bookprep, bookregime, dumps, execcost, features, learn,
+               livemode, metrics, regime, search, sidetable, universe, validate)
 
 
 def cmd_validate(args) -> int:
@@ -973,6 +976,246 @@ def _winner_trades():
     return ds, res.trades
 
 
+
+def _conformance(t: pd.DataFrame, n_seeds: int, label: str) -> None:
+    """What the rule DOES, independent of what it earns.
+
+    The forward test cannot resolve P&L for months, but it can be checked against this in a
+    week: a served policy whose pair mix, side mix, trade rate and entry-confidence band all
+    sit outside the arm it is supposed to be running is not that arm, and no amount of
+    calendar time fixes it.
+    """
+    if t.empty:
+        print(f"  {label}: no trades")
+        return
+    span = metrics.span_days(t)
+    top = t["pair"].value_counts(normalize=True)
+    print(f"  {label}")
+    print(f"    trades/day {len(t) / n_seeds / span:>6.2f}   "
+          f"long {float((t['side'] > 0).mean()):.0%} / short {float((t['side'] < 0).mean()):.0%}   "
+          f"pairs {t['pair'].nunique()}   top pair {top.index[0]} {top.iloc[0]:.0%}")
+    c = t["conf"].astype(float)
+    print(f"    entry conf   min {c.min():.4f}  p25 {c.quantile(.25):.4f}  "
+          f"med {c.median():.4f}  p75 {c.quantile(.75):.4f}  max {c.max():.4f}")
+    s = t["size"].astype(float)
+    print(f"    size         mean {s.mean():.3f}  "
+          + "  ".join(f"{v:.2f}x {float((np.isclose(s, v)).mean()):.0%}"
+                      for v in (1/3, 2/3, 1.0, 4/3, 5/3)))
+
+
+def cmd_fidelity(args) -> int:
+    """Does the SERVED implementation score like the one M3-2 selected?"""
+    wide = args.universe == "12"
+    if wide:
+        ds = [dumps.load(dumps.O8_RUN, seed="o8")]
+        universe_label = "O8, 12 pairs, single seed — the served universe"
+    else:
+        ds = dumps.load_baseline(pairs=dumps.BASE8)
+        universe_label = "the three banked seeds, 8 pairs — the population M3-2 chose on"
+
+    spec = backtest.PolicySpec(label="served", **WINNER_SPEC)
+    regimes = {d.seed: regime.build(d.df) for d in ds}
+    n_seeds = len(ds)
+
+    print(f"\nFIDELITY REPLAY — {universe_label}")
+    print(f"policy: {spec}")
+    print(f"live constants: rank window {livemode.RANK_WINDOW_DAYS}d / floor "
+          f"{livemode.MIN_RANK_BARS:,} bars   ladder window {livemode.REGIME_WINDOW_DAYS}d / "
+          f"floor {livemode.REGIME_MIN_BARS:,} bars")
+    print("\nacceptance ----------------------------------------------------------------")
+    livemode.validate_fidelity(ds, spec, regimes)
+
+    results = {}
+    for arm in livemode.ARMS:
+        results[arm.label] = livemode.run(ds, spec, regimes, arm)
+
+    print("\nthe cut ---------------------------------------------------------------------")
+    ref = results[livemode.ARMS[0].label]
+    print("  fixed  " + "  ".join(f"{k}={v:.4f}" for k, v in ref.fixed_thresholds.items()))
+    for seed, st in results[livemode.ARMS[3].label].rolling_threshold_stats.items():
+        print(f"  rolling {seed}: mean {st['mean']:.4f}  range [{st['min']:.4f}, {st['max']:.4f}]"
+              f"  below the fixed cut on {st['p_below_fixed']:.0%} of warm bars"
+              f"  (cold {st['cold_ts']:,}/{st['ts']:,} ts)")
+
+    for cost, name in ((metrics.MAKER_COST_BPS, "maker 5bps"),
+                       (metrics.TAKER_COST_BPS, "taker 14bps")):
+        print(f"\n--- {name} " + "-" * 58)
+        rows = []
+        for arm in livemode.ARMS:
+            t = results[arm.label].trades
+            s = metrics.summarise(t, cost, metrics.span_days(t), n_seeds=n_seeds)
+            w = metrics.by_window(t, cost, n_seeds=n_seeds)
+            worst = w.loc[w["net_bps"].idxmin()] if len(w) else None
+            ci = metrics.clustered_mean_bps(t, cost)
+            rows.append({
+                "arm": arm.label, "trades": s["trades"], "net_bps": s["net_bps"],
+                "lo95": ci["lo95_bps"], "hi95": ci["hi95_bps"],
+                "worst_w": f"{worst['window']} {worst['net_bps']:+.2f}" if worst is not None else "",
+                "per_day": s["trades_per_day"], "sharpe": s["sharpe"],
+            })
+        hdr = f"{'arm':<44}{'trades':>8}{'net bps':>10}{'95% CI (clustered)':>24}{'worst w':>12}{'/day':>7}{'sharpe':>8}"
+        print(hdr)
+        for r in rows:
+            ci = f"[{r['lo95']:+.1f}, {r['hi95']:+.1f}]"
+            print(f"{r['arm']:<44}{r['trades']:>8,}{r['net_bps']:>+10.2f}{ci:>24}"
+                  f"{r['worst_w']:>12}{r['per_day']:>7.2f}{r['sharpe']:>8.2f}")
+
+    print("\nconformance — what each rule DOES ------------------------------------------")
+    for arm in (livemode.ARMS[0], livemode.ARMS[3]):
+        _conformance(results[arm.label].trades, n_seeds, arm.label)
+
+    print("\noverlap ---------------------------------------------------------------------")
+    a = results[livemode.ARMS[0].label].trades
+    d = results[livemode.ARMS[3].label].trades
+    key = ["seed", "pair", "entry_ts"]
+    shared = a.merge(d[key], on=key, how="inner")
+    print(f"  arm A takes {len(a):,} trades, arm D takes {len(d):,}; "
+          f"{len(shared):,} are the same (pair, bar).")
+    if len(d):
+        below = float((d["conf"].astype(float) <
+                       d["seed"].map(results[livemode.ARMS[0].label].fixed_thresholds)).mean())
+        print(f"  {below:.0%} of arm D's trades are on bars the FIXED cut rejects — "
+              f"the live ledger's first twelve are 12/12.")
+    return 0
+
+
+def cmd_bookaudit(args) -> int:
+    """B1 — the economic information check. BOOK_ERA_PLAN §B1, gate §4.1."""
+    df5 = bookaudit.build("5m")
+    df1 = bookaudit.build("1m")
+    tbl, diag, cut = bookaudit.score(df5)
+    cut_ts = pd.to_datetime(cut, unit="ns", utc=True)
+
+    print("\nB1 — ECONOMIC INFORMATION CHECK (BOOK_ERA_PLAN §B1)")
+    print(f"  book_era_5m: {len(df5):,} rows x {df5['pair'].nunique()} pairs   "
+          f"book_era_1m: {len(df1):,} rows")
+    print(f"  chronological split at {cut_ts:%Y-%m-%d %H:%M} UTC — "
+          f"sign and percentile map fitted on half 1, EVERY number below is half 2")
+    print(f"  cost lines: maker {bookaudit.MAKER_BPS:.0f} bps   "
+          f"taker {bookaudit.TAKER_BPS:.0f} bps round trip")
+
+    print("\nper-horizon sd — §B1 point 4, replacing §1.2's sqrt(t) estimates -----------")
+    sd = bookaudit.sd_by_horizon(df5, df1)
+    print(sd.to_string(index=False, float_format=lambda v: f"{v:,.2f}"))
+    print("  `ratio` < 1 means the real sd grows SLOWER than sqrt(t) — the fee wall at short")
+    print("  horizons is then even harder than §1.2 assumed, not easier.")
+
+    print("\nbps by feature x horizon x coverage — half 2 only --------------------------")
+    print("  Two numbers per cell: RAW mean signed return, and (in the second block) the")
+    print("  EXCESS over the period's own drift. The book era is three weeks of one market;")
+    print("  if it drifted up, every long-biased slice earns that drift for free.")
+    for h in bookaudit.HORIZONS:
+        tag = "  (NEGATIVE CONTROL — a book feature 'beating' the model here is a bug flag)" \
+            if h == 240 else ""
+        sub = tbl[tbl["h"] == h].copy()
+        if sub.empty:
+            continue
+        ns = sub.pivot(index="feature", columns="cov", values="n")
+        drift = sub["all_bps"].iloc[0]
+        print(f"\n  horizon {h}m{tag}")
+        print(f"    period drift (mean over ALL half-2 bars): {drift:+.2f} bps   "
+              f"n at cov 0.05 = {int(ns[0.05].iloc[0]):,}")
+        print("    RAW mean signed return, bps/trade")
+        print(sub.pivot(index="feature", columns="cov", values="bps_h2")
+              .to_string(float_format=lambda v: f"{v:+8.2f}"))
+        print("    EXCESS over drift, bps/trade  <- this is the column that is about the feature")
+        print(sub.pivot(index="feature", columns="cov", values="excess_bps")
+              .to_string(float_format=lambda v: f"{v:+8.2f}"))
+        top = sub[sub["cov"] == bookaudit.GATE_COVERAGE].set_index("feature")
+        print(f"    EXCESS at cov 5% with a DAY-CLUSTERED 95% CI ({int(top['clusters'].iloc[0])} "
+              f"clusters) — overlapping windows make sd/sqrt(n) far too tight")
+        for f, r in top.iterrows():
+            flag = "  *" if r["excess_lo95"] > 0 else ""
+            print(f"      {f:<20}{r['excess_bps']:+8.2f}  "
+                  f"[{r['excess_lo95']:+7.2f}, {r['excess_hi95']:+7.2f}]{flag}")
+    print("\n  ⚠️ `imbalance` and `bid_ask_vol_ratio` are monotone transforms of each other")
+    print("  ((b-a)/(b+a) versus b/a), so every rank-based number below is identical for the")
+    print("  two. There are eight distinct features here, not nine.")
+
+    print("\nDIRECTIONAL vs VOL-PROXY — the split §0.4 depends on -----------------------")
+    cls = bookaudit.classify(diag)
+    show = cls[["feature", "h", "n_h2", "rho_h1", "rho_h2", "sign_agrees",
+                "dir_rho", "vol_rho", "class"]]
+    print(show.to_string(index=False, float_format=lambda v: f"{v:+.4f}"))
+    print("  A VOL-PROXY is NOT a failure: it is useless to M2 (which emits direction) and is")
+    print("  exactly what B2 tests as an M3 regime observable. See §0.4.")
+
+    print("\n§4.1 GATE (B1 -> B3) ------------------------------------------------------")
+    g = bookaudit.gate(tbl, diag)
+    print(f"  needs: top-{bookaudit.GATE_COVERAGE:.0%} mean signed return > "
+          f"+{bookaudit.GATE_MIN_BPS:.0f} bps at a horizon <= {bookaudit.GATE_MAX_HORIZON}m, "
+          f"n >= {bookaudit.GATE_MIN_N:,}, sign agreeing across the halves")
+    print(f"  {g['why']}")
+    if g.get("shown"):
+        print(f"  evidence anyway: {g['shown']}")
+    if g["status"] == "NOT EVALUABLE":
+        print("  VERDICT: NOT EVALUABLE — the gate cannot run on this much data.")
+        print("  🔴 This is NOT a FAIL and must not be recorded as one. A criterion has to be")
+        print("  shown to have the power to decide before it decides. Either wait for the")
+        print("  window to grow past the n floor, or re-pre-register the floor BEFORE looking")
+        print("  at the numbers again — never after.")
+    elif g["pass"]:
+        print("  VERDICT: PASS — B3 is authorised")
+    else:
+        print("  VERDICT: FAIL — B3 does NOT happen")
+        print("  Per §4.1 this number is NOT negotiable downward after the fact. If B2 also")
+        print("  fails §4.2, §4.4 closes the wave until >=90 days of book history (~2026-10-15).")
+
+    out = os.path.join(bookaudit.BOOK_DIR, "b1_bps_table.csv")
+    tbl.to_csv(out, index=False)
+    cls.to_csv(os.path.join(bookaudit.BOOK_DIR, "b1_classification.csv"), index=False)
+    print(f"\n  wrote {out} and b1_classification.csv")
+    return 0
+
+
+def cmd_bookregime(args) -> int:
+    """B2 — book features as M3 regime observables. BOOK_ERA_PLAN §B2, gate §4.2."""
+    ds = dumps.load_baseline(pairs=dumps.BASE8)
+    book = bookregime.load_book(dumps.BASE8)
+    obs = bookregime.observables(book)
+
+    print("\nB2 — BOOK FEATURES AS M3 REGIME OBSERVABLES (BOOK_ERA_PLAN §B2)")
+    print(f"  book era: {len(book):,} bars x {book['pair'].nunique()} pairs, "
+          f"{pd.to_datetime(book['ts'].min(), unit='ns', utc=True):%Y-%m-%d} .. "
+          f"{pd.to_datetime(book['ts'].max(), unit='ns', utc=True):%Y-%m-%d}")
+    print(f"  incumbent: {bookregime.INCUMBENT} (trailing 24h) — candidates are CONTEMPORANEOUS")
+    print(f"  gate on the top {1 - bookregime.REGIME_QUANTILE:.0%} of BARS, per Q1's framing")
+
+    res = bookregime.run(ds, book, obs)
+    for c in bookregime.COVERAGES:
+        r = res[c]
+        print(f"\n--- coverage {c:.0%} " + "-" * 56)
+        print(f"  baseline, no gate:            {r['baseline']['gross_bps']:+8.2f} gross bps "
+              f"(n={r['baseline']['n']:,})")
+        print(f"  baseline inside calm BTC:     {r['baseline_calm']['gross_bps']:+8.2f} gross bps "
+              f"(n={r['baseline_calm']['n']:,})")
+        t = r["rows"]
+        print(f"\n  {'observable':<22}{'n':>7}{'marginal':>11}{'lift':>9}"
+              f"{'n':>8}{'conditional':>13}{'lift':>9}   seeds")
+        for row in t.itertuples():
+            tag = "" if row.primary else "  (diagnostic, not a test)"
+            signs = [np.sign(v) for v in row.seed_lifts.values() if np.isfinite(v)]
+            agree = "agree" if len(set(signs)) == 1 else "SPLIT"
+            print(f"  {row.observable:<22}{row.n_marg:>7,}{row.marg_bps:>+11.2f}"
+                  f"{row.marg_lift:>+9.2f}{row.n_cond:>8,}{row.cond_bps:>+13.2f}"
+                  f"{row.cond_lift:>+9.2f}   {agree}{tag}")
+
+    print("\n§4.2 GATE ------------------------------------------------------------------")
+    g = bookregime.gate(res)
+    print(f"  needs: marginal lift > +{bookregime.GATE_LIFT_BPS:.0f} gross bps at cov 2%, "
+          f"a positive CONDITIONAL lift, and the sign agreeing across all three seeds")
+    print(g["rows"].to_string(index=False, float_format=lambda v: f"{v:+.2f}"))
+    if g["pass"]:
+        print("  VERDICT: PASS — carry the observable into M3 as a HYPOTHESIS, per §4.2.")
+        print("  It is still 38 days. Re-test when the window is longer before it becomes")
+        print("  load-bearing in a policy.")
+    else:
+        print(f"  VERDICT: NOT YET DECIDABLE — no candidate clears +{bookregime.GATE_LIFT_BPS:.0f} bps.")
+        print(f"  🔴 This is NOT a negative result. §1.6 puts the book-era cov02 CI half-width")
+        print(f"  at +/-{bookregime.CI_HALF_WIDTH_BPS:.0f} bps, so a REAL +15 bps effect would fail this")
+        print("  gate too. Record it as 'not yet decidable', per §4.2, never as 'the book is useless'.")
+    return 0
+
 def cmd_sidetable(args) -> int:
     """M3-0b — build the price/funding side-table, prove it, and price what it unlocks."""
     print("=" * 88)
@@ -1218,12 +1461,26 @@ def main() -> int:
                    help="bootstrap draws for the criterion-power table")
     f.set_defaults(fn=cmd_universe_fair)
 
+    fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
+                         "cut and ladder) score like the fixed-window policy M3-2 chose?")
+    fid.add_argument("--universe", default="8", choices=["8", "12"],
+                     help="8 = the three banked seeds; 12 = the O8 single-seed 12-pair run")
+    fid.set_defaults(fn=cmd_fidelity)
+
     sub.add_parser("sidetable", help="M3-0b: build the price/funding side-table, run its "
                    "acceptance test, and price the funding term and the live stop/target "
                    "brake that a fixed-hold backtest cannot see").set_defaults(fn=cmd_sidetable)
 
     sub.add_parser("bookera", help="BOOK_ERA_PLAN B0: the book-era side-table, built on "
                    "M3-0b's alignment").set_defaults(fn=cmd_bookera)
+
+    sub.add_parser("bookaudit", help="B1: the economic information check — book features "
+                   "in bps on a held-out half, pooled across pairs (gate §4.1)"
+                   ).set_defaults(fn=cmd_bookaudit)
+
+    sub.add_parser("bookregime", help="B2: book features as M3 regime observables, "
+                   "marginal and conditional on btc_absret_1d (gate §4.2)"
+                   ).set_defaults(fn=cmd_bookregime)
 
     sub.add_parser("bookprep", help="M3-4a pre-registration facts: ladder cadence, book "
                    "staleness, tape censoring and coverage, touch spread and depth. "

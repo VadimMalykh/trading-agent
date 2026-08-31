@@ -10,7 +10,8 @@ frozen at the §1.3 baseline as a research object**. Before that: R1, and the Q-
 derivation, Q1 regime analysis, Q2 ensemble, Q3 feature expansion).
 
 🟢 **If you are picking this up cold: M2 is frozen as research, §2's queue is empty, and
-nothing is waiting on you here.** The served model is seed 2 on **8 pairs**
+nothing is waiting on you here.** The one training run any plan still calls for is **B3**, and it
+is **blocked** — see §2.  The served model is seed 2 on **8 pairs**
 (`m2_multi_20260819T142759Z_a186182b.pt`, gate 0.6311). All remaining work is in
 `docs/M3_PLAN.md`.
 
@@ -1106,6 +1107,38 @@ which is the whole reason the T-wave changed only `SEED`.
 *(The 12-pair adoption that used to be item 1 here became the T-wave and then T6. It is
 **closed** — not decided, but shown to be undecidable on this evaluation period, so the
 incumbent stands (§1.10). T5, the serving bug it uncovered along the way, is **fixed**.)*
+
+### 🔴 B3 — the book-era GBT. BLOCKED, not refused (2026-08-31)
+
+**This is the only training run any current plan calls for, and it is not runnable.** It is one
+LightGBM run on its own throwaway CPU VM (`scripts/gcp_gbt.sh`), pre-registered in
+[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §B3, and it happens **if and only if** B1 clears §4.1.
+
+B1 ran on 2026-08-31 (`./scripts/m3.sh -m m3 bookaudit`) and returned **`NOT EVALUABLE`**: §4.1
+requires `n >= 2,000` in a top-5% slice, which needs ≥ 40,000 usable held-out rows, and the book
+era supplies 39,740. The gate is short by ~1% and could not be run as written.
+
+🔴 **`NOT EVALUABLE` is not `FAIL`, and B3 must not be launched as though the gate were merely
+close.** The measured evidence, offered as texture only: the best sign-agreeing slice is
+`trade_vol` at 60m, **+12.47 bps in excess of the period's drift, day-clustered 95% CI
+[−6.06, +30.99]** on 12 clusters. It is indistinguishable from zero. Naively it looked like six
+sigma; overlapping 60m windows on a 5m grid are why.
+
+**What un-blocks it — two routes, and only these two:**
+
+1. **Calendar.** The book window grows past the n floor on its own. §4.4's own trigger is ≥90
+   days of continuous book history on the 8 main pairs, ≈**2026-10-15**, which clears the floor
+   with room to spare. Re-run `m3 bookaudit`, then read §4.1.
+2. **A fresh pre-registration of the floor, written BEFORE the numbers are looked at again.**
+   Legitimate — 2,000 was a round number, not a power calculation — but it must be a document
+   written in advance, not a decision taken while the current table is on screen.
+
+⚠️ **Do not "fix" this by widening the coverage to 10% to reach n.** §4.1 names top-5%. Changing
+the coverage to make the n floor reachable is re-picking a searched dimension after seeing
+results, which [M3_PROTOCOL.md](./M3_PROTOCOL.md) §0 forbids.
+
+**Nothing else in the B-wave needs a GPU or a training run.** B0, B1 and B2 are all done and all
+ran on the laptop's `ml_analysis` container.
 
 ### For M3 — the work has moved to `docs/M3_PLAN.md`
 
