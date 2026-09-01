@@ -29,7 +29,7 @@ you defer something, write down what would un-defer it.
 | item | owner doc | state |
 |---|---|---|
 | **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** The clock has started |
-| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **AWAITING RESTART — the rule is fixed in code, the clock is not yet reset.** The cut and ladder are frozen ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6); what remains is the deploy plus the manual `TRUNCATE paper_trades` in §6.4, and the §4.1 control-arm decision that should be made in the same restart. ⚠️ After it, **`warm` is true immediately** — the ~14-hour rank-window wait no longer exists — and long stretches with no trade are expected. Check with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). *Superseded status follows.* 🔴 **RAN THE WRONG RULE — see [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) (2026-08-31) and the blocker row below. It needs a decision before more calendar time is spent.** Original status: **Restarted 2026-08-29** on the twelve-pair universe (see the row below). It needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). ⚠️ `warm: false` until the rank window holds 2,016 bars — that is **~14 hours at twelve pairs, NOT seven days**; the constant is a bar count pooled across served pairs, and every document said "seven days" until 2026-08-29. It may then idle for weeks (see the volatility note below). Both are the strategy working |
+| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **RESTARTED AND VERIFIED 2026-09-01 — and now REGIME-BLOCKED, which is a new problem.** The frozen rule is deployed and every §6.4 check passes (threshold `0.6318973898887634` on both `confidence_threshold` and `frozen_threshold`; `warm: true` immediately; frozen quintile edges; `rolling_threshold` 0.5549 correctly below the cut; only `below_coverage` in `skips`; arms `policy` + `flat_size` at zero trades; `daily_pnl` 0.0). 🔴 **But the cut has not been exceeded since 2026-06-29 — see "The arrival-rate finding" below.** Waiting is no longer a plan that can be costed, which is why [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) is the recommended next work. *Superseded status follows.* ⚫ AWAITING RESTART — the rule is fixed in code, the clock is not yet reset.** The cut and ladder are frozen ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6); what remains is the deploy plus the manual `TRUNCATE paper_trades` in §6.4, and the §4.1 control-arm decision that should be made in the same restart. ⚠️ After it, **`warm` is true immediately** — the ~14-hour rank-window wait no longer exists — and long stretches with no trade are expected. Check with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). *Superseded status follows.* 🔴 **RAN THE WRONG RULE — see [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) (2026-08-31) and the blocker row below. It needs a decision before more calendar time is spent.** Original status: **Restarted 2026-08-29** on the twelve-pair universe (see the row below). It needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). ⚠️ `warm: false` until the rank window holds 2,016 bars — that is **~14 hours at twelve pairs, NOT seven days**; the constant is a bar count pooled across served pairs, and every document said "seven days" until 2026-08-29. It may then idle for weeks (see the volatility note below). Both are the strategy working |
 | **The M3 dashboard panel** | [M3_UI_PLAN.md](./M3_UI_PLAN.md) | ✅ **BUILT 2026-08-29, DEPLOYED and live on `fluxtrader-1` 2026-08-31.** It earned its keep immediately: the panel is what made the served-vs-scored threshold gap visible, which is [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md). Original build note follows. ✅ BUILT 2026-08-29.** The forward paper test is the phase's only deliverable and it was **invisible in the UI**; the dashboard now leads with warm state, the rank-window progress, the A/B arms, the named skips and the served-vs-collector drift check, all read-only. 79 tests green; verified with an empty ledger, with Postgres stopped, and against `fluxtrader-1`'s real `/api/health` state. ⚠️ **`fluxtrader-1` still serves the M2-era page** — the deploy is deliberate and pending, and it **changes dependencies** (a test-only Floki), so it needs `app_deps` / `app_build` recreated. Command in [M3_UI_PLAN.md](./M3_UI_PLAN.md) §9 |
 | **Widen the served universe to 12** | [M3_PLAN.md](./M3_PLAN.md) §0.6 | ✅ **DONE 2026-08-29.** The four extras now carry their own measured crossing cost, so nothing served falls back to a pooled number. See "The twelve-pair widening" below |
 | **M3-0b** — price/funding side-table | [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) | ✅ **DONE 2026-08-29. This was the last M3 build item — M3 now has none.** Acceptance passes on all four dumps (2,655,988 bar-comparisons, every one exact), and it carries **B0** in the same alignment, which closes B0 and unblocks B1. See "What M3-0b found" below — one of its three results is a live setting that needs a decision |
@@ -195,7 +195,55 @@ it are still open and the restart is the moment to settle them.***
 
 ---
 
+## 🔴 The arrival-rate finding, 2026-09-01 — waiting is not a costable plan
+
+*New, and it changes the phase's sequencing. Measured offline on the served checkpoint's own dump
+(`20260819T142759Z`) plus the live bar log; probe scripts in `ml/train/output/probe/` (gitignored).*
+
+**The frozen cut has not been exceeded since 2026-06-29 — ~64 days and counting.** In the 252-day
+evaluation split the cut fires on 93 days (36.9%), but **68% of those bars fall in just two months**
+(Feb + June), July and August contribute **zero**, and the longest dry spell in the whole record is
+**50 days — the same spell, still running.**
+
+🔴 **The comfortable explanation is wrong: volatility came and the model did not respond.** BTC's
+1-day absolute return hit **0.080 / 0.075 on 2026-08-20/21**, the largest in the entire export and a
+level that historically fired on **100%** of days. Live confidence stayed at ~0.56 against a cut of
+0.6319. So "wait for volatility to return" is not a mechanism anyone has evidence for.
+
+**Three defect hypotheses were checked and all are dead** — this is a regime fact, not a bug:
+
+1. **Not serve-path drift.** Live median confidence **0.5197** vs the split's **0.5194**; the live
+   distribution is a clean day-for-day continuation of the split's own July–August tail.
+2. **Not book features going out-of-distribution.** The ceiling collapse *looks* coincident with
+   `has_book` going 0→1, but `NORM_DEGENERATE_MODE=zero` pins constant-in-train columns to zero in
+   train, val **and** serve — the model is candle-only and never sees live book values
+   (`config.py`, and `serve.py` warns about it at load). The p98 decline also *starts before* book
+   turns on, which the coincidence hid. ⚠️ The clean within-day paired test was underpowered
+   (8 mixed cells, p≈0.15) and settles nothing on its own; the config is what settles it.
+3. **Not seed-specific.** **All six** checkpoints on disk — including the 12-pair O8 and both
+   T-wave seeds — show daily-max confidence falling from ~0.62–0.66 pre-July to ~0.55–0.59 after,
+   each ceasing to fire its own cut between 2026-06-29 and 2026-08-22.
+
+**What this does NOT license.** 🔴 It is not evidence that the policy is broken, and it is not
+grounds to lower the cut. Un-freezing the cut to make trades happen is arm D, whose worst window is
+negative, and re-picking coverage after seeing this is exactly what M3_PROTOCOL §0 forbids. The
+honest reading is that the rule is correct and the regime that pays it is absent.
+
+⚠️ **One avoidable loss:** `policy_bars` was reset on 2026-08-29, so the Aug 19–28 window covering
+the volatility spike is gone. That log is the only record of what the model says during a live
+volatility event. **Do not reset it again.**
+
+---
+
 ## 🔴 Open — blockers on trading anything but paper
+
+🔵 **These three rows now have an owning document with an ordered, executable checklist:
+[REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) (new 2026-09-01).** It is the recommended next
+session's work, because it is the only open work whose progress does not depend on the market
+producing a signal — see the arrival-rate finding below. ⚠️ Finishing it does **not** authorise
+trading real money and the document says so in §4: it clears the *mechanical* blockers, while
+the *evidence* blocker (zero forward trades) is untouched. Three decisions are stated there as
+explicit questions (Q1 the API key, Q2 the stop/target, Q3 whether to build signing now).
 
 *New 2026-08-28, from M3-5. Neither blocks the forward paper test; both block real money.*
 
@@ -240,6 +288,37 @@ effect already lives. Owner: **[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md)**.
 | ~~**B1**~~ | ✅ **DONE 2026-08-31** — `./scripts/m3.sh -m m3 bookaudit` | — | **`NOT EVALUABLE`, which is NOT `FAIL`.** §4.1 needs n ≥ 2,000 in a top-5% slice = ≥ 40,000 held-out rows; the era supplies 39,740, short by ~1%. Best sign-agreeing slice `trade_vol` @ 60m: **+12.47 bps excess of drift, day-clustered CI [−6.06, +30.99]** on 12 clusters — indistinguishable from zero, though the naive SEM said six sigma. At 5m nothing clears even the 5 bps maker line. Delivered the real per-horizon sd (grows *slower* than √t) and confirmed `spread_bps`/`trade_count`/`trade_vol`/`funding_rate` as **VOL-PROXY**, per §0.4 |
 | ~~**B2**~~ | ✅ **DONE 2026-08-31** — `./scripts/m3.sh -m m3 bookregime` | — | **`NOT YET DECIDABLE`**, exactly as §4.2 pre-registered. 🟢 The internal control settles the reading: the **incumbent** `btc_absret_1d` — Q1's 4× effect — scores +25.16 on **n=33** with its three seeds **split in sign**. The observable we know works fails its own gate on this window, so the *window* is what cannot resolve it. Cells are 19–78 trades. Texture only: the **conditional** column (book gate inside calm-BTC bars) is positive for `trade_count`/`trade_vol`/composite — the orthogonality hypothesis, to re-test at ≥90 days |
 | **B3** | One book-era GBT, pre-registered | **B1 passing §4.1 — which it has NOT** | 🔴 **BLOCKED, not refused.** B1 returned `NOT EVALUABLE`, so §4.1 has neither authorised nor forbidden B3. Un-blocked by calendar (≈2026-10-15, when the window clears the n floor) **or** by a fresh pre-registration of the floor written *before* the numbers are re-read. ⚠️ Do NOT reach n by widening the coverage to 10% — §4.1 names top-5%, and changing it after seeing results is what M3_PROTOCOL §0 forbids. Recorded in [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2 as the only training run any plan still calls for |
+
+### 🔴 New 2026-09-01 — B1's blocker may already be gone, and the export is the reason
+
+**The "≈2026-10-15" revival trigger on B1/B3 is probably too pessimistic, and it is worth one cheap
+check before anyone plans around it.** That date comes from §4.4's *exit condition* (≥90 days of
+book history), **not** from B1's actual n floor, and the two are different criteria.
+
+What the numbers say, measured 2026-09-01:
+
+* §4.1 needs **≥ 40,000 usable half-2 rows**; B1 reported **39,740** — short by ~1%, i.e. by
+  *hours* of collection, not weeks.
+* **The export B1 ran on is stale and narrower than the data we already hold.**
+  `ml/train/output/m3_4/book_era_5m.parquet` covers **2026-08-05 → 2026-08-27 (23 days)**.
+* On the VM right now, `orderbook_snapshots` holds book history from **2026-07-17** (BTC/ETH/SOL),
+  **07-21** (DOGE/HYPE/WLD), **07-25** (ZEC), **07-27** (1000PEPE) through **2026-09-01** — so the
+  **8 main pairs**, which are the pairs §4.1 and B3 actually name, have **~36 days complete**
+  against the 23 in the export. The four added pairs only start **2026-08-14**.
+
+**So re-exporting over the 8 main pairs' true span is a ~56% increase in rows with zero waiting.**
+
+⚠️ **This is a hypothesis about reachability, not a result, and it must not be run as one.** The
+n floor is a *power* criterion; clearing it changes only whether §4.1 **can** be evaluated, never
+what the verdict is. 🔴 **Do not widen coverage past the pre-registered top-5% to reach n**, and do
+not re-read the numbers first and then decide the window — fix the window, then run it.
+
+**To check it:** re-run the export over the 8 main pairs' span, then `./scripts/m3.sh -m m3 bookera`
+and `./scripts/m3.sh -m m3 bookaudit`. If B1 becomes evaluable it either authorises or refuses B3 on
+evidence — which is the outcome the wave has been waiting on. Owner:
+[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §4.1.
+
+---
 
 ### 🟢 New, from B4.3 — a WS depth consumer is now a real option
 

@@ -642,10 +642,49 @@ recorded. Do not open a B5.
 | **`gcp_walkforward.sh` book ON/OFF** | Retired as a design (§1.3). Three attempts, zero decidable verdicts, and the failure mode is structural: the book-OFF arm collapses to all-flat exactly when the book helps most. The 30-day trigger recorded in the archive does not repair it. |
 | **Architecture search on book data** | §1.6 resolves to ~±8.6bps at 5m; a sweep inside that band measures initialization noise. R3a already showed this family memorizes when given capacity on 30× more data. One well-regularized GBT, one run. |
 | **An LSTM on the book era** | 90k samples. See B3. |
-| **Adding book features to the main M2 model** | Unchanged from NEXT_TRAINING_PLAN §5: they are constant across 99% of the train window and get zeroed. That is a calendar problem and this wave does not change it. |
+| **Adding book features to the main M2 model** | Unchanged from NEXT_TRAINING_PLAN §5: they are constant across 99% of the train window and get zeroed. That is a calendar problem **for a model that keeps the full-history train window** — see the clarification below, because "calendar problem" has been read too broadly. |
 | **Serving anything from B3** | §4.3. A 7-day val window in one regime is not a promotion case at any P&L. |
 | **`orderbook_levels` (raw L2) features** | ~19 days, and nothing on the Python side reads it. This is O5's real home and it is a 2027 item. The scalars are the right target now. |
 | **`liquidations`** | 0 rows, egress-blocked. Not in any plan. |
+
+### Clarification, 2026-09-01 — what "a calendar problem" does and does not mean
+
+Asked directly, and worth writing down because the short phrase above is misleading on its own:
+*if the book era is too recent to sit in the train window, why not just train on a short recent
+window instead of all history?*
+
+**That is right, and it is not blocked by the calendar. It is B3.** The reasoning, in order:
+
+1. **More history makes it worse, not better.** The split is a fraction of time-ordered samples
+   (`VAL_FRACTION` 0.2, `--val-frac`). Train opens 2022-08 and val runs 2025-12 → 2026-08, so the
+   boundary sits at start + 0.8·span. Adding *older* data moves that boundary **earlier** and makes
+   the val window **longer** — back-filling ten years would put the boundary near 2024-08 and leave
+   the book era even more solidly inside val. So downloading more history is the one move that is
+   strictly counter-productive here.
+2. **Training on a short recent window puts book data inside train, and that is exactly B3** —
+   `./scripts/gcp_gbt.sh --tail-days 38`, which bounds the window without needing `--require-book`.
+   The idea is already the plan's; what gates it is B1, not the calendar.
+3. 🔴 **But not with the LSTM, and not at 1m/5m because the sample count allows it.** Two separate
+   limits bite before data volume does:
+   * **Architecture.** ~90k samples at 5m is 3% of the baseline's 2.90M. R3a showed this family
+     memorizes when given capacity on **30× more data**. That is why B3 is LightGBM and why §5
+     lists an LSTM on the book era as out of scope. E4-GBT showed a GBT *ties* the LSTM at 30m, so
+     nothing known is given up.
+   * **The fee wall, which no amount of data moves.** B1 measured the book era directly: **at 5m
+     nothing clears even the 5 bps maker line.** A short horizon has more samples *and* smaller
+     moves, and the moves have to clear the cost of trading them. This is why B3's gate (§4.3) is
+     stated in **net bps at maker**, not in accuracy.
+4. **The real scarcity is held-out rows and regimes, not training rows.** §4.1's floor is on the
+   **held-out second half**, and §4.3 says a pass is *promoted to nothing* regardless, because a
+   7-day val window in a single market regime is not grounds to serve a model.
+
+⚠️ **The cautionary note that makes this concrete:** the M3 policy's current problem is precisely
+that a model trained on one set of regimes went quiet when a new one arrived (see BACKLOG.md, "The
+arrival-rate finding"). A model trained *and* validated inside a single calm two-month window is
+more exposed to that failure, not less. Short-window training is the right way to get book features
+into a model; it is not a way to get a **servable** model, and those are different goals.
+
+---
 
 ---
 
