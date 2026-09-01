@@ -235,6 +235,31 @@ volatility event. **Do not reset it again.**
 
 ---
 
+## 🔴 New 2026-09-01 — swapping the served checkpoint silently breaks the policy
+
+*Filed from [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6.5, where it was recorded but never
+indexed here. It is promoted to its own row because it is **the actual blocker on iterating models
+quickly**, which is a standing goal — not a footnote to the freeze.*
+
+The policy now serves two constants frozen from **one specific checkpoint's own split**: the
+coverage cut `0.6318973898887634` and the regime ladder, both derived by `backtest.py` over seed 2
+(`20260819T142759Z`). **Neither is tied to the checkpoint in code.** `served_pairs` is guarded by a
+test; the served *checkpoint* is not. Dropping a new `m2_multi.pt` in place silently invalidates
+both constants, and **nothing currently fails when that happens** — the policy would keep trading,
+against a threshold belonging to a model that is no longer running. That is the served-vs-scored
+defect of 2026-08-31 all over again, with a different trigger.
+
+**Why it matters beyond correctness:** it is what makes "retrain and swap the model on the go"
+unsafe today. The obstacle to fast iteration is this missing binding, **not** the protocol.
+
+**What to do (not yet scheduled, needs a decision on approach):** record the checkpoint identity
+alongside the constants and refuse to serve — loudly, at boot — when the loaded checkpoint is not
+the one the constants were derived from. A promotion then becomes: derive the new cut and ladder
+from the new checkpoint's split, update both, restart. ⚠️ It also **restarts the forward clock**,
+since it is a different rule, so it cannot be done casually mid-test.
+
+---
+
 ## 🔴 Open — blockers on trading anything but paper
 
 🔵 **These three rows now have an owning document with an ordered, executable checklist:
@@ -288,6 +313,51 @@ effect already lives. Owner: **[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md)**.
 | ~~**B1**~~ | ✅ **DONE 2026-08-31** — `./scripts/m3.sh -m m3 bookaudit` | — | **`NOT EVALUABLE`, which is NOT `FAIL`.** §4.1 needs n ≥ 2,000 in a top-5% slice = ≥ 40,000 held-out rows; the era supplies 39,740, short by ~1%. Best sign-agreeing slice `trade_vol` @ 60m: **+12.47 bps excess of drift, day-clustered CI [−6.06, +30.99]** on 12 clusters — indistinguishable from zero, though the naive SEM said six sigma. At 5m nothing clears even the 5 bps maker line. Delivered the real per-horizon sd (grows *slower* than √t) and confirmed `spread_bps`/`trade_count`/`trade_vol`/`funding_rate` as **VOL-PROXY**, per §0.4 |
 | ~~**B2**~~ | ✅ **DONE 2026-08-31** — `./scripts/m3.sh -m m3 bookregime` | — | **`NOT YET DECIDABLE`**, exactly as §4.2 pre-registered. 🟢 The internal control settles the reading: the **incumbent** `btc_absret_1d` — Q1's 4× effect — scores +25.16 on **n=33** with its three seeds **split in sign**. The observable we know works fails its own gate on this window, so the *window* is what cannot resolve it. Cells are 19–78 trades. Texture only: the **conditional** column (book gate inside calm-BTC bars) is positive for `trade_count`/`trade_vol`/composite — the orthogonality hypothesis, to re-test at ≥90 days |
 | **B3** | One book-era GBT, pre-registered | **B1 passing §4.1 — which it has NOT** | 🔴 **BLOCKED, not refused.** B1 returned `NOT EVALUABLE`, so §4.1 has neither authorised nor forbidden B3. Un-blocked by calendar (≈2026-10-15, when the window clears the n floor) **or** by a fresh pre-registration of the floor written *before* the numbers are re-read. ⚠️ Do NOT reach n by widening the coverage to 10% — §4.1 names top-5%, and changing it after seeing results is what M3_PROTOCOL §0 forbids. Recorded in [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2 as the only training run any plan still calls for |
+
+### 🟡 New 2026-09-01, PARKED — the tradeable horizon has never been tested with book features
+
+**The whole B-wave is aimed at horizons that cannot clear costs, and the horizon that can is used
+only as a control.** This is an open question, not a defect, and it needs a pre-registration before
+any number is looked at.
+
+**What is true today:**
+
+* §1.2's own fee-wall table says **240m is the only horizon that clears both cost lines** at the
+  current skill level (~22 bps captured against a 14 bps taker round trip). 1m/5m/60m do not. That
+  is why the served policy holds for four hours.
+* B1's gate (§4.1) is capped at horizons **≤ 60m**, and 240m is scored **only as a negative
+  control** — the pre-registered expectation being that an apparent 240m book signal is
+  confounding. **The control fired:** every feature showed large positive raw bps (up to +99),
+  which the harness correctly attributed to the period's own **+62 bps drift**.
+* B3 as specified is `GBT_HORIZONS=5,15,60 GBT_PRIMARY=5` — so the wave's **only** training run
+  would not test 240m either.
+* ⚠️ **B1 is a univariate screen, not a model.** It ranks bars by *one* feature at a time. §4.1's
+  wording — "if the best out-of-sample slice is under +5bps, no architecture recovers it" — is
+  **stronger than what a univariate rank test can support**; a feature interaction invisible to a
+  single-feature sort is ordinary. What B1 legitimately establishes is the weaker and still-useful
+  claim: *no individual book feature is strong enough on its own to justify the training run.*
+
+**The counter-argument, which is not weak and must be answered rather than ignored:** book
+microstructure is theorised to decay in minutes, so a book feature that appears to predict a 4h move
+is more likely a volatility proxy riding drift than an edge. B1 measured exactly that —
+`spread_bps`, `trade_count`, `trade_vol` and `funding_rate` all came back **VOL-PROXY**, with
+directional correlation an order of magnitude below their magnitude correlation.
+
+🟢 **And that is a lead, not a dead end.** A feature that predicts *size but not direction* is the
+definition of a **regime / sizing observable**, which is where M3's largest measured effect already
+lives (the regime size ladder, worth +8.6 bps on the worst window). That is B2's question, not B3's,
+and it needs no new model at all.
+
+**Gated on:** a fresh pre-registration, written **before** any 240m number is re-read. 🔴 Adding a
+240m arm to B1's existing gate is **not** available — B1's results are already known, and changing a
+pre-registered criterion after seeing its output is precisely what M3_PROTOCOL §0 forbids.
+
+**Revival trigger:** whoever is prepared to write that pre-registration first. ⚠️ Note before
+anyone does: B3's gate is stated in **net bps at maker**, and the executor has **no limit-order path
+at all** (M3-5 §3.1) — so a maker-side pass is not executable today without building resting orders.
+Prefer framing a new registration on the **taker** line, or scope the maker work explicitly.
+
+---
 
 ### 🔴 New 2026-09-01 — B1's blocker may already be gone, and the export is the reason
 
