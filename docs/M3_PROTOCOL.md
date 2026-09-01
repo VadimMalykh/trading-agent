@@ -238,5 +238,141 @@ and exit machinery instead of toward more knobs.
 
 ## §7 — AMENDMENTS
 
-None. If this file ever acquires an amendment, it must be dated, must state what was known
-at the time it was made, and must say explicitly whether any search output had been seen.
+Every amendment must be dated, must state what was known at the time it was made, and must
+say explicitly whether any search output had been seen.
+
+| # | date | what it changes | search output seen when written? |
+|---|---|---|---|
+| 1 | 2026-09-01 | Adds §8: an exploratory lane, and a standing champion–challenger promotion rule. **Governance only — changes no bar and no completed verdict.** | 🔴 **YES, extensively** |
+
+---
+
+## §8 — AMENDMENT 1, 2026-09-01: the two lanes, and the standing promotion rule
+
+### 8.0 🔴 Disclosure, first, because §7 requires it
+
+**Search output had been seen when this was written — a great deal of it.** M3-2 and M3-3 are
+complete, all 40 runs are scored, T6 and the B-wave have reported, and the forward test is
+deployed. This amendment is therefore written by someone who knows the answers.
+
+**What follows from that, and it is the whole safeguard:**
+
+1. 🔴 **This amendment is PROSPECTIVE ONLY. It cannot and does not alter any completed
+   verdict.** M3-2's winner, M3-3's rejection of the learned policy, Tier 1, Tier 2, and every
+   number in §§1–6 stand exactly as they were. Nothing here re-opens them.
+2. 🔴 **It lowers no bar.** Tier 1's six criteria are reproduced by reference, unchanged. If
+   anything below appears to relax a threshold, the threshold wins and this section is wrong.
+3. It changes **who may look at what, and when** — governance — not **what counts as a pass**.
+
+**What was known and prompted it (2026-09-01):** the frozen cut has not been exceeded since
+2026-06-29, ~64 days, longer than the 252-day split's worst dry spell; the collapse is present
+in all six checkpoints and is not a serve defect; and the forward test therefore cannot be
+costed in calendar terms. See BACKLOG.md, "The arrival-rate finding".
+
+### 8.1 The problem this fixes
+
+The protocol bans one narrow thing — re-choosing a knob after seeing its result and reporting
+the outcome as if it had been chosen in advance. **In practice it has come to gate everything**,
+because there is only one lane, so every idea must enter through the confirmatory door. As of
+2026-09-01 the queue reads: B3 blocked, the served-coverage re-registration blocked, the 240m
+book-feature question blocked — all of them "pending someone writes a pre-registration first."
+
+That is an activation barrier, not a safeguard. A rule that makes exploration cost a committed
+document produces less thinking, not more rigour.
+
+### 8.2 Two lanes
+
+**EXPLORATORY.** No pre-registration. Look at anything, as often as you like, on any slice.
+Three requirements, all cheap:
+
+* its output says **`EXPLORATORY`** on it;
+* it is **never cited in a promotion argument**, in any document, in any form;
+* its conclusions are recorded as *"a reason to run a confirmatory test"*, never as findings.
+
+**CONFIRMATORY.** Exactly as today: written before it runs, run once, reported whatever it says.
+
+🔴 **The bright line, and the only thing that makes the loosening safe: a number produced in
+the exploratory lane may never appear in a promotion argument.** To promote on an exploratory
+result you must re-establish it confirmatorily **on data the exploration did not touch.**
+
+⚠️ **This is expensive here and pretending otherwise would defeat the purpose.** The 253-day
+split has been looked at repeatedly; it is not untouched data for almost any question. The one
+genuinely untouched source is **forward time** — which is precisely the resource §2 says is
+binding. So the honest reading of this lane split is: *explore freely, and expect the
+confirmatory step to wait on forward data.* It buys thinking speed, not promotion speed.
+
+### 8.3 The standing promotion rule (champion–challenger)
+
+**Registered once, here, applying to every future challenger.** This is what removes the need
+for a fresh pre-registration per retrain: the criterion is fixed **before any challenger
+exists**, which is what pre-registration was ever protecting.
+
+A challenger checkpoint or policy replaces the incumbent **only if all of the following hold**:
+
+| # | criterion |
+|---|---|
+| C1 | it passes **all six Tier-1 criteria (§4.2)** on its own split, unchanged |
+| C2 | it beats the incumbent on **worst-window net at taker** (§4.4's axis) |
+| C3 | `./scripts/m3.sh -m m3 validate` passes **first** — a challenger scored by a changed harness is not a comparison (§4.4) |
+| C4 | the served constants — coverage cut **and** regime ladder — are **re-derived from the challenger's own split**, never inherited |
+| C5 | the checkpoint-binding guard (§8.4) is in place, so the swap cannot silently serve mismatched constants |
+
+**C4 is not a formality — it is the 2026-08-31 defect promoted to a rule.** Serving one
+checkpoint's cut against another checkpoint's model is exactly what
+[M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) records: O8's 12-pair cut realised 4.01%
+coverage on the served checkpoint against a searched 2%. **A cut belongs to a checkpoint first,
+a universe second.**
+
+🔴 **A single-seed win does not satisfy C2.** At a 259-bps per-trade spread and ±37 bps
+resolution (§2), one seed beating one seed is indistinguishable from luck — T2 is the worked
+example: +4.91 net bps on 8 pairs, −2.70 on 12, cluster-robust CI **[−37.3, +31.9]**. A
+challenger is a **family of ≥ 3 seeds**, and C2 is evaluated on the family's **median** seed
+against the incumbent family's median. This mirrors P5, which already refuses to let one seed
+carry a result.
+
+### 8.4 Operational preconditions — this rule cannot be used until both exist
+
+1. 🔴 **The checkpoint-binding guard.** The served cut and ladder are currently not tied to the
+   checkpoint in code; swapping `m2_multi.pt` silently invalidates both and **nothing fails**
+   (M3_FIDELITY_RESULTS §6.5, and the backlog row). Until a mismatch refuses to serve — loudly,
+   at boot — "swap the model on the go" is unsafe regardless of what this protocol permits.
+   **This, not the protocol, is what blocks fast iteration today.**
+2. ⚠️ **A swap restarts the forward clock.** A new checkpoint with new constants is a different
+   rule, so the A/B spans two policies from that moment (M3_4_PROTOCOL §7). Promotion is
+   therefore never free, and the cost must be stated in the promotion record.
+
+### 8.5 What this amendment deliberately does NOT do
+
+* It does **not** authorise re-picking a searched dimension after seeing results. §0 stands in
+  full. The served-coverage question remains blocked and still needs its own registration.
+* It does **not** lower Tier 1 or retire Tier 2. §4.3's expectation — that this dataset cannot
+  certify a policy at taker fees — is unchanged and is not repaired by iterating faster.
+* It does **not** make a challenger's existence evidence that the incumbent is stale.
+* 🔴 It does **not** solve the current problem. A promotion pipeline needs a challenger that is
+  actually better; today's evidence is that **every** checkpoint went quiet in the same regime
+  at the same time. Faster iteration lets you respond once you have something to promote — it
+  does not produce the something.
+
+### 8.6 🔴 Open — three decisions this amendment does not make
+
+**It is not in force until these are answered**, because each changes what the rule means.
+
+**Q1. Must a challenger show FORWARD evidence, or is backtest Tier-1 plus beating the incumbent
+enough?** — (a) backtest only: fast, and repeats the mistake of promoting on a window that the
+2026-06-29 collapse shows can go stale; (b) require N forward trading days: safe, but the
+arrival-rate finding says N may never arrive; (c) backtest to promote, forward to *keep* — swap
+on backtest evidence, then revert automatically if forward performance fails a stated bar.
+**(c) is the recommendation**, since it is the only option that stays live in a regime where
+forward data is scarce.
+
+**Q2. What margin must C2 clear?** — a bare `>` is noise at this signal-to-noise ratio, and §8.3
+already requires a median-of-family comparison rather than a single seed. Options: (a) any
+positive margin on the family median, (b) a margin exceeding the between-seed spread, (c) a
+margin plus a win on ≥ 2 of {worst-window, pooled, trade rate}. **(b) or (c) recommended; (a) is
+too weak to mean anything.**
+
+**Q3. Retrain on a cadence or on a trigger?** — (a) fixed schedule (e.g. monthly), (b) triggered
+by a stated staleness signal, such as the served checkpoint going N days without exceeding its
+own cut — which is measurable **today** and is exactly the condition now in force. **(b) is the
+recommendation**; it is the one that would have fired in July.
+
