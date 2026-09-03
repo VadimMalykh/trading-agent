@@ -1,6 +1,9 @@
 # The candle-poll defect — every stored candle since 2026-07-18 is a partial bar
 
-**Status: 🔴 OPEN, found 2026-09-03. Nothing is fixed yet; this is the finding and the plan.**
+**Status: 🟡 IN REPAIR, found and fixed 2026-09-03.** The collector no longer stores partial
+bars (deployed to `fluxtrader-1`, commit `0b1d743`) and the history repair has been run. The
+consequences — re-scoring the served checkpoint, re-deriving the frozen constants, restarting
+the forward clock — are §7 steps 5–8 and are in progress. Decisions Q1/Q2/Q3 (§6) are answered.
 Indexed in [BACKLOG.md](./BACKLOG.md). Probe scripts: `ml/train/output/probe/candle_cliff.py`,
 `candle_vs_binance.py`, `candle_damage_scope.py`, `conf_vs_cliff.py` (gitignored, `EXPLORATORY`).
 
@@ -218,6 +221,11 @@ is a serve-path change, not a rule change; it should be pre-registered as a fide
 
 ## §6 — The decisions, each as its own question
 
+> **Answered 2026-09-03: Q1 (a), Q2 (a), Q3 (a)** — all three as recommended. Fix and repair
+> both applied now; the served checkpoint and its two family seeds are re-scored on repaired
+> data and the constants re-derived under C4; the serve-path forming-candle exclusion stays
+> **separate**, pre-registered as a fidelity fix and measured, and remains parked in BACKLOG.
+
 **Q1. Apply the collector fix and the history repair now?** — (a) **yes, both, now**
 (recommended: the fix changes no rule, the repair loses nothing, and every day un-repaired is
 another day of the forward test measuring nothing), (b) fix only, repair later, (c) neither
@@ -241,6 +249,10 @@ keep it separate?** — (a) separate, pre-registered as a fidelity fix and measu
 *Written 2026-09-03 for a later session. Every command is real; where it runs is stated.
 Nothing here changes the rule. Steps 1–4 are the fix; 5–8 are the consequences.*
 
+**Progress, 2026-09-03.** Steps 1–3 are DONE (commits `0b1d743`, `467b918`). Step 4 is the
+verification and now has a committed tool. Steps 5–8 are open. What actually happened, and the
+two traps found on the way, is recorded inside each step below.
+
 ### Step 1 — Fix the collector (local, then commit)
 
 1. `apps/fluxtrader/lib/fluxtrader/market_data/collector.ex`, `insert_candle/4`: change
@@ -256,6 +268,11 @@ Nothing here changes the rule. Steps 1–4 are the fix; 5–8 are the consequenc
    ```sh
    docker compose run --rm -e MIX_ENV=test -e POSTGRES_HOST=postgres app mix test
    ```
+
+✅ **DONE 2026-09-03 (`0b1d743`).** The write moved into a public `store_candle/1` so the test
+drives the real path rather than a copy of it. The test was confirmed to be a real regression
+test, not a tautology: with `on_conflict: :nothing` restored it fails, storing volume 12.0 where
+the closed bar carries 118.0. Full suite 100 tests, 0 failures.
 
 ### Step 2 — Add a repair mode to the backfill (local, then commit)
 
@@ -274,6 +291,21 @@ Nothing here changes the rule. Steps 1–4 are the fix; 5–8 are the consequenc
    in `candles` from 2026-07-17. Check with the ad-hoc query pattern in NEXT_TRAINING_PLAN
    §0.1: `SELECT DISTINCT symbol FROM candles`.
 
+✅ **DONE 2026-09-03 (`0b1d743`, `467b918`).** All four points, plus two that were not in the
+plan:
+
+* **Both modes now refuse a kline whose `close_time` is in the future.** Without this the
+  backfill could itself plant the very partial row it exists to repair — the same defect by
+  another route. It reports the count as `unclosed-skipped`, and it is always 0 or 1.
+* **`gcp_backfill.sh` grew the same `--repair-from` flag**, so the repair runs through the
+  established tmux + `gcp_backfill_status.sh` path rather than an ad-hoc ssh command. ⚠️ The
+  launcher's 8-pair `--symbols` default is deliberately NOT applied in repair mode: an empty
+  list makes `backfill_history.py` repair every symbol in `candles`. Inheriting the 8-pair
+  default there would have quietly left four of the twelve collected pairs corrupt.
+
+The per-row `RETURNING (xmax = 0)` reports `inserted` vs `updated` separately, which is what
+distinguishes a genuine gap fill from a repair — see the counts in step 3.
+
 ### Step 3 — Deploy and repair (on `fluxtrader-1`)
 
 ```sh
@@ -291,7 +323,50 @@ Run it inside `tmux` (see `scripts/gcp_backfill.sh` for the pattern) — 1m over
 twelve pairs is ~830k rows and takes tens of minutes, not seconds. `ml_inference` needs no
 restart: it reads the DB on every prediction.
 
-### Step 4 — Verify the repair (local, from the export)
+✅ **DONE 2026-09-03.** The one-liner that was actually run, from the Mac:
+
+```sh
+./scripts/gcp_backfill.sh --repair-from 2026-07-17 --intervals 1m,5m,15m,1h
+```
+
+It resolved to all twelve symbols on its own. The app was rebuilt first
+(`docker compose up -d --build app`) and came back healthy on all twelve pairs.
+
+**Confirmed:** `ml_inference` needs no restart — `serve.py`'s cross-pair market inputs are
+cached for `MARKET_CACHE_TTL_S = 30`, so repaired candles are picked up within 30 seconds.
+
+⚠️ **The repair is slower than "tens of minutes."** `upsert_candles` executes one statement per
+row, which measured **~90 rows/s** on the always-on e2-small: the first unit (1000PEPEUSDT 1m)
+took 12.9 minutes for 69,773 rows, and the whole job is ~1.07M rows, so budget **~3.5 hours**.
+It is unattended in tmux and idempotent, so this is a "leave it running" cost, not a risk — but
+do not schedule the step-5 eval expecting the DB to be ready in twenty minutes. If this is ever
+run again on a larger range, batch the inserts first; the row-by-row loop is the whole cost.
+
+**What the counts mean.** The first unit returned `inserted=0 updated=69773` — every 1m row
+from 2026-07-17 onward already existed and was overwritten. That is the expected shape here and
+is itself evidence for §1: the range was never *missing* data, which is exactly why the old
+gap-detecting backfill reported "already covered" and did nothing.
+
+### Step 4 — Verify the repair
+
+The gitignored probes read the **parquet export**, so they can only verify the repair after a
+re-export, and they cannot be used as a standing guard. `ml/train/verify_candles.py` (committed,
+`0b1d743`) checks the **database** directly against Binance and is the primary verification:
+
+```sh
+# on fluxtrader-1, against the repaired DB itself — the authoritative check
+cd ~/trading_agent && docker compose --profile ml run --rm ml_trainer \
+  python verify_candles.py --intervals 5m --days 2026-07-21,2026-08-20,2026-09-01
+```
+
+It exits non-zero if any (symbol, interval, day) fails, so it doubles as the cron guard of
+§4 item 3 via `--since-yesterday`.
+
+**Pass condition:** every pair reports `exact vol=1.000 close=1.000 high=1.000 low=1.000` with
+no `MISSING`. Check at least one day *before* the deploy (proves the repair) and one day *after*
+(proves the collector fix), so the two are verified separately.
+
+Then re-export and re-run the parquet probes, which is what steps 5–8 consume:
 
 ```sh
 ./scripts/gcp_m3_export.sh                                  # re-pull the price path
@@ -299,13 +374,28 @@ restart: it reads the DB on every prediction.
 ./scripts/m3.sh output/probe/candle_damage_scope.py         # all twelve pairs
 ```
 
-**Pass condition:** every pair reports `exact=1.000` on the 5m volume check for the test day,
-and the "days with median vol > 50%" line reports all 43. Re-run the same two probes against
-a day *after* the deploy as well, so the collector fix and the repair are verified
-separately. ⚠️ The probes are gitignored; if they are gone, §2 of this document is their
-specification.
+⚠️ The probes are gitignored; if they are gone, §2 of this document is their specification.
+
+**Verified on a local mirror before the VM run**, which is why the repair was trusted: repairing
+BTCUSDT 5m from 2026-07-18 moved 07-21's mean volume from 71 to 482 and every checked day to
+288/288 exact on volume, close, high and low, while the same check on a pair not yet repaired
+still reported a 0.116 median volume ratio — the §2 signature, reproduced and then removed.
 
 ### Step 5 — Re-score the served checkpoint on repaired data (GPU VM, one job)
+
+⚠️ **The eval does not read the VM's live DB — it restores a pg_dump cached in the bucket.**
+`ensure_dump` (`gcp_common.sh`) reuses `/var/tmp/fluxtrader_dump_cache.sql.gz` on the always-on
+VM whenever it is younger than `DUMP_MAX_AGE_MIN` (30). **A cache written before the repair
+finished would silently re-score the corrupt data and look completely normal.** Before the first
+eval, delete it and confirm the fresh dump is post-repair:
+
+```sh
+gcloud compute ssh fluxtrader-1 --zone me-central1-b \
+  --command "rm -f /var/tmp/fluxtrader_dump_cache.sql.gz"
+```
+
+This is the same class of error as the defect itself: a check that cannot see the input it is
+actually reading. Do not skip it.
 
 ```sh
 ./scripts/gcp_train.sh --eval-only m2_multi_20260819T142759Z_a186182b.pt
