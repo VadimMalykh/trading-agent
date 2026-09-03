@@ -381,6 +381,33 @@ BTCUSDT 5m from 2026-07-18 moved 07-21's mean volume from 71 to 482 and every ch
 288/288 exact on volume, close, high and low, while the same check on a pair not yet repaired
 still reported a 0.116 median volume ratio — the §2 signature, reproduced and then removed.
 
+#### ✅ The collector fix is verified on the VM independently of the repair
+
+An hour into the history repair — with only the first of twelve symbols processed — the guard
+reported **all twelve 5m checks passing** while eleven of twelve 1m checks failed. The repair
+cannot explain that, and the explanation turns out to be a free bonus of the fix:
+
+**the app restart repaired ~42 hours of 5m data by itself.** `backfill_candles/3` requests
+`limit: 500` on startup and writes through the same `store_candle/1`, so on the 10:48 UTC restart
+it re-fetched the last 500 closed bars per pair per interval and *replaced* them. At 5m, 500 bars
+is 41.7 hours. At 1m it is only 8.3 hours, which is why 1m still failed.
+
+The prediction that follows is exact, and it holds:
+
+| BTCUSDT 5m | exact vol | median vol ratio | |
+|---|---:|---:|---|
+| 2026-09-02 | **1.000** | 1.000 | inside the 500-bar window |
+| 2026-09-01 | 0.285 | 0.196 | the boundary day |
+| 2026-08-30 | 0.000 | **0.101** | outside it — the untouched defect |
+
+500 bars back from 10:48 UTC lands at 2026-09-01 17:05, which is the last **28.8%** of that day;
+the measured exact fraction is **28.5%**. So the collector fix is confirmed working against live
+exchange data on the VM, by a mechanism entirely separate from `--repair-from`.
+
+The 08-30 row is also the first reproduction of §2's evidence **against the VM's own database**
+rather than the parquet export: median volume ratio 0.101, zero exact closes. The original
+finding stands unaltered.
+
 ### Step 5 — Re-score the served checkpoint on repaired data (GPU VM, one job)
 
 ⚠️ **The eval does not read the VM's live DB — it restores a pg_dump cached in the bucket.**
