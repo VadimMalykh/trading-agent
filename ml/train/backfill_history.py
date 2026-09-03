@@ -2,11 +2,26 @@
 """
 Backfill historic Binance Futures public data into Postgres (no API keys).
 
-  python backfill_history.py --symbols BTCUSDT,ETHUSDT --intervals 1m,15m,1h --days 180
+  python backfill_history.py --symbols BTCUSDT,ETHUSDT --intervals 1m,5m,15m,1h --days 180
   python backfill_history.py --symbols BTCUSDT --funding --days 180
+  python backfill_history.py --intervals 1m,5m,15m,1h --repair-from 2026-07-17
 
 Klines: paginated /fapi/v1/klines (max 1500 per request).
 Funding: /fapi/v1/fundingRate.
+
+Two modes:
+
+  * default — fill only what gap detection reports as MISSING, inserting with
+    ON CONFLICT DO NOTHING. Rows that already exist are left alone.
+  * --repair-from DATE — ignore gap detection, refetch the whole range from DATE
+    to now, and OVERWRITE the stored OHLCV. This exists because the app collector
+    used to freeze the first (still-forming) view of every bar, so the corrupt
+    rows are present, not missing, and the default mode reports them "already
+    covered" and does nothing. See docs/CANDLE_POLL_DEFECT.md.
+
+Neither mode ever stores a bar that has not closed yet: a kline whose close_time
+is in the future is the exchange's still-forming bar and is skipped, so this
+script cannot itself plant the partial row it is here to repair.
 """
 
 from __future__ import annotations
@@ -97,11 +112,39 @@ def fetch_funding(symbol: str, start_ms: int, end_ms: int) -> list:
     return get_with_retry(f"{FAPI}/fapi/v1/fundingRate", params).json()
 
 
-def upsert_candles(symbol: str, interval: str, rows: list) -> int:
+# Per-call write tally, reported at the end of each symbol/interval. Kept as
+# module state because _fetch_loop's upsert callback can only return one number.
+_WRITE_STATS = {"inserted": 0, "updated": 0, "unclosed": 0}
+
+
+def _reset_write_stats() -> None:
+    for k in _WRITE_STATS:
+        _WRITE_STATS[k] = 0
+
+
+_ON_CONFLICT_NOTHING = "ON CONFLICT (symbol, interval, open_time) DO NOTHING"
+_ON_CONFLICT_REPLACE = """ON CONFLICT (symbol, interval, open_time) DO UPDATE SET
+          open = EXCLUDED.open,
+          high = EXCLUDED.high,
+          low = EXCLUDED.low,
+          close = EXCLUDED.close,
+          volume = EXCLUDED.volume,
+          close_time = EXCLUDED.close_time"""
+
+
+def upsert_candles(symbol: str, interval: str, rows: list, replace: bool = False) -> int:
+    """
+    Write klines. With replace=False a row that already exists is left untouched;
+    with replace=True its OHLCV is overwritten by the freshly fetched bar, which is
+    the only way to repair the partial rows the collector froze (CANDLE_POLL_DEFECT).
+
+    `xmax = 0` in the RETURNING clause is Postgres for "this tuple was inserted, not
+    updated", which is what separates a genuine gap fill from a repair.
+    """
     if not rows:
         return 0
     sql = text(
-        """
+        f"""
         INSERT INTO candles (
           symbol, interval, open_time, open, high, low, close, volume, close_time
         ) VALUES (
@@ -109,13 +152,21 @@ def upsert_candles(symbol: str, interval: str, rows: list) -> int:
           :open, :high, :low, :close, :volume,
           to_timestamp(:close_time/1000.0)
         )
-        ON CONFLICT (symbol, interval, open_time) DO NOTHING
+        {_ON_CONFLICT_REPLACE if replace else _ON_CONFLICT_NOTHING}
+        RETURNING (xmax = 0) AS inserted
         """
     )
+    now_ms = int(time.time() * 1000)
     n = 0
     with engine().begin() as conn:
         for k in rows:
-            conn.execute(
+            close_ms = int(k[6])
+            # The newest kline of a range ending "now" is the bar still forming. Storing
+            # it is exactly the defect this script repairs, so never store it.
+            if close_ms >= now_ms:
+                _WRITE_STATS["unclosed"] += 1
+                continue
+            inserted = conn.execute(
                 sql,
                 {
                     "symbol": symbol,
@@ -126,9 +177,14 @@ def upsert_candles(symbol: str, interval: str, rows: list) -> int:
                     "low": float(k[3]),
                     "close": float(k[4]),
                     "volume": float(k[5]),
-                    "close_time": int(k[6]),
+                    "close_time": close_ms,
                 },
-            )
+            ).scalar()
+            # DO NOTHING returns no row for a conflict; DO UPDATE always returns one.
+            if inserted is True:
+                _WRITE_STATS["inserted"] += 1
+            elif inserted is False:
+                _WRITE_STATS["updated"] += 1
             n += 1
     return n
 
@@ -280,33 +336,50 @@ def _fetch_loop(
     return total
 
 
-def backfill_klines(symbol: str, interval: str, days: int) -> int:
+def backfill_klines(
+    symbol: str, interval: str, days: int, repair_from: Optional[datetime] = None
+) -> int:
     end = datetime.now(timezone.utc)
-    start = end - timedelta(days=days)
     step_ms = INTERVAL_STEP_MS.get(interval, 60_000)
-    cov = coverage_ms("candles", symbol, "open_time", f"interval = '{interval}'")
-    ranges = fetch_ranges(start, end, cov, step_ms)
-    gaps = gap_ranges_ms(
-        "candles", symbol, "open_time", step_ms, f"interval = '{interval}'"
-    )
-    if gaps:
-        print(f"    {len(gaps)} interior gap(s) detected inside stored range")
-        ranges = merge_ranges(ranges + gaps)
     fmt = lambda m: datetime.fromtimestamp(m / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-    print(f"  klines {symbol} {interval}: window {fmt(ms(start))} → {fmt(ms(end))}")
-    if not ranges:
-        print(f"    already covered, nothing to fetch")
-        return 0
+    _reset_write_stats()
+
+    if repair_from is not None:
+        # Repair: the rows are PRESENT and wrong, so coverage and gap detection would
+        # both say "nothing to do". Refetch the whole window and overwrite.
+        start = repair_from
+        ranges = [(ms(start), ms(end))]
+        print(f"  klines {symbol} {interval}: REPAIR {fmt(ms(start))} → {fmt(ms(end))}")
+    else:
+        start = end - timedelta(days=days)
+        cov = coverage_ms("candles", symbol, "open_time", f"interval = '{interval}'")
+        ranges = fetch_ranges(start, end, cov, step_ms)
+        gaps = gap_ranges_ms(
+            "candles", symbol, "open_time", step_ms, f"interval = '{interval}'"
+        )
+        if gaps:
+            print(f"    {len(gaps)} interior gap(s) detected inside stored range")
+            ranges = merge_ranges(ranges + gaps)
+        print(f"  klines {symbol} {interval}: window {fmt(ms(start))} → {fmt(ms(end))}")
+        if not ranges:
+            print(f"    already covered, nothing to fetch")
+            return 0
+
+    replace = repair_from is not None
     total = _fetch_loop(
         lambda s, f, t: fetch_klines(s, interval, f, t),
-        lambda s, b: upsert_candles(s, interval, b),
+        lambda s, b: upsert_candles(s, interval, b, replace=replace),
         lambda b: int(b[-1][0]),
         symbol,
         ranges,
         "klines",
         MAX_LIMIT,
     )
-    print(f"  done {symbol} {interval}: ~{total} rows attempted")
+    print(
+        f"  done {symbol} {interval}: ~{total} rows attempted "
+        f"(inserted={_WRITE_STATS['inserted']} updated={_WRITE_STATS['updated']} "
+        f"unclosed-skipped={_WRITE_STATS['unclosed']})"
+    )
     return total
 
 
@@ -340,21 +413,55 @@ def backfill_funding(symbol: str, days: int) -> int:
 def parse_args():
     p = argparse.ArgumentParser(description="Backfill Binance Futures history → Postgres")
     p.add_argument("--symbols", default=None)
-    p.add_argument("--intervals", default="1m,15m,1h")
+    # 5m is in the default set because it is the interval the served model reads and the
+    # one the collector defect hit hardest (a 5m bar was frozen after its first fifth).
+    p.add_argument("--intervals", default="1m,5m,15m,1h")
     p.add_argument("--days", type=int, default=90)
     p.add_argument("--funding", action="store_true", help="Also backfill funding rates")
     p.add_argument("--skip-klines", action="store_true", help="Skip kline backfill (funding only)")
+    p.add_argument(
+        "--repair-from",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Repair mode: refetch every kline from this UTC date to now and OVERWRITE the "
+            "stored OHLCV, ignoring gap detection and --days. Use for CANDLE_POLL_DEFECT "
+            "(--repair-from 2026-07-17). Defaults --symbols to every symbol in `candles`."
+        ),
+    )
     return p.parse_args()
+
+
+def stored_symbols() -> List[str]:
+    """Every symbol that has candles, whitelisted or not — a repair must miss none."""
+    with engine().connect() as conn:
+        rows = conn.execute(text("SELECT DISTINCT symbol FROM candles ORDER BY 1")).fetchall()
+    return [r[0] for r in rows]
 
 
 def main():
     args = parse_args()
-    default_pairs = args.symbols or ",".join(load_whitelist_pairs())
-    symbols = [s.strip().upper() for s in default_pairs.split(",") if s.strip()]
+
+    repair_from = None
+    if args.repair_from:
+        repair_from = datetime.strptime(args.repair_from, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
+
+    if args.symbols:
+        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    elif repair_from is not None:
+        # A repair that only covers the whitelist leaves corrupt rows behind for any pair
+        # that was collected earlier under a wider whitelist.
+        symbols = stored_symbols()
+    else:
+        symbols = [s.strip().upper() for s in load_whitelist_pairs()]
     intervals = [i.strip() for i in args.intervals.split(",") if i.strip()]
 
     print("FluxTrader historic backfill")
     print(f"DB={DATABASE_URL}")
+    if repair_from is not None:
+        print(f"MODE=REPAIR (overwrite) from {repair_from:%Y-%m-%d} to now")
     print(f"symbols={symbols} days={args.days} intervals={intervals} funding={args.funding}")
 
     # smoke DB
@@ -366,7 +473,7 @@ def main():
         for sym in symbols:
             for iv in intervals:
                 try:
-                    backfill_klines(sym, iv, args.days)
+                    backfill_klines(sym, iv, args.days, repair_from=repair_from)
                 except Exception as e:
                     print(f"ERROR klines {sym} {iv}: {e}")
 

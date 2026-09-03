@@ -21,6 +21,11 @@ done, what the next command is, and what to bring back. When a step closes, its 
 moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
 never left here contradicting a later result.*
 
+🔴 **2026-09-03 — read [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md) before anything below.**
+Every stored candle since 2026-07-18 is a partial bar; the forward test has measured nothing, the
+frozen constants were derived on a split with a corrupt tail, and "the market has been quiet"
+(§0.8) is the model reading ~10% of true volume. The fix and repair are that document's §4–§6.
+
 **Last updated: 2026-08-29 — M3-0b is DONE, and with it M3 HAS NO BUILD ITEMS LEFT.**
 [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) is the record. The price/funding side-table exists
 (`ml/train/m3/sidetable.py`), its acceptance test passes on all four eval dumps — 2,655,988

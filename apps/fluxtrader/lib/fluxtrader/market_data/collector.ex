@@ -623,20 +623,45 @@ defmodule FluxTrader.MarketData.Collector do
 
   defp insert_candle(symbol, interval, kline, opts) do
     candle = parse_kline(symbol, interval, kline)
-
-    try do
-      %Candle{}
-      |> Candle.changeset(candle)
-      |> Repo.insert(on_conflict: :nothing, conflict_target: [:symbol, :interval, :open_time])
-    rescue
-      e -> Logger.warning("candle insert failed #{symbol}/#{interval}: #{Exception.message(e)}")
-    catch
-      :exit, reason -> Logger.warning("candle insert exit #{symbol}/#{interval}: #{inspect(reason)}")
-    end
+    store_candle(candle)
 
     if Keyword.get(opts, :broadcast, false) do
       Phoenix.PubSub.broadcast(FluxTrader.PubSub, "candles:live", {:new_candle, candle})
     end
+  end
+
+  @doc """
+  Writes one parsed candle, replacing the OHLCV of a row already stored for the same
+  `(symbol, interval, open_time)`.
+
+  The replace is the whole point. `/fapi/v1/klines` returns the still-forming bar as its
+  newest row, so the first time the poller sees a bar it sees roughly the first minute of
+  it: with `on_conflict: :nothing` that partial snapshot was frozen and the closed bar
+  never landed. Every 5m candle stored between 2026-07-18 and 2026-09-03 carries ~10% of
+  the true volume and ~30% of the true range for exactly that reason — see
+  docs/CANDLE_POLL_DEFECT.md. With `limit: 5` and a 60s poll each bar is re-seen many
+  times after it closes, so replacing on conflict converges every row to the closed bar.
+
+  Public only so the regression test can drive the real write path; not part of the API.
+  """
+  def store_candle(candle) do
+    %Candle{}
+    |> Candle.changeset(candle)
+    |> Repo.insert(
+      on_conflict: {:replace, [:open, :high, :low, :close, :volume, :close_time]},
+      conflict_target: [:symbol, :interval, :open_time]
+    )
+  rescue
+    e ->
+      Logger.warning(
+        "candle insert failed #{candle.symbol}/#{candle.interval}: #{Exception.message(e)}"
+      )
+
+      :error
+  catch
+    :exit, reason ->
+      Logger.warning("candle insert exit #{candle.symbol}/#{candle.interval}: #{inspect(reason)}")
+      :error
   end
 
   defp parse_kline(symbol, interval, kline) when is_list(kline) do

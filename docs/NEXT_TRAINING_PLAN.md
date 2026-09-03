@@ -15,6 +15,12 @@ is **blocked** — see §2.  The served model is seed 2 on **8 pairs**
 (`m2_multi_20260819T142759Z_a186182b.pt`, gate 0.6311). All remaining work is in
 `docs/M3_PLAN.md`.
 
+🔴 **Corrected 2026-09-03: the paragraph below is wrong about the cause.** Every candle stored
+since 2026-07-18 is a partial first-minute bar (~10% of true volume, ~30% of true range), so the
+"confidence dispersion collapses" observation is the model reading flat inputs, not a calm market.
+The last 31 days of every eval dump's split are affected. Owner:
+[CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md). The original paragraph is kept for the record.
+
 🔴 **One M2-relevant fact discovered on 2026-08-28, and it is not a defect.** The served
 checkpoint has produced **no gated signal since 2026-06-29**. Monthly maximum confidence falls
 from 0.66–0.80 (Dec–Jun) to 0.60–0.68 in July and **0.547–0.569 in August**, on all three

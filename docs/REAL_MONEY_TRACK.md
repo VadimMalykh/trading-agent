@@ -40,6 +40,12 @@ is for.
 
 ## §1 — Why this track, and why now
 
+🔴 **Superseded in part, 2026-09-03.** The bullets below conclude "it is not a defect". It is one:
+every stored candle since 2026-07-18 is a partial first-minute bar (~10% of true volume), which is
+why the model did not respond on 08-20/21. See [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md).
+This track's *steps* stand — they never depended on the market — but its premise that the
+forward test is unboundedly regime-blocked does not, and the candle repair outranks it.
+
 The forward paper test cannot generate evidence at the moment. Measured 2026-09-01 on the
 served checkpoint's own dump (`20260819T142759Z`) and on the live bar log:
 
