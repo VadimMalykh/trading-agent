@@ -60,6 +60,14 @@ chmod +x scripts/*.sh
 - Compare counts (script prints local vs remote if `counts_local.txt` present).
 - Confirm book `max(ts)` moves forward on GCP.
 - **Stop local** `docker compose stop app` (or full stack) so only GCP collects book.
+- **Install the candle integrity guard** — see [CANDLE_GUARD.md](./CANDLE_GUARD.md):
+  ```sh
+  GCP_ALWAYS_ON=<new-instance> GCP_ZONE=<zone> ./scripts/install_candle_guard.sh --run-now
+  ```
+  Do this on every instance that collects candles. It is the only check in the project that
+  compares stored data against something *outside* the system, and its absence is what let the
+  candle-poll defect run undetected for six weeks ([CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md)).
+  A brand-new instance may legitimately fail its first run until its history is backfilled.
 
 ---
 

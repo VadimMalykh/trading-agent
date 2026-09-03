@@ -182,9 +182,11 @@ a `--repair-from <date>` mode that ignores gap detection and upserts; ~48 days �
 1m is ~830k rows, well within the endpoint's weight budget in minutes. Then re-run
 `candle_vs_binance.py` for all twelve pairs on two post-repair days and require 100% exact.
 
-**3. Add the guard that was missing.** A daily integrity check that compares yesterday's
-stored closed candles to a fresh kline pull per pair and reports the mismatch fraction on
-`/api/health` (or as a `mix` task run by cron on the VM). It would have fired on 2026-07-19.
+**3. Add the guard that was missing.** ✅ **BUILT 2026-09-03 — see
+[CANDLE_GUARD.md](./CANDLE_GUARD.md)** for what it does and how to install it on another
+instance. A daily integrity check that compares yesterday's stored closed candles to a fresh
+kline pull per pair; it runs on `fluxtrader-1` under the systemd timer `candle-guard.timer`,
+is quiet on success and alerts on Telegram on failure. It would have fired on 2026-07-19.
 Separately, the served model's feature z-scores against the checkpoint's own `norm_stats`
 are a cheap drift monitor — a live column sitting at −2σ for a month is exactly this defect's
 signature and is visible without any external call.
