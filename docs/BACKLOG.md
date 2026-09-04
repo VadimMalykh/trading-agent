@@ -33,7 +33,7 @@ were taken and carried out the same day. Record: [RULES_REVIEW.md](./RULES_REVIE
 | # | item | owner | state |
 |---|---|---|---|
 | 1 | **Deploy the re-derived rule and the checkpoint guard to `fluxtrader-1`** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.1 | 🔵 both `ml_inference` and `app`, no truncate (the ledger persists across swaps), verify `checkpoint_bound: true` |
-| 2 | **The walk-forward fold queue** — 12 serial runs, F2 first | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §5 | 🔵 the harness (`M3_ERA=walkforward`) is built and committed; the runs are not started |
+| 2 | **The walk-forward fold queue** — 12 serial runs, F2 first | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §5 | 🔵 harness built and committed; **0 of 12 banked.** The 2026-09-04 first attempt is void — it inherited the M2-era defaults (8 pairs, 1m, seq 128) from the gitignored `scripts/gcp_env`; §5 now carries the full recipe and `gcp_train.sh` refuses a fold that does not match the incumbent |
 | 3 | **The document restructuring** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.3 | 🔵 in progress 2026-09-04 |
 
 **What the review established, in one line each:** the bars are right and the friction is four

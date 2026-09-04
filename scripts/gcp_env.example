@@ -53,7 +53,18 @@
 # Debug only: 1 = keep train VM alive after the job (never auto delete/stop)
 : "${KEEP_VM:=0}"
 
-# Training defaults (override on the command line of gcp_train.sh if you want)
+# --- Training defaults ------------------------------------------------------
+# 🔴 THESE ARE M2-ERA VALUES AND THEY ARE NOT THE CURRENT RECIPE. They are kept
+# because the old M2 scripts still assume them. The M3 incumbent (T1) trains 12
+# pairs on 5m candles at seq 384 with horizons 60,240,1440 and primary 240m —
+# nothing like the lines below.
+#
+# gcp_env is gitignored, so it is exactly the wrong place to decide a recipe: a
+# launch command that omits a knob silently inherits whatever this file happens
+# to say, which is how walk-forward fold WF-F2-s1 was voided on 2026-09-04.
+# STATE THE FULL RECIPE IN THE LAUNCH COMMAND. gcp_train.sh's recipe guard
+# (its section 0a) pins the incumbent in tracked code, prints how each run
+# differs from it, and refuses a walk-forward fold that does not match.
 : "${TRAIN_EPOCHS:=60}"
 : "${TRAIN_SEQ_LEN:=128}"
 : "${TRAIN_DEVICE:=cpu}"

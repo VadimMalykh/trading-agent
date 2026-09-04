@@ -500,19 +500,26 @@ curl -s localhost:4000/api/health | jq '{policy, regime}'
 The forward clock restarts at this deploy by definition: every row from here carries the
 checkpoint tag, and the A/B is read on tagged rows.
 
-### 6.2 The fold queue — harness ✅ built 2026-09-04, runs not started
+### 6.2 The fold queue — harness ✅ built 2026-09-04; 0 of 12 folds banked
 
 **Decided 2026-09-04, before any fold was trained: §3 is scored on the TWELVE served pairs**
 (WALKFORWARD_PROTOCOL §6). **Vadim launches the runs; this session records and scores them.**
 The exact split of work is in that protocol's §6.
 
-
+🔴 **The twelve pairs are the *training* universe too, not only the scoring one, and the launch
+command must say so.** The first attempt (2026-09-04, run `20260904T172905Z`) is void: the command
+this section then pointed at set only `VAL_FRACTION`/`VAL_OFFSET`/`TRAIN_FRACTION`/`SEED`, so every
+other knob fell back to the gitignored `scripts/gcp_env`, which still holds the M2-era defaults —
+the run trained **8 pairs on 1m candles at seq 128, horizons 5/30/60, primary 30m**. The fold
+variables arrived correctly; the recipe did not. Recorded in WALKFORWARD_PROTOCOL §6.1, log at
+`logs/archive/VOID-WF-F2-s1-20260904T172905Z.log`. Two fixes are in place: §5 of that protocol now
+carries the whole recipe plus a five-line pre-record checklist, and `gcp_train.sh` refuses a
+split-moving run whose recipe is not the incumbent's.
 
 [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §5, **F2 first**. Before the first launch:
-clear the VM dump cache, and build the `M3_ERA=walkforward` harness support (§2 of that protocol)
-in the same session that fetches the first dump — it must exist before any fold number is read.
-Twelve serial runs at roughly four hours each; record each in §6 of the protocol from its own
-`Split` line.
+clear the VM dump cache; the `M3_ERA=walkforward` harness support (§2 of that protocol) is built
+and committed. Twelve serial runs at roughly four hours each; verify each against §5.1's
+checklist, then record it in §6 of the protocol from its own `Split` line.
 
 ### 6.3 The document-restructuring session (decision 7) — ✅ DONE 2026-09-04
 

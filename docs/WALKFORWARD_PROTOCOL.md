@@ -11,6 +11,14 @@ satisfy). **Owner of the plumbing:** [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §2–
 launched.** A better fold shape, a better statistic or a different k is a proposal for a future
 pre-registration, never a re-scoring of these runs.
 
+⚠️ **One edit has been made since a fold was first launched, and it is recorded here rather than
+made quietly.** On 2026-09-05 §5 was rewritten and §6.1 added, because the 2026-09-04 launch
+attempt was void (it trained the wrong recipe — §6.1) and §5's command was the cause. **Nothing
+that decides anything moved:** the fold design (§1), what is scored (§2), the five criteria (§3),
+the confirmatory status of each fold (§4) and the twelve-pair universe (§6) are untouched, and no
+fold number existed when the edit was made. §5 is an operating instruction, and it was brought
+into line with the recipe §1 already specified.
+
 ---
 
 ## §0 — In plain language
@@ -154,30 +162,62 @@ numbers are read:
 older than the candle repair (`rm -f /var/tmp/fluxtrader_dump_cache.sql.gz` on the VM); every fold
 must be trained on repaired candles — the `cache miss` line in the launcher log confirms it.
 
+🔴 **The command states the WHOLE recipe, every time.** This is not verbosity. `scripts/gcp_env`
+is machine-local and gitignored and still holds the M2-era defaults (8 pairs, 1m candles, seq 128,
+horizons 5/30/60, primary 30m), so a command that sets only the split variables inherits a recipe
+nobody chose. That is exactly what voided the first fold attempt on 2026-09-04 — see §6.1. The
+lines below carry §1's recipe explicitly; **`VAL_OFFSET` and `SEED` are the only parts that vary
+between the twelve runs.**
+
 ```sh
-# F0 (control) — three seeds
-VAL_FRACTION=0.125 VAL_OFFSET=0.000 TRAIN_FRACTION=0.5 SEED=1 ./scripts/gcp_train.sh
-./scripts/gcp_status.sh && ./scripts/gcp_logs.sh <run_id> > logs/WF-F0-s1.log
-VAL_FRACTION=0.125 VAL_OFFSET=0.000 TRAIN_FRACTION=0.5 SEED=2 ./scripts/gcp_train.sh
-./scripts/gcp_status.sh && ./scripts/gcp_logs.sh <run_id> > logs/WF-F0-s2.log
-VAL_FRACTION=0.125 VAL_OFFSET=0.000 TRAIN_FRACTION=0.5 SEED=3 ./scripts/gcp_train.sh
-./scripts/gcp_status.sh && ./scripts/gcp_logs.sh <run_id> > logs/WF-F0-s3.log
-# F1, F2, F3: the same three lines with VAL_OFFSET=0.125, 0.250, 0.375
-#   -> logs/WF-F1-s{1,2,3}.log, logs/WF-F2-s{1,2,3}.log, logs/WF-F3-s{1,2,3}.log
+# ---- the recipe, identical in all twelve runs (docs/RULES_REVIEW.md §6.2, §1 above) ----
+export FEATURE_GROUPS=legacy CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export VAL_FRACTION=0.125 TRAIN_FRACTION=0.5
+
+# ---- F2 (untouched, run first) — three seeds, strictly serial ----
+VAL_OFFSET=0.250 SEED=1 ./scripts/gcp_train.sh --gpu 60 384
+./scripts/gcp_status.sh && ./scripts/gcp_logs.sh <run_id> > logs/WF-F2-s1.log
+VAL_OFFSET=0.250 SEED=2 ./scripts/gcp_train.sh --gpu 60 384
+./scripts/gcp_status.sh && ./scripts/gcp_logs.sh <run_id> > logs/WF-F2-s2.log
+VAL_OFFSET=0.250 SEED=3 ./scripts/gcp_train.sh --gpu 60 384
+./scripts/gcp_status.sh && ./scripts/gcp_logs.sh <run_id> > logs/WF-F2-s3.log
+# F3, F1, F0: the same three lines with VAL_OFFSET=0.375, 0.125, 0.000
+#   -> logs/WF-F3-s{1,2,3}.log, logs/WF-F1-s{1,2,3}.log, logs/WF-F0-s{1,2,3}.log
 ```
 
 **Recommended order: F2 first, then F3, then F1, then F0.** F2 and F3 are the folds §3 decides
 on; if the budget is interrupted, the untouched evidence exists before the control does.
 
-🔴 **Verify every run from its own log before recording it:** the `Split walkforward_window |
-val_frac=0.125 val_offset=<x> train_frac=0.5 | train [a → b] | val [c → d]` line, and the
-`resolved knobs` block. A run whose split line reads `global_time` did not receive the fold
-variables and is void. The checkpoint's `meta` carries `val_offset`, `train_fraction`, `run_id`
-and the four boundary timestamps, so a fold can also be verified after the fact.
+`gcp_train.sh` refuses to launch a run that moves the split (`VAL_OFFSET` / `TRAIN_FRACTION` set)
+unless every recipe knob matches the incumbent, and it refuses any *extra* forwarded knob
+(`HIDDEN_SIZE`, `LR`, `FEE_RATE_BPS`, …) that would make the fold non-comparable. It prints
+`recipe: incumbent (T1) exactly …` when the command is right — **that line is the go/no-go before
+the VM is created**, and it costs nothing to read. A fold that deliberately departs from the
+recipe needs a fresh pre-registration (M3_PROTOCOL §0) and then `ALLOW_RECIPE_DRIFT=1`.
 
-**Bring back per run:** the `Split` line; the `Fixed-coverage P&L` table for the **240m** head;
-the `SERVED GATE (C13)` line; the run id; and the `eval_preds_<run>.parquet` fetched into
-`ml/train/output/eval_dumps/`. Then, once all twelve exist:
+### 5.1 Verify every run from its own log BEFORE recording it
+
+🔴 All five must be true. A run failing any of them is **void**: do not record it, and do not
+promote its checkpoint (every training run overwrites `checkpoints/latest.pt`, so after a void
+run `gcp_promote.sh --checkpoint latest` would ship the wrong model — promote by explicit run id).
+
+| # | log line | required value |
+|---|---|---|
+| 1 | `Split walkforward_window \| val_frac=… val_offset=… train_frac=…` | `0.125` / the fold's offset / `0.5`. **`Split global_time` means the fold variables never arrived — void.** |
+| 2 | `=== resolved knobs: …` | `SEQ_LEN=384 HORIZONS=60,240,1440 PRIMARY=240`, and `PAIRS_FLAG` listing **twelve** pairs |
+| 3 | `knob CANDLE_INTERVAL=…` | `5m` — its absence means 1m, a different model on ~5× the samples |
+| 4 | `knob FEATURE_GROUPS=` / `knob PAIR_EMBED_DIM=` / `knob EARLY_STOP_PATIENCE=` | `legacy` / `8` / `20` |
+| 5 | `Training pairs: [...]` | the twelve, not `dumps.BASE8` |
+
+The checkpoint's `meta` also carries `val_offset`, `train_fraction`, `run_id` and the four
+boundary timestamps, so a fold can be verified after the fact as well.
+
+**Bring back per run:** the `Split` line; the `resolved knobs` line; the `Fixed-coverage P&L`
+table for the **240m** head; the `SERVED GATE (C13)` line; the run id; and the
+`eval_preds_<run>.parquet` fetched into `ml/train/output/eval_dumps/`. Then, once all twelve
+exist:
 
 ```sh
 M3_ERA=walkforward ./scripts/m3.sh -m m3 validate     # C3, the third test must PASS
@@ -221,6 +261,19 @@ mixes universes — part of any fold-to-fold difference is the pair list moving,
 pairs present in all four folds; under twelve that restricted table is **not optional garnish, it
 is the control**, and it is read before any fold-to-fold difference is interpreted.
 
+
+### 6.1 Void runs — attempted, thrown away, not part of any statistic
+
+| when | run id | intended | why void |
+|---|---|---|---|
+| 2026-09-04 | `20260904T172905Z` | F2 seed 1 | Trained the **M2-era defaults**, not the incumbent recipe: 8 pairs, 1m candles, `seq 128`, horizons `5,30,60`, primary 30m, `EARLY_STOP_PATIENCE` 10, `FEATURE_GROUPS`/`PAIR_EMBED_DIM` unset. The fold variables *did* arrive (`Split walkforward_window … val_offset=0.25`); only the recipe was wrong. Cause: §5's command set the split variables and let every other knob fall back to the gitignored `scripts/gcp_env`. Log kept at `logs/archive/VOID-WF-F2-s1-20260904T172905Z.log`. |
+
+Nothing was written into `dumps.WALKFORWARD_RUNS`, `validate.PUBLISHED_FIXED_COV_WALKFORWARD` or
+the table below, so the registry never saw it. Two consequences were handled: §5 now states the
+full recipe and lists the five lines that must be checked before a run is recorded, and
+`gcp_train.sh` refuses a split-moving run whose recipe is not the incumbent's. Note also that the
+void run overwrote `checkpoints/latest.pt` in the bucket, as every training run does — **promote
+by explicit run id, never `--checkpoint latest`, until a valid run has replaced it.**
 
 | fold | seed | run id | split line (train → / val →) | pairs | status |
 |---|---|---|---|---|---|

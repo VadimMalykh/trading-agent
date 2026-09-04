@@ -45,6 +45,15 @@
 #                             different experiments.
 # Unknown --flags are rejected (previously they were silently misread as epochs).
 #
+# RECIPE GUARD (see section 0a below). scripts/gcp_env is GITIGNORED and still holds
+# M2-era defaults (8 pairs, 1m candles, seq 128, horizons 5/30/60), so a command that
+# sets only the variables its experiment changes inherits a recipe nobody chose — that
+# is how walk-forward fold WF-F2-s1 was voided on 2026-09-04. Every run now prints how
+# its resolved recipe differs from the incumbent T1, and a run that moves the split
+# (VAL_OFFSET / TRAIN_FRACTION set) is REFUSED unless it matches T1 exactly:
+#   ALLOW_RECIPE_DRIFT=1     a fold that deliberately changes the recipe; needs a
+#                            fresh pre-registration (docs/M3_PROTOCOL.md 0) first.
+#
 # One-time bucket setup (run once):
 #   gcloud storage buckets create "$GCS_BUCKET" --location="$GCP_REGION" \
 #     --uniform-bucket-level-access
@@ -204,6 +213,122 @@ if [[ -n "$EVAL_ONLY_CKPT" ]]; then
   echo "    (no training; seq_len/horizons/candles come from the checkpoint meta; latest.pt untouched)"
 else
   echo "==> run_id=$RUN_ID  ref=$GIT_REF epochs=$EPOCHS seq=$SEQ_LEN horizons=$HORIZONS primary=${PRIMARY}m pairs=${PAIRS_ARG:-DB-whitelist} device=$TRAIN_DEVICE quantile_head=$QUANTILE_HEAD quantile_weight=$QUANTILE_LOSS_WEIGHT"
+fi
+
+# --- 0a. RECIPE GUARD ------------------------------------------------------------
+# WHY THIS EXISTS. On 2026-09-04 the first walk-forward fold (WF-F2-s1,
+# run 20260904T172905Z) was launched with the command WALKFORWARD_PROTOCOL.md §5
+# printed at the time, which set only VAL_FRACTION/VAL_OFFSET/TRAIN_FRACTION/SEED.
+# Every OTHER knob then fell back to scripts/gcp_env — a machine-local, GITIGNORED
+# file still carrying the M2-era defaults — so the run trained 8 pairs on 1m candles
+# at seq 128 with horizons 5,30,60 and primary 30m. The fold variables arrived
+# correctly; the recipe did not. The run was void and had to be thrown away.
+#
+# The lesson is that an untracked file must never be what decides a recipe. The
+# incumbent recipe is therefore pinned HERE, in tracked code, and a run that says it
+# is a walk-forward fold is REFUSED unless every knob matches. This does not set
+# anything — a silent default is what caused the defect — it only refuses.
+#
+# The incumbent: T1 (logs/T1.log:1160), the checkpoint every M3 number is measured on.
+FLUX_INCUMBENT_PAIRS="BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT"
+FLUX_INCUMBENT_SEQ_LEN=384
+FLUX_INCUMBENT_EPOCHS=60
+FLUX_INCUMBENT_HORIZONS="60,240,1440"
+FLUX_INCUMBENT_PRIMARY=240
+FLUX_INCUMBENT_CANDLE_INTERVAL=5m
+FLUX_INCUMBENT_FEATURE_GROUPS=legacy
+FLUX_INCUMBENT_PAIR_EMBED_DIM=8
+FLUX_INCUMBENT_EARLY_STOP_PATIENCE=20
+
+# Compare pair lists as SETS: order is irrelevant to the trained model, and a
+# reordered-but-identical list must not be reported as drift.
+_flux_sorted_pairs() { tr ',' '\n' <<<"${1:-}" | tr -d ' ' | tr '[:lower:]' '[:upper:]' | sed '/^$/d' | sort | paste -sd, -; }
+
+_RECIPE_DRIFT=""
+_recipe_cmp() {   # <label> <expected> <actual-or-empty>
+  local label="$1" want="$2" got="${3:-}"
+  [[ "$label" == "pairs" ]] && { want="$(_flux_sorted_pairs "$want")"; got="$(_flux_sorted_pairs "$got")"; }
+  if [[ "$got" != "$want" ]]; then
+    _RECIPE_DRIFT+="    ${label}: incumbent='${want}'  this run='${got:-<unset -> falls back>}'"$'\n'
+  fi
+}
+
+if [[ -z "$EVAL_ONLY_CKPT" ]]; then
+  _recipe_cmp pairs               "$FLUX_INCUMBENT_PAIRS"               "$PAIRS_ARG"
+  _recipe_cmp seq_len             "$FLUX_INCUMBENT_SEQ_LEN"             "$SEQ_LEN"
+  _recipe_cmp epochs              "$FLUX_INCUMBENT_EPOCHS"              "$EPOCHS"
+  _recipe_cmp horizons            "$FLUX_INCUMBENT_HORIZONS"            "$HORIZONS"
+  _recipe_cmp primary             "$FLUX_INCUMBENT_PRIMARY"             "$PRIMARY"
+  _recipe_cmp CANDLE_INTERVAL     "$FLUX_INCUMBENT_CANDLE_INTERVAL"     "${CANDLE_INTERVAL:-}"
+  _recipe_cmp FEATURE_GROUPS      "$FLUX_INCUMBENT_FEATURE_GROUPS"      "${FEATURE_GROUPS:-}"
+  _recipe_cmp PAIR_EMBED_DIM      "$FLUX_INCUMBENT_PAIR_EMBED_DIM"      "${PAIR_EMBED_DIM:-}"
+  _recipe_cmp EARLY_STOP_PATIENCE "$FLUX_INCUMBENT_EARLY_STOP_PATIENCE" "${EARLY_STOP_PATIENCE:-}"
+
+  # A walk-forward fold is any run that moves the split (WALKFORWARD_PROTOCOL §1).
+  # Such a run exists to be compared with the incumbent, so drift is fatal, not a note.
+  _IS_FOLD=0
+  [[ -n "${VAL_OFFSET:-}" || -n "${TRAIN_FRACTION:-}" ]] && _IS_FOLD=1
+
+  # The list above pins the knobs the incumbent SET. A fold can also be voided by a
+  # knob it sets that the incumbent left at its config.py default (HIDDEN_SIZE,
+  # LABEL_MODE, LR, FEE_RATE_BPS, ...), and enumerating those one by one would rot.
+  # So for a fold, invert it: anything forwarded that is not on this allowlist is
+  # refused. The allowlist is the split itself, the seed, the recipe knobs checked
+  # above, and two knobs that affect only throughput.
+  if [[ "$_IS_FOLD" == "1" && "${ALLOW_RECIPE_DRIFT:-0}" != "1" ]]; then
+    _FOLD_ALLOWED=" VAL_FRACTION VAL_OFFSET TRAIN_FRACTION SEED CANDLE_INTERVAL \
+FEATURE_GROUPS PAIR_EMBED_DIM EARLY_STOP_PATIENCE NUM_WORKERS PREFETCH_FACTOR "
+    _FOLD_EXTRA=""
+    for _k in $FLUX_TRAIN_ENV_KEYS; do
+      if [[ -n "${!_k:-}" && "$_FOLD_ALLOWED" != *" $_k "* ]]; then
+        _FOLD_EXTRA+="    $_k=${!_k}"$'\n'
+      fi
+    done
+    if [[ -n "$_FOLD_EXTRA" ]]; then
+      echo ""
+      echo "ERROR: this is a WALK-FORWARD FOLD, but knobs outside the incumbent recipe are"
+      echo "       set on the launcher. WALKFORWARD_PROTOCOL.md §1: the split is the ONLY"
+      echo "       thing a fold changes, so this run would not be comparable."
+      echo ""
+      printf '%s' "$_FOLD_EXTRA"
+      echo ""
+      echo "  Unset them, or — if the change is deliberate and pre-registered"
+      echo "  (M3_PROTOCOL.md §0) — relaunch with ALLOW_RECIPE_DRIFT=1."
+      exit 1
+    fi
+  fi
+
+  if [[ -n "$_RECIPE_DRIFT" ]]; then
+    if [[ "$_IS_FOLD" == "1" && "${ALLOW_RECIPE_DRIFT:-0}" != "1" ]]; then
+      echo ""
+      echo "ERROR: this is a WALK-FORWARD FOLD (VAL_OFFSET/TRAIN_FRACTION set) but the"
+      echo "       recipe is NOT the incumbent's. WALKFORWARD_PROTOCOL.md §1 requires the"
+      echo "       fold to change the split and NOTHING else, so this run would be void."
+      echo ""
+      printf '%s' "$_RECIPE_DRIFT"
+      echo ""
+      echo "  Fix — the full §5 command (VAL_OFFSET/SEED are the only parts that vary):"
+      echo ""
+      echo "    FEATURE_GROUPS=$FLUX_INCUMBENT_FEATURE_GROUPS CANDLE_INTERVAL=$FLUX_INCUMBENT_CANDLE_INTERVAL PAIR_EMBED_DIM=$FLUX_INCUMBENT_PAIR_EMBED_DIM EARLY_STOP_PATIENCE=$FLUX_INCUMBENT_EARLY_STOP_PATIENCE \\"
+      echo "      TRAIN_HORIZONS=$FLUX_INCUMBENT_HORIZONS TRAIN_PRIMARY=$FLUX_INCUMBENT_PRIMARY \\"
+      echo "      TRAIN_PAIRS=$FLUX_INCUMBENT_PAIRS \\"
+      echo "      VAL_FRACTION=0.125 VAL_OFFSET=${VAL_OFFSET:-0.250} TRAIN_FRACTION=0.5 SEED=${SEED:-1} \\"
+      echo "      ./scripts/gcp_train.sh --gpu $FLUX_INCUMBENT_EPOCHS $FLUX_INCUMBENT_SEQ_LEN"
+      echo ""
+      echo "  A fold that DELIBERATELY changes the recipe needs a fresh pre-registration"
+      echo "  (M3_PROTOCOL.md §0); launch it with ALLOW_RECIPE_DRIFT=1 once that is written."
+      exit 1
+    fi
+    # Not a fold: an experiment is SUPPOSED to differ. Say how, so the difference is
+    # in the log and never has to be reconstructed from a checkpoint's meta later.
+    echo "    recipe differs from the incumbent (T1) in:"
+    printf '%s' "$_RECIPE_DRIFT"
+    if [[ "$_IS_FOLD" == "1" ]]; then
+      echo "    ALLOW_RECIPE_DRIFT=1 — fold drift accepted on the launcher's say-so."
+    fi
+  else
+    echo "    recipe: incumbent (T1) exactly — 12 pairs, 5m, seq $FLUX_INCUMBENT_SEQ_LEN, horizons $FLUX_INCUMBENT_HORIZONS, primary ${FLUX_INCUMBENT_PRIMARY}m."
+  fi
 fi
 
 # --- 0. sanity: bucket reachable -------------------------------------------------
