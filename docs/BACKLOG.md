@@ -250,6 +250,54 @@ each:
 
 ---
 
+## 🔵 New 2026-09-03 — how fresh should the model be, and how do we find out cheaply
+
+**Owner: [RETRAIN_PLAN.md](./RETRAIN_PLAN.md).** The served model's training data stops
+~2025-12-10, so it is **~253 days ≈ 8.3 months stale**, and *nobody chose that*: the split is a
+fraction (`VAL_FRACTION = 0.2`), so `staleness = 0.2 × span = exactly the val window's length`.
+Staleness therefore **grows on its own at 0.2 days per calendar day**, and adding older history
+makes it *worse* (the boundary is `start + 0.8 × span`). Whether that costs anything is **unknown
+and the best evidence is contaminated** — M3-2's winner is worst in w4, the newest window, which is
+also where ~40% of the calendar carried the partial-candle defect. Decay and the defect are
+perfectly confounded, and the repair's re-eval separates them **at no extra compute**.
+
+### ✅ Phase 0 closed 2026-09-04 — Phase 1 is unblocked and is the next thing to run
+
+| step | state |
+|---|---|
+| **0.1** verify the repair actually finished | ✅ **PASSED** — `verify_candles.py` returned **36/36**, twelve pairs × 07-21 / 08-20 / 09-02 at 5m, every one `288/288 exact vol=close=high=low=1.000`. 🟢 **2026-08-20 is the decisive one**: it is the day recorded at a median **11%** of true volume with **0/288** matching closes, and it is now 1.000 across the board. Pre-deploy days prove the repair, the post-deploy day proves the collector fix |
+| **0.2** the checkpoint-binding guard | ⚪ **not started — and deliberately not blocking.** See the decision below |
+| **0.3** plumb `VAL_FRACTION` into the launcher | ✅ **DONE** — one line in `scripts/gcp_train.sh`'s `FLUX_TRAIN_ENV_KEYS`. `train_m2.py` always accepted `--val-frac`; the launcher simply never forwarded it, so **the split was unreachable from the CLI** |
+
+**Decision taken 2026-09-04 — RETRAIN_PLAN §8 Q4 = (a): the checkpoint-binding guard blocks
+Phase 4 only.** Phases 1–3 swap no checkpoint, so nothing can be mis-served. The guard remains a
+hard precondition for Phase 4 and for M3_PROTOCOL §8.3 **C5**, and it is still the thing that
+"blocks fast iteration today" — it is just not a reason to delay a read-only re-baseline.
+
+| item | what | gated on | revival trigger / next command |
+|---|---|---|---|
+| 🟡 **Phase 1 — re-baseline on repaired data** | Three **serial** `--eval-only` runs of the banked seeds, producing `logs/R1-repair-s{1,2,3}.log` and three new dumps | — **nothing. Ready now** | ⚠️ Delete `/var/tmp/fluxtrader_dump_cache.sql.gz` first, or a pre-repair cache is silently re-scored and looks normal. Commands in [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §4 |
+| 🟡 **Phase 2 — read the decay curve** | `m3 validate` → `m3 policy --label winner` → `m3 fidelity --universe 8`, read against the **pre-registered** table in §5 | Phase 1 | No GPU. 🔴 Report `n_trades` per window: if w4's clustered interval spans the other windows' means the verdict is `NOT DECIDABLE`, **not** "no decay" |
+| ⚪ **Phase 3 — the paired freshness test** | `VAL_FRACTION=0.095` × 3 seeds, moving the boundary ~4.5 months fresher, scored on the **same calendar rows** as the stale family. This is the only design that breaks the decay/regime confound | **What Phase 2 reads.** §5's table says in advance which reading forbids it | If Phase 2 shows w4 recovering to w1–w3's level, **do not run this** — record it and close the question |
+| ⚪ **Phase 4 — what gets served, and on what cadence** | Resolves a genuine conflict: a fresh-boundary challenger has a short split and cannot satisfy C1/C2 as written, and §8.5 refuses to lower Tier 1 | Phase 0.2 **and** Phase 3 passing its gate | Two coherent resolutions in §7 — (A) certify the recipe / refresh the checkpoint, or (B) walk-forward certification at k× the compute |
+
+🔴 **Phase 1 buys far more than this plan.** The same three re-scored dumps are what unblock
+the arrival-rate re-answer, the C4 re-derivation of the frozen cut and ladder, and the M3-0b /
+B1 / B2 re-runs — every one of which currently rests on corrupt candles.
+
+🔴 **M3_PROTOCOL §8.6 Q3's recommended retrain trigger is void.** It proposed triggering on
+"the served checkpoint going N days without exceeding its own cut", calling that "exactly the
+condition now in force" — but **that condition was the candle defect**. The trigger would have
+fired in July for the wrong reason. It must be re-specified against a repaired baseline before
+adoption, which is why the interim answer is a fixed **quarterly** cadence instead.
+
+**Three questions this plan deliberately leaves open** (§8), none of which needs answering now:
+Q1 shorten the holdout or accept growing staleness; Q2 which C1/C2 resolution; Q3 cadence or
+trigger. 🟢 **Each defaults to "decide after Phase 2", and Phase 2 is free**, so deferring
+them has no price.
+
+---
+
 ## ⚫ The arrival-rate finding, 2026-09-01 — SUPERSEDED 2026-09-03 for everything after 07-18
 
 *🔴 Read the section above first. The three hypotheses killed here stay dead; the one this section
@@ -308,15 +356,19 @@ volatility event. **Do not reset it again.**
 🔴 **It is NOT in force.** §8.6 holds three open decisions — whether a challenger needs forward
 evidence (recommendation: promote on backtest, *keep* on forward), what margin C2 must clear
 (recommendation: more than the between-seed spread), and whether retraining runs on a cadence or
-on a staleness trigger (recommendation: trigger — N days without the checkpoint exceeding its own
-cut, which is measurable today and would have fired in July).
+on a staleness trigger. 🔴 **Q3's recommendation is void as written** — it proposed a trigger of
+"N days without the checkpoint exceeding its own cut, measurable today and would have fired in
+July", but **that condition was the candle defect**, so it would have fired for the wrong reason.
+Until a repaired baseline exists there is no calibrated trigger; the interim answer is a fixed
+**quarterly** cadence. See [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §7 and §8 Q3.
 
 ⚠️ **The amendment discloses that search output was seen when it was written**, and is therefore
 **prospective only**: it alters no completed verdict, and Tier 1 / Tier 2 are unchanged. It also
 does not solve the current problem — see §8.5.
 
 **Blocked on:** the checkpoint-binding guard in the row below. Until a mismatch refuses to serve,
-the promotion rule cannot safely be used.
+the promotion rule cannot safely be used. ⚠️ That blocker is scoped: it stops **promotion**, and
+per RETRAIN_PLAN §8 Q4 it does **not** stop the read-only re-baseline in Phases 1–3.
 
 ---
 

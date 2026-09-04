@@ -1,6 +1,14 @@
 # The candle-poll defect — every stored candle since 2026-07-18 is a partial bar
 
-**Status: 🟡 IN REPAIR, found and fixed 2026-09-03.** The collector no longer stores partial
+**Status: 🟢 REPAIRED AND VERIFIED 2026-09-04 — `36/36 checks passed`.** Twelve pairs x
+2026-07-21 / 08-20 / 09-02 at 5m, every one `288/288 bars, exact vol=1.000 close=1.000 high=1.000
+low=1.000`. **2026-08-20 is the decisive day**: §2 recorded it at a median 11% of true volume with
+0/288 matching closes, and it now reports 1.000 throughout. The two pre-deploy days establish the
+**repair**, the post-deploy day the **collector fix**, separately as step 4 required. The daily
+guard's own run the same morning wrote `{"ok": true, "summary": "24/24 checks passed"}` — but that
+is `--since-yesterday`, i.e. post-deploy only, and could never have closed this on its own.
+**Step 5 (the re-score) is now unblocked**; it is Phase 1 of [RETRAIN_PLAN.md](./RETRAIN_PLAN.md).
+*Original status follows.* 🟡 IN REPAIR, found and fixed 2026-09-03.** The collector no longer stores partial
 bars (deployed to `fluxtrader-1`, commit `0b1d743`) and the history repair has been run. The
 consequences — re-scoring the served checkpoint, re-deriving the frozen constants, restarting
 the forward clock — are §7 steps 5–8 and are in progress. Decisions Q1/Q2/Q3 (§6) are answered.
