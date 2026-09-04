@@ -99,14 +99,29 @@ defmodule FluxTrader.Trading.ConfigTest do
     # round, and — the one that actually happened during this change — a constant taken from
     # a DIFFERENT CHECKPOINT. O8's cut of 0.5992 looks entirely plausible next to 0.6319 and
     # realizes 4.01% coverage on this model instead of 2%. Only an exact literal catches that.
-    assert Policy.frozen_threshold() == 0.6318973898887634
+    #
+    # 🔵 2026-09-04: re-derived on the REPAIRED split (CANDLE_POLL_DEFECT.md; M3_PROTOCOL §9.2,
+    # a data correction under C4, same checkpoint, same rule). Reproduces seed 2's arm A on
+    # eval run 20260904T051921Z: 490 trades, mean size 1.367, entry confidence 0.6296 .. 0.7820.
+    # Pre-repair values were 0.6318973898887634 and p80 0.025166796520352364.
+    assert Policy.frozen_threshold() == 0.6296127438545227
 
     assert Policy.frozen_regime_edges() == [
-             0.00391214806586504,
-             0.008861115202307701,
-             0.015078878961503506,
-             0.025166796520352364
+             0.003956599626690149,
+             0.00888611190021038,
+             0.015089680440723896,
+             0.025596268475055695
            ]
+
+    assert Policy.frozen_ladder_p80() == 0.025596268475055695
+
+    # The checkpoint both constants belong to: sha256 of
+    # gs://fluxtrader-train-artifacts/checkpoints/m2_multi_20260819T142759Z_a186182b.pt.
+    # `PolicyEngine` refuses to trade unless ml_inference reports exactly this.
+    assert Policy.frozen_checkpoint_sha256() ==
+             "882cd4153c2d2d401897aaca9e0ddc593a92b78a6baf71da5c229a154ab92d42"
+
+    assert String.length(Policy.frozen_checkpoint_sha256()) == 64
 
     # Monotone, which `size_multiplier/2`'s `searchsorted` assumes and does not check.
     assert Policy.frozen_regime_edges() == Enum.sort(Policy.frozen_regime_edges())

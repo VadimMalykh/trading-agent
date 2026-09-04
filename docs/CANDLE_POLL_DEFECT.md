@@ -7,7 +7,14 @@ low=1.000`. **2026-08-20 is the decisive day**: §2 recorded it at a median 11% 
 **repair**, the post-deploy day the **collector fix**, separately as step 4 required. The daily
 guard's own run the same morning wrote `{"ok": true, "summary": "24/24 checks passed"}` — but that
 is `--since-yesterday`, i.e. post-deploy only, and could never have closed this on its own.
-**Step 5 (the re-score) is now unblocked**; it is Phase 1 of [RETRAIN_PLAN.md](./RETRAIN_PLAN.md).
+**Steps 5–7 DONE 2026-09-04**: the three seeds re-scored (RETRAIN_PLAN §4), the full M3-2/M3-3
+protocol re-executed on the repaired dumps under M3_PROTOCOL §9.2 (the incumbent still passes
+Tier 1), the constants re-derived under C4 (cut 0.6296127438545227, p80 0.025596268475055695,
+now in `policy.ex`), and the arrival question answered on true data: **the served cut fires on
+repaired candles** — last bar over the cut 2026-08-31, longest dry spell 51.8 days — so the
+forward test was never regime-blocked, it was reading partial bars. **Step 8 (deploy and restart
+the forward clock) is pending**; the checklist is [RULES_REVIEW.md](./RULES_REVIEW.md) §6, and
+the clock is no longer reset by truncation (M3_PROTOCOL §9.6).
 *Original status follows.* 🟡 IN REPAIR, found and fixed 2026-09-03.** The collector no longer stores partial
 bars (deployed to `fluxtrader-1`, commit `0b1d743`) and the history repair has been run. The
 consequences — re-scoring the served checkpoint, re-deriving the frozen constants, restarting

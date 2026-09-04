@@ -134,6 +134,16 @@ def _resolve_gate(meta: dict) -> None:
     _state["gate"] = GATE_THRESHOLD
 
 
+def _sha256_of(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def load_model():
     path = Path(MODEL_PATH)
     if not path.exists():
@@ -142,8 +152,14 @@ def load_model():
         return False
 
     device = torch.device("cpu")
+    # The checkpoint's identity, for the app's checkpoint-binding guard (M3_PROTOCOL §9.5):
+    # the served cut and ladder are derived on ONE checkpoint, and the policy refuses to
+    # trade unless the file actually loaded is that one. A content hash, because promotion
+    # copies the named checkpoint to m2_multi.pt and the name is lost.
+    _state["checkpoint_sha256"] = _sha256_of(path)
     ckpt = torch.load(path, map_location=device, weights_only=False)
     meta = ckpt.get("meta", {})
+    _state["checkpoint_run_id"] = meta.get("run_id")
     horizons = meta.get("horizons_minutes") or HORIZONS_MINUTES
     feature_dim = meta.get("feature_dim", FEATURE_DIM)
     hidden = meta.get("hidden_size", 64)
@@ -518,6 +534,10 @@ class Handler(BaseHTTPRequestHandler):
                     {
                         "ok": _state["model"] is not None,
                         "model_path": MODEL_PATH,
+                        # Identity of the loaded weights. The app binds its frozen cut and
+                        # ladder to this and skips every bar on a mismatch.
+                        "checkpoint_sha256": _state.get("checkpoint_sha256"),
+                        "checkpoint_run_id": _state.get("checkpoint_run_id"),
                         "error": _state.get("error"),
                         "gate_threshold": GATE_THRESHOLD,
                         # "checkpoint" is the healthy value: the model is served at

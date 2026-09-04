@@ -198,6 +198,9 @@ Writes best checkpoint (by **primary gated dir_acc** @ gate 0.40, with early sto
 | `LR` / `--lr` | `5e-4` | |
 | `WEIGHT_DECAY` | `1e-4` | |
 | `BATCH_SIZE` env | 32 | same as flag |
+| `VAL_FRACTION` / `--val-frac` | 0.2 | val window as a fraction of time-ordered samples; **it is also the model's staleness** (RETRAIN_PLAN §0.2) |
+| `VAL_OFFSET` / `--val-offset` | 0.0 | walk-forward: end the val window this fraction of samples before the latest; step by `VAL_FRACTION` for non-overlapping folds |
+| `TRAIN_FRACTION` / `--train-frac` | 0.0 (anchored) | walk-forward: a **fixed-width** train window of this fraction of samples just before the val window, so every fold trains on the same amount of data. The fold design is pre-registered in [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md); 🔴 always verify the run's own `Split …` log line |
 
 Examples:
 

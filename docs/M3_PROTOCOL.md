@@ -244,6 +244,7 @@ say explicitly whether any search output had been seen.
 | # | date | what it changes | search output seen when written? |
 |---|---|---|---|
 | 1 | 2026-09-01 | Adds §8: an exploratory lane, and a standing champion–challenger promotion rule. **Governance only — changes no bar and no completed verdict.** | 🔴 **YES, extensively** |
+| 2 | 2026-09-04 | Adds §9: answers §8.6 (Amendment 1 is now **in force**), the data-correction clause, the standing confirmatory dataset (walk-forward folds), the ranking axis for *future* protocols, the checkpoint-binding guard, and the forward ledger's persistence across swaps. **Governance and data sources only — lowers no bar; the re-executed M3-2/M3-3 verdicts of §9.2 are the same rule on corrected data.** | 🔴 **YES** — including the repaired-data re-score |
 
 ---
 
@@ -376,3 +377,107 @@ by a stated staleness signal, such as the served checkpoint going N days without
 own cut — which is measurable **today** and is exactly the condition now in force. **(b) is the
 recommendation**; it is the one that would have fired in July.
 
+
+---
+
+## §9 — AMENDMENT 2, 2026-09-04: Amendment 1 in force, the data-correction clause, and the confirmatory dataset
+
+### 9.0 🔴 Disclosure
+
+**Search output had been seen when this was written**, including the repaired-data re-execution
+of M3-2 and M3-3 (§9.2) that this amendment makes the verdict of record. The same safeguard as
+§8.0 applies: nothing here re-chooses a searched dimension, lowers a Tier-1 criterion, or retires
+Tier 2. Where it changes how *future* protocols rank (§9.4), that rule binds only protocols
+registered after this date and never re-reads a completed one. The review that produced it,
+with the reasoning in full, is [RULES_REVIEW.md](./RULES_REVIEW.md).
+
+### 9.1 §8.6 answered — Amendment 1 is in force
+
+Decided 2026-09-04 by Vadim, against the options §8.6 listed:
+
+| | decision | consequence |
+|---|---|---|
+| **Q1** | **(c) promote on backtest, keep on forward.** A challenger is swapped in on C1–C5. It is **reverted automatically** if its forward ledger, on its own rows, fails a stated bar: pooled net at taker below zero **and** its day-clustered upper bound below the incumbent family's pooled backtest net, evaluated once the challenger holds ≥ 60 forward exit-day clusters. Fewer clusters than that is "not yet decidable", not a revert | the champion–challenger rule can be used |
+| **Q2** | **(c) margin plus breadth.** C2 is met only if the challenger family's median beats the incumbent family's median on worst-window net at taker by more than the between-seed spread of the incumbent family **and** wins on at least two of {worst-window net, pooled net at taker, trade rate} | a bare `>` never promotes |
+| **Q3** | **(b) a staleness trigger.** Retrain when the served checkpoint has gone **N = 65 days** without a served bar meeting its own cut — calibrated as ~1.25× the longest dry spell of the cut in the served checkpoint's own repaired split (51.8 days on seed 2; 24.9 and 12.7 on seeds 1 and 3). ⚠️ One eight-month split is a thin basis for N; it is **re-calibrated from the walk-forward folds** (§9.3) once they exist, and RETRAIN_PLAN §8 Q3's interim quarterly cadence is **superseded** by this. The trigger is measured live: `/api/health` → `policy.retrain_trigger` | a retrain has a defined start condition |
+
+**§8.4's preconditions.** (1) The checkpoint-binding guard is **built** (§9.5) — it ships with this
+amendment and is a hard precondition for any swap. (2) A swap no longer restarts the forward
+clock by truncation; see §9.6.
+
+### 9.2 The data-correction clause
+
+**When an input defect is found, the pre-registered protocol is re-executed in full on the
+corrected data** — every sub-protocol, the full grid, the same bar, the same folds — with
+eligibility (P4) recomputed mechanically from the new trade counts before any P&L is read. The
+re-executed verdict replaces the original; both are kept; nothing is re-chosen. This is not an
+amendment of a protocol, it is running it on the data it was written for. A pre-registration is
+a rule about *decisions*, not a warranty on *data*.
+
+**Applied 2026-09-04 to the candle-poll defect** ([CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md)):
+`M3_ERA=repaired` `validate` (PASS/PASS) → `power` (16 of 36 eligible, the same sixteen) →
+`search` → `learn`. **Verdicts of record:**
+
+* **M3-2:** 1 of 36 primary configurations clears Tier 1, `cov0.02_hold240_rqnone_mcnone`
+  (worst −4.98, pooled +7.24); the §3.2 sizing variant also clears and outranks it (worst
+  **−4.61** w3, pooled **+13.82**, seeds +8.41 / +11.94 / +21.97, Tier 2 CI [−34.9, +62.6]).
+  **The incumbent stands.** [M3_2_RESULTS_REPAIRED.md](./M3_2_RESULTS_REPAIRED.md).
+* **M3-3:** 0 of 8 learned configurations pass Tier 1 (best worst-window −6.6); the
+  confidence-only ablation beats both fitted models in 3 of 4 pairings, as before.
+  [M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md).
+* **§4.4's bar for a learned policy is restated at −4.61 bps** worst-window net at taker.
+* **C4:** the served constants are re-derived from the same checkpoint's repaired split —
+  cut **0.6296127438545227**, ladder `[0.003956599626690149, 0.00888611190021038,
+  0.015089680440723896, 0.025596268475055695]` — reproducing seed 2's arm A exactly (490 trades,
+  mean size 1.367). Same checkpoint, same rule, corrected data.
+
+The 2026-08-27 originals ([M3_2_RESULTS.md](./M3_2_RESULTS.md), [M3_3_RESULTS.md](./M3_3_RESULTS.md))
+are kept as the record of what the corrupt tail looked like.
+
+### 9.3 The standing confirmatory dataset: walk-forward folds
+
+§8.2 says an exploratory result is promoted only by re-establishing it on data the exploration
+did not touch, and names forward time as the only such source. **That is no longer the only
+source.** A checkpoint trained with its boundary stepped back in time, scored on the months it
+never saw, yields out-of-sample predictions on a period no M3 search has looked at (every M3
+number to date was measured on 2025-12 → 2026-09). Those folds are:
+
+1. the **confirmatory dataset** for any exploratory finding — a parked pre-registration
+   (served coverage, the 240m book question, a learned policy) is confirmed on the folds;
+2. the **certification path for a fresh checkpoint** (RETRAIN_PLAN §8 Q2 (B));
+3. the population on which §9.1 Q3's N and §9.4's statistics are calibrated.
+
+The fold design is its own pre-registration, [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md),
+committed before any fold is trained. **Rolling fixed-width** train windows, decided 2026-09-04,
+so boundary age is the only thing that moves between folds.
+
+### 9.4 The ranking axis for protocols registered after this date
+
+Tier 1 ranks on worst-window net at taker. RETRAIN_PLAN §5.3–5.4 established that a single
+window's day-clustered interval on this population is ±50–100 bps against a ~15 bps edge, so
+no ordering of four windows is resolvable — and the 2026-09-04 re-score put the incumbent at
+−4.61 against a −5 floor, a 0.4-bps margin on a ±50-bps number. **Completed and already-registered
+protocols keep their axis; they are not re-read.** Every protocol registered after this date
+ranks instead on **the day-clustered 95% lower bound of pooled net at taker**, keeps the
+worst-window (or worst-fold) criterion as a **veto only**, and calibrates that veto to the
+window's own error: a window vetoes when its clustered *upper* bound is below zero, not when its
+point estimate is. WALKFORWARD_PROTOCOL §3 is the first protocol under this rule.
+
+### 9.5 The checkpoint-binding guard (C5) — built
+
+`ml_inference` reports the sha256 of the weights it loaded on `/health` (`checkpoint_sha256`);
+`Policy.frozen_checkpoint_sha256/0` names the checkpoint the served cut and ladder belong to;
+`PolicyEngine` compares the two every tick and **enters no bar on either arm** on a mismatch
+(`skips.checkpoint_mismatch`; `checkpoint_unverified` when the hash cannot be read), while still
+recording bars and closing due positions. `/api/health` → `policy.checkpoint_bound`. Promotion
+is therefore: derive the new cut and ladder from the challenger's own split, update the three
+constants, deploy — and nothing trades in between against the wrong constants.
+
+### 9.6 The forward ledger persists across swaps
+
+A swap no longer truncates `paper_trades`. Every row is stamped with the checkpoint hash and the
+ladder p80 in force (`checkpoint`, `ladder_p80`; the cut was already on the row as `threshold`),
+so the ledger is a walk-forward record: the **recipe** is scored pooled across checkpoints, and
+any single checkpoint's rows can be scored alone. The forward evidence therefore accumulates
+under a retrain trigger instead of being reset by it. Rows taken before 2026-09-04 carry no
+checkpoint tag; the table held none at the time.

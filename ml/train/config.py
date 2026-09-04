@@ -191,6 +191,12 @@ VAL_FRACTION = float(os.environ.get("VAL_FRACTION", "0.2"))
 # folds. Env-plumbed so scripts/gcp_train.sh can forward it (RETRAIN_PLAN §7
 # option B); --val-offset alone was unreachable from the launcher.
 VAL_OFFSET = float(os.environ.get("VAL_OFFSET", "0.0"))
+# Walk-forward fold shape: a FIXED-WIDTH train window, as a fraction of samples,
+# taken immediately before the val window. 0.0 == anchored (train on everything
+# earlier), which is what every published checkpoint used. WALKFORWARD_PROTOCOL
+# fixes 0.5 so every fold trains on the same number of samples and only the
+# boundary moves. Only honoured on the windowed split (VAL_OFFSET > 0 or this > 0).
+TRAIN_FRACTION = float(os.environ.get("TRAIN_FRACTION", "0.0"))
 # Patience raised: directional coverage kept climbing when the old run stopped.
 EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "10"))
 # Gate used when ranking checkpoints (matches serve default)

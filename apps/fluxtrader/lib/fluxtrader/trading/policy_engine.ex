@@ -63,6 +63,22 @@ defmodule FluxTrader.Trading.PolicyEngine do
   `/api/health` as drift diagnostics. **Nothing routes either into a decision**, and
   `refresh_rolling_threshold/2` below carries the note about keeping it that way.
 
+  ## The checkpoint-binding guard (2026-09-04, M3_PROTOCOL §9.5)
+
+  Both constants belong to one checkpoint, `Policy.frozen_checkpoint_sha256/0`. Every tick
+  asks `ml_inference` for the sha256 of the weights it actually loaded and compares. On a
+  mismatch **no bar is entered on either arm** — each is counted under
+  `skips.checkpoint_mismatch` — and `/api/health` reports `checkpoint_bound: false` with both
+  hashes. If the hash cannot be read at all (inference down) bars are skipped as
+  `checkpoint_unverified`; there are no signals in that state anyway. Bars are still
+  recorded and due positions still close, so the guard never strands a hold. This is what
+  makes "swap `m2_multi.pt` and forget the constants" fail loudly instead of silently — the
+  2026-08-31 served-vs-scored defect, closed at the root.
+
+  Every opened row is stamped with the checkpoint and the ladder p80 in force
+  (`paper_trades.checkpoint`, `.ladder_p80`), so the forward ledger is kept across swaps and
+  scored per rule or pooled, instead of being truncated (§9.6).
+
   ## Coverage lives here, and only here
 
   §3.1 was an architectural decision and this is where it landed: `serve.py` gates, the app
@@ -146,6 +162,11 @@ defmodule FluxTrader.Trading.PolicyEngine do
        autotick: Keyword.get(opts, :autotick, true),
        signals_fun: Keyword.get(opts, :signals_fun, &__MODULE__.default_signals/0),
        regime_fun: Keyword.get(opts, :regime_fun, &__MODULE__.default_regime/0),
+       # Returns the sha256 `ml_inference` reports for the weights it loaded, or nil.
+       checkpoint_fun: Keyword.get(opts, :checkpoint_fun, &__MODULE__.default_checkpoint/0),
+       checkpoint: nil,
+       checkpoint_bound: false,
+       last_cut_exceeded_at: nil,
        # The cut in force. A constant since the 2026-08-31 freeze, held in state rather than
        # read at each decision only so `status/0` reports the value this process is actually
        # deciding with, not the one its source says it should be.
@@ -220,6 +241,14 @@ defmodule FluxTrader.Trading.PolicyEngine do
        # live from its first bar. Kept in the payload because dashboards and the deploy
        # checklist read it, and a field that vanishes reads as a broken endpoint.
        warm: state.threshold != nil,
+       # The checkpoint-binding guard: what inference loaded, what the constants belong to,
+       # and whether the policy is therefore allowed to trade.
+       checkpoint: state.checkpoint,
+       frozen_checkpoint: Policy.frozen_checkpoint_sha256(),
+       checkpoint_bound: state.checkpoint_bound,
+       # The retrain trigger (§8.6 Q3 (b)): days since a served bar last met the cut,
+       # against the calibrated ceiling. `fired: true` means a retrain is due.
+       retrain_trigger: retrain_trigger(state),
        # Named skip counts since boot. A policy that is correctly sitting out a calm market
        # and a policy that is broken produce the same silence otherwise (§0.8).
        skips: state.skips,
@@ -234,6 +263,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
     now = DateTime.utc_now()
     regime = state.regime_fun.()
     served = served_pairs()
+    state = bind_checkpoint(state)
 
     # Filtered BEFORE record_bars, not at entry: a bar that reaches policy_bars joins the
     # population the 2% rank is taken over, so an unserved pair recorded here would move the
@@ -250,11 +280,71 @@ defmodule FluxTrader.Trading.PolicyEngine do
     state =
       state
       |> refresh_rolling_threshold(now)
+      |> refresh_last_cut_exceeded()
       |> close_due(now)
       |> open_new(bars)
       |> maybe_prune(now)
 
     %{state | last_tick_at: now, ticks: state.ticks + 1, last_error: nil}
+  end
+
+  # The guard. Re-read every tick, because a promotion swaps the weights under a running
+  # inference service; a one-time check at boot would miss exactly the event it exists for.
+  defp bind_checkpoint(state) do
+    sha = safe_checkpoint(state.checkpoint_fun)
+    bound = sha != nil and sha == Policy.frozen_checkpoint_sha256()
+
+    if sha != nil and not bound and state.checkpoint != sha do
+      Logger.error(
+        "checkpoint mismatch: ml_inference serves #{sha} but the frozen cut and ladder " <>
+          "belong to #{Policy.frozen_checkpoint_sha256()} — the policy will not trade " <>
+          "until the constants are re-derived (M3_PROTOCOL §9.5)"
+      )
+    end
+
+    %{state | checkpoint: sha, checkpoint_bound: bound}
+  end
+
+  defp safe_checkpoint(fun) do
+    case fun.() do
+      sha when is_binary(sha) and sha != "" -> sha
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
+  @doc false
+  def default_checkpoint do
+    case FluxTrader.ML.Predict.health() do
+      {:ok, %{"checkpoint_sha256" => sha}} -> sha
+      _ -> nil
+    end
+  end
+
+  defp refresh_last_cut_exceeded(state) do
+    %{state | last_cut_exceeded_at:
+        Ledger.last_cut_exceeded_at(state.threshold, state.spec.signal_horizon_m)}
+  rescue
+    _ -> state
+  end
+
+  defp retrain_trigger(state) do
+    days =
+      case state.last_cut_exceeded_at do
+        nil -> nil
+        ts -> DateTime.diff(DateTime.utc_now(), ts) / 86_400
+      end
+
+    %{
+      rule: "days without a served bar meeting the cut",
+      n_days: Policy.retrain_trigger_days(),
+      last_cut_exceeded_at: state.last_cut_exceeded_at,
+      days_since: days && Float.round(days, 1),
+      fired: days != nil and days >= Policy.retrain_trigger_days()
+    }
   end
 
   @doc false
@@ -328,6 +418,13 @@ defmodule FluxTrader.Trading.PolicyEngine do
   # The open sets are read once per tick and updated as positions are taken, so a tick that
   # opens on eight pairs costs two queries rather than sixteen. The partial unique index is
   # still the authority — this is a fast path, not the invariant.
+  defp open_new(%{checkpoint_bound: false} = state, bars) do
+    # The guard: nothing is entered on either arm against constants that belong to a
+    # different checkpoint. Due positions were already closed above; only entries stop.
+    reason = if state.checkpoint == nil, do: :checkpoint_unverified, else: :checkpoint_mismatch
+    count_skips(state, reason, length(bars))
+  end
+
   defp open_new(state, bars) do
     open = %{
       @policy_arm => Ledger.open_pairs(@policy_arm),
@@ -357,6 +454,8 @@ defmodule FluxTrader.Trading.PolicyEngine do
         {count_skip(state, reason), open}
 
       {:enter, decision} ->
+        decision = stamp_provenance(state, decision)
+
         risk_request = %{
           symbol: decision.pair,
           side: if(decision.side > 0, do: "BUY", else: "SELL"),
@@ -409,6 +508,8 @@ defmodule FluxTrader.Trading.PolicyEngine do
         {state, open}
 
       {:enter, decision} ->
+        decision = stamp_provenance(state, decision)
+
         case Executor.open(@control_arm, decision) do
           {:ok, _} ->
             {count_decision(state, :control_opened),
@@ -418,6 +519,13 @@ defmodule FluxTrader.Trading.PolicyEngine do
             {state, open}
         end
     end
+  end
+
+  # M3_PROTOCOL §9.6: the row records the rule that took it, so the ledger outlives a swap.
+  defp stamp_provenance(state, decision) do
+    decision
+    |> Map.put(:checkpoint, state.checkpoint)
+    |> Map.put(:ladder_p80, Policy.frozen_ladder_p80())
   end
 
   defp close_due(state, now) do

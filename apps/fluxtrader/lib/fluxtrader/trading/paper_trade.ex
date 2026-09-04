@@ -38,12 +38,16 @@ defmodule FluxTrader.Trading.PaperTrade do
     field(:confidence, :float)
     field(:threshold, :float)
     field(:regime, :float)
+    # Provenance (M3_PROTOCOL §9.6): the checkpoint and ladder this row was taken under, so
+    # the ledger survives a checkpoint swap instead of being truncated.
+    field(:checkpoint, :string)
+    field(:ladder_p80, :float)
 
     timestamps()
   end
 
   @fields ~w(arm pair side size entry_ts exit_after_ts exit_ts entry_price exit_price quantity notional
-             gross_bps cost_bps net_bps status confidence threshold regime)a
+             gross_bps cost_bps net_bps status confidence threshold regime checkpoint ladder_p80)a
   @required ~w(arm pair side size entry_ts exit_after_ts entry_price status)a
 
   def arms, do: @arms

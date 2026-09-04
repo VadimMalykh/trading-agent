@@ -21,6 +21,13 @@ done, what the next command is, and what to bring back. When a step closes, its 
 moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
 never left here contradicting a later result.*
 
+🔵 **2026-09-04 — the rules review, the repaired-data re-score and Amendment 2: read
+[RULES_REVIEW.md](./RULES_REVIEW.md) and [M3_PROTOCOL.md](./M3_PROTOCOL.md) §9 first.** The incumbent
+still passes Tier 1 on repaired data (worst −4.61, pooled +13.82 net at taker); the served constants
+are re-derived (cut 0.6296) and await deploy with the new checkpoint-binding guard; the next
+investment is the walk-forward folds ([WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md)). The
+"not yet deployed" statements further down this block are stale: M3-5 has been live since 2026-08-28.
+
 🔴 **2026-09-03 — read [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md) before anything below.**
 Every stored candle since 2026-07-18 is a partial bar; the forward test has measured nothing, the
 frozen constants were derived on a split with a corrupt tail, and "the market has been quiet"

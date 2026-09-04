@@ -18,12 +18,12 @@ it launchable (§3, 0.3). Indexed in [BACKLOG.md](./BACKLOG.md); the promotion r
 | phase | state |
 |---|---|
 | **0.1** verify the repair | ✅ **PASSED 2026-09-04** — 36/36, see §3 |
-| **0.2** checkpoint-binding guard | ⚪ not started — gates **Phase 4 only** (§8 Q4 answered (a)) |
+| **0.2** checkpoint-binding guard | ✅ **BUILT 2026-09-04** — `ml_inference` reports `checkpoint_sha256`, `Policy.frozen_checkpoint_sha256/0` names the bound checkpoint, `PolicyEngine` skips every bar on a mismatch (M3_PROTOCOL §9.5). Deploy pending |
 | **0.3** plumb `VAL_FRACTION`, `VAL_OFFSET` | ✅ **DONE 2026-09-04** — both; walk-forward is now launchable, see §3 |
 | **1** re-baseline on repaired data | ✅ **DONE 2026-09-04** — 3 runs, all DONE; see §4. 🔴 **its headline was read off the wrong horizon and does not survive §5's controls** |
 | **2** read the decay curve | ✅ **DONE 2026-09-04** — verdict `NOT DECIDABLE`; see §5 |
 | **3** paired freshness test | 🔴 **BLOCKED — underpowered by construction**, see §5.4. Needs a redesign, not a launch |
-| **4** what gets served, on what cadence | ⚪ gated on 0.2; no longer gated on Phase 3, since Phase 3 cannot report |
+| **4** what gets served, on what cadence | 🔵 **decided 2026-09-04**: walk-forward certification ([WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md)), a 65-day staleness trigger (§8 Q3 (b)), promote-on-backtest / keep-on-forward (M3_PROTOCOL §9.1). The served constants are re-derived on repaired data (§8 Q0) and await deploy |
 
 *Holds only what is currently true and actionable. When a phase's conclusions are superseded,
 move the narrative to `docs/archive/TRAINING_HISTORY.md` and carry the surviving conclusion
@@ -595,7 +595,10 @@ The two coherent resolutions:
   recipe per seed — and runs are strictly serial on the GCP box, so k is a wall-clock decision,
   not a budget one. Read a real training log for the per-run duration before fixing k.
 
-  🔴 **Open design question before k folds are burned: the fold shape.** The implemented split is
+  ✅ **Settled 2026-09-04: rolling fixed-width**, `TRAIN_FRACTION=0.5`, plumbed the same day
+  (`config.py`, `train_m2.py --train-frac`, `gcp_train.sh`), and pre-registered as
+  [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) — four folds × three seeds, the run queue
+  in its §5. *The original question follows for the record.* 🔴 **Open design question before k folds are burned: the fold shape.** The implemented split is
   **anchored** — train always starts at the beginning of history — so older folds train on
   progressively less data (at `val_frac=0.2`, the fourth-oldest fold sees a quarter of the
   samples). A score across folds therefore mixes *boundary age* with *training-set size*, which
@@ -620,7 +623,16 @@ Revisit only if a design that adds clusters (§6's redesign note) makes a trigge
 recorded inline below, each next to the options it was chosen against, so the rejected options
 stay visible and nobody re-derives them.
 
-**Q0 — ✅ ANSWERED: (a). Does the incumbent still clear its own promotion bar
+**Q0 — ✅ ANSWERED: (a), and ✅ RUN 2026-09-04.** `validate` PASS/PASS, eligibility unchanged at
+16/36, and **the incumbent `cov0.02_hold240_rqnone_mcnone_SIZED` passes all six Tier-1 criteria on
+repaired data**: worst window **−4.61 bps** (w3, 196 trades) against the −5 floor, pooled **+13.82**
+net at taker, seeds +8.41 / +11.94 / +21.97, clustered CI [−34.9, +62.6]. Per the pre-registered
+reading below it passes P3 but lands below +0.25, so **M3-3's bar is restated at −4.61**; the
+learned runs were re-executed too and 0 of 8 pass (best −6.6). Records:
+[M3_2_RESULTS_REPAIRED.md](./M3_2_RESULTS_REPAIRED.md), [M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md);
+logs `logs/Q0-repaired-all.log`, `logs/Q0-learn-repaired.log`. Whether this becomes the verdict of
+record, and the C4 re-derivation of `policy.ex`'s constants that follows, is
+[RULES_REVIEW.md](./RULES_REVIEW.md) §4 decision 3. *Original question follows.* **Does the incumbent still clear its own promotion bar
 on repaired data?** §5.5 shows arm A's worst window at **−4.61 bps** against the **+0.25 bps**
 M3_2_RESULTS §D fixed as M3-3's bar, and §5.2 shows the regime ladder its sizing overlay rests
 on has flattened by half at Q5. Neither is certified — a Tier-1 re-score of the incumbent
@@ -683,7 +695,13 @@ is recorded in §7 B and **must be settled before the folds are run.**
 (C) never serve a fresh-boundary model — rejected, though it is the honest name for what happens
 by default if (B) is not funded.
 
-**Q3 — ✅ ANSWERED: (a). Retrain on a cadence or on a trigger?**
+**Q3 — 🔵 RE-ANSWERED 2026-09-04 (later the same day): (b), a staleness trigger — see
+[M3_PROTOCOL.md](./M3_PROTOCOL.md) §9.1.** Vadim chose the trigger over the cadence: retrain when
+the served checkpoint has gone **65 days** without a served bar meeting its own cut, calibrated
+as ~1.25× the longest dry spell in the served checkpoint's repaired split (51.8 days), and
+re-calibrated from the walk-forward folds when they exist (WALKFORWARD_PROTOCOL §4 item 2). It is
+measured live at `/api/health` → `policy.retrain_trigger`. The earlier (a) below is superseded
+and kept for the record. *Original answer follows.* **~~✅ ANSWERED: (a).~~ Retrain on a cadence or on a trigger?**
 (a) ✅ **CHOSEN: fixed cadence, quarterly**, and Phase 2 strengthens it;
 (b) trigger, re-specified against the repaired baseline;
 (c) both — cadence as a floor, trigger as an interrupt.

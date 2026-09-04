@@ -18,4 +18,4 @@ ENV DATABASE_URL=postgresql://fluxtrader:secret@postgres:5432/fluxtrader
 ENV MODEL_DIR=/models
 ENV OUTPUT_DIR=/workspace/train/output
 
-CMD ["python", "train.py", "--device", "cpu", "--epochs", "5"]
+CMD ["python", "train_m2.py", "--device", "cpu"]

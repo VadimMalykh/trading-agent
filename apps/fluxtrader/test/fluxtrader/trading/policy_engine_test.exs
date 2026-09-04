@@ -77,13 +77,16 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     }
   end
 
-  defp start_engine(signals, regime) do
+  # The checkpoint-binding guard is satisfied by default: tests inject the frozen hash as
+  # what inference "loaded", exactly as a correctly promoted VM would report it.
+  defp start_engine(signals, regime, checkpoint \\ Policy.frozen_checkpoint_sha256()) do
     start_supervised!(
       {PolicyEngine,
        [
          autotick: false,
          signals_fun: fn -> signals end,
-         regime_fun: fn -> regime end
+         regime_fun: fn -> regime end,
+         checkpoint_fun: fn -> checkpoint end
        ]}
     )
   end
@@ -117,6 +120,55 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     # It went through the risk manager: that is M3_PLAN §6's last exit criterion.
     assert %{open_positions: 1} = RiskManager.get_stats()
     assert trade.notional
+    # Provenance (M3_PROTOCOL §9.6): the row names the rule that took it.
+    assert trade.checkpoint == Policy.frozen_checkpoint_sha256()
+    assert trade.ladder_p80 == Policy.frozen_ladder_p80()
+    assert status.checkpoint_bound
+  end
+
+  test "the checkpoint-binding guard: a different checkpoint trades nothing, loudly" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    other = String.duplicate("ab", 32)
+    start_engine([signal(symbol: "BTCUSDT", confidence: 0.95)], regime(0.05), other)
+    :ok = PolicyEngine.refresh()
+
+    status = PolicyEngine.status()
+    refute status.checkpoint_bound
+    assert status.checkpoint == other
+    assert status.frozen_checkpoint == Policy.frozen_checkpoint_sha256()
+    assert status.skips[:checkpoint_mismatch] == 1
+    refute Map.has_key?(status.decisions, :policy_opened)
+    assert Ledger.open_trades("policy") == []
+    assert Ledger.open_trades("flat_size") == []
+    # The bar is still recorded: the guard stops entries, not the evidence.
+    assert Repo.aggregate(FluxTrader.Trading.PolicyBar, :count) > Ledger.min_rank_bars()
+  end
+
+  test "the checkpoint-binding guard: an unreadable checkpoint is unverified, not bound" do
+    start_engine([signal(symbol: "BTCUSDT", confidence: 0.95)], regime(0.05), nil)
+    :ok = PolicyEngine.refresh()
+
+    status = PolicyEngine.status()
+    refute status.checkpoint_bound
+    assert status.skips[:checkpoint_unverified] == 1
+    assert Ledger.open_trades("policy") == []
+  end
+
+  test "the retrain trigger reads the served checkpoint's own arrival record" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    start_engine([signal(symbol: "BTCUSDT", confidence: 0.95)], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    trig = PolicyEngine.status().retrain_trigger
+    assert trig.n_days == Policy.retrain_trigger_days()
+    # The 0.95 bar just recorded meets the cut, so the trigger cannot have fired.
+    assert trig.last_cut_exceeded_at
+    assert trig.days_since < 1
+    refute trig.fired
   end
 
   test "a pair outside the served universe never reaches policy_bars or a trade" do
@@ -348,7 +400,8 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
          [
            autotick: false,
            signals_fun: fn -> Agent.get_and_update(box, fn s -> {s, []} end) end,
-           regime_fun: fn -> regime(0.05) end
+           regime_fun: fn -> regime(0.05) end,
+           checkpoint_fun: fn -> Policy.frozen_checkpoint_sha256() end
          ]}
       )
 

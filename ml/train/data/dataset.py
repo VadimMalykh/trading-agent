@@ -657,18 +657,26 @@ def time_split_indices_window(
     times: np.ndarray,
     val_fraction: float = 0.2,
     val_offset: float = 0.0,
+    train_fraction: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Rolling-origin walk-forward split (global time).
 
     Carve a contiguous val window of size ``val_fraction`` of the time-ordered
     samples, ending ``val_offset`` (as a fraction of the sample count) from the
-    latest sample. Train = all samples strictly BEFORE the val window (no
-    leakage; future is never used to predict the past). Stepping ``val_offset``
-    by ``val_fraction`` yields non-overlapping trailing folds:
+    latest sample. Train = samples strictly BEFORE the val window (no leakage;
+    future is never used to predict the past). Stepping ``val_offset`` by
+    ``val_fraction`` yields non-overlapping trailing folds:
 
         offset=0.0 -> newest window      (train = all earlier)
         offset=val_fraction -> next older window
         ...
+
+    ``train_fraction`` > 0 makes the train window a FIXED WIDTH — the
+    ``train_fraction`` of samples immediately before the val window — so every
+    fold trains on the same number of samples ("rolling fixed-width",
+    WALKFORWARD_PROTOCOL §1). 0.0 keeps the anchored behaviour (train = all
+    earlier samples), under which older folds train on progressively less data
+    and a fold score mixes boundary age with training-set size.
 
     Any samples AFTER the val window (i.e. within ``val_offset`` of the end) are
     dropped for that fold — they are the future relative to this val block.
@@ -682,7 +690,10 @@ def time_split_indices_window(
     val_lo = int(round(n * (1.0 - val_offset - val_fraction)))
     val_lo = max(0, min(val_lo, n - 1))
     val_hi = max(val_lo + 1, min(val_hi, n))
-    tr_idx = order[:val_lo].astype(np.int64)
+    tr_lo = 0
+    if train_fraction > 0.0:
+        tr_lo = max(0, val_lo - int(round(n * train_fraction)))
+    tr_idx = order[tr_lo:val_lo].astype(np.int64)
     va_idx = order[val_lo:val_hi].astype(np.int64)
     return tr_idx, va_idx
 

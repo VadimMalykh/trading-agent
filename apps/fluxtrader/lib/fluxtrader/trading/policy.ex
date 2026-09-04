@@ -95,14 +95,18 @@ defmodule FluxTrader.Trading.Policy do
   # `test/fluxtrader/trading/config_test.exs` is where this side asserts its copies, and a
   # change on either side has to be made on both.
   #
-  # Provenance — **seed 2, run 20260819T142759Z**: the SERVED checkpoint
-  # (`m2_multi_20260819T142759Z_a186182b.pt`). 579,539 bars in the 240m head over the eight
-  # pairs it was evaluated on. Re-derive with:
+  # Provenance — **seed 2, the SERVED checkpoint** `m2_multi_20260819T142759Z_a186182b.pt`
+  # (sha256 `882cd415…`, `frozen_checkpoint_sha256/0`), scored on the **REPAIRED** split —
+  # eval run `20260904T051921Z`, 586,736 bars in the 240m head over the eight pairs it was
+  # evaluated on, val 2025-12-22 → 2026-09-03. Re-derived 2026-09-04 under M3_PROTOCOL §8.3 C4
+  # after the candle-poll repair (CANDLE_POLL_DEFECT.md): same checkpoint, same rule,
+  # corrected data — a data correction, not a re-pick (M3_PROTOCOL §9.2). The pre-repair
+  # constants were cut 0.6318973898887634 / p80 0.025166796520352364. Re-derive with:
   #
-  #     ./scripts/m3.sh -m m3 fidelity --universe 8
+  #     M3_ERA=repaired ./scripts/m3.sh -m m3 fidelity --universe 8
   #
   # whose arm A is this rule. Recomputing the two lines below reproduces seed 2's arm A
-  # exactly: 483 trades, mean size 1.362, entry confidence 0.6320 .. 0.7820.
+  # exactly: 490 trades, mean size 1.367, entry confidence 0.6296 .. 0.7820.
   #
   # 🔴 THE CUT BELONGS TO A CHECKPOINT, NOT JUST TO A UNIVERSE. A first attempt at this
   # freeze took the cut from O8 (run 20260822T012619Z), because O8 is the only run evaluated
@@ -124,7 +128,7 @@ defmodule FluxTrader.Trading.Policy do
 
   # `coverage_threshold(conf, 0.02)` over the split — the k-th largest confidence,
   # k = round(n * 0.02). Selection is `conf >= threshold`, tie-inclusive.
-  @frozen_threshold 0.6318973898887634
+  @frozen_threshold 0.6296127438545227
 
   # `r["btc_absret_1d"].quantile([0.2, 0.4, 0.6, 0.8])` over BARS, not over trades — the
   # ladder has to be a statement about the market (invariant 3).
@@ -134,15 +138,32 @@ defmodule FluxTrader.Trading.Policy do
   # about a checkpoint — O8's split puts the same four edges within 2% of these. It is still
   # taken from the served checkpoint's own split, because there is no reason to mix sources.
   #
-  # ⚠️ The p80 here is 0.0252, NOT the 0.0431 NEXT_TRAINING_PLAN §1.8 published. Both are
+  # ⚠️ The p80 here is 0.0256, NOT the 0.0431 NEXT_TRAINING_PLAN §1.8 published. Both are
   # correct: §1.8 measured on an earlier window. The health endpoint compares the live
   # trailing p80 against THIS number, because this is the ladder in force.
   @frozen_regime_edges [
-                         0.00391214806586504,
-                         0.008861115202307701,
-                         0.015078878961503506,
-                         0.025166796520352364
+                         0.003956599626690149,
+                         0.00888611190021038,
+                         0.015089680440723896,
+                         0.025596268475055695
                        ]
+
+  # 🔴 THE CHECKPOINT THE TWO CONSTANTS ABOVE BELONG TO — M3_PROTOCOL §8.3 C5 / §9.5.
+  # sha256 of `m2_multi_20260819T142759Z_a186182b.pt` as stored in the artifact bucket and
+  # promoted to `/models/m2_multi.pt` on `fluxtrader-1`. `ml_inference` hashes the file it
+  # loaded and reports it on /health; `PolicyEngine` skips every bar (`:checkpoint_mismatch`)
+  # unless the two agree. Swapping the weights without re-deriving the cut and ladder is
+  # therefore loud rather than silent — the 2026-08-31 served-vs-scored defect cannot recur
+  # through this path. To promote: derive the new cut and ladder from the new checkpoint's
+  # own split, update all three constants here and in `config_test.exs`, deploy.
+  @frozen_checkpoint_sha256 "882cd4153c2d2d401897aaca9e0ddc593a92b78a6baf71da5c229a154ab92d42"
+
+  # Retrain trigger (M3_PROTOCOL §9.1, §8.6 Q3 answered (b) on 2026-09-04): retrain when the
+  # served checkpoint has gone this many days without a bar meeting its own cut. Calibrated
+  # as ~1.25× the longest dry spell of the cut in the served checkpoint's own repaired split
+  # (51.8 days; seeds 1 and 3: 24.9 / 12.7). One split is a thin basis for this number —
+  # it is refined from the walk-forward folds when they exist (WALKFORWARD_PROTOCOL §5).
+  @retrain_trigger_days 65
 
   defstruct coverage: @coverage,
             hold_minutes: @hold_minutes,
@@ -192,6 +213,18 @@ defmodule FluxTrader.Trading.Policy do
   replay) but a separate fix would have cost a second clock reset.
   """
   def frozen_regime_edges, do: @frozen_regime_edges
+
+  @doc "The ladder's top edge — enough to identify the ladder a forward trade was sized on."
+  def frozen_ladder_p80, do: List.last(@frozen_regime_edges)
+
+  @doc """
+  sha256 of the checkpoint `frozen_threshold/0` and `frozen_regime_edges/0` were derived on.
+  The policy trades only while `ml_inference` reports exactly this on `/health`.
+  """
+  def frozen_checkpoint_sha256, do: @frozen_checkpoint_sha256
+
+  @doc "Days without a bar meeting the cut after which a retrain is due (§8.6 Q3 (b))."
+  def retrain_trigger_days, do: @retrain_trigger_days
 
   @doc """
   Floor a timestamp onto the 5-minute bar grid the model is scored on.

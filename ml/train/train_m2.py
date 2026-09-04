@@ -69,6 +69,7 @@ from config import (
     SEL_NET_WEIGHT,
     SEED,
     SEQ_LEN,
+    TRAIN_FRACTION,
     VAL_FRACTION,
     VAL_OFFSET,
     WEIGHT_DECAY,
@@ -177,6 +178,16 @@ def parse_args():
             "latest sample; train = samples strictly before the val window. "
             "0.0 = newest window (== trailing split). Step by --val-frac for "
             "non-overlapping rolling-origin folds. Default: VAL_OFFSET."
+        ),
+    )
+    p.add_argument(
+        "--train-frac",
+        type=float,
+        default=None,
+        help=(
+            "Walk-forward: a FIXED-WIDTH train window, this fraction of samples "
+            "immediately before the val window (rolling fixed-width folds). "
+            "0.0 = anchored (train on everything earlier). Default: TRAIN_FRACTION."
         ),
     )
     return p.parse_args()
@@ -546,6 +557,7 @@ def main():
 
     val_frac = args.val_frac if args.val_frac is not None else VAL_FRACTION
     val_offset = args.val_offset if args.val_offset is not None else VAL_OFFSET
+    train_frac = args.train_frac if args.train_frac is not None else TRAIN_FRACTION
     if val_offset < 0.0 or val_offset + val_frac > 1.0:
         # time_split_indices_window clamps silently, which would train on an
         # empty or truncated set without failing. Refuse instead.
@@ -553,8 +565,17 @@ def main():
             f"val_offset={val_offset} + val_frac={val_frac} must lie in [0, 1]; "
             "the fold would leave no training samples."
         )
-    if val_offset > 0.0:
-        tr_idx, va_idx = time_split_indices_window(bundle.times, val_frac, val_offset)
+    if train_frac < 0.0 or (train_frac > 0.0 and val_offset + val_frac + train_frac > 1.0 + 1e-9):
+        # A fixed-width window that runs off the start of history would be silently
+        # shorter than every other fold — the confound the window exists to remove.
+        sys.exit(
+            f"train_frac={train_frac} + val_frac={val_frac} + val_offset={val_offset} "
+            "exceeds 1; this fold's train window would be truncated by the start of history."
+        )
+    if val_offset > 0.0 or train_frac > 0.0:
+        tr_idx, va_idx = time_split_indices_window(
+            bundle.times, val_frac, val_offset, train_frac
+        )
         split_kind = "walkforward_window"
     else:
         tr_idx, va_idx = time_split_indices(bundle.times, val_frac)
@@ -562,7 +583,8 @@ def main():
     t_tr = bundle.times[tr_idx]
     t_va = bundle.times[va_idx]
     print(
-        f"Split {split_kind} | val_frac={val_frac} val_offset={val_offset} | "
+        f"Split {split_kind} | val_frac={val_frac} val_offset={val_offset} "
+        f"train_frac={train_frac} | "
         f"train={tr_idx.shape[0]} val={va_idx.shape[0]} | "
         f"train [{_ns_to_iso(int(t_tr.min()))} → {_ns_to_iso(int(t_tr.max()))}] | "
         f"val [{_ns_to_iso(int(t_va.min()))} → {_ns_to_iso(int(t_va.max()))}]"
@@ -581,7 +603,15 @@ def main():
     meta["norm"] = "train_only_per_pair"
     meta["val_fraction"] = val_frac
     meta["val_offset"] = val_offset
+    meta["train_fraction"] = train_frac
     meta["split"] = split_kind
+    # The launcher's run id, so a checkpoint carries the identity its serving constants
+    # are later bound to (M3_PROTOCOL §9.5). Absent on a local run.
+    meta["run_id"] = os.environ.get("RUN_ID")
+    meta["train_start"] = _ns_to_iso(int(t_tr.min()))
+    meta["train_end"] = _ns_to_iso(int(t_tr.max()))
+    meta["val_start"] = _ns_to_iso(int(t_va.min()))
+    meta["val_end"] = _ns_to_iso(int(t_va.max()))
 
     p_va = pair_ids_for_indices(bundle, va_idx)
     val_pair_counts = {p: int(np.sum(p_va == p)) for p in pairs}

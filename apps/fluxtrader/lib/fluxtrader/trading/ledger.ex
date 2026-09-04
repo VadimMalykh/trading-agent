@@ -144,6 +144,20 @@ defmodule FluxTrader.Trading.Ledger do
     }
   end
 
+  @doc """
+  When a recorded bar last met the cut in force — the retrain trigger's input
+  (M3_PROTOCOL §9.1 Q3 (b)). Reads `policy_bars`, which holds every served bar gated or
+  not, so this is the served checkpoint's own arrival record rather than M2's gate.
+  """
+  def last_cut_exceeded_at(threshold, horizon_m) when is_number(threshold) do
+    Repo.one(
+      from(b in PolicyBar,
+        where: b.horizon_m == ^horizon_m and b.confidence >= ^threshold,
+        select: max(b.bar_ts)
+      )
+    )
+  end
+
   defp seconds_since(nil, _now), do: nil
   defp seconds_since(ts, now), do: DateTime.diff(now, ts)
 
@@ -201,6 +215,8 @@ defmodule FluxTrader.Trading.Ledger do
       confidence: decision.confidence,
       threshold: decision[:threshold],
       regime: decision[:regime],
+      checkpoint: decision[:checkpoint],
+      ladder_p80: decision[:ladder_p80],
       cost_bps: ExecCost.cost_bps(decision.pair),
       status: "open"
     })

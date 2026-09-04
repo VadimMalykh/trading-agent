@@ -29,7 +29,14 @@ defmodule FluxTraderWeb.DashboardLiveTest do
 
   defp start_engine(signals \\ []) do
     start_supervised!(
-      {PolicyEngine, [autotick: false, signals_fun: fn -> signals end, regime_fun: fn -> nil end]}
+      {PolicyEngine,
+       [
+         autotick: false,
+         signals_fun: fn -> signals end,
+         regime_fun: fn -> nil end,
+         # The checkpoint-binding guard is satisfied, as on a correctly promoted VM.
+         checkpoint_fun: fn -> FluxTrader.Trading.Policy.frozen_checkpoint_sha256() end
+       ]}
     )
   end
 
@@ -71,7 +78,7 @@ defmodule FluxTraderWeb.DashboardLiveTest do
 
       assert html =~ "M3 Policy — forward paper test"
       # The cut in force is on the page, and it is the constant.
-      assert html =~ "0.632"
+      assert html =~ "0.630"
       assert html =~ "There is no warmup"
 
       # None of the retired warmup vocabulary may come back.
@@ -156,7 +163,7 @@ defmodule FluxTraderWeb.DashboardLiveTest do
     test "a calm market is described as correct, not as a fault", %{conn: conn} do
       # The state the panel exists for, and the state the VM is actually in: the model's
       # confidence never gets near the cut, so nothing trades. August 2026's live bars topped
-      # out at 0.569 against a cut of 0.632, so the seeded range here is the real one.
+      # out at 0.569 against a cut of 0.630, so the seeded range here is the real one.
       now = DateTime.utc_now()
       record_bars(Ledger.min_rank_bars() + 50, now, {0.40, 0.56})
       start_engine()

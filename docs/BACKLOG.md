@@ -24,6 +24,39 @@ you defer something, write down what would un-defer it.
 
 ---
 
+## 🔴 New 2026-09-04 — the rules review, the M3 re-score on repaired data, and eight open decisions
+
+**Owner: [RULES_REVIEW.md](./RULES_REVIEW.md).** Asked the same day: are the rules too tight, what
+can be cleaned up, and why not re-assess M3 (rule *and* RL) on corrected validation. Verdict in one
+line each: the bars are right, the friction is four structural gaps around them (the swap rule is
+not in force, the confirmatory lane has no dataset but forward time, Tier 1 ranks on an undecidable
+statistic, and there is no data-correction rule); **M3 was re-executed on repaired data and the
+incumbent still passes Tier 1 — worst window −4.61 bps against a −5 floor, pooled +13.82 net at
+taker — while 0 of 8 learned runs pass**, records in [M3_2_RESULTS_REPAIRED.md](./M3_2_RESULTS_REPAIRED.md)
+and [M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md); RL is not forbidden, it is unfundable on
+~220 independent days, and **walk-forward folds over the older history** are the one investment
+that unblocks it, the parked pre-registrations, and retraining alike.
+
+✅ **All eight decisions taken the same day and carried out** (RULES_REVIEW §4): **Amendment 2 is
+written and in force** ([M3_PROTOCOL.md](./M3_PROTOCOL.md) §9 — Q1 (c) promote on backtest / keep on
+forward, Q2 (c) margin plus breadth, Q3 (b) a **65-day staleness trigger** superseding the quarterly
+cadence, the data-correction clause, the walk-forward folds as the standing confirmatory dataset,
+and a new ranking axis for *future* protocols); the served constants are **re-derived on repaired
+data** (cut 0.6296127438545227, p80 0.025596268475055695); the **checkpoint-binding guard is built**
+(RETRAIN_PLAN 0.2 — the policy skips every bar unless `ml_inference`'s reported sha256 matches);
+the **forward ledger persists across swaps**, every row tagged with its checkpoint and ladder;
+`TRAIN_FRACTION` is plumbed and **[WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) is
+pre-registered** (4 rolling fixed-width folds × 3 seeds, F2 first); the approved cleanup ran (M1
+code, the pre-bucket migration scripts, `quant_ab.sh` and a crash dump are gone; M2-era logs are in
+`logs/archive/`; two M2-era studies in `scripts/archive/`). 🟢 **The arrival question is answered
+on true data: the cut fires on repaired candles** (last 2026-08-31, longest dry spell 51.8 days) —
+the forward test was never regime-blocked.
+
+🔴 **Three things remain, all in RULES_REVIEW §6:** (1) **deploy to `fluxtrader-1`** — both
+`ml_inference` and `app`, no truncate, verify `checkpoint_bound: true`; (2) **the fold queue**,
+twelve serial runs; (3) **the document-restructuring session**, brief in §6.3. The parked
+"re-answer the arrival question" row below is closed by this.
+
 ## 🔵 Active
 
 | item | owner doc | state |
@@ -244,7 +277,7 @@ each:
 |---|---|---|---|
 | ~~**Input-integrity guard**~~ ✅ **DONE 2026-09-03** (`1200152`) | `scripts/candle_guard.sh` runs `ml/train/verify_candles.py --since-yesterday` daily on `fluxtrader-1` under the **systemd timer** `candle-guard.timer` — runbook: [CANDLE_GUARD.md](./CANDLE_GUARD.md) — (01:40 UTC; the VM is Ubuntu 26.04 with no cron daemon, and `Persistent=true` fires a run missed while the VM was down). Quiet on success, Telegram alert on failure through the bot the app already uses, and `/var/tmp/candle_guard_status.json` written either way. Install/update with `./scripts/install_candle_guard.sh` | The 2026-09-01 "live matches the split" check compared two outputs of the same corrupt input. A candle-vs-exchange check would have fired on 2026-07-19 | **Remaining half, still parked:** (a) surface `candle_guard_status.json` on `/api/health` — the guard cannot alert if the VM is off or the timer is disabled, and only the app can notice that silence; (b) the served model's live feature z-scores against the checkpoint's own `norm_stats`, a drift monitor needing no external call — a live column sitting at −2σ for a month is this defect's signature |
 | **The forming candle is the newest timestep at serve time** | `serve.py` `build_tensor` takes the last `max_rows` candles including the still-forming bar; offline every window ends on a complete bar. Drop candles whose `close_time` is in the future | A live/offline mismatch the `on_conflict` fix does not remove. Its size is unmeasured | Q3. Pre-register as a fidelity fix (the 2026-08-31 pattern); measure with `./scripts/m3.sh -m m3 fidelity` before and after |
-| **Re-answer the arrival question on true data** | Does the served cut fire on 2026-08-20/21 once the candles are real? Re-run `ml/train/output/probe/arrival.py` and `vol.py` against the repaired dump | This one number decides whether the forward test is regime-blocked at all, and whether Amendment 1's staleness trigger (M3_PROTOCOL §8.6 Q3) is even in force | After §7 step 5. Until then every arrival-rate statement about 07-18 onward is void |
+| ~~**Re-answer the arrival question on true data**~~ ✅ **CLOSED 2026-09-04** | On the repaired seed-2 dump the frozen cut is exceeded through **2026-08-31**; its longest dry spell is **51.8 days** (seeds 1/3: 24.9 / 12.7). `ml/train/output/probe/c4_repaired.py` | The forward test was never regime-blocked — it was reading partial bars. The staleness trigger is calibrated on this (N = 65 days, M3_PROTOCOL §9.1) | — |
 | **Kline taker-buy volume and trade count as M2 inputs** | `/fapi/v1/klines` returns `taker_buy_base_volume`, `taker_buy_quote_volume` and `number_of_trades` for the full history; `collector.ex` `parse_kline` and `backfill_history.py` both keep only indices 0–6 ([DATA_COLLECTION_AUDIT.md](./DATA_COLLECTION_AUDIT.md) item 3). Add the columns, backfill four years, one pre-registered run under M3_PROTOCOL §8.3 | It is the one kind of **genuinely external information that is inside the training window today** — order-flow imbalance, not a re-parameterization of bars already in the window, which is what NEXT_TRAINING_PLAN §5 names as the sole reopening condition for features. Every closed feature lever was a function of the existing seven columns | Needs a migration (three columns), collector + backfill changes, a `features.py` group, and a pre-registration written before the run. Do it after the repair, since the same backfill pass can carry the new columns. ⚠️ One run is a probe, not a bank — three seeds bank it (§0.3) |
 | **Exploratory probes on the dumps, no GPU** | (a) gross bps and `dir_acc` of the cov-0.02 slice by hour of day and weekday — the model has no clock and crypto has strong intraday seasonality; (b) a market-neutral pairing: at each bar, long the top up-confidence pair against short the top down-confidence pair, scored against the single-leg policy | Both are `EXPLORATORY` under M3_PROTOCOL §8.2 — reasons to write a confirmatory test, never findings. Either could become an M3 observable (a) or an M3 execution variant (b) | Any idle session; run on the **repaired** dumps, not the current ones. Output labelled `EXPLORATORY` |
 
