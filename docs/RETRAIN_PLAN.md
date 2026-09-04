@@ -10,8 +10,8 @@ promotion rule this plan must satisfy is [M3_PROTOCOL.md](./M3_PROTOCOL.md) §8.
 | **0.1** verify the repair | ✅ **PASSED 2026-09-04** — 36/36, see §3 |
 | **0.2** checkpoint-binding guard | ⚪ not started — gates **Phase 4 only** (§8 Q4 answered (a)) |
 | **0.3** plumb `VAL_FRACTION` | ✅ **DONE 2026-09-04** — see §3 |
-| **1** re-baseline on repaired data | 🟡 **NEXT** — 3 serial eval-only jobs |
-| **2** read the decay curve | ⚪ blocked on Phase 1 |
+| **1** re-baseline on repaired data | ✅ **DONE 2026-09-04** — 3 runs, all DONE; see §4 |
+| **2** read the decay curve | 🟡 **NEXT** — no GPU |
 | **3** paired freshness test | ⚪ gated on what Phase 2 reads |
 | **4** what gets served, on what cadence | ⚪ gated on 0.2 and on Phase 3 |
 
@@ -223,6 +223,46 @@ ids** — do not overwrite the originals, which are the record of what the corru
 
 **Bring back:** the three logs, and from each the `Fixed-coverage P&L` table and the
 `SERVED GATE (C13, coverage-targeted)` line.
+
+
+### ✅ Phase 1 result, 2026-09-04 — the repair bought back real edge, on every seed
+
+Three eval-only runs, all `finish: DONE`, val window ending **2026-09-03** so the repaired tail
+is included. The dump cache was cleared first and the launcher logged `cache miss`, so a fresh
+post-repair dump was built rather than the corrupt one silently re-scored.
+
+| seed | checkpoint | new run id | new dump |
+|---|---|---|---|
+| s1 | `m2_multi_20260818T185438Z_8c4b2a03.pt` | `20260904T061948Z` | `eval_preds_20260904T061948Z.parquet` |
+| s2 (served) | `m2_multi_20260819T142759Z_a186182b.pt` | `20260904T051921Z` | `eval_preds_20260904T051921Z.parquet` |
+| s3 | `m2_multi_20260820T025723Z_a186182b.pt` | `20260904T073714Z` | `eval_preds_20260904T073714Z.parquet` |
+
+**The paired before/after at cov 0.02** — same checkpoint, same eval code, only the candles
+differ (pre-repair rows from each checkpoint's own original run log in the bucket):
+
+| seed | gross bps pre | gross bps post | Δ | net@14 pre | net@14 post | trades pre → post | win pre → post |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| s1 | +0.81 | +1.41 | **+0.60** | −13.19 | −12.59 | 2490 → 2527 | 0.545 → 0.546 |
+| s2 | +0.99 | +3.68 | **+2.69** | −13.01 | −10.32 | 1941 → 1983 | 0.545 → 0.554 |
+| s3 | +5.87 | +8.01 | **+2.14** | −8.13 | −5.99 | 1948 → 2027 | 0.563 → 0.571 |
+| **median** | +0.99 | +3.68 | **+2.14** | −13.01 | −10.32 | | |
+
+**Four things survive as findings.** (1) Gross edge improved on **every seed at every coverage**,
+median **+2.14 bps/trade** at cov 0.02, sign consistent 3/3. (2) **Trade counts rose on every
+seed** — exactly the direction §5's power check predicted, since the defect suppressed confidence
+and so suppressed the bars clearing a fixed-coverage cut. (3) Win rate rose on every seed.
+(4) The **C4 cut moved**: the served seed's re-derived cut is **0.6296** against the frozen
+`0.6318973898887634` (s1 0.6095, s3 0.6137).
+
+🔴 **What Phase 1 does NOT say.** `net@14bps` remains **negative at every coverage on every
+seed** in that table — and this must **not** be read as contradicting M3-2's winner row
+(`+8.2 / +16.8 / +6.8 / −3.6`). They are different statistics, and their equivalence has not
+been verified: the table above is `eval_m2.py`'s **whole-val pooled** fixed-coverage P&L with one
+serial position per pair, whereas M3-2's row comes from `m3 policy`, which splits w1..w4 and ranks
+across pairs. **This table has no window axis, so it cannot answer the decay question at all.**
+That is Phase 2's job, and until it runs the M3-comparable numbers do not exist.
+
+Working extract with the full tables: `logs/R1-repair-EXTRACT.md` (gitignored).
 
 ---
 
