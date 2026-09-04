@@ -1526,9 +1526,9 @@ def main() -> int:
     wf = sub.add_parser("folds", help="WALKFORWARD_PROTOCOL §3: score the incumbent on the "
                         "walk-forward folds and apply the five pre-registered criteria "
                         "(needs M3_ERA=walkforward)")
-    wf.add_argument("--universe", choices=["8", "12"], default="8",
-                    help="8 = dumps.BASE8, the served universe the rule was chosen on "
-                         "(default); 12 = every pair present in each fold's dump")
+    wf.add_argument("--universe", choices=["8", "12"], default="12",
+                    help="12 (default) = every pair present in each fold's dump, the served "
+                         "universe §3 is decided on; 8 = dumps.BASE8, a diagnostic")
     wf.set_defaults(fn=cmd_folds)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "

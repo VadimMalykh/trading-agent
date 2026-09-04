@@ -27,14 +27,18 @@ no constant crosses a fold boundary. Alongside it, reported and never selected o
 flat-size anchor `cov0.02_hold240_rqnone_mcnone`, so the ladder's contribution per fold is
 visible as it was in M3_3_RESULTS §D2.
 
-THE UNIVERSE, AND WHY IT IS A FLAG. §2 names the rule but not the pair list, and the two
-defensible readings differ: "the rule as served" is eight pairs (`dumps.BASE8`), while the
-runs themselves validate on the twelve collected ones. This module scores **8 by default**,
-because that is the universe the rule was chosen on and the universe it is serving, and it
-prints the twelve-pair number beside it as a diagnostic. §1.1's restriction — the pooled
-statistic over only the pairs present in *every* fold — is reported in both cases, since
-older folds predate several listings and a pooled number over a moving pair list is not one
-number.
+THE UNIVERSE. §2 names the rule but not the pair list. **Decided 2026-09-04, before any fold
+was trained: the folds are scored on TWELVE** — every pair present in each fold's own dump,
+which is the universe actually served since 2026-08-29. `--universe 8` restricts to
+`dumps.BASE8` and is a diagnostic, not the decision.
+
+🔴 **What choosing twelve costs, stated here because it is the whole reason §1.1 exists.**
+HYPE, WLD, ZEC and 1000PEPE are late listings, so an older fold simply has fewer pairs, and a
+pooled number over four folds with different pair lists is not one number — part of any
+fold-to-fold difference is the universe moving rather than the market. Every table therefore
+prints its fold's pair count, and the §1.1 restriction — the same statistic over only the pairs
+present in *every loaded fold* — is printed beneath it. **Read the restricted table before
+concluding anything about a fold-to-fold difference.**
 
 CLUSTERING. Day-clustered throughout (`metrics.clustered_mean_bps`), for the reason that
 module gives: three seeds gating the same bar are three views of one market moment. Two
@@ -282,7 +286,7 @@ def verdict(c1: dict, c2: dict, c3: dict, c4: dict, c5: dict) -> tuple[str, list
 # The report
 # --------------------------------------------------------------------------------------
 
-def report(sized_spec: dict, flat_spec: dict, universe: str = "8") -> int:
+def report(sized_spec: dict, flat_spec: dict, universe: str = "12") -> int:
     require_walkforward_era()
     print("=" * 96)
     print("WALK-FORWARD FOLDS — WALKFORWARD_PROTOCOL.md §3")
@@ -291,8 +295,10 @@ def report(sized_spec: dict, flat_spec: dict, universe: str = "8") -> int:
 
     missing = dumps.missing_runs()
     pairs = dumps.BASE8 if universe == "8" else None
-    label = ("8 pairs (dumps.BASE8) — the served universe the rule was chosen on"
-             if universe == "8" else "every pair in each fold's dump (up to 12)")
+    label = ("8 pairs (dumps.BASE8) — DIAGNOSTIC ONLY; §3 is decided on twelve"
+             if universe == "8"
+             else "every pair in each fold's dump, up to 12 — the served universe, and what "
+                  "§3 decides on (pinned 2026-09-04, before the first fold)")
     print(f"\nuniverse: {label}")
     print(f"cost line: taker {COST:.0f} bps round trip; all intervals are day-clustered")
 

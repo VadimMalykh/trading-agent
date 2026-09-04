@@ -210,10 +210,16 @@ A run whose split line reads `global_time` did not receive the fold variables an
 do not record it. `m3 folds` prints every criterion against a partial registry so the queue can be
 steered, but marks the whole block **PROVISIONAL** and produces no verdict until all twelve exist.
 
-⚠️ **One thing §2 left unspecified and the harness had to choose: the pair universe.** It defaults
-to the served eight (`dumps.BASE8`), the universe the rule was chosen on; `--universe 12` scores
-every pair in each fold's dump, and §1.1's restriction to the pairs present in all four folds is
-reported either way. If the twelve are meant to decide, say so **before the first fold is read**.
+✅ **§2 left the pair universe unspecified; it is pinned here on 2026-09-04, before any fold was
+trained: §3 is decided on TWELVE** — every pair present in each fold's own dump, the universe
+actually served since 2026-08-29. `--universe 8` restricts to `dumps.BASE8` and is a diagnostic.
+
+🔴 **The cost of that choice, and what it obliges every reading to do.** HYPE, WLD, ZEC and
+1000PEPE are late listings, so older folds hold fewer pairs and a pooled number across the four
+mixes universes — part of any fold-to-fold difference is the pair list moving, not the market.
+§1.1 already required the pair count on every table and the pooled statistic restricted to the
+pairs present in all four folds; under twelve that restricted table is **not optional garnish, it
+is the control**, and it is read before any fold-to-fold difference is interpreted.
 
 
 | fold | seed | run id | split line (train → / val →) | pairs | status |

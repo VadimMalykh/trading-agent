@@ -500,7 +500,13 @@ curl -s localhost:4000/api/health | jq '{policy, regime}'
 The forward clock restarts at this deploy by definition: every row from here carries the
 checkpoint tag, and the A/B is read on tagged rows.
 
-### 6.2 The fold queue
+### 6.2 The fold queue — harness ✅ built 2026-09-04, runs not started
+
+**Decided 2026-09-04, before any fold was trained: §3 is scored on the TWELVE served pairs**
+(WALKFORWARD_PROTOCOL §6). **Vadim launches the runs; this session records and scores them.**
+The exact split of work is in that protocol's §6.
+
+
 
 [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §5, **F2 first**. Before the first launch:
 clear the VM dump cache, and build the `M3_ERA=walkforward` harness support (§2 of that protocol)
