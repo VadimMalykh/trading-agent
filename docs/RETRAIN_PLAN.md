@@ -5,15 +5,21 @@ written cannot decide it either.** The w1..w4 axis does not have the power to ra
 windows: w4's 95% interval contains all three other windows' means on every policy, in every
 era, at every scope. Phase 3's gate, priced against that same precision, could only resolve a
 freshness effect **~7–12× larger than the model's entire edge**, so three GPU runs would buy
-another `NOT DECIDABLE`. **Do not run Phase 3 in its current form** — §8 Q1/Q2 need re-answering
-first. Indexed in [BACKLOG.md](./BACKLOG.md); the promotion rule this plan must satisfy is
+another `NOT DECIDABLE`. **Do not run Phase 3 in its current form.**
+
+🟢 **§8 was answered 2026-09-04 (all five questions — see §8).** The decisions: re-score the
+incumbent against Tier 1 on repaired data **first** (Q0 a); **buy precision before touching the
+split** (Q1 d); and certify by **walk-forward folds** rather than by refreshing an uncertified
+checkpoint (Q2 B). Q1 and Q2 converge on one piece of work — folds bought for precision are the
+same folds that certify a fresh checkpoint — and `VAL_OFFSET` was plumbed the same day to make
+it launchable (§3, 0.3). Indexed in [BACKLOG.md](./BACKLOG.md); the promotion rule this plan must satisfy is
 [M3_PROTOCOL.md](./M3_PROTOCOL.md) §8.3–8.6.
 
 | phase | state |
 |---|---|
 | **0.1** verify the repair | ✅ **PASSED 2026-09-04** — 36/36, see §3 |
 | **0.2** checkpoint-binding guard | ⚪ not started — gates **Phase 4 only** (§8 Q4 answered (a)) |
-| **0.3** plumb `VAL_FRACTION` | ✅ **DONE 2026-09-04** — see §3 |
+| **0.3** plumb `VAL_FRACTION`, `VAL_OFFSET` | ✅ **DONE 2026-09-04** — both; walk-forward is now launchable, see §3 |
 | **1** re-baseline on repaired data | ✅ **DONE 2026-09-04** — 3 runs, all DONE; see §4. 🔴 **its headline was read off the wrong horizon and does not survive §5's controls** |
 | **2** read the decay curve | ✅ **DONE 2026-09-04** — verdict `NOT DECIDABLE`; see §5 |
 | **3** paired freshness test | 🔴 **BLOCKED — underpowered by construction**, see §5.4. Needs a redesign, not a launch |
@@ -22,6 +28,21 @@ first. Indexed in [BACKLOG.md](./BACKLOG.md); the promotion rule this plan must 
 *Holds only what is currently true and actionable. When a phase's conclusions are superseded,
 move the narrative to `docs/archive/TRAINING_HISTORY.md` and carry the surviving conclusion
 forward — do not append a contradicting section.*
+
+### The order of work, as the §8 answers leave it
+
+1. **Q0 — re-score the incumbent against Tier 1 on repaired data.** No GPU, eval-only, and every
+   other item assumes its answer. Commands and the pre-registered reading: §8 Q0.
+2. **Phase 0.2 — the checkpoint-binding guard.** The plan's single most valuable open item
+   (§7): the served rule and the validated rule now differ by the entire edge, and the guard is
+   what makes that fail loudly instead of silently. Gates Phase 4 and M3_PROTOCOL §8.3 **C5**.
+3. **Settle the walk-forward fold shape** — anchored versus rolling fixed-width train window
+   (§7 B). A design decision, no runs, and it must precede them.
+4. **Then the folds themselves** (Q1 d + Q2 B, one investment). k serial training runs per
+   recipe per seed; `VAL_OFFSET` is plumbed as of 2026-09-04, so they are launchable.
+
+*Not on this list, deliberately:* Phase 3 as written (§6, underpowered by ~10×), and any redesign
+that reads a per-window mean of this population (§5.6's tombstone).
 
 ---
 
@@ -130,11 +151,22 @@ Any revival of this axis has to buy clusters first (§6's redesign note).
 
 ## §2 — The plumbing gap, and the two hard blockers
 
-**Gap (one line).** `train_m2.py` accepts `--val-frac` / `--val-offset` (args at :161–:180,
-consumed at :546–:552), but `scripts/gcp_train.sh` forwards neither, and `VAL_FRACTION` is absent
-from `FLUX_TRAIN_ENV_KEYS` (:176). **The split is unreachable from the launcher today.** Adding
-`VAL_FRACTION` to that list is the whole enabler. Note `--val-offset 0` is *identical* to the
-default trailing split, so `--val-frac` is the only real lever.
+**Gap — ✅ CLOSED 2026-09-04, both halves.** `train_m2.py` accepts `--val-frac` /
+`--val-offset`, but neither was reachable from `scripts/gcp_train.sh`. Both are now env-plumbed
+the same way every other knob is:
+
+* `VAL_FRACTION` — `config.py:187` → `train_m2.py:546`, forwarded at `gcp_train.sh:180`.
+* `VAL_OFFSET` — `config.py:188` → `train_m2.py:548`, forwarded at `gcp_train.sh:180`.
+  `--val-offset`'s argparse default moved `0.0 → None` so the env var is actually reachable; a
+  hard-coded default would have silently outranked it. The resolved value now prints in the
+  `Split ...` line and is written to `meta["val_offset"]`, so a checkpoint records the fold it
+  was trained on. Out-of-range offsets **exit** rather than clamp (`train_m2.py:549`) — the
+  window helper clamps silently, which is the failure mode `config.py:180` and `gcp_train.sh:157`
+  each record having voided an experiment.
+
+`VAL_OFFSET=0.0` reproduces the trailing split bar for bar, so the default is a genuine no-op and
+nothing published changes. **This is what unblocks §7 option B**, the walk-forward now chosen at
+§8 Q2.
 
 **Blocker 1 — the checkpoint-binding guard does not exist.** *(Answered 2026-09-04: §8 Q4 =
 **(a) blocks Phase 4 only**. Phases 1–3 swap no checkpoint, so nothing can be mis-served.)* §8.4: swapping `m2_multi.pt`
@@ -465,8 +497,13 @@ as written buys nothing.** Do not launch it.
 ~35–52 day-clusters per window; a shorter holdout makes that *worse*, not better. Anything that
 un-blocks this has to add clusters — more seeds, more pairs (the 12-pair universe is already
 banked, see `traded-universe`), a walk-forward that accumulates folds (§7 option B), or a
-statistic that is not a per-window mean of overlapping 4h trades. Until one of those is costed,
-freshness stays ranked fourth (§5.6).
+statistic that is not a per-window mean of overlapping 4h trades.
+
+🟢 **§8 Q1 chose exactly that (option d), and Q2 chose the walk-forward (option B).** So this
+section's redesign is no longer hypothetical: the folds being bought for precision are the same
+folds §7 B certifies on, and `VAL_OFFSET` is now plumbed to launch them (§2). Freshness stays
+ranked fourth *as a question* (§5.6) — what changed is that the instrument which would make it
+answerable is now being built for an independent reason.
 
 <details>
 <summary>The original design, retained for whoever redesigns it</summary>
@@ -550,10 +587,22 @@ The two coherent resolutions:
   split; the served checkpoint is that recipe refitted to a later boundary, with its cut and
   ladder re-derived from its own trailing holdout under C4. Cheap and honest, but the served
   artefact is never itself Tier-1 certified — that must be written into the promotion record.
-* **(B) Walk-forward certification.** Score the recipe across k rolling folds
-  (`--val-offset` stepped by `--val-frac`, already implemented at `dataset.py:656`), giving long
-  effective coverage with fresh boundaries throughout. Statistically the right answer; costs
-  k serial training runs per recipe per seed.
+* **(B) Walk-forward certification.** ✅ **CHOSEN, §8 Q2, 2026-09-04.** Score the recipe across
+  k rolling folds (`VAL_OFFSET` stepped by `VAL_FRACTION`, split helper at
+  `ml/train/data/dataset.py:656`, launcher plumbing closed in §2), giving long effective
+  coverage with fresh boundaries throughout. Statistically the right answer, and the only option
+  under which the **served artefact is itself certified**. Costs k serial training runs per
+  recipe per seed — and runs are strictly serial on the GCP box, so k is a wall-clock decision,
+  not a budget one. Read a real training log for the per-run duration before fixing k.
+
+  🔴 **Open design question before k folds are burned: the fold shape.** The implemented split is
+  **anchored** — train always starts at the beginning of history — so older folds train on
+  progressively less data (at `val_frac=0.2`, the fourth-oldest fold sees a quarter of the
+  samples). A score across folds therefore mixes *boundary age* with *training-set size*, which
+  are the same two effects §6's caveat (a) already says this family cannot separate. Either
+  state it as a known confound in the protocol, or switch to a **rolling fixed-width** train
+  window so every fold trains on the same number of samples. This must be decided before the
+  runs, not after.
 
 **Cadence (§8.6 Q3, re-answered, and Phase 2 settles it for now).** Q3's recommended staleness
 trigger was void — it was the candle defect. A repaired baseline now exists, and §5.6 says this
@@ -567,39 +616,75 @@ Revisit only if a design that adds clusters (§6's redesign note) makes a trigge
 
 ## §8 — The decisions, each as its own question
 
-**Q0 (NEW, and it now outranks the rest). Does the incumbent still clear its own promotion bar
+✅ **All five answered 2026-09-04.** Q0 (a), Q1 (d), Q2 (B), Q3 (a), Q4 (a). The answers are
+recorded inline below, each next to the options it was chosen against, so the rejected options
+stay visible and nobody re-derives them.
+
+**Q0 — ✅ ANSWERED: (a). Does the incumbent still clear its own promotion bar
 on repaired data?** §5.5 shows arm A's worst window at **−4.61 bps** against the **+0.25 bps**
 M3_2_RESULTS §D fixed as M3-3's bar, and §5.2 shows the regime ladder its sizing overlay rests
 on has flattened by half at Q5. Neither is certified — a Tier-1 re-score of the incumbent
 against the repaired dumps is the check, it needs **no GPU**, and it decides whether anything
 downstream is worth doing.
-(a) **re-score the incumbent against Tier 1 on the repaired dumps, before any other phase**
-*(recommended — it is cheap, it is about what is servable today, and every other question in
-this document assumes an answer to it)*;
-(b) treat §5.5 as noise on the strength of its interval `[−34.9, +62.6]` and carry on;
-(c) skip to Phase 0.2, on the grounds that nothing can be swapped safely anyway.
+(a) ✅ **CHOSEN: re-score the incumbent against Tier 1 on the repaired dumps, before any other
+phase.** It is cheap, it needs no GPU, it is about what is servable *today*, and every other
+question in this document assumes an answer to it.
+(b) treat §5.5 as noise on the strength of its interval `[−34.9, +62.6]` and carry on — rejected:
+the interval argues the decline is unproven, not that the baseline is sound, and continuing to
+rank challengers against an unverified champion is the failure it would hide.
+(c) skip to Phase 0.2, on the grounds that nothing can be swapped safely anyway — rejected: 0.2
+is the more valuable item (§7) but it does not answer whether today's rule is servable.
 
-**Q1. Do we shorten the holdout at all — accepting that it weakens every M3 per-window table —
-or keep the 253-day split and accept ~8.3 months of staleness, growing?**
-🔵 **Phase 2 has removed option (a) as stated.** A ~120-day split cannot be validated on this
+**What to run, and what to bring back.** The dumps and the harness both exist; this is eval-only.
+
+```sh
+M3_ERA=repaired ./scripts/m3.sh -m m3 validate   # C3 first — a re-score by an unvalidated
+                                                 # harness is not a comparison (§8.3 C3)
+M3_ERA=repaired ./scripts/m3.sh -m m3 search     # the 40 pre-registered configurations,
+                                                 # scored against Tier 1 (M3_PROTOCOL §4.2)
+```
+
+Logs to `logs/Q0-validate-repaired.log` and `logs/Q0-search-repaired.log`. **Bring back:** the
+Tier-1 pass/fail table (the `n / 36` line), the incumbent
+`cov0.02_hold240_rqnone_mcnone_SIZED`'s six criteria individually, and its per-window net at
+taker with the day-clustered interval. **The reading is pre-registered here, before the numbers:**
+if the incumbent fails **P3** (worst window < −5 bps) it is not servable and Phase 4 becomes
+urgent; if it passes P3 but its worst window sits below the **+0.25 bps** it set as M3-3's bar,
+the bar is restated at the new number and every M3-3 comparison is re-read against it — the
+challengers do not retroactively pass.
+
+**Q1 — ✅ ANSWERED: (d). Do we shorten the holdout at all — accepting that it weakens every M3
+per-window table — or keep the 253-day split and accept ~8.3 months of staleness, growing?**
+🔵 **Phase 2 had already removed option (a) as stated.** A ~120-day split cannot be validated on this
 population (§5.4), so "shorten for challengers" now means "shorten and have no way to score the
 challenger". The live options are:
-(b) keep 0.2 and accept growing staleness *(recommended by default now — not because staleness
-is fine, but because nothing on this data can currently price it)*;
-(d) **NEW: add precision before touching the split** — more seeds, the banked 12-pair universe,
-or walk-forward folds — and revisit (a) once a per-window mean has an interval narrower than
-the edge. This is the only path that ever makes freshness measurable.
+(b) keep 0.2 and accept growing staleness — this is what happens in the meantime either way,
+and it is not a resolution: staleness grows at 0.2 days per calendar day whether or not anyone
+looks at it.
+(d) ✅ **CHOSEN: add precision before touching the split** — more seeds, the banked 12-pair
+universe (`traded-universe`: 12 pairs is the standing long-run intent, the served 8 is a
+conservative T6 default), or walk-forward folds — and revisit (a) once a per-window mean has an
+interval narrower than the edge. **This is the only path that ever makes freshness measurable**,
+and it is the same investment Q2 (B) requires, which is why the two were answered together.
 
-**Q2. If a fresh-boundary model cannot satisfy C1/C2 (§7), which resolution?**
-🔵 **Deferred, and it costs nothing to defer.** The question only arises when a fresh-boundary
-challenger exists, and §6 is blocked. Recorded so it is not re-derived: (a) certify the recipe
-and refresh the checkpoint; (b) walk-forward certification; (c) never serve a fresh-boundary
-model. **(b) is now more attractive than it was**, because §5.4 says accumulating folds is one
-of the few things that actually buys the precision this whole plan lacks — it is no longer just
-the expensive-but-correct option, it is a fix for the binding constraint.
+**Q2 — ✅ ANSWERED: (B). If a fresh-boundary model cannot satisfy C1/C2 (§7), which resolution?**
+The conflict is structural and is stated in §7: a fresher model has a shorter split, ~±54 bps
+resolution and two windows, so it **cannot** pass C1 (all six Tier-1 criteria on its own split)
+or C2 (beat the incumbent on worst-window). M3_PROTOCOL §8.5 refuses to lower Tier 1, correctly.
+(A) certify the recipe and refresh the checkpoint — rejected as the *primary* route: cheap, but
+the artefact actually served is never itself certified, and that is precisely the assumption
+Phase 2 tried and failed to test. It remains available as an interim, provided the promotion
+record says in plain words that the served checkpoint is uncertified.
+(B) ✅ **CHOSEN: walk-forward certification.** §5.4 says accumulating folds is one of the few
+things that actually buys the precision this plan lacks, so it is not merely the
+expensive-but-correct option — it is a fix for the binding constraint, and it answers Q1 (d)
+with the same runs. Its open sub-decision — anchored versus rolling fixed-width train window —
+is recorded in §7 B and **must be settled before the folds are run.**
+(C) never serve a fresh-boundary model — rejected, though it is the honest name for what happens
+by default if (B) is not funded.
 
-**Q3. Retrain on a cadence or on a trigger?**
-(a) **fixed cadence, quarterly** *(recommended, and Phase 2 strengthens it)*;
+**Q3 — ✅ ANSWERED: (a). Retrain on a cadence or on a trigger?**
+(a) ✅ **CHOSEN: fixed cadence, quarterly**, and Phase 2 strengthens it;
 (b) trigger, re-specified against the repaired baseline;
 (c) both — cadence as a floor, trigger as an interrupt.
 🔵 **Phase 2 closes the door on (b) for now.** §5.6 shows this population cannot resolve a
@@ -608,7 +693,8 @@ calibrated here — the same reason §8.6 Q3's original trigger was void, arrive
 other direction. **(a) stands, on the same "bound the identity in §0.2 rather than react to a
 signal" grounds, and (c) stays the end state whenever (b) becomes calibratable.**
 
-**Q4. Does Phase 0.2 (the checkpoint-binding guard) block Phases 1–3, or only Phase 4?**
+**Q4 — ✅ ANSWERED: (a). Does Phase 0.2 (the checkpoint-binding guard) block Phases 1–3, or
+only Phase 4?**
 ✅ **ANSWERED 2026-09-04: (a) only Phase 4.** Phases 1–3 produce no swap, so nothing can be
 mis-served; the guard remains a hard precondition for Phase 4 and for M3_PROTOCOL §8.3 **C5**.
 *(b) block everything until the guard exists — rejected.*

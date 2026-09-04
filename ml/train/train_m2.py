@@ -70,6 +70,7 @@ from config import (
     SEED,
     SEQ_LEN,
     VAL_FRACTION,
+    VAL_OFFSET,
     WEIGHT_DECAY,
 )
 from data.dataset import (
@@ -170,12 +171,12 @@ def parse_args():
     p.add_argument(
         "--val-offset",
         type=float,
-        default=0.0,
+        default=None,
         help=(
             "Walk-forward: end the val window this fraction of samples from the "
             "latest sample; train = samples strictly before the val window. "
             "0.0 = newest window (== trailing split). Step by --val-frac for "
-            "non-overlapping rolling-origin folds."
+            "non-overlapping rolling-origin folds. Default: VAL_OFFSET."
         ),
     )
     return p.parse_args()
@@ -544,8 +545,16 @@ def main():
             sys.exit(2)
 
     val_frac = args.val_frac if args.val_frac is not None else VAL_FRACTION
-    if args.val_offset and args.val_offset > 0.0:
-        tr_idx, va_idx = time_split_indices_window(bundle.times, val_frac, args.val_offset)
+    val_offset = args.val_offset if args.val_offset is not None else VAL_OFFSET
+    if val_offset < 0.0 or val_offset + val_frac > 1.0:
+        # time_split_indices_window clamps silently, which would train on an
+        # empty or truncated set without failing. Refuse instead.
+        sys.exit(
+            f"val_offset={val_offset} + val_frac={val_frac} must lie in [0, 1]; "
+            "the fold would leave no training samples."
+        )
+    if val_offset > 0.0:
+        tr_idx, va_idx = time_split_indices_window(bundle.times, val_frac, val_offset)
         split_kind = "walkforward_window"
     else:
         tr_idx, va_idx = time_split_indices(bundle.times, val_frac)
@@ -553,7 +562,7 @@ def main():
     t_tr = bundle.times[tr_idx]
     t_va = bundle.times[va_idx]
     print(
-        f"Split {split_kind} | val_frac={val_frac} val_offset={args.val_offset} | "
+        f"Split {split_kind} | val_frac={val_frac} val_offset={val_offset} | "
         f"train={tr_idx.shape[0]} val={va_idx.shape[0]} | "
         f"train [{_ns_to_iso(int(t_tr.min()))} → {_ns_to_iso(int(t_tr.max()))}] | "
         f"val [{_ns_to_iso(int(t_va.min()))} → {_ns_to_iso(int(t_va.max()))}]"
@@ -571,7 +580,7 @@ def main():
     meta["norm_stats"] = norm_stats
     meta["norm"] = "train_only_per_pair"
     meta["val_fraction"] = val_frac
-    meta["val_offset"] = args.val_offset
+    meta["val_offset"] = val_offset
     meta["split"] = split_kind
 
     p_va = pair_ids_for_indices(bundle, va_idx)

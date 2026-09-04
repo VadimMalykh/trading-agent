@@ -185,6 +185,12 @@ DROPOUT = float(os.environ.get("DROPOUT", "0.2"))
 # silent confound. Set PAIR_EMBED_DIM=0 explicitly for a pair-agnostic arm.
 PAIR_EMBED_DIM = int(os.environ.get("PAIR_EMBED_DIM", "8"))
 VAL_FRACTION = float(os.environ.get("VAL_FRACTION", "0.2"))
+# Walk-forward rolling origin: end the val window this fraction of samples
+# from the latest sample. 0.0 == the trailing split (the default everything
+# published so far was trained on). Step by VAL_FRACTION for non-overlapping
+# folds. Env-plumbed so scripts/gcp_train.sh can forward it (RETRAIN_PLAN §7
+# option B); --val-offset alone was unreachable from the launcher.
+VAL_OFFSET = float(os.environ.get("VAL_OFFSET", "0.0"))
 # Patience raised: directional coverage kept climbing when the old run stopped.
 EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "10"))
 # Gate used when ranking checkpoints (matches serve default)

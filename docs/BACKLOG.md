@@ -273,7 +273,15 @@ effect of ~111–118 bps/trade, 7–12× the model's entire edge. Freshness is n
 |---|---|
 | **0.1** verify the repair actually finished | ✅ **PASSED** — `verify_candles.py` returned **36/36**, twelve pairs × 07-21 / 08-20 / 09-02 at 5m, every one `288/288 exact vol=close=high=low=1.000`. 🟢 **2026-08-20 is the decisive one**: it is the day recorded at a median **11%** of true volume with **0/288** matching closes, and it is now 1.000 across the board. Pre-deploy days prove the repair, the post-deploy day proves the collector fix |
 | **0.2** the checkpoint-binding guard | ⚪ **not started — and deliberately not blocking.** See the decision below |
-| **0.3** plumb `VAL_FRACTION` into the launcher | ✅ **DONE** — one line in `scripts/gcp_train.sh`'s `FLUX_TRAIN_ENV_KEYS`. `train_m2.py` always accepted `--val-frac`; the launcher simply never forwarded it, so **the split was unreachable from the CLI** |
+| **0.3** plumb `VAL_FRACTION` and `VAL_OFFSET` into the launcher | ✅ **DONE — both halves.** `train_m2.py` always accepted `--val-frac` / `--val-offset`; the launcher forwarded neither. `VAL_FRACTION` was closed first; `VAL_OFFSET` followed 2026-09-04 (`config.py:188`, `train_m2.py:548`, `gcp_train.sh:180`), with the argparse default moved `0.0 → None` so the env var is reachable and an out-of-range fold now **exits** instead of clamping silently. `VAL_OFFSET=0.0` reproduces the trailing split bar for bar. **This is what makes walk-forward folds launchable** |
+
+🟢 **All five §8 decisions taken 2026-09-04: Q0 (a), Q1 (d), Q2 (B), Q3 (a), Q4 (a).** In one
+line each: **re-score the incumbent against Tier 1 on repaired data first** (it is cheap and
+everything else assumes its answer); **buy statistical precision before touching the split**,
+since a shorter holdout cannot score a challenger; **certify by walk-forward folds** rather than
+by refreshing an uncertified checkpoint; **quarterly cadence**, no trigger — this population
+cannot calibrate one; and the guard blocks **Phase 4 only**. Q1 and Q2 converge on a single
+investment: the folds bought for precision are the folds that certify a fresh checkpoint.
 
 **Decision taken 2026-09-04 — RETRAIN_PLAN §8 Q4 = (a): the checkpoint-binding guard blocks
 Phase 4 only.** Phases 1–3 swap no checkpoint, so nothing can be mis-served. The guard remains a
@@ -284,8 +292,8 @@ hard precondition for Phase 4 and for M3_PROTOCOL §8.3 **C5**, and it is still 
 |---|---|---|---|
 | ✅ **Phase 1 — re-baseline on repaired data** | **DONE 2026-09-04.** Three eval-only runs (`20260904T051921Z` / `061948Z` / `073714Z`), all DONE, on a verified-fresh post-repair dump. 🔴 **Its headline is RETRACTED**: "the repair bought back real edge, median +2.14 bps, 3/3 seeds" was read off the eval log's **Horizon 60m** block, not the **240m primary head** every M3 policy uses. On 240m the same cells are **−1.22 / +3.17 / −3.51** — 1 up, 2 down. What survives: the 240m head is net-**positive** at taker on all three seeds (+6.89 / +6.00 / +8.72), and the C4 cut re-derived to **0.6296** against the frozen `0.6318973898887634` | — | See [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §4. When reading `eval_m2.py`, **the 240m block is the one that counts** |
 | ✅ **Phase 2 — read the decay curve** | **DONE 2026-09-04. Verdict `NOT DECIDABLE`** on both policies, both eras, both scopes — w4's clustered CI contains all three other windows' means. Also found: the two eras are **not the same calendar rows** (val start moved +12d, end +16d), so every before/after is clipped to the shared span; the defect did not degrade w4 evenly, it **deleted the last fortnight** (0 bars over the cut in 2026-08-01..17, all three seeds) | — | `./scripts/m3.sh -m m3 decay` reproduces it; `M3_ERA=repaired` switches any m3 command to the repaired dumps. Logs `logs/P2-*.log` |
-| 🔴 **Phase 3 — the paired freshness test** | **BLOCKED — underpowered by construction, not scheduled.** §5.4 prices its gate at a **~111–118 bps/trade** minimum detectable effect against a ~9–17 bps edge. Running it as written returns `NOT DECIDABLE` whatever the truth is | A **redesign that adds day-clusters** — more seeds, the banked 12-pair universe, or walk-forward folds. A shorter holdout makes precision *worse*, not better | Do **not** launch `VAL_FRACTION=0.095`. Revive only when a per-window mean has an interval narrower than the edge |
-| ⚪ **Phase 4 — what gets served, and on what cadence** | Resolves a genuine conflict: a fresh-boundary challenger has a short split and cannot satisfy C1/C2 as written, and §8.5 refuses to lower Tier 1 | Phase 0.2 **only** — the Phase 3 gate is removed, since Phase 3 cannot report | Two coherent resolutions in §7 — (A) certify the recipe / refresh the checkpoint, or (B) walk-forward certification at k× the compute. **(B) is now more attractive**: accumulating folds is one of the few things that buys the missing precision |
+| 🔴 **Phase 3 — the paired freshness test** | **BLOCKED — underpowered by construction, not scheduled.** §5.4 prices its gate at a **~111–118 bps/trade** minimum detectable effect against a ~9–17 bps edge. Running it as written returns `NOT DECIDABLE` whatever the truth is | A **redesign that adds day-clusters** — more seeds, the banked 12-pair universe, or walk-forward folds. A shorter holdout makes precision *worse*, not better. 🟢 **§8 Q1 = (d) funds exactly this**, so the revival trigger is now being built | Do **not** launch `VAL_FRACTION=0.095`. Revive only when a per-window mean has an interval narrower than the edge |
+| ⚪ **Phase 4 — what gets served, and on what cadence** | Resolves a genuine conflict: a fresh-boundary challenger has a short split and cannot satisfy C1/C2 as written, and §8.5 refuses to lower Tier 1 | Phase 0.2 **only** — the Phase 3 gate is removed, since Phase 3 cannot report | ✅ **RESOLVED §8 Q2 = (B), walk-forward certification** at k× the compute — the only option under which the *served* artefact is itself certified, and the same runs Q1 (d) buys for precision. (A) stays available as an interim only if the promotion record states plainly that the served checkpoint is uncertified. 🔴 **One design question precedes the runs**: anchored versus rolling fixed-width train window (RETRAIN_PLAN §7 B) — the implemented split is anchored, so older folds train on less data and a fold score mixes boundary age with training-set size |
 
 ### 🔴 What Phase 2 found on the way — these outrank freshness
 
@@ -308,13 +316,27 @@ population cannot resolve a per-window change of the size a trigger would fire o
 remains a fixed **quarterly** cadence, chosen to bound staleness rather than to react to a
 signal.
 
-**The open questions** (§8), re-answered by Phase 2 and no longer deferrable to it:
-**Q0 (new, and it now outranks the rest)** — re-score the incumbent against Tier 1 on the
-repaired dumps, no GPU;
-**Q1** — (a) "shorten for challengers" is **removed** as unscoreable; the live options are (b)
-keep 0.2 and accept growing staleness, or (d) **add precision before touching the split**;
-**Q2** — deferred at no cost until a fresh-boundary challenger exists;
-**Q3** — **(a) quarterly cadence** stands; (b) a trigger is not calibratable here.
+**The open questions** (§8) — ✅ **all answered 2026-09-04**:
+**Q0 = (a)** re-score the incumbent against Tier 1 on the repaired dumps, before any other
+phase, no GPU;
+**Q1 = (d)** add precision before touching the split — (a) "shorten for challengers" was already
+**removed** as unscoreable, and (b) keep-and-accept is what happens meanwhile, not a resolution;
+**Q2 = (B)** walk-forward certification, the same runs Q1 (d) buys;
+**Q3 = (a)** quarterly cadence; a trigger is not calibratable here;
+**Q4 = (a)** the guard blocks Phase 4 only.
+
+**Next command, and the pre-registered reading** (RETRAIN_PLAN §8 Q0). Eval-only, in Docker:
+
+```sh
+M3_ERA=repaired ./scripts/m3.sh -m m3 validate   # C3 first, then
+M3_ERA=repaired ./scripts/m3.sh -m m3 search     # Tier 1 over the 40 configurations
+```
+
+Bring back the `n / 36` Tier-1 line, the incumbent `cov0.02_hold240_rqnone_mcnone_SIZED`'s six
+criteria individually, and its per-window net at taker with the clustered interval. **Fail P3
+(worst window < −5 bps) → not servable, and Phase 4 becomes urgent. Pass P3 but land below
++0.25 → the bar is restated at the new number and M3-3's comparisons are re-read against it;
+the challengers do not retroactively pass.**
 
 ---
 
