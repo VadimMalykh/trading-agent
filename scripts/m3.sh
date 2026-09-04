@@ -32,8 +32,12 @@ fi
 # M3_EXPORT_DIR lets `bookprep` point at an alternative export directory (a smoke-test
 # slice, say) without editing the module. Only forwarded when set, so the container keeps
 # its own default otherwise.
+# M3_ERA selects which scoring of the three banked checkpoints to read — `prerepair` (the
+# default, and what every published M3 number was measured on) or `repaired`. See
+# m3/dumps.py:RUNS_BY_ERA.
 ENV_ARGS=()
 [[ -n "${M3_EXPORT_DIR:-}" ]] && ENV_ARGS+=(-e "M3_EXPORT_DIR=$M3_EXPORT_DIR")
+[[ -n "${M3_ERA:-}" ]] && ENV_ARGS+=(-e "M3_ERA=$M3_ERA")
 
 DOCKER_ARGS=(--rm "${ENV_ARGS[@]+"${ENV_ARGS[@]}"}" -v "$REPO_ROOT/ml/train:/workspace/train" -w /workspace/train "$IMAGE")
 

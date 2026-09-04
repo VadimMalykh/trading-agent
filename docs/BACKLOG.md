@@ -256,12 +256,18 @@ each:
 ~2025-12-10, so it is **~253 days ≈ 8.3 months stale**, and *nobody chose that*: the split is a
 fraction (`VAL_FRACTION = 0.2`), so `staleness = 0.2 × span = exactly the val window's length`.
 Staleness therefore **grows on its own at 0.2 days per calendar day**, and adding older history
-makes it *worse* (the boundary is `start + 0.8 × span`). Whether that costs anything is **unknown
-and the best evidence is contaminated** — M3-2's winner is worst in w4, the newest window, which is
-also where ~40% of the calendar carried the partial-candle defect. Decay and the defect are
-perfectly confounded, and the repair's re-eval separates them **at no extra compute**.
+makes it *worse* (the boundary is `start + 0.8 × span`).
 
-### ✅ Phase 0 closed 2026-09-04 — Phase 1 is unblocked and is the next thing to run
+🔵 **ANSWERED 2026-09-04 (Phase 2): whether staleness costs anything is UNMEASURABLE on this
+data.** The repair removed the candle defect from w4 and the decay-shaped curve survived
+(+18.6 / +15.2 / +5.5 / **−1.9** net at taker) — **but w4's 95% interval contains the means of
+all three other windows**, so the windows cannot be ranked at all. Three seeds over one market
+give ~35–52 day-clusters per window and ±50–100 bps intervals on a ~15 bps edge. **Phase 3
+cannot fix this**: priced against the same precision, its gate could only resolve a freshness
+effect of ~111–118 bps/trade, 7–12× the model's entire edge. Freshness is now ranked **fourth**
+— behind three things Phase 2 found on the way (see the table).
+
+### ✅ Phase 0 closed 2026-09-04; Phases 1 and 2 done — the plan's centre of gravity has moved
 
 | step | state |
 |---|---|
@@ -276,25 +282,39 @@ hard precondition for Phase 4 and for M3_PROTOCOL §8.3 **C5**, and it is still 
 
 | item | what | gated on | revival trigger / next command |
 |---|---|---|---|
-| ✅ **Phase 1 — re-baseline on repaired data** | **DONE 2026-09-04.** Three eval-only runs (`20260904T051921Z` / `061948Z` / `073714Z`), all DONE, on a verified-fresh post-repair dump. **The repair bought back real edge on every seed**: gross at cov 0.02 improved +0.60 / +2.69 / +2.14 bps/trade, median **+2.14**, sign consistent 3/3; trade counts and win rates rose on all three; the C4 cut re-derived to **0.6296** on the served seed against the frozen `0.6318973898887634` | — | 🔴 `net@14bps` is still negative in that table, but it is `eval_m2`'s **whole-val pooled** statistic with **no window axis** — it does **not** contradict M3-2 and it cannot answer the decay question. See [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §4 |
-| 🟡 **Phase 2 — read the decay curve — THE NEXT THING TO RUN** | `m3 validate` → `m3 policy --label winner` → `m3 fidelity --universe 8`, read against the **pre-registered** table in §5. This is what produces the M3-comparable w1..w4 numbers; Phase 1's table cannot | ✅ Phase 1 done — **ready now** | No GPU. 🔴 Report `n_trades` per window: if w4's clustered interval spans the other windows' means the verdict is `NOT DECIDABLE`, **not** "no decay" |
-| ⚪ **Phase 3 — the paired freshness test** | `VAL_FRACTION=0.095` × 3 seeds, moving the boundary ~4.5 months fresher, scored on the **same calendar rows** as the stale family. This is the only design that breaks the decay/regime confound | **What Phase 2 reads.** §5's table says in advance which reading forbids it | If Phase 2 shows w4 recovering to w1–w3's level, **do not run this** — record it and close the question |
-| ⚪ **Phase 4 — what gets served, and on what cadence** | Resolves a genuine conflict: a fresh-boundary challenger has a short split and cannot satisfy C1/C2 as written, and §8.5 refuses to lower Tier 1 | Phase 0.2 **and** Phase 3 passing its gate | Two coherent resolutions in §7 — (A) certify the recipe / refresh the checkpoint, or (B) walk-forward certification at k× the compute |
+| ✅ **Phase 1 — re-baseline on repaired data** | **DONE 2026-09-04.** Three eval-only runs (`20260904T051921Z` / `061948Z` / `073714Z`), all DONE, on a verified-fresh post-repair dump. 🔴 **Its headline is RETRACTED**: "the repair bought back real edge, median +2.14 bps, 3/3 seeds" was read off the eval log's **Horizon 60m** block, not the **240m primary head** every M3 policy uses. On 240m the same cells are **−1.22 / +3.17 / −3.51** — 1 up, 2 down. What survives: the 240m head is net-**positive** at taker on all three seeds (+6.89 / +6.00 / +8.72), and the C4 cut re-derived to **0.6296** against the frozen `0.6318973898887634` | — | See [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §4. When reading `eval_m2.py`, **the 240m block is the one that counts** |
+| ✅ **Phase 2 — read the decay curve** | **DONE 2026-09-04. Verdict `NOT DECIDABLE`** on both policies, both eras, both scopes — w4's clustered CI contains all three other windows' means. Also found: the two eras are **not the same calendar rows** (val start moved +12d, end +16d), so every before/after is clipped to the shared span; the defect did not degrade w4 evenly, it **deleted the last fortnight** (0 bars over the cut in 2026-08-01..17, all three seeds) | — | `./scripts/m3.sh -m m3 decay` reproduces it; `M3_ERA=repaired` switches any m3 command to the repaired dumps. Logs `logs/P2-*.log` |
+| 🔴 **Phase 3 — the paired freshness test** | **BLOCKED — underpowered by construction, not scheduled.** §5.4 prices its gate at a **~111–118 bps/trade** minimum detectable effect against a ~9–17 bps edge. Running it as written returns `NOT DECIDABLE` whatever the truth is | A **redesign that adds day-clusters** — more seeds, the banked 12-pair universe, or walk-forward folds. A shorter holdout makes precision *worse*, not better | Do **not** launch `VAL_FRACTION=0.095`. Revive only when a per-window mean has an interval narrower than the edge |
+| ⚪ **Phase 4 — what gets served, and on what cadence** | Resolves a genuine conflict: a fresh-boundary challenger has a short split and cannot satisfy C1/C2 as written, and §8.5 refuses to lower Tier 1 | Phase 0.2 **only** — the Phase 3 gate is removed, since Phase 3 cannot report | Two coherent resolutions in §7 — (A) certify the recipe / refresh the checkpoint, or (B) walk-forward certification at k× the compute. **(B) is now more attractive**: accumulating folds is one of the few things that buys the missing precision |
+
+### 🔴 What Phase 2 found on the way — these outrank freshness
+
+| # | finding | why it outranks | cost |
+|---|---|---|---|
+| 1 | **The incumbent's worst window is −4.61 bps** on repaired data, against the **+0.25 bps** M3_2_RESULTS §D fixed as M3-3's promotion bar | It is about what is servable **today**, and every other question assumes an answer to it | No GPU — a Tier-1 re-score of an existing checkpoint |
+| 2 | **The regime ladder flattened by half at Q5** (+35.5 → +17.4 bps; per seed `[+34.8,+32.5,+38.7]` → `[+12.3,+8.3,+32.3]`) | The incumbent's `size_by_regime` overlay rests on exactly this ladder | No GPU |
+| 3 | **The served rule (fidelity arm D) scores −0.29 bps** at taker, down from +8.62; the **validated** arm A is at +13.82 | The gap between what was certified and what runs in production is now the entire edge — which is what **0.2, the checkpoint-binding guard**, exists to catch | 0.2 is already sized |
 
 🔴 **Phase 1 buys far more than this plan.** The same three re-scored dumps are what unblock
 the arrival-rate re-answer, the C4 re-derivation of the frozen cut and ladder, and the M3-0b /
-B1 / B2 re-runs — every one of which currently rests on corrupt candles.
+B1 / B2 re-runs — every one of which currently rests on corrupt candles. They are reachable
+from any m3 command as `M3_ERA=repaired`.
 
-🔴 **M3_PROTOCOL §8.6 Q3's recommended retrain trigger is void.** It proposed triggering on
-"the served checkpoint going N days without exceeding its own cut", calling that "exactly the
-condition now in force" — but **that condition was the candle defect**. The trigger would have
-fired in July for the wrong reason. It must be re-specified against a repaired baseline before
-adoption, which is why the interim answer is a fixed **quarterly** cadence instead.
+🔴 **M3_PROTOCOL §8.6 Q3's recommended retrain trigger is void, and Phase 2 confirms it stays
+void.** It proposed triggering on "the served checkpoint going N days without exceeding its own
+cut", calling that "exactly the condition now in force" — but **that condition was the candle
+defect**. A repaired baseline now exists and it **still cannot calibrate a trigger**: this
+population cannot resolve a per-window change of the size a trigger would fire on. The answer
+remains a fixed **quarterly** cadence, chosen to bound staleness rather than to react to a
+signal.
 
-**Three questions this plan deliberately leaves open** (§8), none of which needs answering now:
-Q1 shorten the holdout or accept growing staleness; Q2 which C1/C2 resolution; Q3 cadence or
-trigger. 🟢 **Each defaults to "decide after Phase 2", and Phase 2 is free**, so deferring
-them has no price.
+**The open questions** (§8), re-answered by Phase 2 and no longer deferrable to it:
+**Q0 (new, and it now outranks the rest)** — re-score the incumbent against Tier 1 on the
+repaired dumps, no GPU;
+**Q1** — (a) "shorten for challengers" is **removed** as unscoreable; the live options are (b)
+keep 0.2 and accept growing staleness, or (d) **add precision before touching the split**;
+**Q2** — deferred at no cost until a fresh-boundary challenger exists;
+**Q3** — **(a) quarterly cadence** stands; (b) a trigger is not calibratable here.
 
 ---
 

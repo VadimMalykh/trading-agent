@@ -23,8 +23,8 @@ import os
 import numpy as np
 import pandas as pd
 
-from . import (backtest, bookaudit, bookprep, bookregime, dumps, execcost, features, learn,
-               livemode, metrics, regime, search, sidetable, universe, validate)
+from . import (backtest, bookaudit, bookprep, bookregime, decay, dumps, execcost, features,
+               learn, livemode, metrics, regime, search, sidetable, universe, validate)
 
 
 def cmd_validate(args) -> int:
@@ -438,6 +438,30 @@ def cmd_learn(args) -> int:
 WINNER_SPEC = dict(coverage=0.02, signal_horizon=240, hold_horizon=240,
                    regime_col="btc_absret_1d", regime_quantile=None, regime_min=None,
                    size_by_regime=True, max_concurrent=None, sides="both", side_from="model")
+
+
+# M3-2's PRIMARY-GRID winner, i.e. the same policy with the sizing overlay off. It is here
+# because it, not the SIZED variant, is the config whose w4 is negative
+# (+8.2/+16.8/+6.8/-3.6, M3_2_RESULTS §B) — the row that raised the decay question in the
+# first place. RETRAIN_PLAN §0.4 quotes it as "the winner", which is true under M3_2_RESULTS
+# §B's narrow reading; WINNER_SPEC above is the wide reading. Phase 2 reads both rather than
+# picking one, because the question is about the w4 row and only this one has a negative w4.
+GRID_WINNER_SPEC = dict(coverage=0.02, signal_horizon=240, hold_horizon=240,
+                        regime_col=None, regime_quantile=None, regime_min=None,
+                        size_by_regime=False, max_concurrent=None, sides="both",
+                        side_from="model")
+
+
+def cmd_decay(args) -> int:
+    """RETRAIN_PLAN Phase 2 — read the decay curve off w1..w4, both eras."""
+    specs = {
+        "M3-2 grid winner (cov0.02_hold240_rqnone_mcnone) — the negative-w4 row":
+            backtest.PolicySpec(label="grid winner", **GRID_WINNER_SPEC),
+        "M3-2 winner SIZED (the incumbent m3 fidelity replays)":
+            backtest.PolicySpec(label="SIZED incumbent", **WINNER_SPEC),
+    }
+    decay.report(specs)
+    return 0
 
 
 def _score_universe(label: str, ds: list, spec: backtest.PolicySpec,
@@ -916,6 +940,12 @@ def cmd_execcost(args) -> int:
 
 def cmd_policy(args) -> int:
     ds = dumps.load_baseline(pairs=dumps.BASE8)
+    if args.winner:
+        # Verbatim from WINNER_SPEC rather than retyped as flags. Transcribing the winner
+        # by hand at each call site is how a "re-score of the incumbent" quietly becomes a
+        # score of something else — `--label winner` names a policy, it does not select one.
+        spec = backtest.PolicySpec(label=args.label or "M3-2 winner", **WINNER_SPEC)
+        return _print_policy(ds, spec)
     spec = backtest.PolicySpec(
         coverage=args.coverage,
         signal_horizon=args.signal_horizon,
@@ -928,6 +958,10 @@ def cmd_policy(args) -> int:
         sides=args.sides,
         label=args.label or "policy",
     )
+    return _print_policy(ds, spec)
+
+
+def _print_policy(ds: list, spec: backtest.PolicySpec) -> int:
     regimes = {d.seed: regime.build(d.df) for d in ds} if spec.regime_col else None
     res = backtest.run(ds, spec, regimes)
     t = res.trades
@@ -946,8 +980,19 @@ def cmd_policy(args) -> int:
         print(f"trades={s['trades']:,}  gross={s['gross_bps']:+.2f}bps  net={s['net_bps']:+.2f}bps  "
               f"win={s['win']:.3f}  trades/day={s['trades_per_day']:.2f}  "
               f"maxdd={s['maxdd']:.4f}  sharpe={s['sharpe']:.2f}")
-        w = metrics.by_window(t, cost)
+        w = metrics.by_window(t, cost, n_seeds=len(ds))
         print(w.to_string(index=False, float_format=lambda v: f"{v:+.3f}"))
+        # The per-window means above have no uncertainty attached, and w1..w4 is the axis
+        # RETRAIN_PLAN §5 reads decay off — a window ranking without intervals is not a
+        # reading. Clustered on the exit day, per metrics.clustered_mean_bps.
+        print(f"  {'window':<8}{'n':>7}{'clusters':>10}{'net bps':>10}"
+              f"{'95% CI (day-clustered)':>26}")
+        for name in ("w1", "w2", "w3", "w4"):
+            sub = dumps.add_window(t, ts_col="entry_ts")
+            sub = sub[sub["window"] == name]
+            c = metrics.clustered_mean_bps(sub, cost)
+            ci = f"[{c['lo95_bps']:+.1f}, {c['hi95_bps']:+.1f}]" if c["clusters"] > 1 else "n/a"
+            print(f"  {name:<8}{c['n']:>7,}{c['clusters']:>10,}{c['mean_bps']:>+10.2f}{ci:>26}")
         worst = w.loc[w["net_bps"].idxmin()]
         print(f"WORST WINDOW: {worst['window']}  net={worst['net_bps']:+.2f}bps  "
               f"(n={int(worst['trades'])}) — this is the number M3-1 scores on")
@@ -1433,6 +1478,9 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("validate", help="run the two acceptance tests").set_defaults(fn=cmd_validate)
+    sub.add_parser("decay", help="RETRAIN_PLAN Phase 2: the w1..w4 decay curve, pre-repair "
+                   "vs repaired, restricted to the calendar span both eras cover"
+                   ).set_defaults(fn=cmd_decay)
     sub.add_parser("power", help="pre-registration facts: spans, SE calibration, eligibility"
                    ).set_defaults(fn=cmd_power)
     sub.add_parser("search", help="M3-2: run and score the 40 pre-registered configurations"
@@ -1507,6 +1555,9 @@ def main() -> int:
     p.add_argument("--max-concurrent", type=int, default=None)
     p.add_argument("--sides", default="both", choices=["both", "long", "short"])
     p.add_argument("--label", default="")
+    p.add_argument("--winner", action="store_true",
+                   help="score M3-2's winner verbatim from WINNER_SPEC, ignoring the "
+                        "per-knob flags above")
     p.set_defaults(fn=cmd_policy)
 
     args = ap.parse_args()
