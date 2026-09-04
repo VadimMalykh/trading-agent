@@ -66,7 +66,7 @@ defmodule FluxTrader.Binance.Client do
   #
   # `/futures/data/*` endpoints, NOT `/fapi/v1/*`. The exchange retains these
   # series for only ~30 days, so history beyond that exists only if we stored it
-  # (docs/DATA_COLLECTION_AUDIT.md). Minimum `period` is "5m".
+  # (docs/archive/DATA_COLLECTION_AUDIT.md). Minimum `period` is "5m".
   #
   # All three return a LIST of maps, oldest-first, each with a "timestamp" (ms).
   # `start_time`/`end_time` page the ~30-day window; `limit` maxes out at 500.

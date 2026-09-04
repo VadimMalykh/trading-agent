@@ -5,7 +5,7 @@ defmodule FluxTrader.MarketData.LongShortRatio do
 
   `ts` is the EXCHANGE bucket timestamp, not local collection time. The exchange
   retains these series for only ~30 days, so anything older than that exists only
-  because we stored it — see docs/DATA_COLLECTION_AUDIT.md and
+  because we stored it — see docs/archive/DATA_COLLECTION_AUDIT.md and
   docs/BOOK_ERA_PLAN.md B4.
 
   The three endpoints are polled independently and each upserts only its own

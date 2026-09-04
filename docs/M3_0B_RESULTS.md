@@ -280,3 +280,41 @@ The table exists, so these stop being impossible and become merely un-run:
 * **Slippage realism beyond a per-trade constant**, now that the intra-hold path is available
   next to M3-4's measured ladder.
 * **B1 and B2** (BOOK_ERA_PLAN), which were gated on B0 and are not any more.
+
+---
+
+## §6 — What M3-0b handed over, as it was summarised in the backlog
+
+*Moved here from `BACKLOG.md` on 2026-09-04 (RULES_REVIEW §6.3). The stop/target decision it hands over stays as a row in the backlog's real-money blockers; this is the reasoning behind that row.*
+
+## What M3-0b found, 2026-08-29 — and the one decision it hands over
+
+**[M3_0B_RESULTS.md](./M3_0B_RESULTS.md)** is the record. Three results, in descending order of
+how much they matter:
+
+1. 🔴 **The `auto` path's 2% stop / 4% target costs ~10.5 gross bps per trade** — +33.76 →
+   +23.24, on a policy netting ~20. `RiskManager` attaches it to every `auto` entry
+   (`stop_loss_pct: 0.02`, `take_profit_ratio: 2.0`); the validated policy exits at a fixed
+   four hours. The stop fires three times as often as the target (34.1% vs 11.2%). 🟢 **The
+   running paper test is NOT affected** — `Executor`'s paper arms ignore both barriers and
+   close on the timer, and the `auto` path cannot trade because it is unsigned. Filed with the
+   **real-money blockers**, which is where the executor's own moduledoc said this belonged:
+   the brake "must be priced before real money goes near this", and now it is.
+2. 🟢 **Funding is a rounding error: +0.14 bps/trade**, moving the headline +20.59 → +20.45. It
+   was an unquantified term for the whole project. ⚠️ **HYPEUSDT settles every 4 hours, not 8**
+   — the schedule is now read per pair from the data, never assumed; a hardcoded 8h calendar
+   would have halved it on a pair the policy trades.
+3. 🟢 **C4b is answered.** Every barrier setting tried loses to the fixed 4h hold (best +9.2
+   against +19.8 net bps), improving monotonically as the band widens back toward it. The
+   label/booking mismatch is real and points *away* from barriers, so accepting it costs
+   nothing. ⚠️ This is a slice, not a search — six (stop, target) pairs at one horizon on one
+   entry rule. Trailing stops, vol-scaled bands and regime-conditional barriers stay untested,
+   and stay that way until someone writes a pre-registration.
+
+⚠️ **Two corrections to what the plans asserted**, both caught by the acceptance test rather
+than by review: M3-0b's data was **not** "already on disk" (the M3-4 export is the 23-day book
+era, and 96% of the policy's trades fall outside it — the price path is now its own export over
+2025-11-15..2026-08-30), and funding is **not** "a real term in the P&L, not a rounding error"
+at a 4h hold. Both assertions were reasonable; measuring is what settled them.
+
+---

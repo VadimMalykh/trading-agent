@@ -2,7 +2,7 @@
 #
 # Full data-collection health check for the always-on GCP collector.
 # Post-2026-08-05: also verifies the raw L2 ladder table (orderbook_levels)
-# and its 1:1 join to orderbook_snapshots. See docs/DATA_COLLECTION_AUDIT.md.
+# and its 1:1 join to orderbook_snapshots. See docs/archive/DATA_COLLECTION_AUDIT.md.
 #
 # Every time-series section reports:
 #   rows | first | last | ... | existence | staleness

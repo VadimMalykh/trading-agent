@@ -4,7 +4,7 @@ defmodule FluxTrader.Repo.Migrations.CreateOrderbookLevels do
   @moduledoc """
   Raw L2 order-book ladder, stored losslessly alongside the compressed
   `orderbook_snapshots` scalar features. Motivation: L2 depth has NO historical
-  backfill (see docs/DATA_COLLECTION_AUDIT.md) — the previous collector fetched 20
+  backfill (see docs/archive/DATA_COLLECTION_AUDIT.md) — the previous collector fetched 20
   levels and discarded the raw ladder, keeping only 11 aggregate floats, so that
   detail was unrecoverable. This table preserves the full ladder per snapshot.
 

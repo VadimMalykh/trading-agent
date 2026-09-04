@@ -188,6 +188,34 @@ M3_ERA=walkforward ./scripts/m3.sh -m m3 folds        # §3, all five criteria, 
 
 ## §6 — THE RECORD (filled in as folds complete; nothing above this line changes)
 
+**The harness §2 requires exists and is committed (2026-09-04), before the first fold was
+launched:** `ml/train/m3/walkforward.py` (the five criteria), the `walkforward` era in
+`dumps.py`, `m3 folds` in the CLI, and validate's **TEST 3**. Both entry points run today
+against an empty registry and say so:
+
+```sh
+M3_ERA=walkforward ./scripts/m3.sh -m m3 validate   # C3 — must pass before any fold is read
+M3_ERA=walkforward ./scripts/m3.sh -m m3 folds      # §3; refuses a verdict until all twelve exist
+```
+
+**To record a finished run, three places, from that run's own log — never from §1's estimates:**
+
+1. `dumps.WALKFORWARD_RUNS["F2s1"] = "<run_id>"`, and `dumps.WALKFORWARD_SPLITS["F2"]` from the
+   `Split walkforward_window …` line's `val [c → d]`;
+2. `validate.PUBLISHED_FIXED_COV_WALKFORWARD["F2s1"]` — the **Horizon 240m** `Fixed-coverage P&L`
+   block, as `{0.01: (trades, gross_bps, win), …}`;
+3. the row in the table below.
+
+A run whose split line reads `global_time` did not receive the fold variables and is **void** —
+do not record it. `m3 folds` prints every criterion against a partial registry so the queue can be
+steered, but marks the whole block **PROVISIONAL** and produces no verdict until all twelve exist.
+
+⚠️ **One thing §2 left unspecified and the harness had to choose: the pair universe.** It defaults
+to the served eight (`dumps.BASE8`), the universe the rule was chosen on; `--universe 12` scores
+every pair in each fold's dump, and §1.1's restriction to the pairs present in all four folds is
+reported either way. If the twelve are meant to decide, say so **before the first fold is read**.
+
+
 | fold | seed | run id | split line (train → / val →) | pairs | status |
 |---|---|---|---|---|---|
 | F2 | 1 | | | | ⚪ |

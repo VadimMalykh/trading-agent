@@ -1,7 +1,11 @@
-# M3 dashboard panel — what to build
+# M3 dashboard panel — what to build (archived)
+
+> **ARCHIVED 2026-09-04 — the dashboard panel it specifies was built 2026-08-29 and deployed 2026-08-31**, and its warmup requirements describe a mechanism that no longer exists (the coverage-cut freeze removed the rank window).
+> Its one durable idea, the empty-state doctrine, moved into [M3_5_INTEGRATION.md](../M3_5_INTEGRATION.md) §2 before archiving. Kept as the build record.
+
 
 **Status:** ✅ **BUILT 2026-08-29, deployed 2026-08-31, and REVISED the same day by the
-coverage-cut freeze** ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6).
+coverage-cut freeze** ([M3_FIDELITY_RESULTS.md](../M3_FIDELITY_RESULTS.md) §6).
 
 🔴 **Read §0.1 before using this document as a spec.** Its warmup requirements described a
 mechanism that no longer exists. Everything else in it — the empty-state doctrine, the `nil`
@@ -13,9 +17,9 @@ panel earned its keep.
 file that changed in `lib/`), plus the web app's first tests. Nothing in `apps/fluxtrader/`
 changed, as §5 required: every number the panel shows already existed.
 
-**Related:** [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) (what runs live, and how to read
-`/api/health`) · [BACKLOG.md](./BACKLOG.md) (the index) · [M3_PLAN.md](./M3_PLAN.md) §0.0
-(current status) · [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) (the most recent results)
+**Related:** [M3_5_INTEGRATION.md](../M3_5_INTEGRATION.md) (what runs live, and how to read
+`/api/health`) · [BACKLOG.md](../BACKLOG.md) (the index) · [M3_PLAN.md](../M3_PLAN.md) §0.0
+(current status) · [M3_0B_RESULTS.md](../M3_0B_RESULTS.md) (the most recent results)
 
 ---
 
@@ -44,7 +48,7 @@ the market is calm and a policy silent because it is broken still look identical
 still has to tell them apart. Only the specific emptiness changed.
 
 ⚠️ This panel is also what surfaced the defect it is now revised for: it made the served-vs-
-scored threshold gap visible, which is [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md).
+scored threshold gap visible, which is [M3_FIDELITY_RESULTS.md](../M3_FIDELITY_RESULTS.md).
 
 ---
 
@@ -148,7 +152,7 @@ Two rows, `policy` and `flat_size` (`signal_only` before 2026-08-31), from `Ledg
 * Under the table, one line of provenance:
   `charged M3-4 measured per-pair crossing cost (pooled 9.842 bps) · fee tier UNVERIFIED`.
   Show `fee_tier_verified: false` in amber — it is a real open item
-  ([BACKLOG.md](./BACKLOG.md)), and hiding it in JSON is how it stays open.
+  ([BACKLOG.md](../BACKLOG.md)), and hiding it in JSON is how it stays open.
 
 ### 2.4 Row four: skips and rejections
 
@@ -255,7 +259,7 @@ and they are exactly what a manual click-through on a populated dev box would mi
 Named so the next session does not quietly widen the job:
 
 * ❌ **Any change to trading behaviour, the policy, the rule, or `RiskManager`.** Read-only.
-* ❌ **The `auto` path's stop/target decision.** Measured in [M3_0B_RESULTS.md](./M3_0B_RESULTS.md)
+* ❌ **The `auto` path's stop/target decision.** Measured in [M3_0B_RESULTS.md](../M3_0B_RESULTS.md)
   §4 and filed with the real-money blockers in BACKLOG. Unrelated to this panel.
 * ❌ **Charts or equity curves.** The A/B has zero trades and may have very few for weeks; a
   time-series chart of nothing is worse than a table. Revisit once an arm has ~50 trades.

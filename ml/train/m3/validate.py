@@ -14,6 +14,11 @@ that look fine and are wrong.
   `btc_absret_1d`, which is the finding the whole milestone rests on and whose harness was
   never committed (M3_PLAN §1.4, risk #6).
 
+  TEST 3 — the folds (M3_ERA=walkforward only). Each fold dump reproduces its OWN trainer
+  log's 240m fixed-coverage table. WALKFORWARD_PROTOCOL §2 makes this test control C3: it
+  must pass before any fold number is read. In that era it is the only test that runs —
+  TESTs 1 and 2 reproduce tables published for the incumbent's split, which no fold has.
+
 TIE CELL. Seed 3 at cov05 has two bars tied at the boundary confidence for one slot, so the
 selection there is not uniquely defined by "top 5%". The tie-inclusive rule this harness
 uses (backtest.py) reproduces the logged cell anyway; `reaggregate_preds.py`'s argpartition
@@ -57,6 +62,28 @@ PUBLISHED_FIXED_COV_REPAIRED = {
 PUBLISHED_FIXED_COV_BY_ERA = {
     "prerepair": PUBLISHED_FIXED_COV_PREREPAIR,
     "repaired": PUBLISHED_FIXED_COV_REPAIRED,
+}
+
+# --- TEST 3's references: the fold runs' own logged 240m tables ------------------------
+# WALKFORWARD_PROTOCOL §2 requires a third acceptance test — each fold dump reproduces its
+# OWN trainer log's `Fixed-coverage P&L` 240m table digit-exact — which must pass before any
+# fold number is read (C3).
+#
+# WHY PER RUN AND NOT PER ERA. The other two eras score three checkpoints over one split, so
+# one published table per seed is the whole reference. The folds are twelve checkpoints over
+# four different splits: there is no era-level table to check against, only each run's own.
+# That makes this test weaker in one way — it cannot catch a mis-specified split, since a
+# fold trained on the wrong window still reproduces its own log — and the split line recorded
+# in `dumps.WALKFORWARD_SPLITS` is what catches that instead. It is the same guarantee TEST 1
+# gives: the dump on disk is the model the log describes, and this harness reads it the way
+# the trainer did.
+#
+# HOW TO FILL IT. From each run's log, the **Horizon 240m** `Fixed-coverage P&L` block (the
+# 60m and 1440m blocks are also printed and are NOT what M3 scores):
+#     0.010      470    +1.1188     +23.80  ...  0.606
+# becomes  0.01: (470, +23.80, 0.606).  Transcribe from the log, never from a summary.
+PUBLISHED_FIXED_COV_WALKFORWARD: dict[str, dict[float, tuple[int, float, float]]] = {
+    # "F2s1": {0.01: (...), 0.02: (...), 0.05: (...), 0.10: (...), 0.20: (...)},
 }
 
 # NEXT_TRAINING_PLAN §1.3's pooled table (trade-weighted across the three seeds). Published
@@ -195,7 +222,88 @@ def test_regime_ladder(ds: list[dumps.Dump], regimes: dict) -> bool:
     return ok
 
 
+def test_fold_reproduction() -> bool:
+    """TEST 3 — every recorded fold dump reproduces its own trainer log, digit-exact.
+
+    Structurally the same check TEST 1 makes, with two differences forced by what a fold is:
+    the reference is per RUN rather than per era, and the population is the dump's full pair
+    list rather than `BASE8`, because the trainer's logged table is over everything the run
+    validated on. Scoring the fold on eight pairs and comparing to a twelve-pair log would
+    fail for a reason that is not a defect.
+
+    The test is over the runs that exist. Whether the FAMILY is complete is a separate
+    question, asked by `walkforward.report`, which refuses a verdict while any run is
+    missing — C3 gates reading fold numbers, and there are no numbers to read here.
+    """
+    from . import walkforward
+
+    print("\n" + "=" * 88)
+    print("TEST 3 — each fold dump reproduces its own trainer log's 240m fixed-coverage table")
+    print("=" * 88)
+    print(walkforward.registry_state())
+
+    recorded = dumps.recorded_runs()
+    if not recorded:
+        print("\nno fold runs recorded yet — nothing to reproduce.")
+        print("This is a PASS in the only sense available: the harness exists and is wired,")
+        print("which is what WALKFORWARD_PROTOCOL §2 requires BEFORE the first fold is read.")
+        return True
+
+    ok = True
+    for label, run_id in recorded.items():
+        ref = PUBLISHED_FIXED_COV_WALKFORWARD.get(label)
+        d = dumps.load(run_id, seed=label, pairs=None)
+        h = d.at(240)
+        ts = pd.to_datetime(h["ts"], unit="ns", utc=True)
+        print(f"\n{label}  {run_id}  {len(h):,} bars @240m  {h['pair'].nunique()} pairs  "
+              f"{ts.min():%Y-%m-%d} .. {ts.max():%Y-%m-%d}")
+        if not ref:
+            print("  🔴 NO REFERENCE TABLE — the run is registered but its logged 240m table")
+            print("     was never transcribed into PUBLISHED_FIXED_COV_WALKFORWARD. A dump")
+            print("     with nothing to check against cannot pass an acceptance test.")
+            ok = False
+            continue
+        span = dumps.WALKFORWARD_SPLITS[dumps.fold_of(label)]
+        if not span:
+            print(f"  🔴 NO SPLIT SPAN recorded for {dumps.fold_of(label)} — the `Split` line is")
+            print("     what proves the run received its fold variables; record it first.")
+            ok = False
+        print(f"  {'cov':>6} {'trades':>8} {'logged':>8} {'gross_bps':>10} {'logged':>10} "
+              f"{'win':>6} {'logged':>8}  verdict")
+        for cov in (0.01, 0.02, 0.05, 0.10, 0.20):
+            t = backtest.run([d], backtest.PolicySpec(coverage=cov,
+                                                      label=f"fixedcov{cov}")).trades
+            g = float(t["signed_ret"].mean() * BPS)
+            w = float((t["signed_ret"] > 0).mean())
+            p_tr, p_g, p_w = ref[cov]
+            match = (len(t) == p_tr) and abs(g - p_g) < 0.005 and abs(w - p_w) < 0.0005
+            ok &= match
+            print(f"  {cov:6.2f} {len(t):8,} {p_tr:8,} {g:+10.2f} {p_g:+10.2f} "
+                  f"{w:6.3f} {p_w:8.3f}  {'MATCH' if match else '🔴 MISMATCH'}")
+    return ok
+
+
+def main_walkforward() -> int:
+    """The walkforward era runs TEST 3 and only TEST 3.
+
+    TESTs 1 and 2 are reproductions of tables published for the incumbent's split — three
+    seeds over one window, §1.3 and §1.8. A fold model has no such table and never will, so
+    running them here would compare a fold against numbers that describe a different model
+    on a different window and call the difference a failure.
+    """
+    print(f"era={dumps.ERA}")
+    ok3 = test_fold_reproduction()
+    print("\n" + "=" * 88)
+    print(f"TEST 3 fold reproduction : {'PASS' if ok3 else '🔴 FAIL'}")
+    print("(TESTs 1 and 2 do not apply in this era — they reproduce the incumbent split's")
+    print(" published tables, which no fold model has.)")
+    print("=" * 88)
+    return 0 if ok3 else 1
+
+
 def main(pairs=None) -> int:
+    if dumps.ERA == "walkforward":
+        return main_walkforward()
     ds = dumps.load_baseline(pairs=pairs or dumps.BASE8)
     print(f"era={dumps.ERA}; loaded {len(ds)} dumps: "
           + ", ".join(f"{d.seed}={d.run_id}" for d in ds))

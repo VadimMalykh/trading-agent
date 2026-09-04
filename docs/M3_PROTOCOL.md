@@ -481,3 +481,39 @@ so the ledger is a walk-forward record: the **recipe** is scored pooled across c
 any single checkpoint's rows can be scored alone. The forward evidence therefore accumulates
 under a retrain trigger instead of being reset by it. Rows taken before 2026-09-04 carry no
 checkpoint tag; the table held none at the time.
+
+---
+
+## §10 — The backlog's account of the exploratory lane
+
+*Moved here from `BACKLOG.md` on 2026-09-04 (RULES_REVIEW §6.3). It describes §8.2's lane and the decisions that were pending on it; those decisions were taken in Amendment 2 (§9), and this is the account of what they were for. **§0's no-edit rule governs §1–§8; this section is a record appended after the fact and changes nothing pre-registered.***
+
+## 🔵 New 2026-09-01 — the protocol now has an exploratory lane, pending three decisions
+
+**[M3_PROTOCOL.md](./M3_PROTOCOL.md) §8 (Amendment 1)** adds two things and changes no bar:
+
+* an **exploratory lane** — no pre-registration, look at anything as often as you like, provided
+  the output is labelled `EXPLORATORY` and **never cited in a promotion argument**. To promote on
+  an exploratory result you re-establish it confirmatorily on data the exploration did not touch;
+* a **standing champion–challenger promotion rule** (C1–C5), registered once so that retraining
+  and swapping models needs no fresh pre-registration each time. C4 makes the 2026-08-31 defect a
+  rule: the cut and ladder are **always** re-derived from the challenger's own split.
+
+🔴 **It is NOT in force.** §8.6 holds three open decisions — whether a challenger needs forward
+evidence (recommendation: promote on backtest, *keep* on forward), what margin C2 must clear
+(recommendation: more than the between-seed spread), and whether retraining runs on a cadence or
+on a staleness trigger. 🔴 **Q3's recommendation is void as written** — it proposed a trigger of
+"N days without the checkpoint exceeding its own cut, measurable today and would have fired in
+July", but **that condition was the candle defect**, so it would have fired for the wrong reason.
+Until a repaired baseline exists there is no calibrated trigger; the interim answer is a fixed
+**quarterly** cadence. See [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §7 and §8 Q3.
+
+⚠️ **The amendment discloses that search output was seen when it was written**, and is therefore
+**prospective only**: it alters no completed verdict, and Tier 1 / Tier 2 are unchanged. It also
+does not solve the current problem — see §8.5.
+
+**Blocked on:** the checkpoint-binding guard in the row below. Until a mismatch refuses to serve,
+the promotion rule cannot safely be used. ⚠️ That blocker is scoped: it stops **promotion**, and
+per RETRAIN_PLAN §8 Q4 it does **not** stop the read-only re-baseline in Phases 1–3.
+
+---

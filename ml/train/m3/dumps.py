@@ -56,6 +56,62 @@ RUNS_BY_ERA = {
     },
 }
 
+# --- the third era: the walk-forward folds ---------------------------------------------
+# WALKFORWARD_PROTOCOL.md's twelve runs. Not three seeds over one split but four splits of
+# three seeds each, so the label carries both: "F2s1" is fold F2, seed 1. Everything
+# downstream keys on `seed`, and `fold_of()` recovers the fold from the label, so the pooling
+# machinery (concatenate, carry the key, never merge) is reused unchanged — with one
+# difference that matters: two seeds of the SAME fold see the same market moment and cluster
+# together, while two folds do not overlap in calendar at all.
+#
+# --------------------------------------------------------------------------------------
+# The walk-forward fold registry (WALKFORWARD_PROTOCOL.md §6's record, in code).
+#
+# WHY IT IS A TABLE OF `None`s RATHER THAN AN EMPTY DICT. The protocol pre-registers twelve
+# runs before any of them exists, and "which twelve" is part of the registration. A dict
+# that grows as results arrive cannot be checked against the plan; this one can — a missing
+# fold is a `None` you can see, and `missing_runs()` names it.
+#
+# Fill each entry from its run's own log line
+#
+#   Split walkforward_window | val_frac=0.125 val_offset=<x> train_frac=0.5 | train [a → b] | val [c → d]
+#
+# and record the same line in §6 of the protocol. A run whose split line says `global_time`
+# did not receive the fold variables and is VOID — do not record it here.
+# --------------------------------------------------------------------------------------
+FOLD_OFFSETS = {"F0": 0.000, "F1": 0.125, "F2": 0.250, "F3": 0.375}
+FOLD_VAL_FRACTION = 0.125
+FOLD_TRAIN_FRACTION = 0.5
+
+# Run order is the protocol's: F2 and F3 (the folds §3 decides on) before F1 and F0, so the
+# untouched evidence exists first if the budget is interrupted.
+FOLD_RUN_ORDER = ("F2", "F3", "F1", "F0")
+
+WALKFORWARD_RUNS: dict[str, str | None] = {
+    "F0s1": None, "F0s2": None, "F0s3": None,
+    "F1s1": None, "F1s2": None, "F1s3": None,
+    "F2s1": None, "F2s2": None, "F2s3": None,
+    "F3s1": None, "F3s2": None, "F3s3": None,
+}
+
+# The val span each fold's own `Split` line reports, as (start, end) ISO strings. Recorded
+# once per fold from its first completed seed and then checked against the other two: three
+# seeds of one fold are the same split, so a disagreement is a mis-recorded run, not noise.
+# Used to give the walkforward era its `WINDOWS` — in this era the "window" IS the fold
+# (protocol §2), so `add_window` keeps working and every per-window table becomes a per-fold
+# table with no special case downstream.
+WALKFORWARD_SPLITS: dict[str, tuple[str, str] | None] = {
+    "F0": None, "F1": None, "F2": None, "F3": None,
+}
+
+
+def fold_of(label: str) -> str:
+    """"F2s1" -> "F2". The fold is the identity that matters for clustering and for §3."""
+    return label[:2]
+
+
+RUNS_BY_ERA["walkforward"] = WALKFORWARD_RUNS
+
 # Default is `prerepair` so that every number this package has ever published reproduces
 # with no environment set. Phase 2 of the retrain plan reads `repaired`.
 ERA = os.environ.get("M3_ERA", "prerepair")
@@ -95,6 +151,28 @@ WINDOWS = [
     ("w4", "2026-06-01", "2026-10-01"),
 ]
 
+if ERA == "walkforward":
+    # Protocol §2: in this era the *window* is the fold. The four val spans do not overlap
+    # in calendar (offsets 0.375/0.250/0.125/0.000 of one time-ordered history), so the same
+    # "tag a row by which span its timestamp falls in" machinery labels a row with its fold.
+    #
+    # The spans come from the runs' own `Split` lines, never from the protocol's estimate
+    # table — so until a fold is recorded it has no window and its rows tag as NA, which is
+    # exactly the behaviour a half-filled registry should have. Oldest first, matching the
+    # w1..w4 convention that a window list runs forward in time.
+    WINDOWS = [(f, lo, hi) for f in ("F3", "F2", "F1", "F0")
+               for lo, hi in [WALKFORWARD_SPLITS[f] or (None, None)] if lo]
+
+
+def recorded_runs() -> dict[str, str]:
+    """The era's runs that actually have a run id. Equals BASELINE_RUNS outside walkforward."""
+    return {k: v for k, v in BASELINE_RUNS.items() if v}
+
+
+def missing_runs() -> list[str]:
+    """Registered runs with no run id yet — empty for the two completed eras."""
+    return [k for k, v in BASELINE_RUNS.items() if not v]
+
 
 def dump_path(run_id: str) -> str:
     return os.path.join(DUMP_DIR, f"eval_preds_{run_id}.parquet")
@@ -125,8 +203,15 @@ def load(run_id: str, seed: str | None = None, pairs: list[str] | None = None) -
 
 
 def load_baseline(pairs: list[str] | None = None) -> list[Dump]:
-    """The three banked seeds, in s1/s2/s3 order."""
-    return [load(run_id, seed=seed, pairs=pairs) for seed, run_id in BASELINE_RUNS.items()]
+    """The era's dumps, in registry order (s1/s2/s3, or F0s1..F3s3 under walkforward).
+
+    Only *recorded* runs are loaded. Every era but `walkforward` has all of its runs, so this
+    is the same list it has always returned; under `walkforward` it is however many folds
+    have finished, and the callers that must not read a partial family (validate's TEST 3,
+    the §3 verdict) check `missing_runs()` themselves rather than being handed a short list
+    that looks complete.
+    """
+    return [load(run_id, seed=seed, pairs=pairs) for seed, run_id in recorded_runs().items()]
 
 
 def clip_overlap(df: pd.DataFrame, ts_col: str = "ts") -> pd.DataFrame:
@@ -142,7 +227,8 @@ def clip_overlap(df: pd.DataFrame, ts_col: str = "ts") -> pd.DataFrame:
 
 
 def add_window(df: pd.DataFrame, ts_col: str = "ts") -> pd.DataFrame:
-    """Tag each row with its calendar window label (§1.2's four ~2-month blocks)."""
+    """Tag each row with its window label — §1.2's four ~2-month blocks, or, in the
+    `walkforward` era, the fold whose val span contains it (see WINDOWS above)."""
     t = pd.to_datetime(df[ts_col], unit="ns", utc=True)
     out = df.copy()
     out["window"] = pd.Series(pd.NA, index=df.index, dtype="object")

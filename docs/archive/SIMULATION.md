@@ -1,9 +1,13 @@
-# Signal Simulation Guide (Phase I light)
+# Signal Simulation Guide (Phase I light) (archived)
+
+> **ARCHIVED 2026-09-04 — the "Phase I light" paper-signal runbook.** The thing it describes running has been replaced by the M3 policy engine and its forward paper test, which run continuously rather than being started by hand.
+> Superseded by [M3_5_INTEGRATION.md](../M3_5_INTEGRATION.md) §2 (how to run it and how to read `/api/health`) and [TRAINING.md](../TRAINING.md).
+
 
 How to run **paper signal simulation** with the wired M2 model on **CPU + small data**.  
 No API keys. No real orders.
 
-For **historic backfill, more epochs, overfitting, `eval_m2`**: see **[TRAINING.md](./TRAINING.md)**.
+For **historic backfill, more epochs, overfitting, `eval_m2`**: see **[TRAINING.md](../TRAINING.md)**.
 
 ---
 

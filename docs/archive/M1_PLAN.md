@@ -1,8 +1,12 @@
-# M1 Implementation Plan
+# M1 Implementation Plan (archived)
+
+> **ARCHIVED 2026-09-04 — M1 is complete and its code has been removed** (the 15m baseline was retired in the 2026-09-04 cleanup).
+> Superseded by [TRAINING.md](../TRAINING.md) for the pipeline that replaced it. Kept as the record of what M1 was and why.
+
 
 Session-resilient plan for **Phase M1: Data pipeline + supervised 15m baseline**.
 
-See also: [PLAN.md](./PLAN.md) (full roadmap), `MODEL.md` (architecture), `SPEC.md` (system), `README.md` (status).
+See also: [PLAN.md](../PLAN.md) (full roadmap), `MODEL.md` (architecture), `SPEC.md` (system), `README.md` (status).
 
 **Status:** In progress  
 **Keys required:** No (public Binance Futures REST only)  

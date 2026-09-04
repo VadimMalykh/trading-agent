@@ -12,10 +12,10 @@ Related docs:
 
 | Doc | Role |
 |-----|------|
-| [SIMULATION.md](./SIMULATION.md) | Live paper **signals** (UI / API, no real orders) |
-| [M2_PLAN.md](./M2_PLAN.md) | M2 multi-horizon design |
+| [SIMULATION.md](./archive/SIMULATION.md) | Live paper **signals** (UI / API, no real orders) |
+| [M2_PLAN.md](./archive/M2_PLAN.md) | M2 multi-horizon design |
 | [PLAN.md](./PLAN.md) | Full roadmap |
-| [MODEL.md](../MODEL.md) | ML architecture |
+| [MODEL.md](./archive/MODEL.md) | ML architecture |
 | [README.md](../README.md) | Quick start |
 | [archive/GCP_TRAIN_DESIGN.md](./archive/GCP_TRAIN_DESIGN.md) | *Why* the GCP pipeline is built this way (design notes) |
 
@@ -301,7 +301,7 @@ Checkpoint saves when **primary gated score** improves. Training **early-stops**
 
 ## 6. Live signals (optional, not the main grade)
 
-See [SIMULATION.md](./SIMULATION.md).
+See [SIMULATION.md](./archive/SIMULATION.md).
 
 ```bash
 docker compose up -d postgres ml_inference app
@@ -653,7 +653,7 @@ collecting for book features over time.
 | `scripts/gcp_promote.sh` | **3** — install checkpoint + serve code on always-on |
 | `scripts/gcp_audit.sh` | *(separate flow)* — microstructure signal audit on its own throwaway VM (see [Part 3](#part-3--microstructure-audit-separate-flow)) |
 
-Related: [GCP_MIGRATE.md](./GCP_MIGRATE.md) — first-time Mac → always-on data move.
+Related: [GCP_MIGRATE.md](./archive/GCP_MIGRATE.md) — first-time Mac → always-on data move.
 
 ---
 

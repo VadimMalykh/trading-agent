@@ -29,7 +29,7 @@ throwaway VM (`gcp_gbt.sh`), which is explicitly designed to run concurrently wi
 **Keys required:** No.
 **Related:** [M3_PLAN.md](./M3_PLAN.md) (B0 shares its side-table with M3-0b; B2 consumes its harness) ·
 [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.7 (data status), §5 (the retired ON/OFF design) ·
-[DATA_COLLECTION_AUDIT.md](./DATA_COLLECTION_AUDIT.md) (what the collector keeps and drops)
+[DATA_COLLECTION_AUDIT.md](./archive/DATA_COLLECTION_AUDIT.md) (what the collector keeps and drops)
 
 *Written 2026-08-24. Holds only what is currently true and actionable. When a step's conclusions are
 superseded, move the narrative to `docs/archive/TRAINING_HISTORY.md` and carry the surviving

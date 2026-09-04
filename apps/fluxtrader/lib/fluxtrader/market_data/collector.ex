@@ -48,7 +48,7 @@ defmodule FluxTrader.MarketData.Collector do
   # Depth levels to fetch per book poll. Fetch DEEP for the lossless raw ladder
   # (OrderbookLevel); the compressed scalar features stay pinned to the top 20 in
   # BookFeatures to preserve the served model's semantics. Tunable via config
-  # :fluxtrader, :book_depth_limit. See docs/DATA_COLLECTION_AUDIT.md.
+  # :fluxtrader, :book_depth_limit. See docs/archive/DATA_COLLECTION_AUDIT.md.
   @default_book_depth_limit 100
 
   # aggTrades to fetch per 5s tape poll. Binance returns the *most recent* N, so a limit

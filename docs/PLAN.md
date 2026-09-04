@@ -5,9 +5,9 @@ Master roadmap for the whole project. Details can change via discussion; this is
 | Doc | Role |
 |-----|------|
 | **This file** | End-to-end plan, phases, testing, ops |
-| [SPEC.md](../SPEC.md) | Original system / infra specification |
-| [MODEL.md](../MODEL.md) | ML architecture (signal + policy + risk) |
-| [M1_PLAN.md](./M1_PLAN.md) | M1 implementation checklist (session-resilient) |
+| [SPEC.md](./archive/SPEC.md) | Original system / infra specification |
+| [MODEL.md](./archive/MODEL.md) | ML architecture (signal + policy + risk) |
+| [M1_PLAN.md](./archive/M1_PLAN.md) | M1 implementation checklist (session-resilient) |
 | [M3_PLAN.md](./M3_PLAN.md) | M3 policy milestone — sequence, constraints, exit criteria |
 | [M3_PROTOCOL.md](./M3_PROTOCOL.md) | M3's pre-registered evaluation protocol — frozen; read before any policy search |
 | [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) | M3-3's pre-registration — the leave-one-window-out fold structure and the 14 learned runs |
@@ -55,7 +55,7 @@ Master roadmap for the whole project. Details can change via discussion; this is
 | Retrain | Weekly full signal retrain; policy can adapt faster |
 | Online weight updates | Avoid full continuous NN updates by default |
 
-Full rationale: [MODEL.md](../MODEL.md).
+Full rationale: [MODEL.md](./archive/MODEL.md).
 
 ---
 
@@ -141,7 +141,7 @@ Legacy SPEC “Phase 1–4” maps roughly as:
 | LSTM direction model 15m | Done | Checkpoint `/models/m1_15m.pt` |
 | Accuracy | Baseline only | Improves with more book/trade history + train time |
 
-**Ops:** see [M1_PLAN.md](./M1_PLAN.md).
+**Ops:** see [M1_PLAN.md](./archive/M1_PLAN.md).
 
 **Still useful after M1 (hardening, not blockers):**
 
@@ -168,7 +168,7 @@ Legacy SPEC “Phase 1–4” maps roughly as:
 
 **Exit criteria:** Gated signals produce fewer calls at higher thresholds; per-horizon metrics reported. Still no live trading.
 
-**Commands:** see [M2_PLAN.md](./M2_PLAN.md).
+**Commands:** see [M2_PLAN.md](./archive/M2_PLAN.md).
 
 ---
 
@@ -198,7 +198,7 @@ whether this can trade profitably yet (not certifiably — §0.5.4 says exactly 
 
 **Exit criteria:** Sim shows controlled max DD and non-pathological trade rate; policy never bypasses hard limits. 🟢 **Both are now met** — the drawdown/trade-rate criterion by M3-2's tables, the risk criterion by M3-5, which routes every policy entry through `RiskManager` in every mode and asserts refusal on each hard limit in `risk_manager_test.exs`.
 
-**Status (2026-08-28):** the offline search is finished, execution costs are measured, and **the rule is wired up to paper-trade forward** (built and verified; ⚠️ not yet deployed to the always-on VM, which is the next action). The policy earned **+15.0 bps/trade net of a 14-bps taker round trip** in backtest (≈0.15% per trade, ~2.3 trades/day); M3-4 then measured the real crossing cost at **9.84 bps, not 14**, so the honest figure is nearer +19 — but it is **still not certifiable**, because 253 days holding ~220 independent ones cannot resolve an effect that size and no re-analysis of them ever will. What changed is that the **only** thing that can resolve it is now built and ready to run: `Trading.PolicyEngine` scores every bar, ranks the trailing 14 days, sizes on live BTC-volatility quintiles, holds four hours, and charges the measured per-pair cost, with a signal-only control arm beside it ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)). ⚠️ Expect a quiet start: the rank window needs 2,016 bars before it trades at all (~14 hours at twelve served pairs — a bar count pooled across pairs, not the seven days this line claimed until 2026-08-29), and the served checkpoint has emitted no gated signal since 2026-06-29 because the market has been calm — `GET /api/health` now makes that silence legible as correct. Next: **M3-0b**; and before real money, the two blockers in [BACKLOG.md](./BACKLOG.md) (the fee tier is unverified, the `auto` order path is unsigned).
+**Status (2026-09-04):** the offline search is finished, execution costs are measured, and **the rule is wired up and paper-trading forward on `fluxtrader-1`** (deployed 2026-08-28; the coverage cut and regime ladder were frozen to the served checkpoint's own constants on 2026-08-31 and re-derived on repaired candles on 2026-09-04). The policy earned **+15.0 bps/trade net of a 14-bps taker round trip** in backtest (≈0.15% per trade, ~2.3 trades/day); M3-4 then measured the real crossing cost at **9.84 bps, not 14**, so the honest figure is nearer +19 — but it is **still not certifiable**, because 253 days holding ~220 independent ones cannot resolve an effect that size and no re-analysis of them ever will. What changed is that the **only** thing that can resolve it is now built and ready to run: `Trading.PolicyEngine` scores every bar, ranks the trailing 14 days, sizes on live BTC-volatility quintiles, holds four hours, and charges the measured per-pair cost, with a signal-only control arm beside it ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)). ⚠️ Expect a quiet start: the rank window needs 2,016 bars before it trades at all (~14 hours at twelve served pairs — a bar count pooled across pairs, not the seven days this line claimed until 2026-08-29), and the served checkpoint has emitted no gated signal since 2026-06-29 because the market has been calm — `GET /api/health` now makes that silence legible as correct. Next: **M3-0b**; and before real money, the two blockers in [BACKLOG.md](./BACKLOG.md) (the fee tier is unverified, the `auto` order path is unsigned).
 
 **Full plan:** see [M3_PLAN.md](./M3_PLAN.md) — the sequence (backtester → protocol → rules baseline → learned policy), the constraints M2 hands over, and what to bring back at each step. No GPU is required for any of it.
 
@@ -282,7 +282,7 @@ Features (batched)
 - **Retrain:** weekly signal (default); policy faster  
 - **GPU:** optional cloud when CPU retrain is too slow  
 
-Details: [MODEL.md](../MODEL.md).
+Details: [MODEL.md](./archive/MODEL.md).
 
 ---
 
@@ -331,7 +331,7 @@ Details: [MODEL.md](../MODEL.md).
 
 1. **More data + better M2 train** — [TRAINING.md](./TRAINING.md) (local + [GCP pipeline](./TRAINING.md#part-2--gcp-pipeline-3-steps-self-cleaning))  
 2. **Judge signal quality** — `eval_m2` gate table (before M3)  
-3. **Live paper signals** — [SIMULATION.md](./SIMULATION.md)  
+3. **Live paper signals** — [SIMULATION.md](./archive/SIMULATION.md)  
 4. **M3** — discrete policy + sim A/B  
 5. **S** — full paper P&L / backtest  
 6. **M4 / P** — positional, alts, production
@@ -360,7 +360,7 @@ Details: [MODEL.md](../MODEL.md).
 
 ## 13. Resume after session loss
 
-1. Read **this file** → [MODEL.md](../MODEL.md) → [M1_PLAN.md](./M1_PLAN.md) → [README.md](../README.md)  
+1. Read **this file** → [MODEL.md](./archive/MODEL.md) → [M1_PLAN.md](./archive/M1_PLAN.md) → [README.md](../README.md)  
 2. `docker compose up -d postgres app`  
 3. Check data: SQL counts; train: `ml_trainer` commands in README  
 4. Continue from **§10 Suggested order** at first incomplete phase  

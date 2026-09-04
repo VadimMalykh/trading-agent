@@ -98,6 +98,21 @@ GCP_ALWAYS_ON=fluxtrader-2 GCP_ZONE=europe-west1-b \
   bash -c 'source scripts/gcp_common.sh >/dev/null 2>&1; echo "target=$GCP_ALWAYS_ON zone=$GCP_ZONE"'
 ```
 
+### When a new instance takes over collection
+
+**Installing the guard is part of cutting collection over to a different VM, not a follow-up.**
+Whenever an instance starts collecting candles — a migration, a rebuild, a second box — install
+the timer on it in the same session, before the old instance is stopped:
+
+```sh
+GCP_ALWAYS_ON=<new-instance> GCP_ZONE=<zone> ./scripts/install_candle_guard.sh --run-now
+```
+
+This is the only check in the project that compares stored data against something *outside* the
+system, and its absence is what let the candle-poll defect run undetected for six weeks
+([CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md)). ⚠️ A brand-new instance may legitimately fail
+its first run until its candle history has been backfilled — see §4.
+
 ### Changing the schedule
 
 ```sh

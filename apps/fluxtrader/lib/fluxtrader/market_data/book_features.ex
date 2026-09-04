@@ -6,7 +6,7 @@ defmodule FluxTrader.MarketData.BookFeatures do
   ladder separately (`OrderbookLevel`). To keep the served model's feature
   distribution stable, the 11 scalar features here are computed over only the top
   `@scalar_levels` levels — the same depth the model was trained on — regardless of
-  how many levels were fetched. See docs/DATA_COLLECTION_AUDIT.md.
+  how many levels were fetched. See docs/archive/DATA_COLLECTION_AUDIT.md.
   """
 
   # Number of book levels used to compute the compressed scalar features. Fixed at

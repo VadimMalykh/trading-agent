@@ -4,7 +4,7 @@ defmodule FluxTrader.MarketData.OrderbookLevel do
   the compressed scalar features in `FluxTrader.MarketData.OrderbookSnapshot`.
 
   `bids` / `asks` are arrays of `[price, qty]` pairs (best-first). Joins to
-  `orderbook_snapshots` on `(symbol, ts)`. See docs/DATA_COLLECTION_AUDIT.md for why
+  `orderbook_snapshots` on `(symbol, ts)`. See docs/archive/DATA_COLLECTION_AUDIT.md for why
   the raw ladder is captured (no historical backfill exists for L2 depth).
   """
   use Ecto.Schema

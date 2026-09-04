@@ -1,4 +1,8 @@
-# Data Collection Audit (2026-08-05)
+# Data Collection Audit (2026-08-05) (archived)
+
+> **ARCHIVED 2026-09-04 — the 2026-08-05 audit of what the collector captures and drops.** Everything it recommended acting on has been acted on or is tracked as a row in [BACKLOG.md](../BACKLOG.md), which keeps the pointer for kline taker-buy volume.
+> Kept because its central argument — microstructure data has no backfill, so a day not collected is gone forever — is the reason several collection decisions look the way they do.
+
 
 **Purpose.** Decide what raw market data we should be collecting **now**, given the
 hard constraint: **most microstructure data has no historical backfill** — a day not

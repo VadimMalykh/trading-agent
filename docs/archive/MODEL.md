@@ -1,6 +1,10 @@
-# FluxTrader — Model Architecture
+# FluxTrader — Model Architecture (archived)
 
-Specification for ML signal + policy design. Complements [docs/PLAN.md](./docs/PLAN.md) (roadmap), `SPEC.md` (system), and `README.md` (status).
+> **ARCHIVED 2026-09-04 — the M1–M3 model-architecture design note (frozen 2026-07-18).** The architecture it froze is the one that shipped, but every number and every policy decision in it has been superseded by measurement.
+> Superseded by [NEXT_TRAINING_PLAN.md](../NEXT_TRAINING_PLAN.md) §1 for the model as measured and [M3_PROTOCOL.md](../M3_PROTOCOL.md) for the policy rules. Kept for the design rationale.
+
+
+Specification for ML signal + policy design. Complements [docs/PLAN.md](../PLAN.md) (roadmap), `SPEC.md` (system), and `README.md` (status).
 
 **Status:** Design frozen for M1–M3 (discussion 2026-07-18)  
 **Version:** 0.1

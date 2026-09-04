@@ -4,18 +4,21 @@ Real-time cryptocurrency futures trading agent with ML-driven decision making.
 
 ## Status
 
-**Phase I light — M2 signals wired into the app** (current)
+**M3 — the trading policy is live in paper.** A pre-registered rules policy (top 2% of bars by
+model confidence, held four hours, sized by BTC's daily move) is wired to a crossing executor on
+the always-on VM and paper-trading forward. M2 is frozen as a research object; every M3 build
+item is complete. Nothing trades real money: the `auto` order path is unsigned by design.
 
-See **[docs/SIMULATION.md](./docs/SIMULATION.md)** for how to run paper signal simulation.
+👉 **[docs/BACKLOG.md](./docs/BACKLOG.md) is the entry point** — the single index of every open,
+parked and closed item, with the revival trigger for each. Start there.
 
-What's working:
-- Elixir + Docker (no host installs); public Binance data (no keys)
-- M1/M2 train/eval in `ml_trainer`
-- **`ml_inference`** serves `m2_multi.pt` (`serve.py`)
-- **SignalEngine** polls scores → dashboard + `/api/signals` + `[SIM_SIGNAL]` logs
-- Simulation mode only (no real orders)
-
-Docs: **[TRAINING.md](./docs/TRAINING.md)** (local + [GCP steps](./docs/TRAINING.md#part-2--gcp-pipeline-3-steps-self-cleaning)) · [SIMULATION.md](./docs/SIMULATION.md) · [PLAN.md](./docs/PLAN.md) · [MODEL.md](./MODEL.md) · [SPEC.md](./SPEC.md)
+| for | read |
+|---|---|
+| what runs live, and how to read `/api/health` | [docs/M3_5_INTEGRATION.md](./docs/M3_5_INTEGRATION.md) |
+| the rules that govern a promotion | [docs/M3_PROTOCOL.md](./docs/M3_PROTOCOL.md) |
+| the policy milestone and what each step established | [docs/M3_PLAN.md](./docs/M3_PLAN.md) |
+| training: what M2 measured, and the standing rules | [docs/NEXT_TRAINING_PLAN.md](./docs/NEXT_TRAINING_PLAN.md) |
+| how to train, locally or on GCP | [docs/TRAINING.md](./docs/TRAINING.md) |
 
 ## Quick Start
 
@@ -67,7 +70,7 @@ docker compose down
 ```
 
 - **Train / backfill / eval / overfit:** [docs/TRAINING.md](./docs/TRAINING.md)  
-- **Live paper signals:** [docs/SIMULATION.md](./docs/SIMULATION.md)
+- **What runs live, and how to read it:** [docs/M3_5_INTEGRATION.md](./docs/M3_5_INTEGRATION.md)
 
 ## Project Structure
 
@@ -100,7 +103,7 @@ trading_agent/
 │       ├── Dockerfile.train
 │       ├── requirements.txt
 │       └── train.py
-└── SPEC.md                     # Full technical specification
+└── docs/                       # BACKLOG.md is the entry point
 ```
 
 ## Tech Stack
@@ -131,7 +134,9 @@ Copy `.env.example` to `.env` and configure:
 
 ## Model Design
 
-See **[MODEL.md](./MODEL.md)** for the frozen ML architecture:
+The architecture note is archived at [docs/archive/MODEL.md](./docs/archive/MODEL.md); it is the
+design as frozen in 2026-07, not as measured. For what the model measures, see
+[docs/NEXT_TRAINING_PLAN.md](./docs/NEXT_TRAINING_PLAN.md) §1.
 
 - Supervised signal model (microstructure + OHLCV + funding/OI; no hand TA as core)
 - Discrete policy layer (flat/long/short/hold/exit) — not end-to-end RL
@@ -140,20 +145,7 @@ See **[MODEL.md](./MODEL.md)** for the frozen ML architecture:
 
 ## What's Next
 
-### Done
-
-- [x] M1 data + 15m baseline
-- [x] M2 multi-horizon (1m/15m/1h) + confidence gating
-
-### Next (M3+)
-
-- [ ] Discrete policy (flat/long/short/hold/exit) with DD-aware reward
-- [ ] Simulation A/B: signal-only vs signal+policy
-- [ ] Wire checkpoint into Elixir `ML.Predict` (Phase I light)
-
-### Later
-
-- [ ] Binance WebSocket (upgrade from REST polling)
-- [ ] ML inference serving (ONNX / Nx)
-- [ ] Position persistence, backtesting UI
-- [ ] Multi-day positional head (M4)
+Everything open, parked or closed — with the trigger that would revive each parked item — is in
+**[docs/BACKLOG.md](./docs/BACKLOG.md)**. In short: the walk-forward folds are the next
+investment, the forward paper test needs calendar time rather than work, and real money is
+blocked on an unverified fee tier and an unsigned order path.

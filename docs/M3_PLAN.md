@@ -1,11 +1,12 @@
 # M3 Implementation Plan — the trading policy
 
-**Status:** **Every M3 build item is complete — M3-0a, M3-1, M3-2, M3-3, M3-4, M3-5 and M3-0b** (§0.0). What remains is calendar time on the forward paper test, not work. A rules baseline clears the pre-registered Tier-1 bar, the learned policy did not beat it, so that rule stands as M3's policy — and as of 2026-08-28 **it is wired to the executor, deployed to `fluxtrader-1`, and paper-trading — the forward test started 2026-08-28** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md); deploying it exposed three defects invisible on the local stack, all fixed — see §3.5 and [BACKLOG.md](./BACKLOG.md)). **The traded-universe question is closed** (T6, 2026-08-27): 8-vs-12 is not decidable on this evaluation period — the effect is within a couple of bps of zero in every framing and the data resolves ±37 bps at best. ⚠️ That is a verdict of *undecidable*, **not** a verdict against twelve, and it was being misread as one: **the served universe is 12 as of 2026-08-29**, once M3-4's already-measured per-pair costs for XRP/LINK/AVAX/ADA were promoted so nothing served falls back to a pooled number ([BACKLOG.md](./BACKLOG.md), "The twelve-pair widening"). **T5 is fixed.** **M3-4 measured execution costs** ([M3_4_RESULTS.md](./M3_4_RESULTS.md), 2026-08-28): crossing costs **9.84 bps round trip, not 14** — every published M3 number was too pessimistic — while the maker arm's apparent +3.6 bps saving is a fee-rebate accounting gain that §3's adverse-selection panel contradicts in **16 of 16 cells**, so M3-5 built a crossing executor and no limit-order machinery. **M3-0b is DONE (2026-08-29) and M3 now has NO build items left** ([M3_0B_RESULTS.md](./M3_0B_RESULTS.md)): the price/funding side-table passes its acceptance test on all four dumps and carries BOOK_ERA_PLAN B0 in the same alignment. 🔴 It found that **the live 2%/4% brake costs ~10.5 gross bps/trade, about a third of the edge**; funding is a rounding error (+0.14) and **C4b is answered — barrier exits all lose to the fixed 4h hold**. **The served universe widened to 12 on 2026-08-29**, deliberately in the window before the forward test booked its first trade, because changing the universe changes the coverage rank and therefore the rule. **Two preconditions M3-5 could not close are open and filed:** the Binance fee tier is still unverified against the account, and the `auto` order path is unsigned so nothing beyond paper can trade. Every open and parked item across all wavefronts is indexed in [BACKLOG.md](./BACKLOG.md). Unblocked: R0 promoted 2026-08-26.
+**What this document is.** The plan for the M3 milestone — the trading policy — and the
+record of what each of its steps established. **Every build item is complete.** It is not a
+status page: [BACKLOG.md](./BACKLOG.md) is the entry point for everything open, parked or
+closed, and §0.0 below says which four documents hold the live state.
 
-**New to this document?** **§0.5** explains what we have in plain language — every term defined, the strategy in dollars, and a direct answer to "can it trade profitably yet?" (short version: the edge is real and **slightly better than published now that costs are measured**, but it is still unproven at this size — and as of 2026-08-28 it is **wired up to paper-trade forward** — the only thing that can ever change that — though not yet deployed to the always-on VM).
-**GPU required:** **No — not for any step in this document.** See §0.3.
-**Keys required:** No.
-**Related:** [BACKLOG.md](./BACKLOG.md) (**the index of every open and parked item — start here to see what exists**) · [M3_UI_PLAN.md](./M3_UI_PLAN.md) (**the specified-but-unbuilt M3 dashboard panel — the forward test is currently invisible in the UI**) · [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) (**M3-0b's results — the side-table, the funding term, and the price of the live brake**) · [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) (**what actually runs live, how to read `/api/health`, and every place the live rule differs from the backtested one**) · [M3_PROTOCOL.md](./M3_PROTOCOL.md) (**the pre-registration — read before running any search**) · [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) (**M3-3's own pre-registration — the fold structure and the 14 learned runs**) · [M3_2_RESULTS.md](./M3_2_RESULTS.md) (**M3-2's full generated results — all 40 runs**) · [M3_3_RESULTS.md](./M3_3_RESULTS.md) (**M3-3's full generated results — all 14 runs**) · [PLAN.md](./PLAN.md) Phase M3 · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 (the evidence M3 consumes) · [SIMULATION.md](./SIMULATION.md) (the live paper-sim stack) · [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) (the parallel B-wave — shares M3-0b's side-table, and its B2 may hand M3 a new regime observable)
+**Status in one line:** the rules baseline is M3's policy, it is wired to a crossing executor
+and paper-trading on `fluxtrader-1`, and the next investment is the walk-forward folds.
 
 *Written 2026-08-24, at the moment M2 froze. This document is the plan for the whole
 milestone; it holds only what is currently true and actionable. When a step's conclusions
@@ -14,100 +15,59 @@ surviving conclusion forward — do not append a contradicting section.*
 
 ---
 
-## §0.0 — STATUS: RESUME HERE
+## §0.0 — STATUS: START AT THE BACKLOG
 
-*This block is the session-to-session handoff. It holds only what is true **now**: what is
-done, what the next command is, and what to bring back. When a step closes, its narrative
-moves down into the step's own section or into `docs/archive/TRAINING_HISTORY.md` — it is
-never left here contradicting a later result.*
+**Every M3 build item is done — M3-0a, M3-0b, M3-1, M3-2, M3-3, M3-4, M3-5.** The rules
+baseline `cov0.02_hold240_rqnone_mcnone_SIZED` cleared the pre-registered Tier-1 bar, the
+learned policy did not beat it, so that rule is M3's policy; it is wired to a crossing
+executor and paper-trading on `fluxtrader-1`. What is left is not work in this document.
 
-🔵 **2026-09-04 — the rules review, the repaired-data re-score and Amendment 2: read
-[RULES_REVIEW.md](./RULES_REVIEW.md) and [M3_PROTOCOL.md](./M3_PROTOCOL.md) §9 first.** The incumbent
-still passes Tier 1 on repaired data (worst −4.61, pooled +13.82 net at taker); the served constants
-are re-derived (cut 0.6296) and await deploy with the new checkpoint-binding guard; the next
-investment is the walk-forward folds ([WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md)). The
-"not yet deployed" statements further down this block are stale: M3-5 has been live since 2026-08-28.
+👉 **[BACKLOG.md](./BACKLOG.md) is the entry point** — the single index of every open, parked
+and closed item across every wavefront, with the revival trigger for each. This file no longer
+carries a running status; it carries what M3 *is*, what each step established, and the
+decisions behind the design.
 
-🔴 **2026-09-03 — read [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md) before anything below.**
-Every stored candle since 2026-07-18 is a partial bar; the forward test has measured nothing, the
-frozen constants were derived on a split with a corrupt tail, and "the market has been quiet"
-(§0.8) is the model reading ~10% of true volume. The fix and repair are that document's §4–§6.
+**The four documents that hold the live state:**
 
-**Last updated: 2026-08-29 — M3-0b is DONE, and with it M3 HAS NO BUILD ITEMS LEFT.**
-[M3_0B_RESULTS.md](./M3_0B_RESULTS.md) is the record. The price/funding side-table exists
-(`ml/train/m3/sidetable.py`), its acceptance test passes on all four eval dumps — 2,655,988
-bar-comparisons, every one exact after a float32 round-trip — and it carries
-[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md)'s **B0** in the same alignment, which closes B0 and
-unblocks B1. Everything M3 planned to build is built. **From here the milestone advances on
-calendar time, not on work**, because the binding constraint is independent trading days.
-
-🔴 **M3-0b's headline is a live setting, not a measurement: the deployed 2% stop / 4% target
-costs ~10.5 gross bps per trade — about a third of the edge.** `RiskManager` attaches that
-brake to every `auto` entry, the validated policy exits at a fixed four hours, and until now
-nothing could price the difference because pricing it needs the intra-hold price path. It is
-**not** a licence to switch the brake off: it is catastrophe insurance whose premium is now
-known, and it is a live-trading decision filed in [BACKLOG.md](./BACKLOG.md). ⚠️ Changing it
-also changes the served rule, and the standing rule is not to do that while the forward test
-accumulates trades — the test has not yet booked one, so a window exists, but it closes.
-
-🟢 **Two open terms closed, both as "small", which is the useful kind of negative result.**
-Funding costs **+0.14 bps/trade** on the policy's own 1,773 trades and moves the headline
-+20.59 → +20.45 — an unquantified term for the whole project, now quantified. And **C4b is
-answered**: every barrier setting tried loses to the fixed 4h hold (best +9.2 against +19.8
-net bps), monotonically improving as the band widens back toward it. The label/booking
-mismatch C4b filed is real and points *away* from barriers, so accepting it costs nothing.
-
-🔴 **The forward paper test's first twelve trades were not the scored rule, and the clock
-restarts.** The served code re-derived the coverage cut from a trailing 14-day rank and the
-sizing ladder from a trailing 30-day quintile; both were measured on 2026-08-31 and the cut
-alone turns **+21.44 into −18.43** net taker bps on the served universe. Both are now frozen to
-the constants `backtest.py` derives over **the served checkpoint's own split** — cut
-**0.6319**, ladder p80 **0.0252** — and the twelve trades are discarded. ⚠️ A first attempt
-took the cut from O8 instead, because O8 is the only run evaluated on all twelve served pairs;
-O8 is a **different model**, and its cut realizes 4.01% coverage on the served checkpoint
-rather than 2% — §1.5's closed defect, one level down. Full account and the manual restart
-procedure: [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6.
-
-**The test itself** ([M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)) still needs no work, only
-calendar time. Check it with `curl localhost:4000/api/health` **on the VM**. ⚠️ `warm` is now
-`true` immediately — the 2,016-bar rank window no longer gates anything — and the first line to
-read is `confidence_threshold` against `frozen_threshold`: they must be equal.
-
-🔴 **Two preconditions M3-5 could not close, both filed in [BACKLOG.md](./BACKLOG.md):** the
-Binance fee tier is **still unverified** (`mix flux.fee_tier` performs the check and needs
-account keys the container does not have), and the `auto` order path is **unsigned** —
-`Binance.Client.post/2` sends no API key header and no HMAC signature, so nothing beyond paper
-can trade until request signing exists.
-
-*Earlier: M3-5 built, deployed 2026-08-28 and paper-trading; the served universe widened to 12
-on 2026-08-29 (see [BACKLOG.md](./BACKLOG.md), "The twelve-pair widening").*
-
-*Earlier: M3-4 run — both execution assumptions were wrong in opposite directions: crossing
-costs 9.84 bps round trip, not 14, and the maker arm is not worth building (§0.8).*
-
-*Earlier: M3-3 complete — the learned policy did not beat the rules baseline; the traded
-universe question was closed as unresolvable on this evaluation period (§0.6).*
-
-👉 **New here, or want this without the jargon?** Read **§0.5** — it defines every term
-(what a "basis point" is, what "14 bps" means, maker vs taker), says what the strategy is
-worth in dollars, and answers "can it trade profitably yet?" directly. The rest of this
-block assumes you have.
-
-### Where the work stands
-
-| step | state |
+| for | read |
 |---|---|
-| **R0** (the blocker) | ✅ promoted 2026-08-26 — seed 2 served at gate 0.6311 |
-| **M3-0a** — regime harness + policy backtester | ✅ **built, and both acceptance tests pass** |
-| **M3-1** — pre-registered protocol | ✅ **committed 2026-08-27 as [M3_PROTOCOL.md](./M3_PROTOCOL.md)**, before any search ran |
-| **M3-2** — rules baseline | ✅ **run 2026-08-27, all 40 configurations** — [M3_2_RESULTS.md](./M3_2_RESULTS.md). A baseline passes Tier 1 |
-| **M3-3** — learned policy | ✅ **run 2026-08-27, all 14 configurations** — [M3_3_RESULTS.md](./M3_3_RESULTS.md). **None beat the baseline; M3-2's rule stands as M3's policy** |
-| **T-wave + T6** — the 12-pair universe | 🟢 **Closed 2026-08-27, as unresolvable on this data.** The +7.5 did not replicate; T6's fair tests (trade-count-matched, cut-matched, cap-re-tuned) put the effect within a couple of bps of zero in every framing against a ±37 bps resolution limit, and what a count-matched test made look like a pair gain is the *confidence cut*. ⚠️ **"Unresolvable" is not "12 is worse", and this row said "served universe stays 8" until 2026-08-29, when the served universe became 12** — the eight were a default held only while the four extras lacked a measured crossing cost. The closed question is whether this *data* can rank the universes; it cannot, and that is not a reason to trade eight. [T6_RESULTS.md](./T6_RESULTS.md), [BACKLOG.md](./BACKLOG.md) |
-| **T5** — `/predict_all` served untrained pairs | 🟢 **fixed 2026-08-27** — `serve.py` now intersects the DB whitelist with the checkpoint's own pair list and reports both on `/health` |
-| **M3-4a** — the maker study's pre-registration | ✅ **committed 2026-08-28 as [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md)**, before any fill number. It closes M3-4a's open cadence question and turns up **two data defects and one structural fact** that M3_PLAN had wrong — see §0.7 |
-| **M3-4** — the execution-cost study (§3.3) | ✅ **run 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), implemented as `ml/train/m3/execcost.py`, all nine §6 items published. **Q1: the 14 bps taker assumption is MIS-STATED — the real cost is 9.84.** **Q2: the maker arm is not worth building** (§0.8) |
-| **M3-0b** — price/funding side-table | ✅ **DONE 2026-08-29** — [M3_0B_RESULTS.md](./M3_0B_RESULTS.md), implemented as `ml/train/m3/sidetable.py`. Acceptance passes on all four dumps (2,655,988 bar-comparisons, every one exact). **It carries BOOK_ERA_PLAN B0 in the same alignment**, which closes B0 and unblocks B1. 🔴 **Headline: the live executor's 2%/4% brake costs 10.5 gross bps/trade — about a third of the edge** (§4 of the results). Funding is a rounding error (+0.14 bps/trade). **C4b is answered: barrier exits all lose to the fixed 4h hold.** ⚠️ "Its data is already on disk" was wrong — the M3-4 export is the 23-day book era, and 96% of the policy's trades fall outside it |
-| **M3-5** — wire the rule to the executor | ✅ **built and verified 2026-08-28, ⚠️ not deployed to `fluxtrader-1`** — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md). Crossing executor, 4h hold, regime sizing, measured per-pair cost, hard `RiskManager` path, A/B control arm, `/api/health` liveness. No limit orders, as M3-4 decided. Open: the fee tier is unverified and the `auto` path is unsigned (both in [BACKLOG.md](./BACKLOG.md)) |
+| everything open, parked or closed, with triggers | [BACKLOG.md](./BACKLOG.md) |
+| the rules that govern a promotion, and Amendment 2 | [M3_PROTOCOL.md](./M3_PROTOCOL.md) §9 |
+| what actually runs live, and how to read `/api/health` | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) |
+| the next investment — walk-forward folds, pre-registered | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) |
+
+**Two things a reader of this file needs to know before quoting any number in it:**
+
+🔴 **The candle-poll defect.** Every stored candle between 2026-07-18 and 2026-09-03 was a
+partial bar ([CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md)). The data is repaired and the
+three checkpoints were re-scored on it: the incumbent still passes Tier 1 (worst window
+−4.61 bps, pooled +13.82 net at taker), and 0 of 8 learned runs pass
+([M3_2_RESULTS_REPAIRED.md](./M3_2_RESULTS_REPAIRED.md),
+[M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md)). **Numbers below this line that were
+measured before 2026-09-04 are pre-repair** — they are kept because they are what the
+decisions were taken on, and the repaired re-score moved them by about a bar's width, not by
+a conclusion.
+
+🔴 **The served constants belong to a checkpoint, not to this document.** Cut
+`0.6296127438545227`, ladder p80 `0.025596268475055695`, checkpoint
+`m2_multi_20260819T142759Z_a186182b.pt`. The policy refuses to trade unless `ml_inference`
+reports that checkpoint's sha256 (M3_PROTOCOL §9.5). Do not copy a constant out of a results
+file into a config.
+
+**New to this document?** **§0.5** explains what M3 is in plain language — every term defined,
+the strategy in dollars, and a direct answer to "can it trade profitably yet?".
+**GPU required:** no, for any step in this document (§0.3). **Keys required:** no.
+
+**Where the per-step record lives:** each step's own entry in **§2**, and the three sections
+other documents cite as **§0.6** (the traded universe), **§0.7** (the M3-4a audit) and
+**§0.8** (the execution-cost result) are now at the end of §2, with those headings unchanged.
+
+**Related:** [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) · [M3_PROTOCOL.md](./M3_PROTOCOL.md) ·
+[M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md) · [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) ·
+[M3_2_RESULTS.md](./M3_2_RESULTS.md) · [M3_3_RESULTS.md](./M3_3_RESULTS.md) ·
+[M3_4_RESULTS.md](./M3_4_RESULTS.md) · [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) ·
+[T6_RESULTS.md](./T6_RESULTS.md) · [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §1.3/§1.5/§1.8 ·
+[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) · [PLAN.md](./PLAN.md) Phase M3
 
 ### How to run anything in M3
 
@@ -152,598 +112,6 @@ for RUN in 20260818T185438Z 20260819T142759Z 20260820T025723Z 20260822T012619Z; 
 done
 ```
 
-### What M3-0a established (2026-08-26)
-
-**Both acceptance tests pass, so the harness is trustworthy and §1.4's risk #6 is closed.**
-
-1. **Fixed-coverage reproduction: 15 of 15 cells match to the digit.** Every seed at every
-   coverage reproduces the trainer's own logged `trades / gross_bps / win` — and the pooled
-   trade-weighted table reproduces §1.3 exactly (1,081 / 1,783 / 3,718 / 7,104 / 13,462
-   trades at +19.38 / +22.03 / +8.91 / +1.89 / −0.00 bps).
-2. **The regime ladder is rebuilt and reproduces §1.8.** Quintiles of `btc_absret_1d` over
-   the pooled cov05 trades: **−1.9 / −13.9 / +10.2 / +18.0 / +34.2** bps against the
-   published −3.4 / −15.3 / +10.1 / +17.4 / +35.5, with `dir_acc`
-   0.521 / 0.499 / 0.547 / 0.580 / 0.616 against 0.517 / 0.494 / 0.545 / 0.579 / 0.618.
-   The rebuild derives the Q5 boundary at **0.0432** (published 0.0431), selecting **5.218%**
-   of bars (published 5.2%). Per-seed Q5: +32.6 / +30.8 / +38.7 against +34.8 / +32.5 / +38.7.
-   The residual ≈1bps gap is 24 pooled trades whose 24h lookback is incomplete at the start
-   of the validation window; they are dropped rather than zero-filled.
-3. **`fwd_ret` compounding re-verified** at 6.34e-09 max abs difference (§1.8 reported 3.2e-7),
-   which is what licenses building every trailing observable from the dump instead of the DB.
-4. **A tie-handling decision, made explicitly.** `torch.topk` breaks confidence ties at the
-   coverage boundary in an order that is a kernel artifact and is not reproducible from
-   numpy — it is why `reaggregate_preds.py` books 1,222 trades / +9.43 where seed 3's log
-   says 1,223 / +9.60. The new harness selects **every bar at or above the k-th largest
-   confidence** (tie-inclusive, deterministic) and reproduces that cell too. Exactly one
-   boundary in 15 is contended, so this is a 1-trade-in-1,223 question — but it is now a
-   documented definition rather than an accident of which library ran.
-
-### What M3-1 established (2026-08-27)
-
-**The protocol is committed as [M3_PROTOCOL.md](./M3_PROTOCOL.md), before any search ran.**
-It fixes the split, the metric, the decision rule and the exact 40 configurations. Three
-things came out of writing it that change how every later number must be read:
-
-1. 🔴 **The pooled trade count is not the sample size.** Clustering on the exit calendar day,
-   §1.3's cov05 slice has **220 clusters behind 3,718 trades** and a standard error **2.35×**
-   the iid one: +8.91 gross carries a 95% CI of **[−10.63, +28.45]**. The "≈9.5bps SEM" this
-   plan quoted was an iid figure and was optimistic by that factor. The consequence is
-   pre-registered in §2 of the protocol: **this dataset cannot certify a policy at taker
-   fees**, so the decision rule is built around robustness, not significance.
-2. **A trade-count floor prunes the grid before any P&L was seen.** Requiring ≥100 pooled
-   trades in *every* window leaves **16 of 36** configurations eligible. All in-regime configs
-   below cov0.05 fail it, because w3 starves — the top-quintile filter leaves only 23–87
-   trades there. The regime fires very unevenly across time, and the floor catches it.
-3. **Two definitional defects in the M3-0a harness were fixed** before they could be baked
-   into a search (both re-validated, TEST 1 and TEST 2 still pass):
-   - `size_by_regime` bucketed by a quantile of *selected trades*, contradicting the
-     "quantile of BARS" rule the hard threshold obeys. It now uses bar-level quintile edges.
-   - `regime_col` with no threshold used to be an error; it now means "condition without
-     filtering", which is what makes a sizing-only policy expressible at all.
-
-### What M3-2 established (2026-08-27) — the headline, in plain language
-
-**Full results: [M3_2_RESULTS.md](./M3_2_RESULTS.md) — all 40 pre-registered runs, both fee
-assumptions, per window, per seed, per side.** The short version, no statistics required:
-
-1. **There is a tradeable rule, and it is worth about +15 bps a trade after taker fees.**
-   Enter on the top **2%** of bars by model confidence, hold **4 hours**, size the position
-   by how much BTC has moved in the last 24h (a third of normal size in the calmest fifth of
-   the market, up to five thirds in the wildest), no concurrency cap. Over 253 days and three
-   seeds that is 1,773 trades, +33.8 bps gross, **+15.0 net at a 14-bps taker round trip**,
-   Sharpe 0.93, ~2.3 trades a day per seed. It is positive in all four calendar windows.
-2. 🔴 **The finding the whole milestone was built on did not survive in the form we expected.**
-   "Only trade when BTC has moved >4.3% in a day" — §1.8's 4× effect, used as a hard on/off
-   filter — **fails the bar in every one of its twelve configurations.** Not because it loses
-   money: the two best versions are +18.3 and +9.4 bps net pooled. One fails because the
-   filter leaves only 45 trades in an entire two-month window, the other because it is
-   negative on one of the three seeds. Those two floors were fixed in advance, in M3-1, from
-   trade counts alone.
-3. **The soft version is what works.** Using the same market-move observable to *size* the
-   trade, while still trading out of regime, passes everything the hard filter failed. This
-   is the concrete, actionable result of M3-2: **the regime signal is a dial, not a switch.**
-4. **The model's direction call is doing the work.** The same entries with the side taken
-   from trailing momentum instead of from the model earn **−21.8 bps** instead of +15.0 — a
-   **+36.9 bps** gap. Buy-and-hold on the same universe lost 13% over the period. The policy
-   is not a repackaged beta bet.
-5. **It still cannot be certified, exactly as pre-registered.** The clustered 95% interval on
-   the winner is [−33.0, +63.1]. M3_PROTOCOL §2 said in advance that 253 days holding ~162
-   independent trading days cannot prove a 15-bps edge net of a 14-bps round trip, and §4.3
-   pre-registered that Tier 2 would fail. It did. **This is enough to be M3-3's benchmark and
-   to justify paper trading; it is not enough to justify size.**
-
-Two caveats that belong next to the headline: the sizing variant's mean size is 1.34, so per
-unit of *notional deployed* it earns +11.2 rather than +15.0 bps; and its worst window (w3,
-192 trades) is **+0.25 bps** — an absence of a loss, not a profit. Its max drawdown is also
-larger than the flat-size version's (−4.59 against −2.76).
-
-Three structural facts hold across the whole grid and should shape M3-3: **24-hour holds are
-untradeable** (every one loses 61–198 bps in w4), **1-hour holds never cover fees**, and
-**capping at 3 concurrent positions costs money in every single pairing** — on eight pairs
-held serially the uncapped policy is already a real 8-slot portfolio, not leverage.
-
-### What M3-3 established (2026-08-27) — the learned policy lost, and usefully
-
-**Full results: [M3_3_RESULTS.md](./M3_3_RESULTS.md) — all 14 runs, both fee assumptions,
-per window, per seed, per side. Protocol: [M3_3_PROTOCOL.md](./M3_3_PROTOCOL.md), committed
-before the first fit ran.** The short version, no statistics required:
-
-1. **Nothing learned beat the hand-written rule. Nothing learned even passed Tier 1.** The
-   best of the eight fitted configurations reaches **−7.18 bps** on its worst window against
-   the baseline's **+0.25**. M3_3_PROTOCOL §7 pre-registered this outcome and what follows
-   from it: **M3-2's rule is M3's policy**, the grid is not widened, and a bigger model is
-   not the remedy.
-2. 🔴 **The extra observations did not just fail to help — they cost money.** The
-   confidence-only ablation, fitted by the identical machinery on the one observation M3-2
-   already used, **beats both fitted models in three of the four rule pairings.** Nine
-   observations on ~188 independent trading days is over-specification, and running the
-   ablation is what makes that visible rather than arguable.
-3. 🔴 **The size of the edge does not hold still.** The mean gross edge available in the top
-   decile of bars is **+7.6 / +18.4 / +3.7 / −7.5 bps** across the four windows — a **25.9
-   bps swing, larger than the entire edge any policy here is chasing.** This is a fact about
-   the evidence, not about a model. It is why the entry rule that thresholds an *absolute*
-   predicted edge collapses (it simply stops firing in the low windows), and it is the
-   strongest argument yet for keeping every condition **rank-based** (§1.3.3): an ordering
-   survives what a level does not.
-4. **M3-2's central finding replicated, in a stronger form.** Holding the entry set constant
-   **bar for bar** — the ablation and the re-scored baseline enter the identical 1,796 trades
-   — sizing by the regime observable is worth **+8.6 bps on the worst window** and **+8.5
-   pooled**, and is the whole difference between failing Tier 1 and passing it. M3-2 reached
-   that conclusion by comparing two grid rows; this holds everything else fixed.
-5. **A harness check passed that was written to be able to fail.** §6 of the protocol
-   predicted, before the run, that a one-feature fit with a positive coefficient must select
-   exactly the bars the baseline selects. It did: 34,772 entry bars, identical. Had it not,
-   the run would have been void rather than interesting.
-
-The honest reading of why: the learned policy was given four genuinely new observations (the
-60m and 1440m heads and whether they agree with the 240m side) and could not turn them into
-anything. That is a real answer to a real question, and it cost one afternoon of laptop time
-rather than a wave of GPU runs.
-
-### What was measured on 2026-08-27, after M3-3 closed — the universe is NOT a policy lever
-
-🔴 **Read the amendment at the end of this section before quoting any number in it.** The
-+7.5 bps below is a single seed and **it did not replicate**. But the follow-up did **not**
-show 12 pairs is worse either — that question is open. The section is kept in full because how
-a clean-looking measurement turned out to be noise is the most useful thing in it.
-
-**M3-2 and M3-3 both ran on the 8 pairs every published M2 number is measured on. That was
-never a decision; it is the experimental control the E-wave froze in place** (NEXT_TRAINING_PLAN
-§1.9). The collector and the app whitelist have carried **12** pairs for some time. Nobody had
-asked what the extra four are worth *to the policy*, because §1.9 had answered the adjacent
-question — are they worth anything to the *model* — and the answer there was no.
-
-They are worth a lot. M3-2's winner, scored twice on the same O8 dump, changing nothing but
-the traded universe (`./scripts/m3.sh -m m3 universe`):
-
-| universe | trades | tr/day | gross | **net @14 taker** | net @5 maker | Sharpe | maxdd |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| the 8 baseline pairs | 606 | 2.28 | +33.31 | **+13.93** | +26.71 | 0.96 | −1.13 |
-| **all 12 pairs** | 869 | 3.27 | +40.89 | **+21.44** | +33.94 | 1.23 | −1.67 |
-
-**Why this is not the same claim §1.9 refuted.** §1.9 asked whether 58% more training *rows*
-make a better model, and measured no. This asks whether more *instruments* make a better
-policy. The model is byte-identical in both rows above — the only difference is how many
-things the top-2% selection gets to choose between. Rows and instruments are not the same
-quantity, and only one of them was ever tested.
-
-**The validity check.** The 8-pair restriction of O8 reproduces the published 3-seed result
-(+13.93 against +15.0, at 2.28 trades/day against 2.3), so O8's single seed behaves like the
-family on the 8 pairs and the 12-pair row is the four extra instruments talking, not the seed.
-The confidence threshold barely moves (0.5996 → 0.5992), so the wide run is the narrow run's
-trades plus 260 new ones, and those 260 earn **+43.07 net against the base-8 trades' +12.21**
-inside the same run.
-
-🔴 **Three things this does NOT do, and the third is the one that matters most here.**
-
-1. **It does not fix window 3.** Trade count there goes 30 → 32 and net stays near −52; **P4
-   still fails**. The w3 hole is a shortage of confident *bars*, not of instruments.
-2. **It does not buy independent days.** Clustering is on the exit calendar day, so extra
-   pairs add trades inside existing clusters. The clustered interval *widens* (se 25.7 → 30.2)
-   and max drawdown grows. **The certification problem of §0.5.4 item 1 is untouched** — only
-   forward time fixes that.
-3. **It is one seed, and per-pair numbers do not replicate** (NEXT_TRAINING_PLAN §1.3). The
-   per-pair table `m3 universe` prints is texture, never a reason to keep or drop an
-   instrument. Two more seeds is exactly what the T-wave buys.
-
-🔴 **AMENDMENT, the same evening — caveat 3 was the fatal one, and the T-wave collected on
-it.** T1 (`20260827T050701Z`) and T2 (`20260827T114122Z`) ran O8's recipe at two more seeds
-and the winner was re-scored on all three:
-
-| seed | base-8 net@14 | 12-pair net@14 | universe effect |
-|---|---:|---:|---:|
-| O8 (the table above) | +13.93 | +21.44 | **+7.5** |
-| T1 | +7.81 | +5.94 | −1.9 |
-| T2 | +4.91 | **−2.70** | −7.6 |
-| **pooled** | **+9.29** | **+9.00** | **−0.3** |
-
-O8 reproduces exactly, so nothing above is a bug — it is one draw from a distribution wider
-than the effect. **The +7.5 claim is dead:** paired on the exit-day cluster the difference is
-−0.85 bps, 95% CI [−6.8, +5.1], which excludes it. Reproduce with
-`./scripts/m3.sh -m m3 universe --runs 20260827T050701Z,20260827T114122Z,20260822T012619Z`.
-
-🔴 **SECOND AMENDMENT, and it retracts a rejection.** For a few hours this section and
-NEXT_TRAINING_PLAN §2 recorded 12 pairs as *rejected*, on the grounds that the wide pool fails
-Tier-1 **P5** (all three seeds individually pooled-positive) where the narrow pool passes.
-**That was wrong on two counts, and both are checkable:**
-
-- **P5 has no power here.** Day-bootstrapped 2,000 times, the **8-pair** universe — the one
-  that "passed" — fails P5 in **53.8%** of resamples, against the 12-pair universe's **58.6%**.
-  A criterion the incumbent fails more often than not cannot separate two options. Per-seed
-  cluster-robust SEs are 17.6–30.2 bps on 102–161 clusters, so a per-seed *sign* test is
-  nearly uninformative. P5 is a sound screen against configurations that only work on one seed
-  during a 40-config **search**; it is not an instrument for arbitrating a deployment choice.
-- **The test was tilted toward the incumbent.** M3-2's winning spec — including
-  `max_concurrent=None` — was searched on `dumps.BASE8` (`cli.py`'s `cmd_search`) and applied
-  verbatim to 12 pairs. Part of what was measured is "does an 8-pair-tuned policy transfer",
-  not "is a wider universe better".
-
-🟢 **SECOND AMENDMENT, 2026-08-27 — T6 ran those tests and the question is now CLOSED.**
-Full report: **[T6_RESULTS.md](./T6_RESULTS.md)**; the reading is in
-[NEXT_TRAINING_PLAN §1.10](./NEXT_TRAINING_PLAN.md). Three things changed:
-
-- **The trade-count-matched test looked like a big 12-pair win (+10.2 bps) and is not one.**
-  Matching the trade count also makes the wide arm 1.55x more *selective*. Scoring the 8-pair
-  universe at that same cut separates the levers: **+12.7 bps comes from tightening the cut**,
-  and the pairs are worth **−2.5** at a matched cut. It was the coverage, not the universe.
-- **The cap re-tune bought nothing.** Over the pre-registered cap set `max_concurrent=None`
-  wins on **both** universes; every cap in the wider ladder costs net bps. The drawdown
-  argument below stands as a description and not as a fix.
-- **The comparison is under-powered by a wide margin, and that is what closes it.** The
-  cluster-robust SE on the fair difference is 13.2 bps over ~180 exit days: at 80% power this
-  data resolves **±37 bps**. The +7.5 was always about a third of what could be seen. More
-  seeds cannot help — extra seeds and extra pairs both add correlated trades inside days
-  already counted. **Only a longer evaluation period can, and that is calendar, not compute.**
-
-⚠️ **And the first amendment's own interval was the wrong estimand.** "−0.85 bps, CI
-[−6.8, +5.1]" is day-weighted and shared-days-only, reported next to trade-weighted means; the
-matching trade-weighted interval is **[−12.0, +11.5]**, which *contains* +7.5. **The T-wave
-failed to replicate the +7.5; it did not refute it.** Both estimators are now committed in
-`ml/train/m3/universe.py` and every interval is cross-checked against a day-bootstrap SE.
-
-🟡 **The one structural finding, and it is a risk result rather than a verdict.** Widening
-8 → 12 raised the trade count 50% (1,645 → 2,475) but independent exit days only 11%
-(169 → 187), while max drawdown grew −2.83 → −4.53 and the clustered SE widened 20.5 → 23.2.
-Correlated instruments gated on a BTC-derived regime column fire together, and the winner spec
-has no concurrency cap. **That argues for re-tuning sizing on a wider universe, not for
-dropping the instruments** — and inside the wide run the four new pairs are the profitable
-half (+15.99 net on 841 trades against the base-8's +5.41 on 1,634), with §1.3's
-no-cherry-picking rule still in force.
-
-🟢 **Two transferable lessons, and they point in opposite directions — keep both.** The
-comparison in the table above was methodologically clean — same checkpoint, same seed, same
-calendar, only the universe varying — and still wrong, because M3's per-trade sd is 259 bps
-and a one-seed difference of 7 bps is inside the noise: **a within-run comparison on one seed
-is a hypothesis, not a result.** And then the correction over-reached: **a negative result
-needs the same scrutiny as a positive one.** Report the CI on the *difference*, and check a
-criterion's power on both arms, before letting it close a direction. M3-4 should be designed
-with both in mind.
-
-🟢 **The live defect this uncovered is fixed (T5, 2026-08-27).** `serve.py`'s
-`/predict_all` iterated the app whitelist — 12 pairs — while the served checkpoint is the
-8-pair seed 2, so ADA / AVAX / LINK / XRP resolved to `pair_oov_id`, an embedding row never
-trained on any pair, and the system emitted live signals for four instruments the model had
-never seen. `_servable_pairs()` now intersects the whitelist with the checkpoint's own
-`meta["pairs"]`, logs what it drops, and `/health` reports `trained_pairs` and `served_pairs`.
-The whitelist can still only narrow the universe; the checkpoint is a hard ceiling.
-
-### §0.7 — What M3-4a established (2026-08-28) — the execution assumptions are both wrong
-
-[M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) is committed before any fill number, the same order
-M3-1/M3-2 and M3-3a/M3-3 used. Writing it required auditing the data first, and that audit
-found more than it was sent to find. Reproduce all of it with:
-
-```sh
-./scripts/gcp_m3_export.sh            # pulls the book/tape/price slice off fluxtrader-1
-./scripts/m3.sh -m m3 bookprep        # the audit — no fill number, by design
-```
-
-**1. The cadence question is closed: it is scheduler drift, nothing is being dropped.**
-`collector.ex` schedules the next `:poll_book` 5 s *after* walking every pair with a
-synchronous REST call, so the true period is 5 s **plus the whole universe's fetch time**.
-Median gap is **7.6 s in the 8-pair era and 9.0 s in the 12-pair era**, stepping exactly on
-2026-08-14 when four pairs were added, by ~0.35 s per pair — which is the per-pair fetch
-latency visible in the staggered write timestamps inside one loop. No conditional write, no
-dropped poll. (M3_PLAN's "~10.7 s" was the mean across both eras, and the mean is misleading
-here: p95 is 16 s / 23 s and the tail runs to 294 s.)
-
-**2. 🔴 The trade tape is right-censored, and nobody knew.** `collect_trades/2` calls
-`agg_trades` with `limit: 200`, and Binance returns the **most recent** 200 — so on a busy
-pair the *oldest* trades in the poll interval are silently discarded, and `high`/`low`/
-`volume` describe only what survived. Share of windows at the cap: **BTC 30.6%**, ZEC 29.2%,
-ETH 28.0%, HYPE 15.2%, PEPE 10.8%. Censoring concentrates in exactly the busy windows where a
-resting order would fill, so a naive fill rate is biased **downward and not at random**. The
-protocol turns this into an asset by arranging every approximation to point the same way
-(§0.2 there): **a maker verdict is safe, a taker verdict is not.** Fixing it going forward —
-raise the limit, or move the tape to the uncapped WebSocket stream — is a collector change
-worth doing regardless of what M3-4 concludes.
-
-**3. 🔴 The touch spread is ~0.01 bps on the majors, and that changes the question.** Median
-touch spread and median notional resting at the touch:
-
-| | BTC | ETH | ZEC | HYPE | PEPE | XRP | LINK | SOL | DOGE | AVAX | WLD | ADA |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| spread (bps) | **0.01** | 0.04 | 0.13 | 0.12 | 0.26 | 0.70 | 0.85 | 0.96 | 1.13 | 1.34 | 2.45 | 4.69 |
-| touch ($k) | 402 | 238 | 3.0 | 4.2 | 0.8 | 23 | 2.7 | 65 | 14 | 4.2 | 2.9 | 28 |
-
-Two things follow by arithmetic, before a single fill is measured:
-
-* **The maker upside is a fee rebate, not a spread capture.** A resting order gains
-  `(taker_fee − maker_fee) + 2 × half_spread` per side, so the round-trip ceiling is
-  `4 bps + 4 × half_spread` — **4.02 bps on BTC**, against 13.4 on ADA. The 9 bps that 14-vs-5
-  implies is **unreachable on six of the eight served pairs however good the fills are.** The
-  "every candidate roughly doubles at maker fees" line throughout this document was never
-  achievable at these spreads.
-* **The 14-bps taker assumption is the bigger error, and it is pessimistic.** It is
-  `2 × (4 bps fee + 3 bps slippage)`. A $10k order against BTC's $402k touch crosses for
-  0.005 bps, not 3. If that holds up under measurement, **M3-2's published economics are too
-  low**, and the winner's +15.0 net@14 is nearer +21 — which moves a number in
-  [M3_2_RESULTS.md](./M3_2_RESULTS.md) further than any maker finding could.
-
-So M3-4 is pre-registered as a **two-sided** study: Q1 measures the taker cost against the
-assumed 14, Q2 measures the maker saving against 0 and against its per-pair ceiling. Slippage
-is **walked from the ladder** rather than assumed.
-
-**4. The export is deep on purpose.** `scripts/gcp_m3_export.sh` defaults to **20 ladder
-levels a side**. The audit above needs only the touch, but the study walks the ladder to price
-slippage, and five levels cannot hold a $10k order on 1000PEPE, whose touch holds **$823**.
-Depth is nearly free — the server cost is detoasting the 100-level jsonb whatever we project
-out of it — so the deep pull is taken once rather than twice.
-
-**5. The power problem is real and is pre-registered as a stopping condition.** The raw ladder
-starts 2026-08-05, so the study has **22 day-clusters**, against the ~220 independent days
-M3-2 was scored on. The protocol requires the minimum detectable effect to be computed *before*
-either verdict may be applied, and — given a ~4 bps maker ceiling — says explicitly that if the
-MDE exceeds it, the honest output is "22 days cannot resolve this" and the remedy is calendar
-time, not a bigger model. The ladder grows a day per day at no cost.
-
-### §0.8 — What M3-4 established (2026-08-28) — both assumptions were wrong, in opposite directions
-
-**Full results: [M3_4_RESULTS.md](./M3_4_RESULTS.md) — all nine items §6 of the protocol
-requires. Implementation: `ml/train/m3/execcost.py`, run with `./scripts/m3.sh -m m3 execcost`.**
-The short version, no statistics required:
-
-1. 🟢 **Crossing the spread costs 9.84 bps round trip, not 14.** Measured over 51,398
-   decisions on 23 day-clusters, walking the real 20-level ladder for a $10,000 order instead
-   of assuming 3 bps/side of slippage. The 95% interval is **[+9.75, +9.93]** and it excludes
-   14 by a wide margin, so the assumption is **MIS-STATED** in the pre-registered sense — and
-   it is wrong in the direction that made **every published M3 number too pessimistic**.
-   §1.6(b) predicted exactly this before the study ran.
-2. 🔴 **The maker arm is not worth building, and the reason is not the fee.** On the cost
-   arithmetic alone, resting saves +3.60 bps [+3.34, +3.86] against a ~5.6 bps ceiling — which
-   reads like a win. **§3's adverse-selection panel contradicts it in 16 of 16 (pair,
-   direction) cells.** The half-spread earned is 0.007–1.42 bps; the 60-second adverse drift
-   is 0.66–2.13 bps. A resting buy fills *because* the price came down through it, and it
-   keeps going. **The +3.60 is a fee-rebate accounting gain, not a trading gain.** §3 made
-   that panel a precondition of publishing a maker verdict precisely so this could not be
-   missed.
-3. 🟢 **This simplifies M3-5 rather than complicating it.** The conclusion is the one §5.2
-   named as "the outcome that lets M3-5 build a simple crossing executor and stop there" — a
-   useful result, not a failure. **No limit-order machinery, no queue modelling, no fill
-   logic.** That is days of work M3-5 does not have to do.
-4. 🔴 **The study was far better powered than the protocol feared, and the reason is
-   structural.** §4 worried that 22 day-clusters could not resolve a 4 bps effect. The
-   realized MDE is **0.13 bps for Q1 and 0.37 for Q2**. A *cost* is a nearly deterministic
-   function of the book — spread plus a constant fee — while a *P&L* is a return. Measuring a
-   cost on 23 days is not the same statistical problem as measuring an edge on 220, and the
-   stopping condition §5.3 pre-registered never came close to binding.
-5. 🔴 **The re-score re-orders the grid, and nothing may be promoted on it.** At the measured
-   cost `cov0.01_hold240_rq0.8_mcnone` shows a **+17.49** bps worst window against the
-   winner's **+2.43**. It remains **ineligible**: its thinnest window holds **23** trades
-   against P4's floor of 100, and a trade count does not move when the fee does. This is the
-   finding §5.4 says to report and pre-register, never to act on — *the hard regime filter
-   looks better at a truer cost and is still starved in window 3.* The winner's own worst
-   window improves **+0.25 → +2.43**, so it still clears the bar with more room.
-
-#### 🔴 The validity problem the run surfaced, which no protocol section anticipated
-
-**The M3-2 winner books ZERO trades inside the 22-day ladder window.** §2.4 had sized L3 at
-"~18 per pair". The winner's last entry anywhere is **2026-07-16**, three weeks before the
-ladder begins.
-
-The cause is not a bug, and it is the most operationally important thing in this section:
-**the model stops being confident when the market goes quiet, and the market has been quiet
-since July.** `btc_absret_1d` averages **0.0070** in August against 0.011–0.027 in every
-earlier month — the calmest stretch of the whole 253 days — and confidence dispersion collapses
-in step (sd **0.0127** in August against 0.023–0.047 earlier). No bar after 2026-07-16 reaches
-the top-2% cut on **any** of the three seeds, and
-
-> 🔴 **the served checkpoint (seed 2, gate 0.6311) has produced no gated signal since
-> 2026-06-29.**
-
-That is the policy correctly sitting out a regime it has no edge in — §1.8's whole finding is
-that the edge lives in volatile bars — but it has two consequences worth carrying forward:
-
-* **M3-4's cost is measured in the one regime the policy never trades in.** The study sizes
-  that gap rather than waving at it: cost by BTC-volatility quintile runs **9.77 → 10.09 bps**
-  from the calmest fifth to the most violent. The extrapolation is worth about **0.3 bps**
-  against a 4 bps gap to 14, so **the Q1 direction survives comfortably** — but treat 9.84 as
-  the optimistic end, not as the number to re-publish M3-2's economics with. (Note the maker
-  saving *shrinks* to 2.74 in the top quintile, which points the same way as the adverse
-  selection panel.)
-* **A live system that has been silent for two months is indistinguishable from a broken
-  one.** 🟢 **Done 2026-08-28 (M3-5):** `GET /api/health` now reports bars seen, bars and
-  seconds since the last gated signal, the live coverage cut, and a named count of every reason
-  the policy skipped a bar — so silence is visibly *correct* rather than merely quiet.
-
-
-### The plan from here, in order
-
-*Updated 2026-08-28, after M3-4 ran. Item 0 is closed and kept only as the record of why;
-**item 1 is now DONE** and it did invalidate a published number, in the good direction; item 2
-adds evidence nothing else can; **item 3 is now the last blocking piece of M3, and M3-4 made it
-smaller.** Everything below is scoped to the 8 baseline pairs, which is what is served — and as
-of T6 that is a settled scope, not a placeholder.*
-
-#### 0. The 12-pair universe 🟢 **CLOSED 2026-08-27 — nothing further to run**
-
-Two 12-pair seeds ran (T1, T2; ~8h GPU, serial) and T3 re-scored M3-2's winner on all three
-12-pair dumps under the adoption rule pre-registered in
-[NEXT_TRAINING_PLAN §2](./NEXT_TRAINING_PLAN.md): *adopt 12 pairs iff the wide run still
-passes every Tier-1 criterion the narrow run passes and its worst window does not degrade.*
-
-**Outcome: the +7.5 did not replicate, and T6 then closed the question as unresolvable.**
-The adoption rule's P5 clause fired against adoption — but P5 is a coin flip at this sample
-size, failing on the *incumbent* 8-pair universe 52.4% of the time, so it could not have
-decided anything. T6 ran the three fair tests and found the effect within a couple of bps of
-zero in every framing, against a resolution limit of ±37 bps (§0.6's second amendment).
-**The served 8-pair universe stands. No further GPU and no further offline work.**
-
-🔴 **What T6 found instead, and it is the more useful result:** the criterion that
-actually binds this policy is **P3, the −5 bps worst-window floor**, which fails on *both*
-universes in 88–98% of day-bootstraps. **Window 3 is the constraint, and no pair-set change
-touches it.**
-
-Two things this did close cleanly, both worth keeping:
-
-- **The grid was not re-searched.** T3 scored the already-chosen winner spec, transcribed, on
-  both universes of the same dumps, exactly as pre-registered. Re-running the 40 configs on a
-  new pair population and taking the best is the shopping
-  [M3_PROTOCOL §0](./M3_PROTOCOL.md) forbids — and T6 held the same line: it re-tuned
-  *sizing* on a fixed policy and did not re-search the grid. Where T6 noticed that a tighter
-  coverage looked better on these checkpoints, it recorded the observation and explicitly
-  declined to act on it, because coverage is a searched dimension of the M3-2 grid.
-- **A single-seed headline was killed by replication.** That part worked exactly as intended,
-  and it is why the T-wave was worth the GPU.
-
-🔴 **The lesson the retraction added:** a pre-registered criterion protects against shopping
-for a favourable result; it does **not** make an underpowered test informative. Before letting
-any Tier-1 clause close a direction, bootstrap its failure rate on **both** arms.
-
-#### 1. M3-4 — the execution-cost study 🟢 **DONE 2026-08-28** (§2 M3-4, was ranked risk #2)
-
-**Result: [M3_4_RESULTS.md](./M3_4_RESULTS.md); the reading is §0.8.** Crossing costs **9.84 bps
-round trip, not 14**; the maker arm is **not worth building** (adverse selection eats the fee
-rebate in 16 of 16 cells); **M3-5 should build a crossing executor and nothing else.** Risk #2
-is closed. The sub-section below is kept as the record of what the question was and why it was
-framed the way it was — it is history now, not a plan.
-
-<details><summary>The original framing, preserved</summary>
-
-
-**M3-4a is done** — [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) is committed, before any fill
-number, and `./scripts/m3.sh -m m3 bookprep` reproduces every fact it rests on. What remains is
-running the study it pre-registers. **Read §0.7 before doing so: the protocol's audit changed
-what the study is asking, and this sub-section's original framing is preserved below only for
-the parts that survived.**
-
-**The question, as M3_PLAN originally put it:** if we rest a limit order instead of crossing
-the spread, do we actually get filled — and at what real cost? Every M3-2 candidate roughly
-doubles at maker fees (the winner is **+27.1 at maker against +15.0 at taker**), so this
-untested assumption underwrites half the published economics.
-
-🔴 **That framing is now known to be too narrow, and the "roughly doubles" is not reachable.**
-The touch spread is **0.01 bps on BTC** and 0.04 on ETH — one tick — so a resting order's
-entire advantage there is the 2 bps/side fee rebate, capping the maker gain at about **4 bps
-round trip**, not the 9 bps that 14-vs-5 implies. Meanwhile the *taker* side assumes 3 bps of
-slippage per side, and a $10k order against BTC's **$402k resting at the touch** crosses for
-0.005 bps. **The 14 is the more suspicious of the two numbers, and it is wrong in the
-direction that makes every published M3 result too pessimistic.** §0.7 has the detail; the
-protocol pre-registers both as decision quantities.
-
-🔴 **Do it offline, from data we already have — not on the live paper-sim stack.** §3.3 used to
-say "measure it on the paper-sim stack"; that is now known to be wrong, because
-`apps/fluxtrader/lib/fluxtrader/trading/executor.ex` cannot place a limit order at all (§0.5.4).
-Standing that up first would be days of order-simulation work before the first number arrives.
-
-The data to answer it is **already collected**: the collector has written raw L2 order-book
-ladders (`orderbook_levels` — best-first `[price, qty]` arrays, 100 levels a side) plus trade
-aggregates with `high`/`low`/`buy_volume`/`sell_volume` (`market_trades`). It supports all
-three questions directly: **fill probability** (did the tape trade at or through our resting
-price inside the window), **queue position** (resting depth at our level against subsequent
-same-side volume), and **adverse selection** (which way the mid moved right after the fills we
-did get). It runs in the existing `ml_analysis` image via `scripts/m3.sh` — no GPU, no new
-stack, no orders.
-
-🔴 **Two corrections to what this section used to claim, both measured on the VM 2026-08-27,
-and both change how M3-4a must be scoped.** It previously said "5-second ladders since
-2026-07-17, ~40 days". Neither half is right:
-
-| table | actual coverage |
-|---|---|
-| `orderbook_snapshots` (derived features) | from **2026-07-17** for BTC/ETH/SOL — this is the 40-day figure, and it is the *wrong table*, it carries no ladder |
-| `orderbook_levels` (**the raw L2 ladder M3-4 needs**) | from **2026-08-05** for the 8 served pairs (**22 days**) · from **2026-08-14** for ADA/AVAX/LINK/XRP (**13 days**) |
-| observed cadence | ~**10.7 s** per row, not 5 s — 8,037 rows/pair/day against the 17,280 a true 5-second poll would write, while `collector.ex` sets `@book_interval_ms 5_000` |
-
-The cadence gap is not cosmetic: **fill probability is measured against how much of the tape
-we can see, and a 10-second sampling interval sees half the book states a 5-second one does.**
-M3-4a must resolve whether the collector is dropping polls or the write is conditional, and
-state the sampling interval it assumes, before any fill number is quoted.
-
-**Scope it to the 8 baseline pairs — that is what is served** — but produce per-pair numbers
-for all 12 wherever the stored ladders allow at no extra cost. If 12 pairs were adopted, the
-four new ones have 13 days of ladder against the majors' 22. Export all 12, but **pre-register
-the primary result on the pairs with the full window and report the short-window four
-separately** — do not silently pool two depths of evidence, and do not let a 13-day sample
-decide a pair's cost.
-
-🟢 **This instruction is why the 2026-08-29 widening cost one afternoon instead of a re-export.**
-The run followed it exactly: all 12 measured, the primary pre-registered on the 8, the short
-four reported separately and excluded from Q1's verdict. When the universe *was* adopted, the
-numbers were already on disk and the study re-ran byte-identically. Note the distinction that
-made them usable: **the §1.5 exclusion governs the VERDICT, not the CHARGING.** A per-pair cost
-used to charge a trade is not a decision quantity, and a pair's own 14-day number beats a
-constant pooled from eight *other* pairs — ADAUSDT measures 13.733 bps against that pooled
-9.842. What remains forbidden is re-pooling the two depths into a single decision number, and
-`@pooled` was left at the eight-pair value for exactly that reason.
-
-Take it in the milestone's established two-step order:
-
-- **M3-4a** — export the book/tape slice for the served pairs, then **pre-register** the
-  study: the sampling interval, the fill definition, the queue model, the adverse-selection
-  horizon, and the number that decides whether maker economics are real. Commit it before any
-  measurement, exactly as M3-1 and M3-3a did.
-- **M3-4** — run it, and publish the **realized effective round-trip cost per pair** next to
-  the assumed 5 and 14 bps, then re-score the M3-2 grid at the measured cost.
-
-**This is also the gate on any universe wider than 12.** The 14 bps is a single number applied
-to every pair, and §0.6's gain is carried by mid-caps whose spreads are not the majors'. Until
-M3-4 produces per-pair costs, adding instruments is buying edge against an unpriced liability.
-The one thing worth doing *before* then is starting **collection** on any candidate pair, since
-candles backfill four years on demand and order-book history does not — it begins the day the
-collector is pointed at the pair, which is why the four newest pairs have 13 days and not 22.
-Budget the disk first: `orderbook_levels` runs ~24 MB per pair per day (5.3 GB for the 1.78M
-rows currently held), so 12 pairs is ~8.6 GB/month against 55 GB free on `fluxtrader-1` — about
-six months of headroom, under four if the universe grows to twenty.
-
-</details>
-
-#### 2. M3-0b — the price/funding side-table 🟢 **DONE 2026-08-29**
-
-**Result: [M3_0B_RESULTS.md](./M3_0B_RESULTS.md)**, implemented as `ml/train/m3/sidetable.py`
-and run by `./scripts/m3.sh -m m3 sidetable`. It was built in one pass with the book columns
-`BOOK_ERA_PLAN.md` B0 needs, as planned — one alignment, two consumers — so **B0 is closed and
-B1 is unblocked** (`./scripts/m3.sh -m m3 bookera`).
-
-Its four consumers, and what each turned out to be worth:
-
-1. **The live brake** (M3-5's addition) — 🔴 **the finding.** The deployed 2% stop / 4% target
-   costs **10.5 gross bps/trade**, +33.76 → +23.24, on a policy netting ~20. The stop fires
-   three times as often as the target. It is catastrophe insurance whose premium is now known,
-   not a defect to switch off, and the decision is filed in [BACKLOG.md](./BACKLOG.md).
-2. **Barrier exits / C4b** — 🟢 **answered.** Every setting tried loses to the fixed 4h hold
-   (best +9.2 vs +19.8 net bps), improving monotonically as the band widens back toward it.
-   The mismatch C4b filed is real and points away from barriers, so accepting it costs nothing.
-3. **The funding term** — 🟢 **+0.14 bps/trade**, a rounding error at a 4h hold; the headline
-   moves +20.59 → +20.45. Lumpy rather than proportional: 45% of trades cross no settlement.
-   ⚠️ HYPEUSDT settles every 4h, not 8 — the schedule is read per pair, never assumed.
-4. **Position-state observations** — now possible, still un-run, and gated on a
-   pre-registration rather than on data (§7 of the results).
-
-⚠️ **This section said the data was "already on disk". That was wrong**, and the acceptance
-test is what caught it: the M3-4 export covers the 23-day book era, and **96% of the policy's
-trades fall outside it**. The price path was re-exported over 2025-11-15 .. 2026-08-30 into
-`ml/train/output/m3_0b/`; `scripts/gcp_m3_export.sh` now documents the two windows explicitly.
-
-#### 3. M3-5 — wire the rule to the executor 🟢 **DONE 2026-08-28**
-
-**Result: [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md).** The M3-2 SIZED rule now exists once,
-in `Trading.Policy`, and runs: `PolicyEngine` records every bar, ranks the trailing 14 days,
-sizes on live BTC-volatility quintiles, holds four hours, and closes — every policy entry
-through `RiskManager`'s hard limits in **every** mode, which closes §6's last exit criterion.
-A flat-size control arm runs beside it, which is PLAN.md's M3 A/B (it was a *signal-only*
-control until 2026-08-31 — see §4 of the integration doc for the re-registration). Costs charged are M3-4's
-measured per-pair round trips, and there is no limit-order machinery, exactly as §0.8 item 3
-directed.
-
-**The second precondition is done:** `GET /api/health` reports bars seen, time since the last
-gated signal, the live coverage cut and named skip reasons, so the correct silence §0.8 warned
-about is now legible as correct rather than indistinguishable from a dead process.
-
-🔴 **The first precondition is NOT done and is now filed in [BACKLOG.md](./BACKLOG.md):**
-verifying the actual Binance USDⓈ-M VIP fee tier. Every M3 cost uses taker 4.0 / maker 2.0 bps
-per side because that is what `metrics.py`'s 14 and 5 decompose to, and it has **never been
-checked against the account**. `mix flux.fee_tier` now performs the check — signed
-`/fapi/v1/commissionRate`, and written to fail loudly rather than print an unverified number —
-but it needs `BINANCE_API_KEY` / `BINANCE_API_SECRET`, which the container does not have. A
-wrong tier shifts every published M3 number by a constant.
-
-🔴 **One thing M3-5 uncovered that nothing had asked:** the `auto` order path is **unsigned**.
-`Binance.Client.post/2` sends neither the `X-MBX-APIKEY` header nor the HMAC-SHA256 signature
-Binance requires on every TRADE endpoint, so a real order returns 401. The executor now says so
-loudly at boot instead of looking like it is trading. Paper is unaffected; **anything beyond
-paper is blocked on request signing**, which is filed in BACKLOG.md and is not M3 work.
-
 ### What M3-3 says NOT to do
 
 Do not widen the learned grid, extend the feature list, or reach for a larger model class —
@@ -753,6 +121,8 @@ winner against the same evidence either. The binding constraint is ~220 independ
 and no rearrangement of them fixes that — **only forward time does**, and as of 2026-08-28 that
 clock is running (item 3). The right response to "the numbers are not significant yet" is now to
 let the paper arms accumulate, not to re-analyse the same 253 days.
+
+---
 
 ---
 
@@ -877,8 +247,8 @@ this is the result of three separately-trained copies of the model pooled togeth
    adverse move is larger than the fee rebate in every pair and direction tested. The
    remaining caveat is that the cost was measured in the calmest month of the period, so treat
    9.84 as the optimistic end (§0.8).
-3. 🟢 **It is now connected** (M3-5, 2026-08-28 — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)),
-   **though not yet deployed to `fluxtrader-1`.**
+3. 🟢 **It is connected and deployed** (M3-5, built 2026-08-28, live on `fluxtrader-1` since
+   2026-08-28 — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)).
    This used to read "nothing is connected: the policy exists only inside the offline
    backtester". The live executor now crosses the spread, holds four hours, sizes on the live
    BTC-volatility quintiles, charges the **measured** per-pair cost, and passes every entry
@@ -1342,6 +712,282 @@ because of a warmup (the frozen cut has none) but because the market has been th
 period since July and the validated rule takes nothing in a calm market. An idle month is the
 strategy working rather than failing.
 
+
+### What the completed steps established — the sections cited elsewhere as §0.6, §0.7, §0.8
+
+*Moved here from the status block on 2026-09-04 (RULES_REVIEW §6.3). The headings and the
+numbering are unchanged, because other documents cite them; only their position moved.*
+
+### §0.6 — What was measured on 2026-08-27, after M3-3 closed — the universe is NOT a policy lever
+
+🔴 **Read the amendment at the end of this section before quoting any number in it.** The
++7.5 bps below is a single seed and **it did not replicate**. But the follow-up did **not**
+show 12 pairs is worse either — that question is open. The section is kept in full because how
+a clean-looking measurement turned out to be noise is the most useful thing in it.
+
+**M3-2 and M3-3 both ran on the 8 pairs every published M2 number is measured on. That was
+never a decision; it is the experimental control the E-wave froze in place** (NEXT_TRAINING_PLAN
+§1.9). The collector and the app whitelist have carried **12** pairs for some time. Nobody had
+asked what the extra four are worth *to the policy*, because §1.9 had answered the adjacent
+question — are they worth anything to the *model* — and the answer there was no.
+
+They are worth a lot. M3-2's winner, scored twice on the same O8 dump, changing nothing but
+the traded universe (`./scripts/m3.sh -m m3 universe`):
+
+| universe | trades | tr/day | gross | **net @14 taker** | net @5 maker | Sharpe | maxdd |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| the 8 baseline pairs | 606 | 2.28 | +33.31 | **+13.93** | +26.71 | 0.96 | −1.13 |
+| **all 12 pairs** | 869 | 3.27 | +40.89 | **+21.44** | +33.94 | 1.23 | −1.67 |
+
+**Why this is not the same claim §1.9 refuted.** §1.9 asked whether 58% more training *rows*
+make a better model, and measured no. This asks whether more *instruments* make a better
+policy. The model is byte-identical in both rows above — the only difference is how many
+things the top-2% selection gets to choose between. Rows and instruments are not the same
+quantity, and only one of them was ever tested.
+
+**The validity check.** The 8-pair restriction of O8 reproduces the published 3-seed result
+(+13.93 against +15.0, at 2.28 trades/day against 2.3), so O8's single seed behaves like the
+family on the 8 pairs and the 12-pair row is the four extra instruments talking, not the seed.
+The confidence threshold barely moves (0.5996 → 0.5992), so the wide run is the narrow run's
+trades plus 260 new ones, and those 260 earn **+43.07 net against the base-8 trades' +12.21**
+inside the same run.
+
+🔴 **Three things this does NOT do, and the third is the one that matters most here.**
+
+1. **It does not fix window 3.** Trade count there goes 30 → 32 and net stays near −52; **P4
+   still fails**. The w3 hole is a shortage of confident *bars*, not of instruments.
+2. **It does not buy independent days.** Clustering is on the exit calendar day, so extra
+   pairs add trades inside existing clusters. The clustered interval *widens* (se 25.7 → 30.2)
+   and max drawdown grows. **The certification problem of §0.5.4 item 1 is untouched** — only
+   forward time fixes that.
+3. **It is one seed, and per-pair numbers do not replicate** (NEXT_TRAINING_PLAN §1.3). The
+   per-pair table `m3 universe` prints is texture, never a reason to keep or drop an
+   instrument. Two more seeds is exactly what the T-wave buys.
+
+🔴 **AMENDMENT, the same evening — caveat 3 was the fatal one, and the T-wave collected on
+it.** T1 (`20260827T050701Z`) and T2 (`20260827T114122Z`) ran O8's recipe at two more seeds
+and the winner was re-scored on all three:
+
+| seed | base-8 net@14 | 12-pair net@14 | universe effect |
+|---|---:|---:|---:|
+| O8 (the table above) | +13.93 | +21.44 | **+7.5** |
+| T1 | +7.81 | +5.94 | −1.9 |
+| T2 | +4.91 | **−2.70** | −7.6 |
+| **pooled** | **+9.29** | **+9.00** | **−0.3** |
+
+O8 reproduces exactly, so nothing above is a bug — it is one draw from a distribution wider
+than the effect. **The +7.5 claim is dead:** paired on the exit-day cluster the difference is
+−0.85 bps, 95% CI [−6.8, +5.1], which excludes it. Reproduce with
+`./scripts/m3.sh -m m3 universe --runs 20260827T050701Z,20260827T114122Z,20260822T012619Z`.
+
+🔴 **SECOND AMENDMENT, and it retracts a rejection.** For a few hours this section and
+NEXT_TRAINING_PLAN §2 recorded 12 pairs as *rejected*, on the grounds that the wide pool fails
+Tier-1 **P5** (all three seeds individually pooled-positive) where the narrow pool passes.
+**That was wrong on two counts, and both are checkable:**
+
+- **P5 has no power here.** Day-bootstrapped 2,000 times, the **8-pair** universe — the one
+  that "passed" — fails P5 in **53.8%** of resamples, against the 12-pair universe's **58.6%**.
+  A criterion the incumbent fails more often than not cannot separate two options. Per-seed
+  cluster-robust SEs are 17.6–30.2 bps on 102–161 clusters, so a per-seed *sign* test is
+  nearly uninformative. P5 is a sound screen against configurations that only work on one seed
+  during a 40-config **search**; it is not an instrument for arbitrating a deployment choice.
+- **The test was tilted toward the incumbent.** M3-2's winning spec — including
+  `max_concurrent=None` — was searched on `dumps.BASE8` (`cli.py`'s `cmd_search`) and applied
+  verbatim to 12 pairs. Part of what was measured is "does an 8-pair-tuned policy transfer",
+  not "is a wider universe better".
+
+🟢 **SECOND AMENDMENT, 2026-08-27 — T6 ran those tests and the question is now CLOSED.**
+Full report: **[T6_RESULTS.md](./T6_RESULTS.md)**; the reading is in
+[NEXT_TRAINING_PLAN §1.10](./NEXT_TRAINING_PLAN.md). Three things changed:
+
+- **The trade-count-matched test looked like a big 12-pair win (+10.2 bps) and is not one.**
+  Matching the trade count also makes the wide arm 1.55x more *selective*. Scoring the 8-pair
+  universe at that same cut separates the levers: **+12.7 bps comes from tightening the cut**,
+  and the pairs are worth **−2.5** at a matched cut. It was the coverage, not the universe.
+- **The cap re-tune bought nothing.** Over the pre-registered cap set `max_concurrent=None`
+  wins on **both** universes; every cap in the wider ladder costs net bps. The drawdown
+  argument below stands as a description and not as a fix.
+- **The comparison is under-powered by a wide margin, and that is what closes it.** The
+  cluster-robust SE on the fair difference is 13.2 bps over ~180 exit days: at 80% power this
+  data resolves **±37 bps**. The +7.5 was always about a third of what could be seen. More
+  seeds cannot help — extra seeds and extra pairs both add correlated trades inside days
+  already counted. **Only a longer evaluation period can, and that is calendar, not compute.**
+
+⚠️ **And the first amendment's own interval was the wrong estimand.** "−0.85 bps, CI
+[−6.8, +5.1]" is day-weighted and shared-days-only, reported next to trade-weighted means; the
+matching trade-weighted interval is **[−12.0, +11.5]**, which *contains* +7.5. **The T-wave
+failed to replicate the +7.5; it did not refute it.** Both estimators are now committed in
+`ml/train/m3/universe.py` and every interval is cross-checked against a day-bootstrap SE.
+
+🟡 **The one structural finding, and it is a risk result rather than a verdict.** Widening
+8 → 12 raised the trade count 50% (1,645 → 2,475) but independent exit days only 11%
+(169 → 187), while max drawdown grew −2.83 → −4.53 and the clustered SE widened 20.5 → 23.2.
+Correlated instruments gated on a BTC-derived regime column fire together, and the winner spec
+has no concurrency cap. **That argues for re-tuning sizing on a wider universe, not for
+dropping the instruments** — and inside the wide run the four new pairs are the profitable
+half (+15.99 net on 841 trades against the base-8's +5.41 on 1,634), with §1.3's
+no-cherry-picking rule still in force.
+
+🟢 **Two transferable lessons, and they point in opposite directions — keep both.** The
+comparison in the table above was methodologically clean — same checkpoint, same seed, same
+calendar, only the universe varying — and still wrong, because M3's per-trade sd is 259 bps
+and a one-seed difference of 7 bps is inside the noise: **a within-run comparison on one seed
+is a hypothesis, not a result.** And then the correction over-reached: **a negative result
+needs the same scrutiny as a positive one.** Report the CI on the *difference*, and check a
+criterion's power on both arms, before letting it close a direction. M3-4 should be designed
+with both in mind.
+
+🟢 **The live defect this uncovered is fixed (T5, 2026-08-27).** `serve.py`'s
+`/predict_all` iterated the app whitelist — 12 pairs — while the served checkpoint is the
+8-pair seed 2, so ADA / AVAX / LINK / XRP resolved to `pair_oov_id`, an embedding row never
+trained on any pair, and the system emitted live signals for four instruments the model had
+never seen. `_servable_pairs()` now intersects the whitelist with the checkpoint's own
+`meta["pairs"]`, logs what it drops, and `/health` reports `trained_pairs` and `served_pairs`.
+The whitelist can still only narrow the universe; the checkpoint is a hard ceiling.
+
+
+### §0.7 — What M3-4a established (2026-08-28) — the execution assumptions are both wrong
+
+[M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) is committed before any fill number, the same order
+M3-1/M3-2 and M3-3a/M3-3 used. Writing it required auditing the data first, and that audit
+found more than it was sent to find. Reproduce all of it with:
+
+```sh
+./scripts/gcp_m3_export.sh            # pulls the book/tape/price slice off fluxtrader-1
+./scripts/m3.sh -m m3 bookprep        # the audit — no fill number, by design
+```
+
+**1. The cadence question is closed: it is scheduler drift, nothing is being dropped.**
+`collector.ex` schedules the next `:poll_book` 5 s *after* walking every pair with a
+synchronous REST call, so the true period is 5 s **plus the whole universe's fetch time**.
+Median gap is **7.6 s in the 8-pair era and 9.0 s in the 12-pair era**, stepping exactly on
+2026-08-14 when four pairs were added, by ~0.35 s per pair — which is the per-pair fetch
+latency visible in the staggered write timestamps inside one loop. No conditional write, no
+dropped poll. (M3_PLAN's "~10.7 s" was the mean across both eras, and the mean is misleading
+here: p95 is 16 s / 23 s and the tail runs to 294 s.)
+
+**2. 🔴 The trade tape is right-censored, and nobody knew.** `collect_trades/2` calls
+`agg_trades` with `limit: 200`, and Binance returns the **most recent** 200 — so on a busy
+pair the *oldest* trades in the poll interval are silently discarded, and `high`/`low`/
+`volume` describe only what survived. Share of windows at the cap: **BTC 30.6%**, ZEC 29.2%,
+ETH 28.0%, HYPE 15.2%, PEPE 10.8%. Censoring concentrates in exactly the busy windows where a
+resting order would fill, so a naive fill rate is biased **downward and not at random**. The
+protocol turns this into an asset by arranging every approximation to point the same way
+(§0.2 there): **a maker verdict is safe, a taker verdict is not.** Fixing it going forward —
+raise the limit, or move the tape to the uncapped WebSocket stream — is a collector change
+worth doing regardless of what M3-4 concludes.
+
+**3. 🔴 The touch spread is ~0.01 bps on the majors, and that changes the question.** Median
+touch spread and median notional resting at the touch:
+
+| | BTC | ETH | ZEC | HYPE | PEPE | XRP | LINK | SOL | DOGE | AVAX | WLD | ADA |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| spread (bps) | **0.01** | 0.04 | 0.13 | 0.12 | 0.26 | 0.70 | 0.85 | 0.96 | 1.13 | 1.34 | 2.45 | 4.69 |
+| touch ($k) | 402 | 238 | 3.0 | 4.2 | 0.8 | 23 | 2.7 | 65 | 14 | 4.2 | 2.9 | 28 |
+
+Two things follow by arithmetic, before a single fill is measured:
+
+* **The maker upside is a fee rebate, not a spread capture.** A resting order gains
+  `(taker_fee − maker_fee) + 2 × half_spread` per side, so the round-trip ceiling is
+  `4 bps + 4 × half_spread` — **4.02 bps on BTC**, against 13.4 on ADA. The 9 bps that 14-vs-5
+  implies is **unreachable on six of the eight served pairs however good the fills are.** The
+  "every candidate roughly doubles at maker fees" line throughout this document was never
+  achievable at these spreads.
+* **The 14-bps taker assumption is the bigger error, and it is pessimistic.** It is
+  `2 × (4 bps fee + 3 bps slippage)`. A $10k order against BTC's $402k touch crosses for
+  0.005 bps, not 3. If that holds up under measurement, **M3-2's published economics are too
+  low**, and the winner's +15.0 net@14 is nearer +21 — which moves a number in
+  [M3_2_RESULTS.md](./M3_2_RESULTS.md) further than any maker finding could.
+
+So M3-4 is pre-registered as a **two-sided** study: Q1 measures the taker cost against the
+assumed 14, Q2 measures the maker saving against 0 and against its per-pair ceiling. Slippage
+is **walked from the ladder** rather than assumed.
+
+**4. The export is deep on purpose.** `scripts/gcp_m3_export.sh` defaults to **20 ladder
+levels a side**. The audit above needs only the touch, but the study walks the ladder to price
+slippage, and five levels cannot hold a $10k order on 1000PEPE, whose touch holds **$823**.
+Depth is nearly free — the server cost is detoasting the 100-level jsonb whatever we project
+out of it — so the deep pull is taken once rather than twice.
+
+**5. The power problem is real and is pre-registered as a stopping condition.** The raw ladder
+starts 2026-08-05, so the study has **22 day-clusters**, against the ~220 independent days
+M3-2 was scored on. The protocol requires the minimum detectable effect to be computed *before*
+either verdict may be applied, and — given a ~4 bps maker ceiling — says explicitly that if the
+MDE exceeds it, the honest output is "22 days cannot resolve this" and the remedy is calendar
+time, not a bigger model. The ladder grows a day per day at no cost.
+
+
+### §0.8 — What M3-4 established (2026-08-28) — both assumptions were wrong, in opposite directions
+
+**Full results: [M3_4_RESULTS.md](./M3_4_RESULTS.md) — all nine items §6 of the protocol
+requires. Implementation: `ml/train/m3/execcost.py`, run with `./scripts/m3.sh -m m3 execcost`.**
+The short version, no statistics required:
+
+1. 🟢 **Crossing the spread costs 9.84 bps round trip, not 14.** Measured over 51,398
+   decisions on 23 day-clusters, walking the real 20-level ladder for a $10,000 order instead
+   of assuming 3 bps/side of slippage. The 95% interval is **[+9.75, +9.93]** and it excludes
+   14 by a wide margin, so the assumption is **MIS-STATED** in the pre-registered sense — and
+   it is wrong in the direction that made **every published M3 number too pessimistic**.
+   §1.6(b) predicted exactly this before the study ran.
+2. 🔴 **The maker arm is not worth building, and the reason is not the fee.** On the cost
+   arithmetic alone, resting saves +3.60 bps [+3.34, +3.86] against a ~5.6 bps ceiling — which
+   reads like a win. **§3's adverse-selection panel contradicts it in 16 of 16 (pair,
+   direction) cells.** The half-spread earned is 0.007–1.42 bps; the 60-second adverse drift
+   is 0.66–2.13 bps. A resting buy fills *because* the price came down through it, and it
+   keeps going. **The +3.60 is a fee-rebate accounting gain, not a trading gain.** §3 made
+   that panel a precondition of publishing a maker verdict precisely so this could not be
+   missed.
+3. 🟢 **This simplifies M3-5 rather than complicating it.** The conclusion is the one §5.2
+   named as "the outcome that lets M3-5 build a simple crossing executor and stop there" — a
+   useful result, not a failure. **No limit-order machinery, no queue modelling, no fill
+   logic.** That is days of work M3-5 does not have to do.
+4. 🔴 **The study was far better powered than the protocol feared, and the reason is
+   structural.** §4 worried that 22 day-clusters could not resolve a 4 bps effect. The
+   realized MDE is **0.13 bps for Q1 and 0.37 for Q2**. A *cost* is a nearly deterministic
+   function of the book — spread plus a constant fee — while a *P&L* is a return. Measuring a
+   cost on 23 days is not the same statistical problem as measuring an edge on 220, and the
+   stopping condition §5.3 pre-registered never came close to binding.
+5. 🔴 **The re-score re-orders the grid, and nothing may be promoted on it.** At the measured
+   cost `cov0.01_hold240_rq0.8_mcnone` shows a **+17.49** bps worst window against the
+   winner's **+2.43**. It remains **ineligible**: its thinnest window holds **23** trades
+   against P4's floor of 100, and a trade count does not move when the fee does. This is the
+   finding §5.4 says to report and pre-register, never to act on — *the hard regime filter
+   looks better at a truer cost and is still starved in window 3.* The winner's own worst
+   window improves **+0.25 → +2.43**, so it still clears the bar with more room.
+
+#### 🔴 The validity problem the run surfaced, which no protocol section anticipated
+
+**The M3-2 winner books ZERO trades inside the 22-day ladder window.** §2.4 had sized L3 at
+"~18 per pair". The winner's last entry anywhere is **2026-07-16**, three weeks before the
+ladder begins.
+
+The cause is not a bug, and it is the most operationally important thing in this section:
+**the model stops being confident when the market goes quiet, and the market has been quiet
+since July.** `btc_absret_1d` averages **0.0070** in August against 0.011–0.027 in every
+earlier month — the calmest stretch of the whole 253 days — and confidence dispersion collapses
+in step (sd **0.0127** in August against 0.023–0.047 earlier). No bar after 2026-07-16 reaches
+the top-2% cut on **any** of the three seeds, and
+
+> 🔴 **the served checkpoint (seed 2, gate 0.6311) has produced no gated signal since
+> 2026-06-29.**
+
+That is the policy correctly sitting out a regime it has no edge in — §1.8's whole finding is
+that the edge lives in volatile bars — but it has two consequences worth carrying forward:
+
+* **M3-4's cost is measured in the one regime the policy never trades in.** The study sizes
+  that gap rather than waving at it: cost by BTC-volatility quintile runs **9.77 → 10.09 bps**
+  from the calmest fifth to the most violent. The extrapolation is worth about **0.3 bps**
+  against a 4 bps gap to 14, so **the Q1 direction survives comfortably** — but treat 9.84 as
+  the optimistic end, not as the number to re-publish M3-2's economics with. (Note the maker
+  saving *shrinks* to 2.74 in the top quintile, which points the same way as the adverse
+  selection panel.)
+* **A live system that has been silent for two months is indistinguishable from a broken
+  one.** 🟢 **Done 2026-08-28 (M3-5):** `GET /api/health` now reports bars seen, bars and
+  seconds since the last gated signal, the live coverage cut, and a named count of every reason
+  the policy skipped a bar — so silence is visibly *correct* rather than merely quiet.
+
+
+
 ## §3 — DESIGN DECISIONS TO SETTLE BEFORE WRITING CODE
 
 ### 3.1 Where the gate lives — 🟢 SETTLED 2026-08-28: the policy owns coverage
@@ -1388,7 +1034,7 @@ infrastructure. **§2 M3-4 is the step**, and it is the next thing to do.
 
 ### 3.4 Sizing needs a distribution — and there is a deferred branch waiting here
 
-`docs/QUANT_AB_HANDOFF.md` closed the quantile head with an explicit **"defer, don't
+`docs/archive/QUANT_AB_HANDOFF.md` closed the quantile head with an explicit **"defer, don't
 discard"**: what it disproved is that a quantile head *sharing the directional trunk* pays
 for itself (it steals encoder capacity and dents direction even at weight 0.2). It did not
 disprove that quantiles are informative — the head calibrated fine.
@@ -1634,3 +1280,98 @@ items are decisions and preconditions, not construction: the price of the live 2
 path — all indexed in [BACKLOG.md](./BACKLOG.md). All existing protocols stay frozen. §0.0 is the live status block and the only
 place that needs reading to resume; **§0.5 is the same thing in plain language, with the
 vocabulary defined and the "can it trade profitably yet?" question answered directly.***
+
+---
+
+## §8 — The twelve-pair widening, 2026-08-29
+
+*Moved here from `BACKLOG.md` on 2026-09-04 (RULES_REVIEW §6.3): the backlog is an index, and this is a decision record that belongs with the universe question it settles (§0.6).*
+
+### The twelve-pair widening, 2026-08-29
+
+**The served universe is now twelve.** This is not a reversal of T6 and not a new result. T6's
+verdict was **"UNDECIDED — the incumbent 8-pair universe stands by default"**: the cleanly
+separated universe effect is **−2.51 bps, 95% CI [−17.85, +12.83]**, on a period that resolves
+nothing under ±37 bps. Eight was the conservative default while the four extras had no measured
+crossing cost. That reason is now gone, and the standing intent has always been twelve for the
+long run — so the default was retired rather than left to be re-derived from a results file that
+reads like a closed decision.
+
+🔴 **The case for twelve is throughput and diversification, NOT per-trade edge.** T6's point
+estimate for the universe term is slightly negative. What twelve buys is more trades per day
+against a milestone whose binding constraint is the number of independent trading days. Do not
+quote this widening as evidence that twelve earns more.
+
+**What made it safe, and what it cost:**
+
+1. **Every served pair now carries its own measured crossing cost.** M3-4's run had in fact
+   measured all twelve; the protocol reported the four added 2026-08-14 as "texture only" and
+   excluded them from Q1's verdict, because pooling 14 days of ladder with 23 into a decision
+   quantity is what M3_4_PROTOCOL §1.5 forbids. **That exclusion governs the verdict, not the
+   charging** — a cost used to charge a trade is not a decision quantity, and a pair's own
+   14-day number beats a constant pooled from eight *other* pairs. The study was re-run
+   2026-08-29 and reproduced byte-identically before any constant was copied.
+2. **ADAUSDT is why this was a real blocker and not a formality:** it measures **13.733 bps**
+   against the pooled **9.842** it would otherwise have been charged — 3.89 bps light, about
+   40%. Its spread alone (4.901 bps) is 1.7× the widest of the original eight.
+   Full table: XRP 9.075, LINK 10.754, AVAX 11.401, ADA 13.733, each on 14 days / ~3,960 obs.
+3. **`@pooled` was deliberately NOT re-pooled over twelve.** It stays the eight-pair,
+   23-day number, per §1.5. Nothing served is charged it any more; it survives only as the
+   flagged fallback for a pair that has never been measured at all.
+4. **`max_positions` went 8 → 12.** T6 re-tuned the concurrency cap on both universes and
+   `max_concurrent=none` won on both — every cap tried cost net bps. On twelve pairs a cap of 8
+   is no longer "one slot per pair"; it is the binding cap T6 measured at **+13.21** against
+   **+19.51** uncapped. Widening the universe without widening the cap would have silently
+   imposed the constraint T6 said not to use.
+5. **The bar log was reset.** The top-2% cut is a rank over whatever population is recorded, so
+   an 8-pair era sitting inside the 14-day window would have made the live cut a mixture of two
+   rules. 1,161 bars and **zero trades in either arm** were discarded — which is exactly why the
+   change was made now. Backed up first to `~/policy_bars_8pair_20260829.csv` on the VM.
+
+**Deployed and verified on `fluxtrader-1`, 2026-08-29 05:00 UTC** (commit `5815789`):
+
+* `policy.served_pairs` and the new `policy.collector_pairs` both show the twelve;
+* `exec_cost.measured_pairs` shows twelve, split `long_window_pairs` (8, 23d) /
+  `short_window_pairs` (4, 14d);
+* `risk.max_positions` is 12;
+* `skips` holds only `warming_up` — **`not_served` is gone**, which is the expected reading now
+  that the collector and the served set coincide, and is the signal to watch: a non-zero
+  `not_served` from here means the two lists have drifted apart again;
+* `orderbook_snapshots` kept flowing evenly on all twelve pairs across the restart (36 rows per
+  pair in the following 8 minutes) — the deploy-day-defect-#2 failure mode did **not** recur;
+* the rank window restarted at 0 and refills at **12 pairs x 288 = 3,456 bars/day**, so
+  `warm: true` is expected around **2026-08-29 19:00 UTC**, ~14 hours after the reset.
+
+🔴 **Coverage was deliberately NOT changed, and that is an open pre-registration.** At a fixed
+cov 0.02 a wider universe takes **more** trades, not better ones — T6 measured **3.05/day at
+twelve against 2.02 at eight**. Whether the served coverage should instead tighten to hold the
+trade count fixed (T6's count-matched cut is **0.01288**) is a separate question. M3_PROTOCOL §0
+forbids re-picking a searched dimension after seeing results, so it needs its own
+pre-registration on the population it will be served from. It was not bundled into the universe
+change. **Filed as parked below.**
+
+🔴 **Do not change `served_pairs` again while the forward test is accumulating trades.** It
+changes the rule, so the A/B would span two different policies — the same comparability break
+M3_4_PROTOCOL §7 records for the trade-tape change. This widening was done deliberately in the
+window before the first trade fired, and that window is now closing.
+
+**Two defects found and fixed on the way, both latent:**
+
+1. **"Seven days" was never true.** `Ledger.@min_rank_bars` is `7 * 288 = 2016` **bars**, and
+   the count is pooled across served pairs — so it clears in ~21 hours at eight pairs and ~14 at
+   twelve, never in seven days. Every document repeated the seven-day reading and the
+   2026-08-28 deploy was mis-forecast on it. Corrected in `ledger.ex`, M3_PLAN §0.0, PLAN.md,
+   M3_5_INTEGRATION §2 and this file.
+2. **The collector whitelist fallback was narrower than what was being collected.** The DB row
+   held twelve, but `config/config.exs` and `runtime.exs` both defaulted to eight (and
+   `Settings.@default_pairs` to three). One lost row and collection on XRP/LINK/AVAX/ADA would
+   have stopped, unrecoverably — deploy-day defect #2's failure mode with a different trigger.
+   Both defaults now hold twelve, and `config_test.exs` asserts the fallback can never be
+   narrower than the served universe.
+
+**New invariant tests** (`apps/fluxtrader/test/fluxtrader/trading/config_test.exs`) assert the
+three relationships that were individually plausible and jointly wrong: every served pair has
+its own measured cost, the position cap is not narrower than the universe, and the whitelist
+fallback is not narrower than the served set. 74 tests green.
+
+---

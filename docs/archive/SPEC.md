@@ -1,4 +1,8 @@
-# Crypto Trading Agent - Technical Specification
+# Crypto Trading Agent - Technical Specification (archived)
+
+> **ARCHIVED 2026-09-04 — the original system specification, written before M1.** It describes an architecture the code has since outgrown (the policy, the executor, the risk path and the served universe are all documented where they are implemented).
+> Superseded by [BACKLOG.md](../BACKLOG.md) as the entry point, [M3_5_INTEGRATION.md](../M3_5_INTEGRATION.md) for what actually runs, and [TRAINING.md](../TRAINING.md) for the pipeline. Kept for the original intent and vocabulary.
+
 
 ## 1. Project Overview
 

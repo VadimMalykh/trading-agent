@@ -110,10 +110,12 @@ def by_window(trades: pd.DataFrame, cost_bps: float, n_seeds: int = 1) -> pd.Dat
     window's own trade span as its denominator, so it says "how often it fires while it is
     firing" — the honest whole-period rate is the pooled one.
     """
-    from .dumps import add_window
+    from .dumps import WINDOWS, add_window
     t = add_window(trades, ts_col="entry_ts")
     rows = []
-    for name in ["w1", "w2", "w3", "w4"]:
+    # The window names come from `dumps.WINDOWS` rather than a literal list so that the
+    # walkforward era, whose windows are its folds, gets a per-fold table from the same code.
+    for name, _, _ in WINDOWS:
         sub = t[t["window"] == name]
         rows.append({"window": name, **summarise(sub, cost_bps, span_days(sub), n_seeds)})
     return pd.DataFrame(rows)

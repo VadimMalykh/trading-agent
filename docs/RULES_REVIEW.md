@@ -5,8 +5,15 @@ every question in §4 the same day, and the answers were carried out: [M3_PROTOC
 **§9 (Amendment 2)** is written and in force, the served constants are re-derived, the
 checkpoint-binding guard and forward-ledger tagging are built and tested, the walk-forward folds
 are plumbed and pre-registered ([WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md)), and the
-approved cleanup is done. **What remains is §6 — the deploy to `fluxtrader-1`, the fold run queue,
-and the document-restructuring session.** Indexed in [BACKLOG.md](./BACKLOG.md).
+approved cleanup is done.
+
+**Progress on §6, updated 2026-09-04:** §6.1 (the deploy to `fluxtrader-1`) is **done** — one
+correction was needed to the checklist itself: `regime.frozen_p80` is a **top-level** field on
+`/api/health`, not a child of `.policy`, so `jq .policy` silently omits it. §6.3 (the document
+restructuring) is **done**. §6.2 (the fold queue) has its **harness built and committed** —
+`ml/train/m3/walkforward.py`, `M3_ERA=walkforward`, `m3 folds`, and validate's third acceptance
+test — but **no fold has been trained**. That is the one thing left. Indexed in
+[BACKLOG.md](./BACKLOG.md).
 
 The three questions, verbatim in spirit:
 
@@ -293,12 +300,12 @@ T6_RESULTS.md · the two `*_REPAIRED.md` results from today · archive/*.
 |---|---|
 | `SPEC.md` (root, 2026-03-25) | the original system spec; everything it plans is either built or superseded by PLAN.md |
 | `MODEL.md` (root, 2026-07-18) | design frozen on 07-18; weekly-retrain cadence, 1m/15m/1h horizons and "RL policy" are all superseded. Keep one paragraph "design as built" in PLAN.md |
-| `docs/M1_PLAN.md`, `docs/M2_PLAN.md` | completed milestones |
-| `docs/SIMULATION.md` | the Phase-I signal simulation; superseded by M3_5_INTEGRATION |
-| `docs/QUANT_AB_HANDOFF.md` | a closed A/B from 08-05 (verdict: quantile head off) |
-| `docs/GCP_MIGRATE.md` | the one-off Mac→GCP migration; its 09-03 candle-guard note moves to CANDLE_GUARD.md first |
-| `docs/DATA_COLLECTION_AUDIT.md` | the 08-05 audit; one parked backlog row cites item 3 — keep that pointer, archive the rest |
-| `docs/M3_UI_PLAN.md` | built and deployed; its doctrine (empty-state, nil vs 0.00) is worth one paragraph in M3_5_INTEGRATION |
+| `docs/archive/M1_PLAN.md`, `docs/archive/M2_PLAN.md` | completed milestones |
+| `docs/archive/SIMULATION.md` | the Phase-I signal simulation; superseded by M3_5_INTEGRATION |
+| `docs/archive/QUANT_AB_HANDOFF.md` | a closed A/B from 08-05 (verdict: quantile head off) |
+| `docs/archive/GCP_MIGRATE.md` | the one-off Mac→GCP migration; its 09-03 candle-guard note moves to CANDLE_GUARD.md first |
+| `docs/archive/DATA_COLLECTION_AUDIT.md` | the 08-05 audit; one parked backlog row cites item 3 — keep that pointer, archive the rest |
+| `docs/archive/M3_UI_PLAN.md` | built and deployed; its doctrine (empty-state, nil vs 0.00) is worth one paragraph in M3_5_INTEGRATION |
 
 **Slim (the real payoff — the three documents that have grown by accretion):**
 
@@ -470,14 +477,21 @@ docker compose up -d --build ml_inference          # serve.py now reports checkp
 docker compose up -d --build app                   # runs the migration, serves the new constants
 ```
 
-**Verify** (`curl -s localhost:4000/api/health | jq .policy` on the VM):
+**Verify** on the VM. ⚠️ Two of the six checks are **not** under `.policy` — `regime` is a
+sibling block, not a child of it (`HealthController.index/2`), so `jq .policy` silently omits
+them. Ask for both:
+
+```sh
+curl -s localhost:4000/api/health | jq '{policy, regime}'
+```
+
 
 * `confidence_threshold == frozen_threshold == 0.6296127438545227`
 * `checkpoint == frozen_checkpoint == "882cd4153c2d…"` and **`checkpoint_bound: true`**. If it is
   `false`, `/models/m2_multi.pt` on the VM is not `m2_multi_20260819T142759Z_a186182b.pt` —
   re-promote it with `./scripts/gcp_promote.sh --checkpoint m2_multi_20260819T142759Z_a186182b.pt`
   and do **not** touch the constants
-* `regime.frozen_p80 == 0.025596268475055695`
+* `regime.frozen_p80 == 0.025596268475055695` (top-level `.regime`, **not** `.policy`) — and `regime.quintile_edges` is the four-element ladder whose last element it is
 * `retrain_trigger.n_days == 65`; `fired` should be **false** — the repaired data shows the cut
   last fired 2026-08-31, so `days_since` should read a few days
 * `skips` holds no `checkpoint_mismatch` / `checkpoint_unverified` after the first tick
@@ -494,15 +508,29 @@ in the same session that fetches the first dump — it must exist before any fol
 Twelve serial runs at roughly four hours each; record each in §6 of the protocol from its own
 `Split` line.
 
-### 6.3 The document-restructuring session (decision 7) — the brief
+### 6.3 The document-restructuring session (decision 7) — ✅ DONE 2026-09-04
+
+*What was actually done, against the brief below: all nine documents archived with headers and
+every cross-link fixed (including the ones in `apps/` and `scripts/`); `M3_PLAN.md` §0.0 rewritten
+to ~50 lines pointing at BACKLOG, its "What M3-x established" narrative archived and §0.6/§0.7/§0.8
+moved to the end of §2 with their headings intact so external citations still resolve;
+`NEXT_TRAINING_PLAN.md` slimmed from 1,766 to ~670 lines (§0, §1.1/§1.3/§1.8, §2, §5, §7) with the
+rest archived, and its "served on 8 pairs" claim corrected; `BACKLOG.md` reduced from 674 to ~275
+lines of tables, with six narratives moved to their owning documents; `README.md` rewritten to
+point at BACKLOG. ⚠️ Two deviations, both deliberate: `M3_PLAN.md` came to ~1,280 lines rather
+than the ~800 target, because the remaining length is §0.5's plain-language layer and §2's
+per-step record, neither of which is accretion; and this file is **not** archived, because §6.2
+is not finished.*
+
+**The original brief:**
 
 One session, in this order, nothing else in it:
 
 1. Move to `docs/archive/` with a two-line "superseded by" header: `SPEC.md`, `MODEL.md`,
-   `docs/M1_PLAN.md`, `docs/M2_PLAN.md`, `docs/SIMULATION.md`, `docs/QUANT_AB_HANDOFF.md`,
-   `docs/GCP_MIGRATE.md` (its candle-guard install note first moves into `CANDLE_GUARD.md`),
-   `docs/DATA_COLLECTION_AUDIT.md` (the BACKLOG row for kline taker-buy volume keeps its
-   pointer), `docs/M3_UI_PLAN.md` (its empty-state doctrine becomes one paragraph in
+   `docs/archive/M1_PLAN.md`, `docs/archive/M2_PLAN.md`, `docs/archive/SIMULATION.md`, `docs/archive/QUANT_AB_HANDOFF.md`,
+   `docs/archive/GCP_MIGRATE.md` (its candle-guard install note first moves into `CANDLE_GUARD.md`),
+   `docs/archive/DATA_COLLECTION_AUDIT.md` (the BACKLOG row for kline taker-buy volume keeps its
+   pointer), `docs/archive/M3_UI_PLAN.md` (its empty-state doctrine becomes one paragraph in
    `M3_5_INTEGRATION.md`). Fix every cross-link (`grep -rn` each filename under `docs/`).
 2. Rewrite `M3_PLAN.md` §0.0 to ~40 lines pointing at BACKLOG; fold the "What M3-x established"
    sections into §2's per-step entries; remove the three "not yet deployed" statements. Target
@@ -514,4 +542,5 @@ One session, in this order, nothing else in it:
    arrival-rate narratives move to their owning documents. Target ~250 lines.
 5. `README.md`: replace the "Phase I light" status with ten lines pointing at BACKLOG.md.
 6. Add `RULES_REVIEW.md` itself to the archive list once §6.1 and §6.2 are done — it is a
-   record, not a plan.
+   record, not a plan. ⚠️ **Not yet: §6.2's twelve runs have not been launched.** Archive it in
+   the session that records the last fold in `WALKFORWARD_PROTOCOL.md` §6.

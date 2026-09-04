@@ -485,3 +485,64 @@ nothing under the frozen rule), restart the app, verify `/api/health` shows the 
 Bundle with the parked B1 re-export over the 8 main pairs' full span (BACKLOG, "B1's blocker
 may already be gone") — it is the same export. Compare M3-0b §4 (the brake's 10.5 bps) and
 B1's per-horizon sd against the published values before quoting either again.
+
+---
+
+## §8 — The backlog's account of the defect, and the repair queue as it was ordered
+
+*Moved here from `BACKLOG.md` on 2026-09-04 (RULES_REVIEW §6.3). The repair is done; this is kept because the ordering decisions it records are the reason the repair was sequenced the way it was.*
+
+## 🔴 New 2026-09-03 — the stored candles have been partial bars since 2026-07-18, and the silence is a data defect
+
+**Owner: [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md).** The collector polls the five most
+recent klines every 60 s and inserts with `on_conflict: :nothing`, so every candle is stored at
+its **first sighting — within a minute of opening — and never updated when it closes.** Verified
+against Binance at identical timestamps: on 2026-08-20 the stored BTCUSDT 5m bars carry a median
+**11% of true volume** and **31% of true high–low range**, the close matches in 0/288 bars, and
+all twelve pairs show the same (volume ratio medians 0.089–0.112, zero exact matches). A
+pre-collector control day matches 288/288. 42 of the 43 post-07-18 days in the export are corrupt.
+
+🔴 **This supersedes the "regime fact" reading in the arrival-rate section below, in
+[REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §1, NEXT_TRAINING_PLAN's top block, M3_PLAN §0.8 and
+M3_PROTOCOL §8.0.** The model did not respond to the 8% BTC move on 08-20/21 because the candles
+it was shown for those days had a tenth of the volume. The 2026-09-01 check that "live confidence
+matches the split" compared two outputs of the same corrupt input. Day-to-day dispersion of the
+daily p98 confidence fell **7–14×** on 2026-07-18 on all three seeds — the signature of an input
+going flat, not of a calm market.
+
+**Consequences:** every live prediction since 07-18 is void, so the forward paper test has measured
+nothing since it began; the last 31 days of every eval dump's split (~12%) are corrupt, so the
+frozen cut and ladder must be re-derived after repair (same checkpoint, same rule — a data
+correction under C4, not a re-pick); M3-0b and B1/B2 read book-era candles and should be re-run.
+Not affected: every training window (all end 2025-12-10), the book/tape/funding/OI tables, M3-4.
+**Nothing is lost** — klines are fully backfillable. The fix is a one-line `on_conflict` change plus
+a forced re-pull from 2026-07-17; the existing `backfill_history.py` cannot do it because it only
+fills gaps. Three decisions are stated as questions in the owning document §6.
+
+---
+
+### 🔴 The candle-repair queue — decided 2026-09-03 to implement later, in this order
+
+**The ordered checklist with real commands is [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md)
+§7.** Three decisions are open there (§6) and must be answered before the step that depends on
+each:
+
+| # | question | blocks |
+|---|---|---|
+| **Q1** | Apply the collector fix **and** the history repair now, or fix only, or neither yet? *(recommended: both)* | §7 steps 1–4 |
+| **Q2** | Re-score the served checkpoint on repaired data and re-derive the frozen cut and ladder (same checkpoint, same rule, a C4 data correction), or keep the constants and fix only the live inputs? *(recommended: re-score)* | §7 steps 5–7 |
+| **Q3** | Bundle the `serve.py` forming-candle exclusion into the same change, or keep it separate and measured as a fidelity fix? *(recommended: separate)* | the parked row below |
+
+### 🟡 Parked 2026-09-03 — what the defect investigation surfaced, for after the repair
+
+*Each is a proposal filed so it is not lost. None is scheduled; each names what would start it.*
+
+| item | what | why | revival trigger / command |
+|---|---|---|---|
+| ~~**Input-integrity guard**~~ ✅ **DONE 2026-09-03** (`1200152`) | `scripts/candle_guard.sh` runs `ml/train/verify_candles.py --since-yesterday` daily on `fluxtrader-1` under the **systemd timer** `candle-guard.timer` — runbook: [CANDLE_GUARD.md](./CANDLE_GUARD.md) — (01:40 UTC; the VM is Ubuntu 26.04 with no cron daemon, and `Persistent=true` fires a run missed while the VM was down). Quiet on success, Telegram alert on failure through the bot the app already uses, and `/var/tmp/candle_guard_status.json` written either way. Install/update with `./scripts/install_candle_guard.sh` | The 2026-09-01 "live matches the split" check compared two outputs of the same corrupt input. A candle-vs-exchange check would have fired on 2026-07-19 | **Remaining half, still parked:** (a) surface `candle_guard_status.json` on `/api/health` — the guard cannot alert if the VM is off or the timer is disabled, and only the app can notice that silence; (b) the served model's live feature z-scores against the checkpoint's own `norm_stats`, a drift monitor needing no external call — a live column sitting at −2σ for a month is this defect's signature |
+| **The forming candle is the newest timestep at serve time** | `serve.py` `build_tensor` takes the last `max_rows` candles including the still-forming bar; offline every window ends on a complete bar. Drop candles whose `close_time` is in the future | A live/offline mismatch the `on_conflict` fix does not remove. Its size is unmeasured | Q3. Pre-register as a fidelity fix (the 2026-08-31 pattern); measure with `./scripts/m3.sh -m m3 fidelity` before and after |
+| ~~**Re-answer the arrival question on true data**~~ ✅ **CLOSED 2026-09-04** | On the repaired seed-2 dump the frozen cut is exceeded through **2026-08-31**; its longest dry spell is **51.8 days** (seeds 1/3: 24.9 / 12.7). `ml/train/output/probe/c4_repaired.py` | The forward test was never regime-blocked — it was reading partial bars. The staleness trigger is calibrated on this (N = 65 days, M3_PROTOCOL §9.1) | — |
+| **Kline taker-buy volume and trade count as M2 inputs** | `/fapi/v1/klines` returns `taker_buy_base_volume`, `taker_buy_quote_volume` and `number_of_trades` for the full history; `collector.ex` `parse_kline` and `backfill_history.py` both keep only indices 0–6 ([DATA_COLLECTION_AUDIT.md](./archive/DATA_COLLECTION_AUDIT.md) item 3). Add the columns, backfill four years, one pre-registered run under M3_PROTOCOL §8.3 | It is the one kind of **genuinely external information that is inside the training window today** — order-flow imbalance, not a re-parameterization of bars already in the window, which is what NEXT_TRAINING_PLAN §5 names as the sole reopening condition for features. Every closed feature lever was a function of the existing seven columns | Needs a migration (three columns), collector + backfill changes, a `features.py` group, and a pre-registration written before the run. Do it after the repair, since the same backfill pass can carry the new columns. ⚠️ One run is a probe, not a bank — three seeds bank it (§0.3) |
+| **Exploratory probes on the dumps, no GPU** | (a) gross bps and `dir_acc` of the cov-0.02 slice by hour of day and weekday — the model has no clock and crypto has strong intraday seasonality; (b) a market-neutral pairing: at each bar, long the top up-confidence pair against short the top down-confidence pair, scored against the single-leg policy | Both are `EXPLORATORY` under M3_PROTOCOL §8.2 — reasons to write a confirmatory test, never findings. Either could become an M3 observable (a) or an M3 execution variant (b) | Any idle session; run on the **repaired** dumps, not the current ones. Output labelled `EXPLORATORY` |
+
+---

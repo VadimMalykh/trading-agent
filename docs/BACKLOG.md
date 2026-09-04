@@ -1,477 +1,78 @@
 # Backlog — every piece of planned work, and what would revive it
 
-**Purpose:** one place that enumerates *all* open work, so a fresh session can see what exists
-without reading five plan documents and inferring what is still alive. Requested 2026-08-28:
-*"document everything clearly and carefully, so we don't lose any of planned stuff and return
-back when it's needed."*
+**This is the entry point.** One place that enumerates *all* open work, so a fresh session can
+see what exists without reading five plan documents and inferring what is still alive. Requested
+2026-08-28: *"document everything clearly and carefully, so we don't lose any of planned stuff and
+return back when it's needed."*
 
-**This file is an index, not a plan.** Every row points at the document that owns the detail.
-It carries no numbers and no conclusions — those live in the owning plan and would go stale
-here. What it does carry, for each item, is the thing that is easiest to lose: **why it is not
-being worked on right now, and what would change that.**
-
-**Three states, three treatments** (the rule this file exists to enforce):
+**It is an index, not a plan.** Every row points at the document that owns the detail. It carries
+no narrative and no numbers — those go stale here. What it does carry, for each item, is the
+thing that is easiest to lose: **why it is not being worked on right now, and what would change
+that.** 🔴 A parked item without a revival trigger is how a plan quietly becomes a graveyard.
 
 | state | meaning | treatment |
 |---|---|---|
 | 🔵 **active** | being worked on now | full detail in the owning plan's status block |
 | 🟡 **parked** | planned, not done, still worth doing | **stays here with a revival trigger** — never archived |
 | 🟢 **closed** | answered, *including* "answered as unresolvable" | one-line tombstone + link, so it is not re-opened by accident |
-| ⚫ **superseded** | a later result invalidated it | moved to `docs/archive/TRAINING_HISTORY.md`, not listed here |
+| ⚫ **superseded** | a later result invalidated it | moved to [archive/TRAINING_HISTORY.md](./archive/TRAINING_HISTORY.md), not listed here |
 
-🔴 **A parked item without a revival trigger is how a plan quietly becomes a graveyard.** If
-you defer something, write down what would un-defer it.
+*Restructured 2026-09-04 (RULES_REVIEW §6.3): the deploy-day, twelve-pair-widening, M3-0b,
+candle-defect, freshness and arrival-rate narratives moved to the documents that own them. This
+file is tables.*
 
 ---
 
-## 🔴 New 2026-09-04 — the rules review, the M3 re-score on repaired data, and eight open decisions
+## 🔴 Right now — what 2026-09-04 left open
 
-**Owner: [RULES_REVIEW.md](./RULES_REVIEW.md).** Asked the same day: are the rules too tight, what
-can be cleaned up, and why not re-assess M3 (rule *and* RL) on corrected validation. Verdict in one
-line each: the bars are right, the friction is four structural gaps around them (the swap rule is
-not in force, the confirmatory lane has no dataset but forward time, Tier 1 ranks on an undecidable
-statistic, and there is no data-correction rule); **M3 was re-executed on repaired data and the
-incumbent still passes Tier 1 — worst window −4.61 bps against a −5 floor, pooled +13.82 net at
-taker — while 0 of 8 learned runs pass**, records in [M3_2_RESULTS_REPAIRED.md](./M3_2_RESULTS_REPAIRED.md)
-and [M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md); RL is not forbidden, it is unfundable on
-~220 independent days, and **walk-forward folds over the older history** are the one investment
-that unblocks it, the parked pre-registrations, and retraining alike.
+The rules review answered three questions — are the rules too tight, what can be cleaned up, and
+why not re-assess M3 (rule *and* RL) on corrected validation — and all eight decisions it raised
+were taken and carried out the same day. Record: [RULES_REVIEW.md](./RULES_REVIEW.md).
+**Three things remain, in this order:**
 
-✅ **All eight decisions taken the same day and carried out** (RULES_REVIEW §4): **Amendment 2 is
-written and in force** ([M3_PROTOCOL.md](./M3_PROTOCOL.md) §9 — Q1 (c) promote on backtest / keep on
-forward, Q2 (c) margin plus breadth, Q3 (b) a **65-day staleness trigger** superseding the quarterly
-cadence, the data-correction clause, the walk-forward folds as the standing confirmatory dataset,
-and a new ranking axis for *future* protocols); the served constants are **re-derived on repaired
-data** (cut 0.6296127438545227, p80 0.025596268475055695); the **checkpoint-binding guard is built**
-(RETRAIN_PLAN 0.2 — the policy skips every bar unless `ml_inference`'s reported sha256 matches);
-the **forward ledger persists across swaps**, every row tagged with its checkpoint and ladder;
-`TRAIN_FRACTION` is plumbed and **[WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) is
-pre-registered** (4 rolling fixed-width folds × 3 seeds, F2 first); the approved cleanup ran (M1
-code, the pre-bucket migration scripts, `quant_ab.sh` and a crash dump are gone; M2-era logs are in
-`logs/archive/`; two M2-era studies in `scripts/archive/`). 🟢 **The arrival question is answered
-on true data: the cut fires on repaired candles** (last 2026-08-31, longest dry spell 51.8 days) —
-the forward test was never regime-blocked.
+| # | item | owner | state |
+|---|---|---|---|
+| 1 | **Deploy the re-derived rule and the checkpoint guard to `fluxtrader-1`** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.1 | 🔵 both `ml_inference` and `app`, no truncate (the ledger persists across swaps), verify `checkpoint_bound: true` |
+| 2 | **The walk-forward fold queue** — 12 serial runs, F2 first | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §5 | 🔵 the harness (`M3_ERA=walkforward`) is built and committed; the runs are not started |
+| 3 | **The document restructuring** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.3 | 🔵 in progress 2026-09-04 |
 
-🔴 **Three things remain, all in RULES_REVIEW §6:** (1) **deploy to `fluxtrader-1`** — both
-`ml_inference` and `app`, no truncate, verify `checkpoint_bound: true`; (2) **the fold queue**,
-twelve serial runs; (3) **the document-restructuring session**, brief in §6.3. The parked
-"re-answer the arrival question" row below is closed by this.
+**What the review established, in one line each:** the bars are right and the friction is four
+structural gaps around them, all four fixed by [M3_PROTOCOL.md](./M3_PROTOCOL.md) §9
+(Amendment 2); **the incumbent still passes Tier 1 on repaired data** — worst window −4.61 bps
+against a −5 floor, pooled +13.82 net at taker — while **0 of 8 learned runs pass**
+([M3_2_RESULTS_REPAIRED.md](./M3_2_RESULTS_REPAIRED.md),
+[M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md)); and RL is not forbidden but unfundable
+on ~220 independent days, which is what the folds exist to change.
+
+---
 
 ## 🔵 Active
 
 | item | owner doc | state |
 |---|---|---|
-| **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** The clock has started |
-| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **RESTARTED AND VERIFIED 2026-09-01 — and now REGIME-BLOCKED, which is a new problem.** The frozen rule is deployed and every §6.4 check passes (threshold `0.6318973898887634` on both `confidence_threshold` and `frozen_threshold`; `warm: true` immediately; frozen quintile edges; `rolling_threshold` 0.5549 correctly below the cut; only `below_coverage` in `skips`; arms `policy` + `flat_size` at zero trades; `daily_pnl` 0.0). 🔴 **But the cut has not been exceeded since 2026-06-29 — see "The arrival-rate finding" below.** Waiting is no longer a plan that can be costed, which is why [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) is the recommended next work. *Superseded status follows.* ⚫ AWAITING RESTART — the rule is fixed in code, the clock is not yet reset.** The cut and ladder are frozen ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6); what remains is the deploy plus the manual `TRUNCATE paper_trades` in §6.4, and the §4.1 control-arm decision that should be made in the same restart. ⚠️ After it, **`warm` is true immediately** — the ~14-hour rank-window wait no longer exists — and long stretches with no trade are expected. Check with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). *Superseded status follows.* 🔴 **RAN THE WRONG RULE — see [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) (2026-08-31) and the blocker row below. It needs a decision before more calendar time is spent.** Original status: **Restarted 2026-08-29** on the twelve-pair universe (see the row below). It needs no work, only **calendar time**: it is the only mechanism that manufactures new independent trading days. Check it with `curl localhost:4000/api/health` **on the VM** (host port 4000 there; 4001 is the local-compose mapping). ⚠️ `warm: false` until the rank window holds 2,016 bars — that is **~14 hours at twelve pairs, NOT seven days**; the constant is a bar count pooled across served pairs, and every document said "seven days" until 2026-08-29. It may then idle for weeks (see the volatility note below). Both are the strategy working |
-| **The M3 dashboard panel** | [M3_UI_PLAN.md](./M3_UI_PLAN.md) | ✅ **BUILT 2026-08-29, DEPLOYED and live on `fluxtrader-1` 2026-08-31.** It earned its keep immediately: the panel is what made the served-vs-scored threshold gap visible, which is [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md). Original build note follows. ✅ BUILT 2026-08-29.** The forward paper test is the phase's only deliverable and it was **invisible in the UI**; the dashboard now leads with warm state, the rank-window progress, the A/B arms, the named skips and the served-vs-collector drift check, all read-only. 79 tests green; verified with an empty ledger, with Postgres stopped, and against `fluxtrader-1`'s real `/api/health` state. ⚠️ **`fluxtrader-1` still serves the M2-era page** — the deploy is deliberate and pending, and it **changes dependencies** (a test-only Floki), so it needs `app_deps` / `app_build` recreated. Command in [M3_UI_PLAN.md](./M3_UI_PLAN.md) §9 |
-| **Widen the served universe to 12** | [M3_PLAN.md](./M3_PLAN.md) §0.6 | ✅ **DONE 2026-08-29.** The four extras now carry their own measured crossing cost, so nothing served falls back to a pooled number. See "The twelve-pair widening" below |
-| **M3-0b** — price/funding side-table | [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) | ✅ **DONE 2026-08-29. This was the last M3 build item — M3 now has none.** Acceptance passes on all four dumps (2,655,988 bar-comparisons, every one exact), and it carries **B0** in the same alignment, which closes B0 and unblocks B1. See "What M3-0b found" below — one of its three results is a live setting that needs a decision |
-
-**M3-4 completed 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), read via
-[M3_PLAN.md](./M3_PLAN.md) §0.8. Risk #2 closed.
-
-**Deploy day, 2026-08-28 — three defects were found and fixed by deploying.** Recorded here
-because each was invisible on the local stack and only the real VM exposed it:
-
-1. **The policy was ranking over 12 pairs, not 8.** `Settings.get_whitelist/0` is the
-   *collector's* pair list and the VM's copy still held the 12-pair 8-vs-12 era list; the
-   policy followed it, so the top-2% coverage cut was being taken over a population including
-   four pairs `ExecCost` has never measured. Fixed by giving the policy its own universe
-   (`config :fluxtrader, :trading, served_pairs`), reported at `policy.served_pairs`, with
-   unserved bars counted as the named skip `not_served`. 🔴 **Do not "fix" a future mismatch
-   by narrowing the collection whitelist** — see #2.
-2. **Narrowing the whitelist stopped collection.** The first attempt at #1 set the whitelist to
-   the served eight, which halted `orderbook_snapshots` on ADA/AVAX/LINK/XRP for ~18 minutes.
-   Collection gaps do not backfill. Restored, and the code now separates the two concerns.
-3. **The tape fix starved the book poll.** Raising the aggTrades limit ran inline in the same
-   GenServer as the book poll and cost 2.5x of the book snapshot rate (55.2 → 22.2 rows/min).
-   The sweep now runs under `Task.Supervisor`.
-
-**M3-5 completed 2026-08-28** — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md). The policy is
-wired to a crossing executor, the hard `RiskManager` path is exercised on every entry, the
-signal-only A/B control runs beside it, and `/api/health` reports signal liveness. Risk #7
-closed; §6's last two exit criteria closed. It left two items open, both below.
-
-### The twelve-pair widening, 2026-08-29
-
-**The served universe is now twelve.** This is not a reversal of T6 and not a new result. T6's
-verdict was **"UNDECIDED — the incumbent 8-pair universe stands by default"**: the cleanly
-separated universe effect is **−2.51 bps, 95% CI [−17.85, +12.83]**, on a period that resolves
-nothing under ±37 bps. Eight was the conservative default while the four extras had no measured
-crossing cost. That reason is now gone, and the standing intent has always been twelve for the
-long run — so the default was retired rather than left to be re-derived from a results file that
-reads like a closed decision.
-
-🔴 **The case for twelve is throughput and diversification, NOT per-trade edge.** T6's point
-estimate for the universe term is slightly negative. What twelve buys is more trades per day
-against a milestone whose binding constraint is the number of independent trading days. Do not
-quote this widening as evidence that twelve earns more.
-
-**What made it safe, and what it cost:**
-
-1. **Every served pair now carries its own measured crossing cost.** M3-4's run had in fact
-   measured all twelve; the protocol reported the four added 2026-08-14 as "texture only" and
-   excluded them from Q1's verdict, because pooling 14 days of ladder with 23 into a decision
-   quantity is what M3_4_PROTOCOL §1.5 forbids. **That exclusion governs the verdict, not the
-   charging** — a cost used to charge a trade is not a decision quantity, and a pair's own
-   14-day number beats a constant pooled from eight *other* pairs. The study was re-run
-   2026-08-29 and reproduced byte-identically before any constant was copied.
-2. **ADAUSDT is why this was a real blocker and not a formality:** it measures **13.733 bps**
-   against the pooled **9.842** it would otherwise have been charged — 3.89 bps light, about
-   40%. Its spread alone (4.901 bps) is 1.7× the widest of the original eight.
-   Full table: XRP 9.075, LINK 10.754, AVAX 11.401, ADA 13.733, each on 14 days / ~3,960 obs.
-3. **`@pooled` was deliberately NOT re-pooled over twelve.** It stays the eight-pair,
-   23-day number, per §1.5. Nothing served is charged it any more; it survives only as the
-   flagged fallback for a pair that has never been measured at all.
-4. **`max_positions` went 8 → 12.** T6 re-tuned the concurrency cap on both universes and
-   `max_concurrent=none` won on both — every cap tried cost net bps. On twelve pairs a cap of 8
-   is no longer "one slot per pair"; it is the binding cap T6 measured at **+13.21** against
-   **+19.51** uncapped. Widening the universe without widening the cap would have silently
-   imposed the constraint T6 said not to use.
-5. **The bar log was reset.** The top-2% cut is a rank over whatever population is recorded, so
-   an 8-pair era sitting inside the 14-day window would have made the live cut a mixture of two
-   rules. 1,161 bars and **zero trades in either arm** were discarded — which is exactly why the
-   change was made now. Backed up first to `~/policy_bars_8pair_20260829.csv` on the VM.
-
-**Deployed and verified on `fluxtrader-1`, 2026-08-29 05:00 UTC** (commit `5815789`):
-
-* `policy.served_pairs` and the new `policy.collector_pairs` both show the twelve;
-* `exec_cost.measured_pairs` shows twelve, split `long_window_pairs` (8, 23d) /
-  `short_window_pairs` (4, 14d);
-* `risk.max_positions` is 12;
-* `skips` holds only `warming_up` — **`not_served` is gone**, which is the expected reading now
-  that the collector and the served set coincide, and is the signal to watch: a non-zero
-  `not_served` from here means the two lists have drifted apart again;
-* `orderbook_snapshots` kept flowing evenly on all twelve pairs across the restart (36 rows per
-  pair in the following 8 minutes) — the deploy-day-defect-#2 failure mode did **not** recur;
-* the rank window restarted at 0 and refills at **12 pairs x 288 = 3,456 bars/day**, so
-  `warm: true` is expected around **2026-08-29 19:00 UTC**, ~14 hours after the reset.
-
-🔴 **Coverage was deliberately NOT changed, and that is an open pre-registration.** At a fixed
-cov 0.02 a wider universe takes **more** trades, not better ones — T6 measured **3.05/day at
-twelve against 2.02 at eight**. Whether the served coverage should instead tighten to hold the
-trade count fixed (T6's count-matched cut is **0.01288**) is a separate question. M3_PROTOCOL §0
-forbids re-picking a searched dimension after seeing results, so it needs its own
-pre-registration on the population it will be served from. It was not bundled into the universe
-change. **Filed as parked below.**
-
-🔴 **Do not change `served_pairs` again while the forward test is accumulating trades.** It
-changes the rule, so the A/B would span two different policies — the same comparability break
-M3_4_PROTOCOL §7 records for the trade-tape change. This widening was done deliberately in the
-window before the first trade fired, and that window is now closing.
-
-**Two defects found and fixed on the way, both latent:**
-
-1. **"Seven days" was never true.** `Ledger.@min_rank_bars` is `7 * 288 = 2016` **bars**, and
-   the count is pooled across served pairs — so it clears in ~21 hours at eight pairs and ~14 at
-   twelve, never in seven days. Every document repeated the seven-day reading and the
-   2026-08-28 deploy was mis-forecast on it. Corrected in `ledger.ex`, M3_PLAN §0.0, PLAN.md,
-   M3_5_INTEGRATION §2 and this file.
-2. **The collector whitelist fallback was narrower than what was being collected.** The DB row
-   held twelve, but `config/config.exs` and `runtime.exs` both defaulted to eight (and
-   `Settings.@default_pairs` to three). One lost row and collection on XRP/LINK/AVAX/ADA would
-   have stopped, unrecoverably — deploy-day defect #2's failure mode with a different trigger.
-   Both defaults now hold twelve, and `config_test.exs` asserts the fallback can never be
-   narrower than the served universe.
-
-**New invariant tests** (`apps/fluxtrader/test/fluxtrader/trading/config_test.exs`) assert the
-three relationships that were individually plausible and jointly wrong: every served pair has
-its own measured cost, the position cap is not narrower than the universe, and the whitelist
-fallback is not narrower than the served set. 74 tests green.
+| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔵 **running; the clock restarts at the §6.1 deploy**, because every row from there carries its checkpoint tag and the A/B is read on tagged rows. It needs no work, only calendar time — it is the only mechanism that manufactures new independent trading days. Check with `curl -s localhost:4000/api/health \| jq '{policy, regime}'` **on the VM** (port 4000 there; 4001 is the local-compose mapping). Long silences are the strategy working |
+| **The walk-forward folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) | 🔵 **pre-registered 2026-09-04, before any fold was trained.** 4 folds × 3 seeds, F2 first, ~4h each, strictly serial. The scoring harness is committed (`ml/train/m3/walkforward.py`, `M3_ERA=walkforward`); C3's third acceptance test must pass before any fold number is read |
+| **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** Deploy day found three defects invisible on the local stack — recorded in that document's §8 |
+| **The M3 dashboard panel** | [archive/M3_UI_PLAN.md](./archive/M3_UI_PLAN.md) | ✅ **BUILT 2026-08-29, live 2026-08-31.** It earned its keep immediately: the panel is what made the served-vs-scored threshold gap visible ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md)). Its empty-state doctrine now lives in [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §2 |
+| **Widen the served universe to 12** | [M3_PLAN.md](./M3_PLAN.md) §8 | ✅ **DONE 2026-08-29.** Every served pair now carries its own measured crossing cost |
+| **M3-0b** — price/funding side-table | [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) | ✅ **DONE 2026-08-29 — the last M3 build item.** Acceptance passes on all four dumps. Its stop/target finding is a real-money row below |
+| **M3-4** — execution costs | [M3_4_RESULTS.md](./M3_4_RESULTS.md) | ✅ **DONE 2026-08-28.** Crossing costs 9.84 bps round trip, not 14; the maker arm is not worth building. Risk #2 closed |
+| **The candle repair** | [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md) | ✅ **DONE 2026-09-04**, verified 36/36, and the three checkpoints re-scored on it. The integrity guard that would have caught it is in [CANDLE_GUARD.md](./CANDLE_GUARD.md) |
+| **The freshness question** | [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) | 🟢 **not decidable on one split, and Phase 3 as written could not decide it either** (§9). Superseded by the folds, which is the design that can. The 65-day staleness trigger from it is in force (M3_PROTOCOL §9, Q3 (b)) |
 
 ---
+## 🟢/🔴 The forward test's own blockers
 
-## What M3-0b found, 2026-08-29 — and the one decision it hands over
+*Different from the real-money blockers below: these do not block real money, they block the
+paper test from meaning anything. Owner: [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md).*
 
-**[M3_0B_RESULTS.md](./M3_0B_RESULTS.md)** is the record. Three results, in descending order of
-how much they matter:
-
-1. 🔴 **The `auto` path's 2% stop / 4% target costs ~10.5 gross bps per trade** — +33.76 →
-   +23.24, on a policy netting ~20. `RiskManager` attaches it to every `auto` entry
-   (`stop_loss_pct: 0.02`, `take_profit_ratio: 2.0`); the validated policy exits at a fixed
-   four hours. The stop fires three times as often as the target (34.1% vs 11.2%). 🟢 **The
-   running paper test is NOT affected** — `Executor`'s paper arms ignore both barriers and
-   close on the timer, and the `auto` path cannot trade because it is unsigned. Filed with the
-   **real-money blockers**, which is where the executor's own moduledoc said this belonged:
-   the brake "must be priced before real money goes near this", and now it is.
-2. 🟢 **Funding is a rounding error: +0.14 bps/trade**, moving the headline +20.59 → +20.45. It
-   was an unquantified term for the whole project. ⚠️ **HYPEUSDT settles every 4 hours, not 8**
-   — the schedule is now read per pair from the data, never assumed; a hardcoded 8h calendar
-   would have halved it on a pair the policy trades.
-3. 🟢 **C4b is answered.** Every barrier setting tried loses to the fixed 4h hold (best +9.2
-   against +19.8 net bps), improving monotonically as the band widens back toward it. The
-   label/booking mismatch is real and points *away* from barriers, so accepting it costs
-   nothing. ⚠️ This is a slice, not a search — six (stop, target) pairs at one horizon on one
-   entry rule. Trailing stops, vol-scaled bands and regime-conditional barriers stay untested,
-   and stay that way until someone writes a pre-registration.
-
-⚠️ **Two corrections to what the plans asserted**, both caught by the acceptance test rather
-than by review: M3-0b's data was **not** "already on disk" (the M3-4 export is the 23-day book
-era, and 96% of the policy's trades fall outside it — the price path is now its own export over
-2025-11-15..2026-08-30), and funding is **not** "a real term in the P&L, not a rounding error"
-at a 4h hold. Both assertions were reasonable; measuring is what settled them.
-
----
-
-## 🟢/🔴 The blocker on the forward test itself
-
-*New 2026-08-31. Different from everything below it: it does not block real money, it blocks
-the paper test from meaning anything. **The cut row is closed the same day; the two rows under
-it are still open and the restart is the moment to settle them.***
-
-| item | why it matters | what to do | source |
-|---|---|---|---|
-| ✅ **Which coverage cut is the policy — CLOSED 2026-08-31** | Frozen at **0.6318973898887634**, ladder alongside it at **[0.00391214806586504, 0.008861115202307701, 0.015078878961503506, 0.025166796520352364]**. Both derived by `backtest.py` over **the served checkpoint's own split** (seed 2, `20260819T142759Z`); recomputing them reproduces that seed's arm A exactly — 483 trades, mean size 1.362. ⚠️ **A first attempt used O8's 12-pair cut (0.5992) and was wrong:** O8 is a different trained model, and its cut realizes **4.01% coverage** on the served checkpoint against the searched 2% — §1.5's closed "absolute threshold across checkpoints" defect, one level down. A cut belongs to a **checkpoint** first, a universe second. ⚠️ Remaining gap, deliberate: the constants are from an 8-pair split while twelve are served, so realized coverage is not exactly 2%; closing it needs seed 2 re-evaluated on twelve pairs, which would settle the parked coverage pre-registration as a side effect. Consequences that are intended: **no warmup at all**, and **long correct silences** — August's confidence tops out at 0.569 against a 0.6319 cut | 🔴 **The deploy is not the whole fix.** The forward clock restarts by hand: back up and `TRUNCATE paper_trades`, then restart the app to clear the daily P&L. `policy_bars` is **kept** this time — the cut no longer reads from it. Full procedure and the post-restart verification list: [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6.4 | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6 |
-| ⚫ *(superseded — the original row, kept one release for context)* 🔴 **Decide which coverage cut is the policy** | The backtest ranks the top 2% over the whole 253-day split (a fixed cut, ~0.62). Live, `Ledger.coverage_threshold/3` ranks over a **trailing 14 days**, so it admits 2% of bars in *every* window by construction. August's confidence never exceeds 0.569, so **the validated rule would have taken zero trades and the served rule took twelve**, all of them below every seed's fixed cut. Measured: the served rule scores **+8.62 vs +15.03** net taker bps on the 8-pair baseline with the worst window going **+0.25 → −8.88**, and on the served 12-pair universe it **flips sign, +21.44 → −18.43**. The sizing ladder has the same defect (trailing 30d quintiles; `p80_edge` 0.0179 against a published 0.0431) and costs ~1.5 bps | Freeze the cut at the served seed's banked value (s2 = **0.6319**) so live matches what was scored — this is *not* re-picking a searched dimension, so M3_PROTOCOL §0 is not engaged — **or** pre-register the floating cut as a new rule. Fix the ladder in the same change. ⚠️ **Either way the forward clock restarts and the twelve trades are discarded.** Doing that at twelve trades costs two days; at two hundred it costs the phase. 🔴 The one thing not to do is leave it running undecided | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md), `./scripts/m3.sh -m m3 fidelity` |
-| ✅ **The A/B has no B — CLOSED 2026-08-31** | The control arm `signal_only` required `bar.gated` and **nothing had gated in 8,184 bars** (none since 2026-06-29), so it stood at 0 trades against the policy arm's 12 with no end in sight. Re-registered as **`flat_size`: the same bars as the policy, at size 1.0.** The A/B now measures **the regime size ladder** — M3-2's own central claim, worth +8.6 bps on the worst window and never checked forward. `Policy.decide_flat/3` delegates to `Policy.decide/3` so the two arms cannot drift into a two-variable comparison. 🔴 **Compare them on net bps per unit of NOTIONAL, not per trade** — the policy arm varies size, so its per-trade mean is flattered by the very thing under test | Nothing further to decide. Deploy carries it. ⚠️ The arm rename makes `TRUNCATE paper_trades` **required**, not advisory: `PaperTrade.@arms` no longer accepts `signal_only`. The `signal_only` comparison is no longer measured live; reviving it as a third arm is small if M2's gate ever fires again, but should not be done on the assumption that it will | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6.6, [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §4 |
-| 🟡 **The daily loss limit biases the forward estimate** | `RiskManager`'s −50/day limit suppresses entries after a bad day, truncating the recorded sample's left tail, so the forward test's mean net bps is biased **upward**. Daily P&L reached −26.78 against it on 2026-08-31 | Accept and document, or log suppressed entries as counterfactual bars so the bias can be removed | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §4.2 |
-
----
-
-## 🔴 New 2026-09-03 — the stored candles have been partial bars since 2026-07-18, and the silence is a data defect
-
-**Owner: [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md).** The collector polls the five most
-recent klines every 60 s and inserts with `on_conflict: :nothing`, so every candle is stored at
-its **first sighting — within a minute of opening — and never updated when it closes.** Verified
-against Binance at identical timestamps: on 2026-08-20 the stored BTCUSDT 5m bars carry a median
-**11% of true volume** and **31% of true high–low range**, the close matches in 0/288 bars, and
-all twelve pairs show the same (volume ratio medians 0.089–0.112, zero exact matches). A
-pre-collector control day matches 288/288. 42 of the 43 post-07-18 days in the export are corrupt.
-
-🔴 **This supersedes the "regime fact" reading in the arrival-rate section below, in
-[REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §1, NEXT_TRAINING_PLAN's top block, M3_PLAN §0.8 and
-M3_PROTOCOL §8.0.** The model did not respond to the 8% BTC move on 08-20/21 because the candles
-it was shown for those days had a tenth of the volume. The 2026-09-01 check that "live confidence
-matches the split" compared two outputs of the same corrupt input. Day-to-day dispersion of the
-daily p98 confidence fell **7–14×** on 2026-07-18 on all three seeds — the signature of an input
-going flat, not of a calm market.
-
-**Consequences:** every live prediction since 07-18 is void, so the forward paper test has measured
-nothing since it began; the last 31 days of every eval dump's split (~12%) are corrupt, so the
-frozen cut and ladder must be re-derived after repair (same checkpoint, same rule — a data
-correction under C4, not a re-pick); M3-0b and B1/B2 read book-era candles and should be re-run.
-Not affected: every training window (all end 2025-12-10), the book/tape/funding/OI tables, M3-4.
-**Nothing is lost** — klines are fully backfillable. The fix is a one-line `on_conflict` change plus
-a forced re-pull from 2026-07-17; the existing `backfill_history.py` cannot do it because it only
-fills gaps. Three decisions are stated as questions in the owning document §6.
-
----
-
-### 🔴 The candle-repair queue — decided 2026-09-03 to implement later, in this order
-
-**The ordered checklist with real commands is [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md)
-§7.** Three decisions are open there (§6) and must be answered before the step that depends on
-each:
-
-| # | question | blocks |
+| item | state | source |
 |---|---|---|
-| **Q1** | Apply the collector fix **and** the history repair now, or fix only, or neither yet? *(recommended: both)* | §7 steps 1–4 |
-| **Q2** | Re-score the served checkpoint on repaired data and re-derive the frozen cut and ladder (same checkpoint, same rule, a C4 data correction), or keep the constants and fix only the live inputs? *(recommended: re-score)* | §7 steps 5–7 |
-| **Q3** | Bundle the `serve.py` forming-candle exclusion into the same change, or keep it separate and measured as a fidelity fix? *(recommended: separate)* | the parked row below |
-
-### 🟡 Parked 2026-09-03 — what the defect investigation surfaced, for after the repair
-
-*Each is a proposal filed so it is not lost. None is scheduled; each names what would start it.*
-
-| item | what | why | revival trigger / command |
-|---|---|---|---|
-| ~~**Input-integrity guard**~~ ✅ **DONE 2026-09-03** (`1200152`) | `scripts/candle_guard.sh` runs `ml/train/verify_candles.py --since-yesterday` daily on `fluxtrader-1` under the **systemd timer** `candle-guard.timer` — runbook: [CANDLE_GUARD.md](./CANDLE_GUARD.md) — (01:40 UTC; the VM is Ubuntu 26.04 with no cron daemon, and `Persistent=true` fires a run missed while the VM was down). Quiet on success, Telegram alert on failure through the bot the app already uses, and `/var/tmp/candle_guard_status.json` written either way. Install/update with `./scripts/install_candle_guard.sh` | The 2026-09-01 "live matches the split" check compared two outputs of the same corrupt input. A candle-vs-exchange check would have fired on 2026-07-19 | **Remaining half, still parked:** (a) surface `candle_guard_status.json` on `/api/health` — the guard cannot alert if the VM is off or the timer is disabled, and only the app can notice that silence; (b) the served model's live feature z-scores against the checkpoint's own `norm_stats`, a drift monitor needing no external call — a live column sitting at −2σ for a month is this defect's signature |
-| **The forming candle is the newest timestep at serve time** | `serve.py` `build_tensor` takes the last `max_rows` candles including the still-forming bar; offline every window ends on a complete bar. Drop candles whose `close_time` is in the future | A live/offline mismatch the `on_conflict` fix does not remove. Its size is unmeasured | Q3. Pre-register as a fidelity fix (the 2026-08-31 pattern); measure with `./scripts/m3.sh -m m3 fidelity` before and after |
-| ~~**Re-answer the arrival question on true data**~~ ✅ **CLOSED 2026-09-04** | On the repaired seed-2 dump the frozen cut is exceeded through **2026-08-31**; its longest dry spell is **51.8 days** (seeds 1/3: 24.9 / 12.7). `ml/train/output/probe/c4_repaired.py` | The forward test was never regime-blocked — it was reading partial bars. The staleness trigger is calibrated on this (N = 65 days, M3_PROTOCOL §9.1) | — |
-| **Kline taker-buy volume and trade count as M2 inputs** | `/fapi/v1/klines` returns `taker_buy_base_volume`, `taker_buy_quote_volume` and `number_of_trades` for the full history; `collector.ex` `parse_kline` and `backfill_history.py` both keep only indices 0–6 ([DATA_COLLECTION_AUDIT.md](./DATA_COLLECTION_AUDIT.md) item 3). Add the columns, backfill four years, one pre-registered run under M3_PROTOCOL §8.3 | It is the one kind of **genuinely external information that is inside the training window today** — order-flow imbalance, not a re-parameterization of bars already in the window, which is what NEXT_TRAINING_PLAN §5 names as the sole reopening condition for features. Every closed feature lever was a function of the existing seven columns | Needs a migration (three columns), collector + backfill changes, a `features.py` group, and a pre-registration written before the run. Do it after the repair, since the same backfill pass can carry the new columns. ⚠️ One run is a probe, not a bank — three seeds bank it (§0.3) |
-| **Exploratory probes on the dumps, no GPU** | (a) gross bps and `dir_acc` of the cov-0.02 slice by hour of day and weekday — the model has no clock and crypto has strong intraday seasonality; (b) a market-neutral pairing: at each bar, long the top up-confidence pair against short the top down-confidence pair, scored against the single-leg policy | Both are `EXPLORATORY` under M3_PROTOCOL §8.2 — reasons to write a confirmatory test, never findings. Either could become an M3 observable (a) or an M3 execution variant (b) | Any idle session; run on the **repaired** dumps, not the current ones. Output labelled `EXPLORATORY` |
+| **Which coverage cut is the policy** | ✅ **CLOSED 2026-08-31, re-derived on repaired data 2026-09-04.** Frozen to the constants `backtest.py` derives over **the served checkpoint's own split** — cut `0.6296127438545227`, ladder p80 `0.025596268475055695`. ⚠️ A cut belongs to a **checkpoint** first and a universe second; a first attempt used O8's 12-pair cut and realized 4.01% coverage instead of 2% | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6 |
+| **The A/B had no B** | ✅ **CLOSED 2026-08-31.** The `signal_only` control could not fire, so it was re-registered as **`flat_size`** — the same bars at size 1.0, which measures the regime ladder. 🔴 Compare the arms on net bps per unit of **notional**, not per trade | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §4 |
+| **The daily loss limit biases the forward estimate** | 🟡 **OPEN.** `RiskManager`'s −50/day limit suppresses entries after a bad day, truncating the sample's left tail, so the forward mean is biased **upward**. Accept and document, or log suppressed entries as counterfactual bars so the bias can be removed | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §4.2 |
 
 ---
-
-## 🔵 New 2026-09-03 — how fresh should the model be, and how do we find out cheaply
-
-**Owner: [RETRAIN_PLAN.md](./RETRAIN_PLAN.md).** The served model's training data stops
-~2025-12-10, so it is **~253 days ≈ 8.3 months stale**, and *nobody chose that*: the split is a
-fraction (`VAL_FRACTION = 0.2`), so `staleness = 0.2 × span = exactly the val window's length`.
-Staleness therefore **grows on its own at 0.2 days per calendar day**, and adding older history
-makes it *worse* (the boundary is `start + 0.8 × span`).
-
-🔵 **ANSWERED 2026-09-04 (Phase 2): whether staleness costs anything is UNMEASURABLE on this
-data.** The repair removed the candle defect from w4 and the decay-shaped curve survived
-(+18.6 / +15.2 / +5.5 / **−1.9** net at taker) — **but w4's 95% interval contains the means of
-all three other windows**, so the windows cannot be ranked at all. Three seeds over one market
-give ~35–52 day-clusters per window and ±50–100 bps intervals on a ~15 bps edge. **Phase 3
-cannot fix this**: priced against the same precision, its gate could only resolve a freshness
-effect of ~111–118 bps/trade, 7–12× the model's entire edge. Freshness is now ranked **fourth**
-— behind three things Phase 2 found on the way (see the table).
-
-### ✅ Phase 0 closed 2026-09-04; Phases 1 and 2 done — the plan's centre of gravity has moved
-
-| step | state |
-|---|---|
-| **0.1** verify the repair actually finished | ✅ **PASSED** — `verify_candles.py` returned **36/36**, twelve pairs × 07-21 / 08-20 / 09-02 at 5m, every one `288/288 exact vol=close=high=low=1.000`. 🟢 **2026-08-20 is the decisive one**: it is the day recorded at a median **11%** of true volume with **0/288** matching closes, and it is now 1.000 across the board. Pre-deploy days prove the repair, the post-deploy day proves the collector fix |
-| **0.2** the checkpoint-binding guard | ⚪ **not started — and deliberately not blocking.** See the decision below |
-| **0.3** plumb `VAL_FRACTION` and `VAL_OFFSET` into the launcher | ✅ **DONE — both halves.** `train_m2.py` always accepted `--val-frac` / `--val-offset`; the launcher forwarded neither. `VAL_FRACTION` was closed first; `VAL_OFFSET` followed 2026-09-04 (`config.py:188`, `train_m2.py:548`, `gcp_train.sh:180`), with the argparse default moved `0.0 → None` so the env var is reachable and an out-of-range fold now **exits** instead of clamping silently. `VAL_OFFSET=0.0` reproduces the trailing split bar for bar. **This is what makes walk-forward folds launchable** |
-
-🟢 **All five §8 decisions taken 2026-09-04: Q0 (a), Q1 (d), Q2 (B), Q3 (a), Q4 (a).** In one
-line each: **re-score the incumbent against Tier 1 on repaired data first** (it is cheap and
-everything else assumes its answer); **buy statistical precision before touching the split**,
-since a shorter holdout cannot score a challenger; **certify by walk-forward folds** rather than
-by refreshing an uncertified checkpoint; **quarterly cadence**, no trigger — this population
-cannot calibrate one; and the guard blocks **Phase 4 only**. Q1 and Q2 converge on a single
-investment: the folds bought for precision are the folds that certify a fresh checkpoint.
-
-**Decision taken 2026-09-04 — RETRAIN_PLAN §8 Q4 = (a): the checkpoint-binding guard blocks
-Phase 4 only.** Phases 1–3 swap no checkpoint, so nothing can be mis-served. The guard remains a
-hard precondition for Phase 4 and for M3_PROTOCOL §8.3 **C5**, and it is still the thing that
-"blocks fast iteration today" — it is just not a reason to delay a read-only re-baseline.
-
-| item | what | gated on | revival trigger / next command |
-|---|---|---|---|
-| ✅ **Phase 1 — re-baseline on repaired data** | **DONE 2026-09-04.** Three eval-only runs (`20260904T051921Z` / `061948Z` / `073714Z`), all DONE, on a verified-fresh post-repair dump. 🔴 **Its headline is RETRACTED**: "the repair bought back real edge, median +2.14 bps, 3/3 seeds" was read off the eval log's **Horizon 60m** block, not the **240m primary head** every M3 policy uses. On 240m the same cells are **−1.22 / +3.17 / −3.51** — 1 up, 2 down. What survives: the 240m head is net-**positive** at taker on all three seeds (+6.89 / +6.00 / +8.72), and the C4 cut re-derived to **0.6296** against the frozen `0.6318973898887634` | — | See [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §4. When reading `eval_m2.py`, **the 240m block is the one that counts** |
-| ✅ **Phase 2 — read the decay curve** | **DONE 2026-09-04. Verdict `NOT DECIDABLE`** on both policies, both eras, both scopes — w4's clustered CI contains all three other windows' means. Also found: the two eras are **not the same calendar rows** (val start moved +12d, end +16d), so every before/after is clipped to the shared span; the defect did not degrade w4 evenly, it **deleted the last fortnight** (0 bars over the cut in 2026-08-01..17, all three seeds) | — | `./scripts/m3.sh -m m3 decay` reproduces it; `M3_ERA=repaired` switches any m3 command to the repaired dumps. Logs `logs/P2-*.log` |
-| 🔴 **Phase 3 — the paired freshness test** | **BLOCKED — underpowered by construction, not scheduled.** §5.4 prices its gate at a **~111–118 bps/trade** minimum detectable effect against a ~9–17 bps edge. Running it as written returns `NOT DECIDABLE` whatever the truth is | A **redesign that adds day-clusters** — more seeds, the banked 12-pair universe, or walk-forward folds. A shorter holdout makes precision *worse*, not better. 🟢 **§8 Q1 = (d) funds exactly this**, so the revival trigger is now being built | Do **not** launch `VAL_FRACTION=0.095`. Revive only when a per-window mean has an interval narrower than the edge |
-| ⚪ **Phase 4 — what gets served, and on what cadence** | Resolves a genuine conflict: a fresh-boundary challenger has a short split and cannot satisfy C1/C2 as written, and §8.5 refuses to lower Tier 1 | Phase 0.2 **only** — the Phase 3 gate is removed, since Phase 3 cannot report | ✅ **RESOLVED §8 Q2 = (B), walk-forward certification** at k× the compute — the only option under which the *served* artefact is itself certified, and the same runs Q1 (d) buys for precision. (A) stays available as an interim only if the promotion record states plainly that the served checkpoint is uncertified. 🔴 **One design question precedes the runs**: anchored versus rolling fixed-width train window (RETRAIN_PLAN §7 B) — the implemented split is anchored, so older folds train on less data and a fold score mixes boundary age with training-set size |
-
-### 🔴 What Phase 2 found on the way — these outrank freshness
-
-| # | finding | why it outranks | cost |
-|---|---|---|---|
-| 1 | **The incumbent's worst window is −4.61 bps** on repaired data, against the **+0.25 bps** M3_2_RESULTS §D fixed as M3-3's promotion bar | It is about what is servable **today**, and every other question assumes an answer to it | No GPU — a Tier-1 re-score of an existing checkpoint |
-| 2 | **The regime ladder flattened by half at Q5** (+35.5 → +17.4 bps; per seed `[+34.8,+32.5,+38.7]` → `[+12.3,+8.3,+32.3]`) | The incumbent's `size_by_regime` overlay rests on exactly this ladder | No GPU |
-| 3 | **The served rule (fidelity arm D) scores −0.29 bps** at taker, down from +8.62; the **validated** arm A is at +13.82 | The gap between what was certified and what runs in production is now the entire edge — which is what **0.2, the checkpoint-binding guard**, exists to catch | 0.2 is already sized |
-
-🔴 **Phase 1 buys far more than this plan.** The same three re-scored dumps are what unblock
-the arrival-rate re-answer, the C4 re-derivation of the frozen cut and ladder, and the M3-0b /
-B1 / B2 re-runs — every one of which currently rests on corrupt candles. They are reachable
-from any m3 command as `M3_ERA=repaired`.
-
-🔴 **M3_PROTOCOL §8.6 Q3's recommended retrain trigger is void, and Phase 2 confirms it stays
-void.** It proposed triggering on "the served checkpoint going N days without exceeding its own
-cut", calling that "exactly the condition now in force" — but **that condition was the candle
-defect**. A repaired baseline now exists and it **still cannot calibrate a trigger**: this
-population cannot resolve a per-window change of the size a trigger would fire on. The answer
-remains a fixed **quarterly** cadence, chosen to bound staleness rather than to react to a
-signal.
-
-**The open questions** (§8) — ✅ **all answered 2026-09-04**:
-**Q0 = (a)** re-score the incumbent against Tier 1 on the repaired dumps, before any other
-phase, no GPU;
-**Q1 = (d)** add precision before touching the split — (a) "shorten for challengers" was already
-**removed** as unscoreable, and (b) keep-and-accept is what happens meanwhile, not a resolution;
-**Q2 = (B)** walk-forward certification, the same runs Q1 (d) buys;
-**Q3 = (a)** quarterly cadence; a trigger is not calibratable here;
-**Q4 = (a)** the guard blocks Phase 4 only.
-
-**Next command, and the pre-registered reading** (RETRAIN_PLAN §8 Q0). Eval-only, in Docker:
-
-```sh
-M3_ERA=repaired ./scripts/m3.sh -m m3 validate   # C3 first, then
-M3_ERA=repaired ./scripts/m3.sh -m m3 search     # Tier 1 over the 40 configurations
-```
-
-Bring back the `n / 36` Tier-1 line, the incumbent `cov0.02_hold240_rqnone_mcnone_SIZED`'s six
-criteria individually, and its per-window net at taker with the clustered interval. **Fail P3
-(worst window < −5 bps) → not servable, and Phase 4 becomes urgent. Pass P3 but land below
-+0.25 → the bar is restated at the new number and M3-3's comparisons are re-read against it;
-the challengers do not retroactively pass.**
-
----
-
-## ⚫ The arrival-rate finding, 2026-09-01 — SUPERSEDED 2026-09-03 for everything after 07-18
-
-*🔴 Read the section above first. The three hypotheses killed here stay dead; the one this section
-did not test — the stored inputs themselves — is the cause. The July 1–17 dry spell is real; from
-07-18 the model was reading partial bars. Kept one release for the record.*
-
-*Original text, and it changes the phase's sequencing. Measured offline on the served checkpoint's own dump
-(`20260819T142759Z`) plus the live bar log; probe scripts in `ml/train/output/probe/` (gitignored).*
-
-**The frozen cut has not been exceeded since 2026-06-29 — ~64 days and counting.** In the 252-day
-evaluation split the cut fires on 93 days (36.9%), but **68% of those bars fall in just two months**
-(Feb + June), July and August contribute **zero**, and the longest dry spell in the whole record is
-**50 days — the same spell, still running.**
-
-🔴 **The comfortable explanation is wrong: volatility came and the model did not respond.** BTC's
-1-day absolute return hit **0.080 / 0.075 on 2026-08-20/21**, the largest in the entire export and a
-level that historically fired on **100%** of days. Live confidence stayed at ~0.56 against a cut of
-0.6319. So "wait for volatility to return" is not a mechanism anyone has evidence for.
-
-**Three defect hypotheses were checked and all are dead** — this is a regime fact, not a bug:
-
-1. **Not serve-path drift.** Live median confidence **0.5197** vs the split's **0.5194**; the live
-   distribution is a clean day-for-day continuation of the split's own July–August tail.
-2. **Not book features going out-of-distribution.** The ceiling collapse *looks* coincident with
-   `has_book` going 0→1, but `NORM_DEGENERATE_MODE=zero` pins constant-in-train columns to zero in
-   train, val **and** serve — the model is candle-only and never sees live book values
-   (`config.py`, and `serve.py` warns about it at load). The p98 decline also *starts before* book
-   turns on, which the coincidence hid. ⚠️ The clean within-day paired test was underpowered
-   (8 mixed cells, p≈0.15) and settles nothing on its own; the config is what settles it.
-3. **Not seed-specific.** **All six** checkpoints on disk — including the 12-pair O8 and both
-   T-wave seeds — show daily-max confidence falling from ~0.62–0.66 pre-July to ~0.55–0.59 after,
-   each ceasing to fire its own cut between 2026-06-29 and 2026-08-22.
-
-**What this does NOT license.** 🔴 It is not evidence that the policy is broken, and it is not
-grounds to lower the cut. Un-freezing the cut to make trades happen is arm D, whose worst window is
-negative, and re-picking coverage after seeing this is exactly what M3_PROTOCOL §0 forbids. The
-honest reading is that the rule is correct and the regime that pays it is absent.
-
-⚠️ **One avoidable loss:** `policy_bars` was reset on 2026-08-29, so the Aug 19–28 window covering
-the volatility spike is gone. That log is the only record of what the model says during a live
-volatility event. **Do not reset it again.**
-
----
-
-## 🔵 New 2026-09-01 — the protocol now has an exploratory lane, pending three decisions
-
-**[M3_PROTOCOL.md](./M3_PROTOCOL.md) §8 (Amendment 1)** adds two things and changes no bar:
-
-* an **exploratory lane** — no pre-registration, look at anything as often as you like, provided
-  the output is labelled `EXPLORATORY` and **never cited in a promotion argument**. To promote on
-  an exploratory result you re-establish it confirmatorily on data the exploration did not touch;
-* a **standing champion–challenger promotion rule** (C1–C5), registered once so that retraining
-  and swapping models needs no fresh pre-registration each time. C4 makes the 2026-08-31 defect a
-  rule: the cut and ladder are **always** re-derived from the challenger's own split.
-
-🔴 **It is NOT in force.** §8.6 holds three open decisions — whether a challenger needs forward
-evidence (recommendation: promote on backtest, *keep* on forward), what margin C2 must clear
-(recommendation: more than the between-seed spread), and whether retraining runs on a cadence or
-on a staleness trigger. 🔴 **Q3's recommendation is void as written** — it proposed a trigger of
-"N days without the checkpoint exceeding its own cut, measurable today and would have fired in
-July", but **that condition was the candle defect**, so it would have fired for the wrong reason.
-Until a repaired baseline exists there is no calibrated trigger; the interim answer is a fixed
-**quarterly** cadence. See [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §7 and §8 Q3.
-
-⚠️ **The amendment discloses that search output was seen when it was written**, and is therefore
-**prospective only**: it alters no completed verdict, and Tier 1 / Tier 2 are unchanged. It also
-does not solve the current problem — see §8.5.
-
-**Blocked on:** the checkpoint-binding guard in the row below. Until a mismatch refuses to serve,
-the promotion rule cannot safely be used. ⚠️ That blocker is scoped: it stops **promotion**, and
-per RETRAIN_PLAN §8 Q4 it does **not** stop the read-only re-baseline in Phases 1–3.
-
----
-
-## 🔴 New 2026-09-01 — swapping the served checkpoint silently breaks the policy
-
-*Filed from [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §6.5, where it was recorded but never
-indexed here. It is promoted to its own row because it is **the actual blocker on iterating models
-quickly**, which is a standing goal — not a footnote to the freeze.*
-
-The policy now serves two constants frozen from **one specific checkpoint's own split**: the
-coverage cut `0.6318973898887634` and the regime ladder, both derived by `backtest.py` over seed 2
-(`20260819T142759Z`). **Neither is tied to the checkpoint in code.** `served_pairs` is guarded by a
-test; the served *checkpoint* is not. Dropping a new `m2_multi.pt` in place silently invalidates
-both constants, and **nothing currently fails when that happens** — the policy would keep trading,
-against a threshold belonging to a model that is no longer running. That is the served-vs-scored
-defect of 2026-08-31 all over again, with a different trigger.
-
-**Why it matters beyond correctness:** it is what makes "retrain and swap the model on the go"
-unsafe today. The obstacle to fast iteration is this missing binding, **not** the protocol.
-
-**What to do (not yet scheduled, needs a decision on approach):** record the checkpoint identity
-alongside the constants and refuse to serve — loudly, at boot — when the loaded checkpoint is not
-the one the constants were derived from. A promotion then becomes: derive the new cut and ladder
-from the new checkpoint's split, update both, restart. ⚠️ It also **restarts the forward clock**,
-since it is a different rule, so it cannot be done casually mid-test.
-
----
-
 ## 🔴 Open — blockers on trading anything but paper
 
 🔵 **These three rows now have an owning document with an ordered, executable checklist:

@@ -1,4 +1,8 @@
-# Quantile-head A/B — handoff
+# Quantile-head A/B — handoff (archived)
+
+> **ARCHIVED 2026-09-04 — a one-off handoff for the quantile-head A/B, whose verdict is in and whose script (`quant_ab.sh`) was deleted in the same cleanup.**
+> The surviving conclusion is carried in [NEXT_TRAINING_PLAN.md](../NEXT_TRAINING_PLAN.md) §5's closed levers. Nothing here is actionable.
+
 
 Context for a fresh session that will receive `quant_ab.sh` results. Read this
 first, then look at the logs the user pastes / the files under `logs/quant_ab_*`.

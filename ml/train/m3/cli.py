@@ -13,6 +13,9 @@
     ./scripts/m3.sh -m m3 bookaudit           # B1: is there tradeable information? (bps)
     ./scripts/m3.sh -m m3 bookregime          # B2: does it work as an M3 regime observable?
     ./scripts/m3.sh -m m3 fidelity            # is the SERVED rule the one that was scored?
+
+    M3_ERA=walkforward ./scripts/m3.sh -m m3 validate   # C3: every fold reproduces its log
+    M3_ERA=walkforward ./scripts/m3.sh -m m3 folds      # WALKFORWARD_PROTOCOL §3's verdict
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -24,7 +27,8 @@ import numpy as np
 import pandas as pd
 
 from . import (backtest, bookaudit, bookprep, bookregime, decay, dumps, execcost, features,
-               learn, livemode, metrics, regime, search, sidetable, universe, validate)
+               learn, livemode, metrics, regime, search, sidetable, universe, validate,
+               walkforward)
 
 
 def cmd_validate(args) -> int:
@@ -1048,6 +1052,16 @@ def _conformance(t: pd.DataFrame, n_seeds: int, label: str) -> None:
                       for v in (1/3, 2/3, 1.0, 4/3, 5/3)))
 
 
+def cmd_folds(args) -> int:
+    """WALKFORWARD_PROTOCOL §3 — score the incumbent on the walk-forward folds.
+
+    The specs are taken from WINNER_SPEC and GRID_WINNER_SPEC rather than retyped, for the
+    reason cmd_policy gives: transcribing the incumbent by hand at each call site is how a
+    re-score of the incumbent quietly becomes a score of something else.
+    """
+    return walkforward.report(WINNER_SPEC, GRID_WINNER_SPEC, universe=args.universe)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1508,6 +1522,14 @@ def main() -> int:
     f.add_argument("--draws", type=int, default=universe.BOOTSTRAP_DRAWS,
                    help="bootstrap draws for the criterion-power table")
     f.set_defaults(fn=cmd_universe_fair)
+
+    wf = sub.add_parser("folds", help="WALKFORWARD_PROTOCOL §3: score the incumbent on the "
+                        "walk-forward folds and apply the five pre-registered criteria "
+                        "(needs M3_ERA=walkforward)")
+    wf.add_argument("--universe", choices=["8", "12"], default="8",
+                    help="8 = dumps.BASE8, the served universe the rule was chosen on "
+                         "(default); 12 = every pair present in each fold's dump")
+    wf.set_defaults(fn=cmd_folds)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

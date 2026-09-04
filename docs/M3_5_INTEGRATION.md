@@ -152,6 +152,26 @@ docker compose run --rm -e MIX_ENV=test -e POSTGRES_HOST=postgres app mix test
 | `regime.trailing_p80` vs `frozen_p80` | 🟢 DIAGNOSTIC. The trailing-30d top quintile against the frozen one. A trailing value far below means nearly everything sizes into the bottom buckets — correct in a calm market, and worth being able to see rather than infer. It no longer affects sizing. |
 | `ab` | Both arms: trades, net bps per trade, net bps per unit of notional, win rate, drawdown, trades/day. |
 
+### The empty-state doctrine — the one design rule the dashboard inherited
+
+Moved here from `M3_UI_PLAN.md` when that document was archived, because it is the reason the
+panel looks the way it does and it outlives the build plan.
+
+🔴 **The panel's job is to make CORRECT SILENCE legible**, for the same reason `/api/health`
+exists. The served checkpoint produced no gated signal between 2026-06-29 and the forward test's
+restart, because the edge lives in volatile bars and the market was calm. That is the strategy
+working — but *a system that has been silent for two months is indistinguishable from a broken
+one*, and a panel that renders that state as a grey box reading "0 trades" is **worse than no
+panel**: it will be read as a fault, and someone will "fix" a working system.
+
+So every empty state says **why** it is empty and **what would change it** — "The policy trades
+any bar at or above a fixed confidence of 0.630; right now even the top 2% of recent bars only
+reaches 0.548, so it is correctly taking nothing" — and never *"No data"* on its own. The
+corollary is the `nil` rule: with no trades yet `gross_bps` / `net_bps` / `win_rate` come back
+`nil` and render as `—`, **never** as `0.00`, which would read as "measured, and it is zero".
+The panel also degrades rather than 500s: with Postgres down the M3 block says the bar log cannot
+be read and the rest of the dashboard still renders.
+
 `net_bps` and `net_bps_per_notional` are **two different readings** and both are reported for
 the same reason M3_2_RESULTS §D1 reports both: the policy arm varies size, so its per-trade
 mean is size-weighted. Offline the same policy is +15.03 per trade and +11.24 per unit of
@@ -384,3 +404,34 @@ an empty value there means "no operator override, serve at the checkpoint's own 
 (C13). `float("")` raises, so `ml_inference` crash-looped at import **in the default
 configuration**. It now treats an empty value as unset. Nothing about the served gate's
 semantics changed; the service simply starts.
+
+---
+
+## §8 — Deploy day, 2026-08-28: three defects that only the real VM exposed
+
+*Moved here from `BACKLOG.md` on 2026-09-04 (RULES_REVIEW §6.3). Each of these was invisible on the local stack, which is the reason to record them where the deploy is documented rather than in an index.*
+
+**M3-4 completed 2026-08-28** — [M3_4_RESULTS.md](./M3_4_RESULTS.md), read via
+[M3_PLAN.md](./M3_PLAN.md) §0.8. Risk #2 closed.
+
+**Deploy day, 2026-08-28 — three defects were found and fixed by deploying.** Recorded here
+because each was invisible on the local stack and only the real VM exposed it:
+
+1. **The policy was ranking over 12 pairs, not 8.** `Settings.get_whitelist/0` is the
+   *collector's* pair list and the VM's copy still held the 12-pair 8-vs-12 era list; the
+   policy followed it, so the top-2% coverage cut was being taken over a population including
+   four pairs `ExecCost` has never measured. Fixed by giving the policy its own universe
+   (`config :fluxtrader, :trading, served_pairs`), reported at `policy.served_pairs`, with
+   unserved bars counted as the named skip `not_served`. 🔴 **Do not "fix" a future mismatch
+   by narrowing the collection whitelist** — see #2.
+2. **Narrowing the whitelist stopped collection.** The first attempt at #1 set the whitelist to
+   the served eight, which halted `orderbook_snapshots` on ADA/AVAX/LINK/XRP for ~18 minutes.
+   Collection gaps do not backfill. Restored, and the code now separates the two concerns.
+3. **The tape fix starved the book poll.** Raising the aggTrades limit ran inline in the same
+   GenServer as the book poll and cost 2.5x of the book snapshot rate (55.2 → 22.2 rows/min).
+   The sweep now runs under `Task.Supervisor`.
+
+**M3-5 completed 2026-08-28** — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md). The policy is
+wired to a crossing executor, the hard `RiskManager` path is exercised on every entry, the
+signal-only A/B control runs beside it, and `/api/health` reports signal liveness. Risk #7
+closed; §6's last two exit criteria closed. It left two items open, both below.

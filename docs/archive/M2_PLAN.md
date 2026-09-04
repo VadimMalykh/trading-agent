@@ -1,8 +1,12 @@
-# M2 Implementation Plan
+# M2 Implementation Plan (archived)
+
+> **ARCHIVED 2026-09-04 — M2 is implemented and frozen** (NEXT_TRAINING_PLAN §5: no new M2 run without new *kinds* of data).
+> Superseded by [NEXT_TRAINING_PLAN.md](../NEXT_TRAINING_PLAN.md) for the model as it was actually trained and measured.
+
 
 **Multi-horizon supervised signals + confidence gating** (no RL).
 
-See [PLAN.md](./PLAN.md), [MODEL.md](../MODEL.md).
+See [PLAN.md](../PLAN.md), [MODEL.md](./MODEL.md).
 
 **Status:** Implemented  
 **Keys / GPU:** Not required (public data + CPU Docker)
