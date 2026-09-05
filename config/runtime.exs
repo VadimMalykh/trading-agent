@@ -54,3 +54,27 @@ if config_env() == :prod do
       )
       |> String.split(",", trim: true)
 end
+
+# Ecto query logging — every environment, resolved at boot rather than at compile time so
+# the always-on VM can flip it with an env var and a restart.
+#
+# Ecto logs EVERY query at :debug with its parameters interpolated. The collector writes
+# ~2.4 rows/s across twelve pairs and `orderbook_levels` carries all 100 book levels in its
+# parameters, so on 2026-09-05 this alone produced a 1.1 GB container log in 25 hours. It is
+# off by default: the per-insert stream has no diagnostic value on a running collector, and
+# a FAILING query still raises and is logged by the caller, so nothing about errors is lost.
+#
+# Set ECTO_LOG_LEVEL=debug for a local debugging session where you want to see the SQL.
+# An unrecognised value falls back to `false` rather than raising: this runs at boot on the
+# always-on collector, and a typo in an env var must not be able to take data collection
+# down. The warning is the signal that it was ignored.
+ecto_log =
+  case System.get_env("ECTO_LOG_LEVEL", "false") do
+    "false" -> false
+    level when level in ~w(debug info notice warning error) -> String.to_existing_atom(level)
+    other ->
+      IO.warn("ignoring ECTO_LOG_LEVEL=#{inspect(other)}; query logging stays off")
+      false
+  end
+
+config :fluxtrader, FluxTrader.Repo, log: ecto_log
