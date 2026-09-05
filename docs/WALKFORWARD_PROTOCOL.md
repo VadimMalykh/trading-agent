@@ -11,13 +11,19 @@ satisfy). **Owner of the plumbing:** [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §2–
 launched.** A better fold shape, a better statistic or a different k is a proposal for a future
 pre-registration, never a re-scoring of these runs.
 
-⚠️ **One edit has been made since a fold was first launched, and it is recorded here rather than
-made quietly.** On 2026-09-05 §5 was rewritten and §6.1 added, because the 2026-09-04 launch
-attempt was void (it trained the wrong recipe — §6.1) and §5's command was the cause. **Nothing
-that decides anything moved:** the fold design (§1), what is scored (§2), the five criteria (§3),
-the confirmatory status of each fold (§4) and the twelve-pair universe (§6) are untouched, and no
-fold number existed when the edit was made. §5 is an operating instruction, and it was brought
-into line with the recipe §1 already specified.
+⚠️ **Two edits have been made since a fold was first launched, and both are recorded here rather
+than made quietly. Both are to §5, which is an operating instruction; nothing that decides
+anything has moved.** The fold design (§1), what is scored (§2), the five criteria (§3), the
+confirmatory status of each fold (§4) and the twelve-pair universe (§6) are untouched, and **no
+fold number has ever been read** — the registry has been empty at every point below.
+
+1. **2026-09-05, the recipe.** §5 was rewritten and §6.1 added, because the 2026-09-04 launch
+   attempt was void (it trained the wrong recipe — §6.1) and §5's command was the cause. §5 was
+   brought into line with the recipe §1 already specified.
+2. **2026-09-05, the eval window.** §5.1 gained a **sixth** check, because the four runs it
+   already passed were scored on the wrong window (§6.1) — `eval_m2.py` took the newest
+   `VAL_FRACTION` of history regardless of the fold, and §5.1's five checks all read the training
+   `Split` line, so none of them looked at the eval. The sixth check reads the eval block.
 
 ---
 
@@ -210,6 +216,7 @@ run `gcp_promote.sh --checkpoint latest` would ship the wrong model — promote 
 | 3 | `knob CANDLE_INTERVAL=…` | `5m` — its absence means 1m, a different model on ~5× the samples |
 | 4 | `knob FEATURE_GROUPS=` / `knob PAIR_EMBED_DIM=` / `knob EARLY_STOP_PATIENCE=` | `legacy` / `8` / `20` |
 | 5 | `Training pairs: [...]` | the twelve, not `dumps.BASE8` |
+| 6 | `Val samples=… \| [c → d]`, in the **eval** block below `Checkpoint primary=…` | **the same span as check 1's `val [c → d]`.** These are two different code paths — the trainer splits, then `eval_m2.py` splits again — and until 2026-09-05 the second ignored the fold entirely and always scored the newest `VAL_FRACTION` of history. A fold scored there is still out-of-sample, so nothing else in the log looks wrong; this line is the only place the defect is visible |
 
 The checkpoint's `meta` also carries `val_offset`, `train_fraction`, `run_id` and the four
 boundary timestamps, so a fold can be verified after the fact as well.
@@ -267,6 +274,10 @@ is the control**, and it is read before any fold-to-fold difference is interpret
 | when | run id | intended | why void |
 |---|---|---|---|
 | 2026-09-04 | `20260904T172905Z` | F2 seed 1 | Trained the **M2-era defaults**, not the incumbent recipe: 8 pairs, 1m candles, `seq 128`, horizons `5,30,60`, primary 30m, `EARLY_STOP_PATIENCE` 10, `FEATURE_GROUPS`/`PAIR_EMBED_DIM` unset. The fold variables *did* arrive (`Split walkforward_window … val_offset=0.25`); only the recipe was wrong. Cause: §5's command set the split variables and let every other knob fall back to the gitignored `scripts/gcp_env`. Log kept at `logs/archive/VOID-WF-F2-s1-20260904T172905Z.log`. |
+| 2026-09-05 | `20260904T213815Z` | F2 seed 1 | **Scored on the wrong window.** Training was correct — all five §5.1 checks pass, `Split walkforward_window … val_offset=0.25 train_frac=0.5`, val `[2025-04-15 00:50 → 2025-10-03 14:05]`, twelve pairs, 5m, repaired candles — but the eval block reports `Val samples=579424 \| [2026-03-20 05:50 → 2026-09-03 21:35]`: the newest 12.5% of history, i.e. **F0's window**, not F2's. Cause: `eval_m2.py` split with `time_split_indices(times, VAL_FRACTION)` and never read `val_offset` / `train_fraction`, and `gcp_train.sh` passes eval no split flags. Everything downstream of the eval is therefore on the wrong rows — the `SERVED GATE (C13)` cut (the C4 constants), the `Fixed-coverage P&L` tables, and `eval_preds.parquet`. Log kept at `logs/archive/VOID-WF-F2-s1-20260904T213815Z.log` |
+| 2026-09-05 | `20260905T063602Z` | F2 seed 2 | Same defect. Eval window `[2026-03-20 13:50 → 2026-09-04 06:40]` against a fold val of `[2025-04-15 07:00 → 2025-10-03 20:55]`. Log kept at `logs/archive/VOID-WF-F2-s2-20260905T063602Z.log` |
+| 2026-09-05 | `20260905T101852Z` | F2 seed 3 | Same defect. Eval window `[2026-03-20 17:00 → 2026-09-04 10:20]` against a fold val of `[2025-04-15 09:30 → 2025-10-03 23:40]`. Log kept at `logs/archive/VOID-WF-F2-s3-20260905T101852Z.log` |
+| 2026-09-05 | `20260905T132644Z` | F3 seed 1 | Same defect. Eval window `[2026-03-20 19:45 → 2026-09-04 13:30]` against a fold val of `[2024-10-14 11:55 → 2025-04-15 11:40]`. Log kept at `logs/archive/VOID-WF-F3-s1-20260905T132644Z.log` |
 
 Nothing was written into `dumps.WALKFORWARD_RUNS`, `validate.PUBLISHED_FIXED_COV_WALKFORWARD` or
 the table below, so the registry never saw it. Two consequences were handled: §5 now states the
@@ -274,6 +285,27 @@ full recipe and lists the five lines that must be checked before a run is record
 `gcp_train.sh` refuses a split-moving run whose recipe is not the incumbent's. Note also that the
 void run overwrote `checkpoints/latest.pt` in the bucket, as every training run does — **promote
 by explicit run id, never `--checkpoint latest`, until a valid run has replaced it.**
+
+**On the second defect (the four 2026-09-05 runs).** It was not leakage: each fold's eval window
+sits entirely after that fold's train end, so the predictions are honest out-of-sample. It voids
+the runs because it voids the *design* — all four folds were scored on the **same calendar rows**,
+so F2-versus-F3 is no longer a fold comparison and pooling F2+F3 for **W1** would pool the same
+days twice. The four checkpoints were trained correctly and could have been re-scored eval-only
+(`EVAL_ONLY_CKPT`, no retrain); the decision on 2026-09-05 was to **void and retrain** instead, so
+that no fold in the record has a history of being measured twice.
+
+Three consequences were handled. `eval_m2.py` now takes the val window from the **checkpoint's own
+meta** (`split_from_meta`, selecting by the recorded `val_start` / `val_end` timestamps rather than
+re-deriving the fraction, because the dump grows between runs and the same `val_offset` maps to a
+window shifted by hours — the three F2 seeds' split lines already differed by ~9h); the fold
+identity joined `_member_fingerprint`, so an ensemble of two different folds is refused instead of
+being scored on member 0's window; and §5.1 gained check 6. Nothing was written into
+`dumps.WALKFORWARD_RUNS`, `validate.PUBLISHED_FIXED_COV_WALKFORWARD` or the table below, and the
+four dumps were never fetched into `ml/train/output/eval_dumps/`.
+
+Left unfixed this would have surfaced only after all twelve runs: `WALKFORWARD_SPLITS` clips each
+dump to its fold's val span, these dumps hold **zero** rows there, and every fold would have failed
+**W3** with 0 trades — ~50 GPU-hours later.
 
 | fold | seed | run id | split line (train → / val →) | pairs | status |
 |---|---|---|---|---|---|

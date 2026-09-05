@@ -40,6 +40,7 @@ from data.dataset import (
     horizon_bars,
     pair_ids_for_indices,
     time_split_indices,
+    time_split_indices_window,
 )
 from data.db import load_whitelist_pairs
 from data.features import ALL_FEATURE_COLS, FEATURE_COLS
@@ -185,6 +186,74 @@ def _ns_to_iso(ns: int) -> str:
 
 def _ns_to_day(ns: int) -> str:
     return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc).strftime("%Y-%m-%d")
+
+
+def _iso_to_ns(iso: str) -> int:
+    """Inverse of `_ns_to_iso` — parses the "%Y-%m-%d %H:%M UTC" a checkpoint stores."""
+    return int(
+        datetime.strptime(iso, "%Y-%m-%d %H:%M UTC")
+        .replace(tzinfo=timezone.utc)
+        .timestamp()
+        * 1_000_000_000
+    )
+
+
+def split_from_meta(times, meta: dict):
+    """The val rows this CHECKPOINT was scored on, taken from the checkpoint.
+
+    Same rule as `candle_interval` and `feature_cols` above: a re-score trusts the
+    checkpoint, not the ambient env. Before this existed, eval always took the newest
+    `VAL_FRACTION` of history, which silently scored every walk-forward fold on F0's
+    window instead of its own (WALKFORWARD_PROTOCOL §6.1, the 2026-09-05 void). A fold
+    model evaluated there is still out-of-sample, so nothing looks wrong in the log —
+    which is exactly why the window has to come from the checkpoint.
+
+    Selection is by TIMESTAMP, not by re-deriving the fraction. The dump grows between
+    runs, so the same `val_offset` maps to a window shifted by hours (the three F2 seeds'
+    split lines already differed by ~9h); the recorded boundaries reproduce the trained
+    window exactly. Returns (train_idx, val_idx); train is only ever used to re-fit norm
+    for a pre-`norm_stats` checkpoint.
+    """
+    is_fold = meta.get("split") == "walkforward_window" or bool(
+        meta.get("val_offset") or meta.get("train_fraction")
+    )
+    if not is_fold:
+        return time_split_indices(times, VAL_FRACTION)
+
+    val_start, val_end = meta.get("val_start"), meta.get("val_end")
+    if val_start and val_end:
+        lo, hi = _iso_to_ns(val_start), _iso_to_ns(val_end)
+        order = np.argsort(times, kind="mergesort")
+        t_sorted = times[order]
+        va_idx = order[(t_sorted >= lo) & (t_sorted <= hi)].astype(np.int64)
+        tr_idx = order[t_sorted < lo].astype(np.int64)
+        print(
+            f"Fold split from checkpoint meta: val_offset={meta.get('val_offset')} "
+            f"train_frac={meta.get('train_fraction')} | val [{val_start} → {val_end}] "
+            f"| {va_idx.shape[0]} of {times.shape[0]} samples"
+        )
+        if va_idx.shape[0] == 0:
+            print(
+                "ERROR: the checkpoint's val window holds no rows in this bundle — the "
+                "dump does not cover the window this fold was trained against."
+            )
+            sys.exit(2)
+        return tr_idx, va_idx
+
+    # Pre-2026-09-05 fold checkpoints carry the fractions but not the boundaries.
+    val_frac = float(meta.get("val_fraction") or VAL_FRACTION)
+    print(
+        f"WARNING: fold checkpoint records no val_start/val_end — falling back to "
+        f"val_frac={val_frac} val_offset={meta.get('val_offset') or 0.0} "
+        f"train_frac={meta.get('train_fraction') or 0.0} on TODAY's sample count, so "
+        f"the window may be shifted by hours relative to the trained one."
+    )
+    return time_split_indices_window(
+        times,
+        val_frac,
+        float(meta.get("val_offset") or 0.0),
+        float(meta.get("train_fraction") or 0.0),
+    )
 
 
 def simulate_pnl(
@@ -589,6 +658,13 @@ def _member_fingerprint(meta: dict) -> dict:
         "primary_horizon": str(
             meta.get("primary_horizon", horizons[min(1, len(horizons) - 1)])
         ),
+        # The fold, since `split_from_meta` reads the val window off member[0]: two
+        # different folds averaged together would be scored on ONE of their windows.
+        # The fold identity, not the exact boundaries — three seeds of one fold record
+        # boundaries hours apart (the dump grows between runs) and must still ensemble,
+        # in which case member[0]'s boundaries are the ones used.
+        "val_offset": float(meta.get("val_offset") or 0.0),
+        "train_fraction": float(meta.get("train_fraction") or 0.0),
     }
 
 
@@ -992,7 +1068,7 @@ def main():
         candle_interval=eval_interval,
         feature_cols=eval_feature_cols,
     )
-    tr_idx, va_idx = time_split_indices(bundle.times, VAL_FRACTION)
+    tr_idx, va_idx = split_from_meta(bundle.times, meta)
 
     # Each member normalizes with ITS OWN train-fit statistics, and those differ
     # between runs (the val split moves as collection continues, so no two runs fit
