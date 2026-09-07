@@ -269,6 +269,33 @@ pairs present in all four folds; under twelve that restricted table is **not opt
 is the control**, and it is read before any fold-to-fold difference is interpreted.
 
 
+### 6.0 Notes carried with the recorded runs (observations, not decisions)
+
+Recorded 2026-09-06 when F2 s1 and s2 were entered in the table below. None of these change
+anything §1–§5 fixed; they exist so that whoever reads §3's verdict knows what was visible at
+the time the runs were banked.
+
+* **The val window drifts by hours between seeds of one fold.** F2 s1's val starts 2025-04-15
+  14:05, s2's 21:30 — 7h25m later, same length. §6.1 already named the cause: the training dump
+  grows between runs, so the same `val_offset` maps to a slightly later window. It is drift in the
+  data, not a mis-recorded run. `dumps.WALKFORWARD_SPLITS["F2"]` holds the **first seed's** span,
+  as the registry's own rule says; nothing that decides §3 reads it (`walkforward.fold_table`
+  groups trades by seed → fold, never by the window tag).
+* **F2's model is close to long-only on this window.** At the served gate s1 places 741 long
+  trades against 7 short, s2 834 against 7; at fixed-cov 0.05 the up/down split is 26,102/2,887
+  and 27,526/1,473. F2's val is 2025-04 → 2025-10, a rising market. So F2's per-fold P&L cannot
+  distinguish "the rule has an edge" from "the rule was long in an up-market" on its own — which
+  is exactly why §3 decides on **F2 + F3 pooled** and vetoes per fold. Read F3 (2024-11 → 2025-04)
+  with this in mind; it is the fold that carries the different market.
+* **Seed 1's checkpoint is epoch 1.** `epoch LB series @cov0.05: n=21 … selected=epoch 1
+  (lb=0.5866)`; s2 selected epoch 11 of 31. Early selection is normal for the fold recipe (half
+  the training samples, `EARLY_STOP_PATIENCE=20`) and the void 2026-09-05 F2 s3 run selected epoch
+  1 too. It is recorded because a one-epoch checkpoint is worth knowing about when the fold's
+  numbers are read, not because any rule bars it.
+* **The two seeds ran different commits** (`30b2dae` and `a3657c7`). The diff between them is
+  `config/runtime.exs` and `docker-compose.yml` only — the Elixir app's log rotation. No file under
+  `ml/` changed, so both seeds trained and were scored by identical code.
+
 ### 6.1 Void runs — attempted, thrown away, not part of any statistic
 
 | when | run id | intended | why void |
@@ -309,8 +336,8 @@ dump to its fold's val span, these dumps hold **zero** rows there, and every fol
 
 | fold | seed | run id | split line (train → / val →) | pairs | status |
 |---|---|---|---|---|---|
-| F2 | 1 | | | | ⚪ |
-| F2 | 2 | | | | ⚪ |
+| F2 | 1 | `20260905T164940Z` | train [2023-03-31 16:30 → 2025-04-15 14:00] / val [2025-04-15 14:05 → 2025-10-04 04:35] | 12 | ✅ all six §5.1 checks pass; recorded |
+| F2 | 2 | `20260906T034840Z` | train [2023-03-31 18:20 → 2025-04-15 21:30] / val [2025-04-15 21:30 → 2025-10-04 12:45] | 12 | ✅ all six §5.1 checks pass; recorded |
 | F2 | 3 | | | | ⚪ |
 | F3 | 1 | | | | ⚪ |
 | F3 | 2 | | | | ⚪ |

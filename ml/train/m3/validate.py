@@ -83,7 +83,14 @@ PUBLISHED_FIXED_COV_BY_ERA = {
 #     0.010      470    +1.1188     +23.80  ...  0.606
 # becomes  0.01: (470, +23.80, 0.606).  Transcribe from the log, never from a summary.
 PUBLISHED_FIXED_COV_WALKFORWARD: dict[str, dict[float, tuple[int, float, float]]] = {
-    # "F2s1": {0.01: (...), 0.02: (...), 0.05: (...), 0.10: (...), 0.20: (...)},
+    # F2 seed 1, run 20260905T164940Z, logs/WF-F2-s1.log "--- Horizon 240m (PRIMARY) ---"
+    "F2s1": {0.01: (445, +60.35, 0.602), 0.02: (748, +49.57, 0.614),
+             0.05: (1720, +15.38, 0.552), 0.10: (3277, +1.67, 0.513),
+             0.20: (5711, -1.58, 0.511)},
+    # F2 seed 2, run 20260906T034840Z, logs/WF-F2-s2.log "--- Horizon 240m (PRIMARY) ---"
+    "F2s2": {0.01: (481, +54.23, 0.624), 0.02: (841, +47.46, 0.603),
+             0.05: (1921, +17.54, 0.553), 0.10: (3554, +11.47, 0.522),
+             0.20: (6024, +6.15, 0.527)},
 }
 
 # NEXT_TRAINING_PLAN §1.3's pooled table (trade-weighted across the three seeds). Published

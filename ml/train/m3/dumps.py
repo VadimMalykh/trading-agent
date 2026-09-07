@@ -90,18 +90,25 @@ FOLD_RUN_ORDER = ("F2", "F3", "F1", "F0")
 WALKFORWARD_RUNS: dict[str, str | None] = {
     "F0s1": None, "F0s2": None, "F0s3": None,
     "F1s1": None, "F1s2": None, "F1s3": None,
-    "F2s1": None, "F2s2": None, "F2s3": None,
+    "F2s1": "20260905T164940Z", "F2s2": "20260906T034840Z", "F2s3": None,
     "F3s1": None, "F3s2": None, "F3s3": None,
 }
 
 # The val span each fold's own `Split` line reports, as (start, end) ISO strings. Recorded
 # once per fold from its first completed seed and then checked against the other two: three
 # seeds of one fold are the same split, so a disagreement is a mis-recorded run, not noise.
+#
+# ONE CAVEAT, seen on F2 and already anticipated by protocol §6.1: the seeds run hours apart
+# and the dump grows between them, so the same `val_offset` maps to a window shifted by a few
+# hours (F2 s1 starts 14:05, s2 starts 21:30 — 7h25m later, same length). That is drift in the
+# data, not a mis-recorded run. The span kept here is the first seed's, per the rule above, so
+# a later seed's few hours of tail rows tag as NA in `add_window`. Nothing that decides §3
+# reads this: `walkforward.fold_table` groups trades by seed -> fold, never by window tag.
 # Used to give the walkforward era its `WINDOWS` — in this era the "window" IS the fold
 # (protocol §2), so `add_window` keeps working and every per-window table becomes a per-fold
 # table with no special case downstream.
 WALKFORWARD_SPLITS: dict[str, tuple[str, str] | None] = {
-    "F0": None, "F1": None, "F2": None, "F3": None,
+    "F0": None, "F1": None, "F2": ("2025-04-15 14:05", "2025-10-04 04:35"), "F3": None,
 }
 
 
