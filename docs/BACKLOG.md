@@ -32,9 +32,20 @@ were taken and carried out the same day. Record: [RULES_REVIEW.md](./RULES_REVIE
 
 | # | item | owner | state |
 |---|---|---|---|
-| 1 | **Deploy the re-derived rule and the checkpoint guard to `fluxtrader-1`** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.1 | 🔵 both `ml_inference` and `app`, no truncate (the ledger persists across swaps), verify `checkpoint_bound: true` |
+| 1 | **Deploy the re-derived rule and the checkpoint guard to `fluxtrader-1`** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.1 | ✅ **DONE — verified live 2026-09-09.** The §6.1 text saying "nothing on the VM has changed yet" was stale: the services were already running the re-derived constants. All six checks pass — cut `0.6296127438545227` == frozen, checkpoint `882cd415…` == frozen with `checkpoint_bound: true`, `regime.frozen_p80` `0.025596268475055695` as the ladder's last edge, `n_days: 65` / `fired: false`, no `checkpoint_mismatch`/`checkpoint_unverified` skips, `paper_trades` = 0 |
 | 2 | **The walk-forward fold queue** — 12 serial runs | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §7 | ✅ **COMPLETE 2026-09-09. All 12 runs banked, all six §5.1 checks pass on every one, C3 passes 12/12, and §3's verdict is CONFIRMED: W1 = +33.23 net bps at taker on F2+F3, clustered 95% CI [+9.28, +57.17], LB > 0, with W2–W5 all holding.** The first positive evidence in the project rather than absence-of-refutation. 🔴 Read §7.2 before quoting any fold number: the F0 control lands at −0.66 net bps against the incumbent's +13.82 on the same era, so the fixed-width train window costs ~14 bps — which makes W1 *conservative* but **confounds the freshness reading, so §4.1 may not be read off this table** |
 | 3 | **The document restructuring** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.3 | 🔵 in progress 2026-09-04 |
+
+**🔴 What 2026-09-09 opened, and it outranks everything below.** Verifying row 1 turned up
+that **the forward paper test is producing nothing**: the served cut (0.6296) sits *above* the
+highest confidence the live model has produced in 11 days (max 0.5856), so `paper_trades` is
+empty and stays empty. Same checkpoint, same 8 pairs, same 5 overlapping days: the offline and
+live distributions agree to ~p95 and then the live tail is truncated (p99 0.5577 vs 0.5944, max
+0.5628 vs 0.6925). Part is a real regime shift visible offline too (2.000% of bars clear the cut
+over the full split, 0.346% over the last five days); part is an unexplained live-vs-offline tail
+gap. Full evidence and what is already ruled out:
+[M3_FIDELITY_RESULTS.md §7](./M3_FIDELITY_RESULTS.md). 🔴 **Do not respond by lowering the cut** —
+§6.1 and NEXT_TRAINING_PLAN §1.5 both record that as the defect rather than the remedy.
 
 **What the review established, in one line each:** the bars are right and the friction is four
 structural gaps around them, all four fixed by [M3_PROTOCOL.md](./M3_PROTOCOL.md) §9
@@ -50,7 +61,7 @@ on ~220 independent days, which is what the folds exist to change.
 
 | item | owner doc | state |
 |---|---|---|
-| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔵 **running; the clock restarts at the §6.1 deploy**, because every row from there carries its checkpoint tag and the A/B is read on tagged rows. It needs no work, only calendar time — it is the only mechanism that manufactures new independent trading days. Check with `curl -s localhost:4000/api/health \| jq '{policy, regime}'` **on the VM** (port 4000 there; 4001 is the local-compose mapping). Long silences are the strategy working |
+| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **RUNNING BUT PRODUCING NOTHING — see [M3_FIDELITY_RESULTS §7](./M3_FIDELITY_RESULTS.md).** Zero trades in 11 days because the served cut is above the live maximum confidence. Calendar time no longer helps on its own; the tail gap must be root-caused first. Previously: **the clock restarts at the §6.1 deploy**, because every row from there carries its checkpoint tag and the A/B is read on tagged rows. It needs no work, only calendar time — it is the only mechanism that manufactures new independent trading days. Check with `curl -s localhost:4000/api/health \| jq '{policy, regime}'` **on the VM** (port 4000 there; 4001 is the local-compose mapping). Long silences are the strategy working |
 | **The walk-forward folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §7 | ✅ **DONE 2026-09-09 — verdict CONFIRMED.** Pre-registered 2026-09-04 before any fold was trained; 12 runs, all six §5.1 checks and C3 pass. W1 lower bound +9.28 bps. §7.3 records the one harness amendment (a `win`-column double-rounding in C3's comparison, fixed like-for-like, ratified before any fold number was read) |
 | **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** Deploy day found three defects invisible on the local stack — recorded in that document's §8 |
 | **The M3 dashboard panel** | [archive/M3_UI_PLAN.md](./archive/M3_UI_PLAN.md) | ✅ **BUILT 2026-08-29, live 2026-08-31.** It earned its keep immediately: the panel is what made the served-vs-scored threshold gap visible ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md)). Its empty-state doctrine now lives in [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §2 |
@@ -59,6 +70,14 @@ on ~220 independent days, which is what the folds exist to change.
 | **M3-4** — execution costs | [M3_4_RESULTS.md](./M3_4_RESULTS.md) | ✅ **DONE 2026-08-28.** Crossing costs 9.84 bps round trip, not 14; the maker arm is not worth building. Risk #2 closed |
 | **The candle repair** | [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md) | ✅ **DONE 2026-09-04**, verified 36/36, and the three checkpoints re-scored on it. The integrity guard that would have caught it is in [CANDLE_GUARD.md](./CANDLE_GUARD.md) |
 | **The freshness question** | [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) | 🟡 **PARKED, and no longer un-blocked by the folds alone.** Not decidable on one split (§9); the folds were the design that could decide it, but [WALKFORWARD_PROTOCOL §7.2](./WALKFORWARD_PROTOCOL.md) shows the fixed-width train window costs ~14 bps, which is confounded with boundary age in every fold-to-fold difference. **Revival trigger:** register §4.1 with the training-size penalty as an explicit term, or re-run the freshness arm at matched training size. The 65-day staleness trigger stays in force (M3_PROTOCOL §9, Q3 (b)) |
+
+### 🟡 Parked, opened 2026-09-09
+
+| item | owner doc | state |
+|---|---|---|
+| **Root-cause the live-vs-offline confidence tail gap** | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.2 | 🔴 **the top open item.** Same checkpoint, same pairs, same days: live p99 0.5577 vs offline 0.5944, max 0.5628 vs 0.6925. Book availability and the 12-vs-8 universe are ruled out. **Next:** diff `serve.py`'s feature pipeline against `eval_m2.py` — sequence warmup, normalization statistics, feature staleness. **Revival trigger:** none needed; it blocks the forward test outright |
+| **Restate the retrain trigger's N** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §8.5 | 🟡 **§8's registered statistic was the wrong one** — p95 of inter-bar gaps measures signal density, not silence, and came out at 0.01 days. N = 65 stands, as §8.3 pre-committed. What the run *did* establish: the longest dry spell across all twelve runs and ~2 years is **21.49 days**, so 65 is ~3x the worst ever seen and is a very insensitive alarm. **Revival trigger:** a fresh pre-registration choosing a tail statistic, written by someone who has not just read §8.5's table |
+| **§4.3 — confirm the parked findings on the folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §4.3 | 🟡 **unlocked by the CONFIRMED verdict, not yet started.** Served coverage at 12 pairs, the hour-of-day and market-neutral probes, and a learned/RL policy under M3_3_PROTOCOL's leave-one-out shape with folds as units. Each needs its own registration naming which folds it may read; none may read F2/F3 for exploration first |
 
 ---
 ## 🟢/🔴 The forward test's own blockers

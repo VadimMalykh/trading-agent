@@ -41,7 +41,15 @@ defmodule FluxTrader.Trading.Ledger do
   @min_rank_bars 7 * 288
   # Bars older than this are dropped. Two rank windows, so there is always a full window
   # available plus room to widen it without losing history.
-  @retain_days 60
+  #
+  # 🔴 IT MUST ALSO EXCEED `Policy.retrain_trigger_days/0`. The retrain trigger asks "how many
+  # days since a served bar last met the cut", and `last_cut_exceeded_at/2` answers it by
+  # scanning THIS table. At the old value of 60 against a trigger of 65, the qualifying bar
+  # that anchors the count was pruned five days BEFORE the trigger could fire, so the trigger
+  # could never fire however long the dry spell ran. Found live 2026-09-09 (see
+  # M3_FIDELITY_RESULTS.md §7); `config_test.exs` now asserts the invariant so the two
+  # constants cannot drift apart again.
+  @retain_days 80
 
   def rank_window_days, do: @rank_window_days
   def min_rank_bars, do: @min_rank_bars
@@ -157,6 +165,22 @@ defmodule FluxTrader.Trading.Ledger do
       )
     )
   end
+
+  @doc """
+  The oldest retained bar at this horizon — the point from which we can honestly say we have
+  been watching.
+
+  The retrain trigger needs this because `last_cut_exceeded_at/2` returns nil in TWO very
+  different situations that must not be conflated: nothing has been recorded yet, and bars
+  have been recorded for months without one ever meeting the cut. The second is exactly the
+  dry spell the trigger exists to catch, and reading it as "no information" is what kept the
+  trigger silent through the 11-day live silence found on 2026-09-09.
+  """
+  def oldest_bar_at(horizon_m) do
+    Repo.one(from(b in PolicyBar, where: b.horizon_m == ^horizon_m, select: min(b.bar_ts)))
+  end
+
+  def retain_days, do: @retain_days
 
   defp seconds_since(nil, _now), do: nil
   defp seconds_since(ts, now), do: DateTime.diff(now, ts)

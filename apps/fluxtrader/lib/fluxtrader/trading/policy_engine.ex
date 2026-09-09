@@ -167,6 +167,9 @@ defmodule FluxTrader.Trading.PolicyEngine do
        checkpoint: nil,
        checkpoint_bound: false,
        last_cut_exceeded_at: nil,
+       # The oldest bar still retained — the anchor the retrain trigger falls back to when
+       # NO bar has ever met the cut. See `retrain_trigger/1`.
+       watching_since: nil,
        # The cut in force. A constant since the 2026-08-31 freeze, held in state rather than
        # read at each decision only so `status/0` reports the value this process is actually
        # deciding with, not the one its source says it should be.
@@ -325,15 +328,41 @@ defmodule FluxTrader.Trading.PolicyEngine do
   end
 
   defp refresh_last_cut_exceeded(state) do
-    %{state | last_cut_exceeded_at:
-        Ledger.last_cut_exceeded_at(state.threshold, state.spec.signal_horizon_m)}
+    %{
+      state
+      | last_cut_exceeded_at:
+          Ledger.last_cut_exceeded_at(state.threshold, state.spec.signal_horizon_m),
+        watching_since: Ledger.oldest_bar_at(state.spec.signal_horizon_m)
+    }
   rescue
     _ -> state
   end
 
+  # The trigger counts days since a served bar last met the cut. `last_cut_exceeded_at` is
+  # nil in two situations that are NOT the same thing, and conflating them is what kept this
+  # trigger silent through an 11-day live dry spell (found 2026-09-09, M3_FIDELITY_RESULTS §7):
+  #
+  #   * nothing has been recorded at all — genuinely no information, and the honest answer
+  #     is nil;
+  #   * bars have been recorded continuously and not one of them has ever met the cut — which
+  #     is not an absence of information, it is the strongest possible form of the very
+  #     observation the trigger watches for.
+  #
+  # So the count anchors on the last qualifying bar when there is one, and otherwise on the
+  # oldest bar we still hold, which is the earliest moment we can honestly claim to have been
+  # watching. `anchor` reports which of the two it used, because "43 days since the cut was
+  # last met" and "43 days of watching and the cut has never been met" call for different
+  # responses even though they carry the same number.
   defp retrain_trigger(state) do
+    {anchor_ts, anchor} =
+      case {state.last_cut_exceeded_at, Map.get(state, :watching_since)} do
+        {nil, nil} -> {nil, :none}
+        {nil, since} -> {since, :watch_start_cut_never_met}
+        {ts, _} -> {ts, :last_cut_exceeded}
+      end
+
     days =
-      case state.last_cut_exceeded_at do
+      case anchor_ts do
         nil -> nil
         ts -> DateTime.diff(DateTime.utc_now(), ts) / 86_400
       end
@@ -342,6 +371,8 @@ defmodule FluxTrader.Trading.PolicyEngine do
       rule: "days without a served bar meeting the cut",
       n_days: Policy.retrain_trigger_days(),
       last_cut_exceeded_at: state.last_cut_exceeded_at,
+      watching_since: Map.get(state, :watching_since),
+      anchor: anchor,
       days_since: days && Float.round(days, 1),
       fired: days != nil and days >= Policy.retrain_trigger_days()
     }

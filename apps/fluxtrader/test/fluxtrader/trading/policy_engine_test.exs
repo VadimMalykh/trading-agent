@@ -171,6 +171,65 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     refute trig.fired
   end
 
+  # --- the 2026-09-09 defect: a dry spell left the trigger silent -----------------------
+  #
+  # Live, `fluxtrader-1` had recorded 38,388 bars over 11 days without ONE meeting the cut
+  # (best confidence 0.5856 against a cut of 0.6296) and reported `days_since: null`,
+  # `fired: false`. The trigger's own rule is "days without a served bar meeting the cut",
+  # so the one situation it exists to detect was the one it could not see.
+  defp bars_below_cut(from, to) do
+    cut = Policy.frozen_threshold()
+    rows =
+      for i <- 0..(DateTime.diff(to, from) |> div(3600)) do
+        %{
+          pair: "BTCUSDT",
+          bar_ts: DateTime.add(from, i * 3600, :second) |> DateTime.truncate(:second),
+          horizon_m: @horizon,
+          # strictly below the cut, every bar, for the whole span
+          confidence: cut - 0.05,
+          side: 1,
+          price: 1.0,
+          gated: false,
+          inserted_at: NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+        }
+      end
+
+    Repo.insert_all(FluxTrader.Trading.PolicyBar, rows)
+  end
+
+  test "the retrain trigger counts a dry spell in which the cut was NEVER met" do
+    now = DateTime.utc_now()
+    # a continuous record longer than the trigger, with no bar ever meeting the cut
+    bars_below_cut(DateTime.add(now, -(Policy.retrain_trigger_days() + 5) * 86_400), now)
+
+    start_engine([], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    trig = PolicyEngine.status().retrain_trigger
+    # nil last-cut is NOT "no information" when bars have been arriving all along
+    refute trig.last_cut_exceeded_at
+    assert trig.anchor == :watch_start_cut_never_met
+    assert trig.days_since >= Policy.retrain_trigger_days()
+    assert trig.fired
+  end
+
+  test "the retrain trigger reports no information only when nothing has been recorded" do
+    start_engine([], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    trig = PolicyEngine.status().retrain_trigger
+    assert trig.anchor == :none
+    refute trig.days_since
+    refute trig.fired
+  end
+
+  test "bar retention outlives the retrain trigger, or the trigger can never fire" do
+    # The anchor the trigger counts from lives in policy_bars. If bars are pruned before the
+    # trigger's own horizon, the anchor disappears first and the trigger is unconditionally
+    # inert — which is what @retain_days 60 against a 65-day trigger did.
+    assert Ledger.retain_days() > Policy.retrain_trigger_days()
+  end
+
   test "a pair outside the served universe never reaches policy_bars or a trade" do
     now = DateTime.utc_now()
     fill_the_diagnostic_window(now)

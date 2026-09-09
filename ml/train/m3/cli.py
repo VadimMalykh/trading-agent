@@ -1062,6 +1062,15 @@ def cmd_folds(args) -> int:
     return walkforward.report(WINNER_SPEC, GRID_WINNER_SPEC, universe=args.universe)
 
 
+def cmd_dryspells(args) -> int:
+    """WALKFORWARD_PROTOCOL §4.2 — restate the retrain trigger's N from the folds.
+
+    The statistic is fixed by §8, which was written and committed before this function
+    existed; every constant lives in `walkforward`, not here.
+    """
+    return walkforward.dryspell_report(universe=args.universe)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1530,6 +1539,13 @@ def main() -> int:
                     help="12 (default) = every pair present in each fold's dump, the served "
                          "universe §3 is decided on; 8 = dumps.BASE8, a diagnostic")
     wf.set_defaults(fn=cmd_folds)
+
+    dsp = sub.add_parser("dryspells", help="WALKFORWARD_PROTOCOL §4.2/§8: restate the retrain "
+                         "trigger's N as the p95 dry spell across all twelve fold runs")
+    dsp.add_argument("--universe", choices=["8", "12"], default="12",
+                     help="12 (default, the served universe §6 pins the folds to) or the "
+                          "8-pair diagnostic")
+    dsp.set_defaults(fn=cmd_dryspells)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

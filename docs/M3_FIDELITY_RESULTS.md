@@ -450,3 +450,91 @@ reason, and the trigger is a structural fact (`last_gated_at: null`) rather than
 ⚠️ **The renamed arm is why `TRUNCATE paper_trades` is now required rather than merely
 advisable.** `PaperTrade.@arms` no longer accepts `signal_only`, so leaving the old rows in
 place would leave twelve rows whose `arm` value the schema rejects.
+---
+
+## §7 — The forward test is producing nothing, and why (found 2026-09-09)
+
+**In one line: the served cut sits above the highest confidence the live model has produced
+in eleven days, so the forward paper test has taken zero trades and, at this cut, will
+continue to.** This is the mechanism BACKLOG calls "the only mechanism that manufactures new
+independent trading days", and it is manufacturing none.
+
+### 7.1 What was observed on `fluxtrader-1`
+
+Checked while verifying the RULES_REVIEW §6.1 deploy. `paper_trades` is empty and
+`policy_bars` at the 240m head holds **38,388 bars over 2026-08-29 → 2026-09-09**:
+
+| | live (12 pairs, 11 days) |
+|---|---|
+| p50 | 0.5152 |
+| p80 | 0.5262 |
+| p95 | 0.5382 |
+| p98 | 0.5448 |
+| p99 | 0.5526 |
+| **max** | **0.5856** |
+| **bars ≥ the served cut 0.6296** | **0 (0.000%)** |
+
+The cut is not merely rarely met. **It is above the maximum confidence observed at all.**
+
+### 7.2 It is NOT a gross serving mismatch — the body of the distribution agrees
+
+The served checkpoint's own repaired eval (run `20260904T051921Z`) runs to 2026-09-03, and
+live bars start 2026-08-29, so **there is a five-day overlap on which the same checkpoint can
+be compared against itself**, restricted to the same eight pairs:
+
+| | offline eval | live | verdict |
+|---|---|---|---|
+| bars | 11,568 | 11,560 | same population |
+| p50 | 0.5148 | 0.5197 | agrees |
+| p95 | 0.5468 | 0.5452 | agrees |
+| p99 | **0.5944** | **0.5577** | **diverges** |
+| max | **0.6925** | **0.5628** | **diverges** |
+| ≥ cut | 40 bars (0.346%) | 0 bars (0.000%) | **diverges** |
+
+So the model is being served essentially correctly — the two distributions agree to ~p95 —
+but **the live tail is truncated.** Two distinct effects are stacked here and both are real:
+
+1. **A genuine regime shift, visible offline too.** Over the full eval split 2.000% of bars
+   clear the cut; over the last five days of that same split only **0.346%** do. Split by
+   book era: 2.320% of pre-book bars clear it against **0.471%** of book-era bars. The cut's
+   "2% coverage" is a whole-split average that recent history no longer resembles.
+2. **A residual live-versus-offline tail gap that regime does not explain**, on identical
+   pairs, days and bar counts: p99 0.5577 live against 0.5944 offline, max 0.5628 against
+   0.6925. **Root cause not established.** `has_book` is uniformly 1 across the overlap, so
+   book availability is ruled out; the 12-vs-8 pair universe is ruled out by restricting live
+   to the same eight. What remains to check is the feature pipeline in `serve.py` against
+   `eval_m2.py` — sequence warmup, normalization statistics, and feature staleness.
+
+🔴 **Do not "fix" this by lowering the cut.** M3_FIDELITY_RESULTS §6.1 and NEXT_TRAINING_PLAN
+§1.5 both record that a threshold belongs to a checkpoint and that re-picking it against live
+coverage is the defect, not the remedy. Effect (2) must be root-caused first, because if the
+live tail is truncated by a pipeline defect then any cut re-derived against live confidence
+is calibrated to that defect.
+
+### 7.3 The retrain trigger should have caught this, and could not
+
+The trigger's rule is *"days without a served bar meeting the cut"*. Eleven days had passed
+with zero qualifying bars and it reported `days_since: null`, `fired: false`. **Two
+independent defects, both fixed 2026-09-09:**
+
+1. **`nil` was read as "no information".** `Ledger.last_cut_exceeded_at/2` returns
+   `max(bar_ts) WHERE confidence >= threshold`, which is `nil` both when nothing has been
+   recorded and when bars have been arriving for months without one ever meeting the cut.
+   The second is the dry spell itself. `PolicyEngine.retrain_trigger/1` now anchors on the
+   oldest retained bar when the cut has never been met, and reports which anchor it used
+   (`anchor: :last_cut_exceeded | :watch_start_cut_never_met | :none`), because "43 days
+   since the cut was last met" and "43 days of watching, never met" need different responses.
+2. **Retention was shorter than the trigger.** `Ledger.@retain_days` was **60** against a
+   trigger of **65**, so the anchoring bar was pruned five days before the trigger could fire
+   — it could never fire, at any dry-spell length. Retention is now **80**, and
+   `policy_engine_test.exs` asserts `retain_days > retrain_trigger_days` so the two constants
+   cannot drift apart again.
+
+Both are covered by regression tests that fail against the previous behaviour.
+
+### 7.4 What this does NOT invalidate
+
+The walk-forward result ([WALKFORWARD_PROTOCOL §7](./WALKFORWARD_PROTOCOL.md)) is measured on
+**offline fold dumps**, not on the live path, and each fold derives its own cut on its own
+window. Nothing in §7 touches it. What §7 blocks is the **forward paper test** — the separate
+mechanism for accumulating new independent days — and the A/B that reads off it.

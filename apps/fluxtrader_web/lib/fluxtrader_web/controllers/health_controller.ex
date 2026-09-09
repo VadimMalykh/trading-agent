@@ -50,7 +50,11 @@ defmodule FluxTraderWeb.HealthController do
   defp policy_block do
     base = %{
       rule: "cov0.02_hold240_rqnone_mcnone_SIZED",
-      source: "docs/M3_2_RESULTS.md §D1",
+      # The constants are seed 2's, re-derived on REPAIRED candles (eval run 20260904T051921Z)
+      # under M3_PROTOCOL §8.3 C4 — see the provenance block on `Policy`. The pre-repair
+      # derivation this used to cite is superseded; the numbers it published are not the ones
+      # being served. Corrected 2026-09-09.
+      source: "docs/M3_2_RESULTS_REPAIRED.md §D1 (repaired eval 20260904T051921Z)",
       coverage: Policy.coverage(),
       hold_minutes: Policy.hold_minutes(),
       signal_horizon_m: Policy.signal_horizon_m(),

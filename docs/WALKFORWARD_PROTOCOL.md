@@ -495,3 +495,45 @@ meeting the cut**, estimated from a single split. §4.2 restates it from the fol
 ```sh
 M3_ERA=walkforward ./scripts/m3.sh -m m3 dryspells      # §8's table and N
 ```
+
+### 8.5 OUTCOME (2026-09-09) — N = 65 stands; §8's statistic was the wrong one
+
+`M3_ERA=walkforward ./scripts/m3.sh -m m3 dryspells`, run once, against §8 as registered.
+
+| fold | spells | p95 (days) |
+|---|---|---|
+| F2 | 34,796 | 0.00 |
+| F3 | 34,823 | 0.01 |
+| F1 | 34,833 | 0.00 |
+| F0 | 34,856 | 0.01 |
+
+Pooled: 139,308 spells, p50 0.00, p90 0.00, **p95 0.01**, p99 0.20, **max 21.49 days**.
+Restricted to the 11 common pairs (§1.1): p95 0.01 days.
+
+**§8.3's spread check fired and the verdict is NOT DECIDABLE, so — as pre-registered —
+M3_PROTOCOL §9.1 Q3 (b)'s N = 65 days STANDS, unchanged.** Recorded as the registration
+required, whatever the reason.
+
+🔴 **But the honest reading is that §8.2 registered the wrong statistic, and the verdict
+fired on rounding noise rather than on real disagreement.** Both facts are recorded here
+rather than fixed by a quiet re-run:
+
+* The "3.00x spread" is the ratio of 0.01 to 0.00 — two values that are both essentially
+  zero after rounding to two decimals. It is an artifact of the printing precision, not a
+  finding that the eras disagree.
+* The deeper defect is the choice of **p95**. At 2% coverage over twelve pairs a qualifying
+  bar arrives roughly seventy times a day, so 95% of consecutive gaps are minutes. The p95
+  of that distribution measures **signal density, not silence** — it can never speak to a
+  trigger denominated in months. §8.2 fixed this choice before the data was seen, and it was
+  simply a bad choice.
+
+**What the run does legitimately establish**, because §8.2 listed the maximum among the
+statistics to report alongside N: across all twelve runs, ~2 years of history and four eras,
+the **longest dry spell ever observed is 21.49 days** (per-run maxima range 2.00 → 21.49).
+So **N = 65 sits at roughly 3x the longest silence any fold model ever produced.** It will
+essentially never false-fire — and by the same token it is a very insensitive alarm.
+
+**Not restated here.** A sharper N needs its own pre-registration, written by someone who has
+not just read the table above; proposing one in this section would be choosing a statistic
+after seeing the data, which is the move §8 exists to prevent. The parked item and its
+revival trigger are in [BACKLOG.md](./BACKLOG.md).

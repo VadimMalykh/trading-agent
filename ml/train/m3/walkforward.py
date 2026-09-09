@@ -391,3 +391,107 @@ def report(sized_spec: dict, flat_spec: dict, universe: str = "12") -> int:
     else:
         print("  (neither is loaded yet)")
     return 0
+
+
+# --------------------------------------------------------------------------------------
+# §8 — the retrain trigger's N (WALKFORWARD_PROTOCOL §4.2, registered in §8 before this
+# code was written; every constant below is that registration's, none is a knob)
+# --------------------------------------------------------------------------------------
+
+DRYSPELL_COVERAGE = 0.02      # §8.2: each dump's own cut, at the served coverage
+DRYSPELL_PERCENTILE = 95      # §8.2: N is the p95 of the pooled distribution
+DRYSPELL_SPREAD_LIMIT = 2.0   # §8.3: per-fold p95s disagreeing by more than this -> NOT DECIDABLE
+
+
+def dry_spells(d: dumps.Dump) -> np.ndarray:
+    """Completed gaps in DAYS between consecutive bars meeting this dump's own 0.02 cut.
+
+    §8.2 fixes every choice here. The cut is the dump's own `coverage_threshold` (C4 —
+    nothing is inherited across folds). Spells are measured between *bar timestamps* pooled
+    over pairs, not between trades, because the live trigger reads `policy_bars` and a bar
+    can meet the cut while the risk manager declines the trade. The leading and trailing
+    intervals are censored (§8.2): neither is a completed spell, and keeping them would let
+    the arbitrary placement of the val window move N.
+    """
+    h = d.at(240)
+    conf = h["conf"].to_numpy()
+    cut = backtest.coverage_threshold(conf, DRYSPELL_COVERAGE)
+    t = pd.to_datetime(h["ts"].to_numpy()[conf >= cut], unit="ns", utc=True)
+    if t.size < 2:
+        return np.empty(0)
+    ordered = np.sort(t.view("int64"))
+    return np.diff(ordered) / (86_400 * 1e9)
+
+
+def dryspell_report(universe: str = "12") -> int:
+    """§8's table and N. Prints the spread check before the pooled number, as §8.3 requires."""
+    require_walkforward_era()
+    print("=" * 96)
+    print("THE RETRAIN TRIGGER'S N — WALKFORWARD_PROTOCOL §4.2, registered in §8")
+    print("=" * 96)
+    print(registry_state())
+    if dumps.missing_runs():
+        print("\n🔴 the family is incomplete; §8 is a statistic over all twelve. No N.")
+        return 1
+
+    pairs = dumps.BASE8 if universe == "8" else None
+    ds = load_folds(pairs)
+    folds = by_fold(ds)
+    restrict = common_pairs(folds)
+    print(f"\nuniverse: {'the 8-pair diagnostic' if universe == '8' else 'twelve — §6 pins the folds to the served universe'}")
+    print(f"each dump's own cut at coverage {DRYSPELL_COVERAGE} (C4); spells between bars "
+          f"meeting it, pooled over pairs; leading/trailing intervals censored (§8.2)\n")
+
+    print(f"  {'fold':>5} {'seed':>5} {'cut':>8} {'bars>=cut':>10} {'spells':>7} "
+          f"{'p50':>7} {'p90':>7} {'p95':>7} {'max':>8}")
+    per_fold: dict[str, np.ndarray] = {}
+    for fold in dumps.FOLD_RUN_ORDER:
+        for d in folds.get(fold, []):
+            h = d.at(240)
+            cut = backtest.coverage_threshold(h["conf"].to_numpy(), DRYSPELL_COVERAGE)
+            s = dry_spells(d)
+            n_met = int((h["conf"].to_numpy() >= cut).sum())
+            print(f"  {fold:>5} {d.seed[-2:]:>5} {cut:8.4f} {n_met:10,} {s.size:7,} "
+                  f"{np.percentile(s, 50):7.2f} {np.percentile(s, 90):7.2f} "
+                  f"{np.percentile(s, 95):7.2f} {s.max():8.2f}")
+            per_fold.setdefault(fold, np.empty(0))
+            per_fold[fold] = np.concatenate([per_fold[fold], s])
+
+    print(f"\n  {'fold':>5} {'spells':>8} {'p95 (days)':>12}")
+    fold_p95 = {}
+    for fold in dumps.FOLD_RUN_ORDER:
+        s = per_fold[fold]
+        fold_p95[fold] = float(np.percentile(s, DRYSPELL_PERCENTILE))
+        print(f"  {fold:>5} {s.size:8,} {fold_p95[fold]:12.2f}")
+
+    lo, hi = min(fold_p95.values()), max(fold_p95.values())
+    spread = hi / lo if lo > 0 else float("inf")
+    print(f"\n§8.3 spread check (printed BEFORE the pooled number): "
+          f"per-fold p95 ranges {lo:.2f} .. {hi:.2f} days, ratio {spread:.2f}x "
+          f"(limit {DRYSPELL_SPREAD_LIMIT}x)")
+
+    pooled = np.concatenate([per_fold[f] for f in dumps.FOLD_RUN_ORDER])
+    n_raw = float(np.percentile(pooled, DRYSPELL_PERCENTILE))
+    print(f"\npooled over all twelve runs: {pooled.size:,} spells   "
+          f"p50={np.percentile(pooled, 50):.2f}  p90={np.percentile(pooled, 90):.2f}  "
+          f"p95={n_raw:.2f}  p99={np.percentile(pooled, 99):.2f}  max={pooled.max():.2f} days")
+
+    if restrict and universe != "8":
+        rs = [dry_spells(d) for d in dumps.load_baseline(pairs=restrict)]
+        r = np.concatenate([x for x in rs if x.size])
+        print(f"restricted to the {len(restrict)} pairs in every fold (§1.1's control): "
+              f"{r.size:,} spells   p95={np.percentile(r, DRYSPELL_PERCENTILE):.2f} days")
+
+    print("\n" + "=" * 96)
+    if spread > DRYSPELL_SPREAD_LIMIT:
+        print(f"§8.3 VERDICT: NOT DECIDABLE — the per-fold p95s disagree by {spread:.2f}x "
+              f"(> {DRYSPELL_SPREAD_LIMIT}x).")
+        print("  A trigger whose value depends on which era measured it is not a trigger.")
+        print("  M3_PROTOCOL §9.1 Q3 (b)'s N = 65 days STANDS, unchanged.")
+    else:
+        n = int(np.ceil(n_raw))
+        print(f"§8.3 VERDICT: N = {n} days (pooled p95 {n_raw:.2f}, rounded up).")
+        print(f"  This REPLACES the 65-day single-split estimate in M3_PROTOCOL §9.1 Q3 (b),")
+        print(f"  as §8.3 fixed in advance — including if it is larger.")
+    print("=" * 96)
+    return 0
