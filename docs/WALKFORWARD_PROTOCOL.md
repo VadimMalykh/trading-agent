@@ -537,3 +537,102 @@ essentially never false-fire — and by the same token it is a very insensitive 
 not just read the table above; proposing one in this section would be choosing a statistic
 after seeing the data, which is the move §8 exists to prevent. The parked item and its
 revival trigger are in [BACKLOG.md](./BACKLOG.md).
+
+🔴 **A discrepancy that matters more than N does, found while writing this up.** M3_PROTOCOL
+§9.1 Q3 (b) calibrated N = 65 as ~1.25x **51.8 days**, the longest dry spell of the cut in the
+*served* checkpoint's own repaired split (24.9 and 12.7 days on seeds 1 and 3). The folds'
+longest spell, across four eras and twelve models, is **21.49 days** — less than half of it.
+
+The two are not measuring the same thing, and the difference is diagnostic rather than
+contradictory. **Each fold derives its own cut on its own window (C4), so a fold's qualifying
+bars are ~2% of that window throughout.** The served checkpoint's cut is derived over its
+whole split, and its qualifying bars are not spread evenly across it: they concentrate early
+and thin out badly toward the end. A 51.8-day silence inside the very split the cut was
+derived on means **the served model was already going quiet before it was ever deployed** —
+which is the same phenomenon [M3_FIDELITY_RESULTS §7](./M3_FIDELITY_RESULTS.md) then measured
+live, where 11 days have passed with the cut not merely unmet but never approached. Read §7
+first; it is the live half of this observation and it is the more urgent one.
+
+---
+
+## §9 — REGISTRATIONS: confirming the parked findings on the folds (§4.3)
+
+**Written 2026-09-09, before any of the numbers below were computed.** §4.3 requires each
+parked finding to carry its own registration naming which folds it may read. These are those
+registrations. **None of them has been run**, deliberately — see §9.0.
+
+### 9.0 🔴 Read before running any of these
+
+1. **They are ranked below the live tail gap.** [M3_FIDELITY_RESULTS §7](./M3_FIDELITY_RESULTS.md)
+   found that the served cut is above the live maximum confidence, so the forward test takes no
+   trades. Every registration below is offline work that does not fix that, and the tail gap is
+   the thing standing between this project and any new independent trading day. **Do that first.**
+2. **The exploration/confirmation order is not optional.** §4.3: *none may read F2/F3 for
+   exploration first.* Each finding is explored on **F0 + F1** (which §3 already bars from
+   promotion arguments, so nothing is spent by looking) and only then confirmed on **F2 + F3**,
+   once, with the confirmation statistic fixed beforehand. A finding explored on F2/F3 has
+   burned the only untouched history this project has, and there is no second copy.
+3. **The §7.2 training-size penalty applies to every one of these.** Fold models are ~14 bps
+   weaker than the incumbent from the fixed-width train window alone. That is fine for a
+   *relative* comparison (arm A versus arm B within the same fold) and fatal for any absolute
+   claim. Every registration below is therefore written as a within-fold contrast.
+
+### 9.1 Served coverage at twelve pairs
+
+**The question.** The served cut comes from seed 2's **eight**-pair split while **twelve** are
+served (`Policy` provenance, "KNOWN GAP"). T6's count-matched twelve-pair cut is 0.01288. Does
+coverage at twelve pairs beat coverage at eight, on the same bars?
+
+* **Arms:** the incumbent spec at `coverage=0.02` derived over the fold's twelve-pair
+  population, against the same spec derived over its `dumps.BASE8` population and applied to
+  the twelve. One variable: the population the cut is derived on.
+* **Explore on F0+F1.** Confirm on F2+F3 only if the F0+F1 contrast is positive.
+* **Statistic:** the day-clustered mean difference in net bps at taker, paired by fold-seed.
+  **Confirmed iff** the F2+F3 clustered 95% lower bound of the difference > 0.
+* **Reported with it:** realized coverage per arm per fold, because the whole defect this
+  probes is that a threshold's realized coverage moves with the universe.
+
+### 9.2 The hour-of-day probe
+
+**The question.** Does restricting entries by UTC hour improve net bps, or is the hour effect
+seen on the published split an artifact of it?
+
+* **Arms:** the incumbent unrestricted, against the incumbent restricted to the hour set
+  chosen **on F0+F1 alone**. The hour set is chosen once, written into this section before
+  F2/F3 is touched, and never revised.
+* **Statistic:** as §9.1. **Confirmed iff** the F2+F3 clustered 95% lower bound of the
+  difference > 0 **and** the chosen hour set retains ≥ 60% of trades — a filter that confirms
+  by discarding most of the sample is a coverage change wearing a costume.
+* 🔴 **The hour set MUST be recorded here before F2/F3 is read.** Chosen set: *(not yet
+  chosen — F0+F1 exploration has not been run).*
+
+### 9.3 The market-neutral probe
+
+**The question.** Does netting concurrent long and short exposure across pairs improve net bps
+per unit of notional?
+
+* **Arms:** the incumbent as served, against the same entries with per-bar exposure netted
+  across the universe.
+* **Statistic:** day-clustered mean net bps **per unit of notional**, not per trade — the
+  arms deploy different notional by construction, and per-trade would reward the arm that
+  simply trades smaller. (This is the same trap M3_5_INTEGRATION §4 recorded for the
+  `flat_size` control.)
+* **Confirmed iff** the F2+F3 clustered 95% lower bound of the difference > 0.
+
+### 9.4 A learned or sequential (RL) policy
+
+**The question.** M3_PROTOCOL §9.3 records RL as "not forbidden but unfundable on ~220
+independent days". The folds roughly triple that. Is it fundable now?
+
+* **Shape:** M3_3_PROTOCOL's leave-one-out design with **folds as the units** — fit on three
+  folds, score the held-out one, four times. Seeds stay within their fold.
+* **Eligibility gate, checked BEFORE any fitting:** the pooled fold sample must clear
+  M3_3_PROTOCOL's minimum-detectable-effect bar against the incumbent's edge. **If it does
+  not, the answer is "still unfundable" and no model is fitted** — that is a real answer and
+  it costs nothing.
+* **Statistic:** the learned arm must beat the incumbent by a clustered 95% lower bound > 0 on
+  the held-out folds, under M3_PROTOCOL §8.3's champion–challenger rule (a single-seed win is
+  not a win).
+* 🔴 **0 of 8 learned runs have ever passed on the published split**
+  ([M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md)). This registration does not
+  re-open that; it asks the narrower question of whether more history changes it.
