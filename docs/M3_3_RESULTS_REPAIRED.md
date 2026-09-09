@@ -1,4 +1,4 @@
-> **ERA: REPAIRED — generated 2026-09-04 with `M3_ERA=repaired`, on the post-candle-repair dumps. The pre-registered M3-3 protocol re-executed on corrected data ([RULES_REVIEW.md](./RULES_REVIEW.md) §2.3). ⚠️ The bar printed below as "+0.25" is a constant hard-coded from the pre-repair M3-2 result; on repaired data the bar is −4.61 (M3_2_RESULTS_REPAIRED.md). The verdict is identical under either. The 2026-08-27 original is [M3_3_RESULTS.md](./M3_3_RESULTS.md). Do not hand-edit: re-run the command.**
+> **ERA: REPAIRED — generated 2026-09-04 with `M3_ERA=repaired`, on the post-candle-repair dumps. The pre-registered M3-3 protocol re-executed on corrected data ([RULES_REVIEW.md](./archive/RULES_REVIEW.md) §2.3). ⚠️ The bar printed below as "+0.25" is a constant hard-coded from the pre-repair M3-2 result; on repaired data the bar is −4.61 (M3_2_RESULTS_REPAIRED.md). The verdict is identical under either. The 2026-08-27 original is [M3_3_RESULTS.md](./M3_3_RESULTS.md). Do not hand-edit: re-run the command.**
 
 # M3-3 — the learned policy: results
 

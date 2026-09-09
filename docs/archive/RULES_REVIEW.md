@@ -1,10 +1,16 @@
+> **ARCHIVED 2026-09-09.** A record, not a plan. Its §6.1 (deploy) and §6.2 (the fold queue)
+> are both complete — see [WALKFORWARD_PROTOCOL.md](../WALKFORWARD_PROTOCOL.md) §7 for the fold
+> result and [M3_FIDELITY_RESULTS.md](../M3_FIDELITY_RESULTS.md) §7 for what the deploy
+> verification turned up. §6.3 item 6 asked for exactly this move once both were done.
+> Start at [BACKLOG.md](../BACKLOG.md).
+
 # Rules review, M3 re-assessment, and the cleanup inventory — 2026-09-04
 
 **Status: ✅ DECIDED AND EXECUTED 2026-09-04.** The review (§0–§3) was delivered, Vadim answered
-every question in §4 the same day, and the answers were carried out: [M3_PROTOCOL.md](./M3_PROTOCOL.md)
+every question in §4 the same day, and the answers were carried out: [M3_PROTOCOL.md](../M3_PROTOCOL.md)
 **§9 (Amendment 2)** is written and in force, the served constants are re-derived, the
 checkpoint-binding guard and forward-ledger tagging are built and tested, the walk-forward folds
-are plumbed and pre-registered ([WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md)), and the
+are plumbed and pre-registered ([WALKFORWARD_PROTOCOL.md](../WALKFORWARD_PROTOCOL.md)), and the
 approved cleanup is done.
 
 **Progress on §6, updated 2026-09-04:** §6.1 (the deploy to `fluxtrader-1`) is **done** — one
@@ -13,7 +19,7 @@ correction was needed to the checklist itself: `regime.frozen_p80` is a **top-le
 restructuring) is **done**. §6.2 (the fold queue) has its **harness built and committed** —
 `ml/train/m3/walkforward.py`, `M3_ERA=walkforward`, `m3 folds`, and validate's third acceptance
 test — but **no fold has been trained**. That is the one thing left. Indexed in
-[BACKLOG.md](./BACKLOG.md).
+[BACKLOG.md](../BACKLOG.md).
 
 The three questions, verbatim in spirit:
 
@@ -191,8 +197,8 @@ M3_ERA=repaired ./scripts/m3.sh -m m3 search     # the 40 pre-registered runs, T
 ```
 
 Logs: `logs/Q0-repaired-all.log`; the generated report is
-[M3_2_RESULTS_REPAIRED.md](./M3_2_RESULTS_REPAIRED.md) (pre-repair original:
-[M3_2_RESULTS.md](./M3_2_RESULTS.md)).
+[M3_2_RESULTS_REPAIRED.md](../M3_2_RESULTS_REPAIRED.md) (pre-repair original:
+[M3_2_RESULTS.md](../M3_2_RESULTS.md)).
 
 **The verdict is unchanged in kind and slightly weaker in degree.**
 
@@ -225,7 +231,7 @@ flat-size anchor's (−4.59 against −2.76), which is what sizing up into volat
 M3_ERA=repaired ./scripts/m3.sh -m m3 learn      # the 14 pre-registered learned runs
 ```
 
-Logs: `logs/Q0-learn-repaired.log`; report: [M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md).
+Logs: `logs/Q0-learn-repaired.log`; report: [M3_3_RESULTS_REPAIRED.md](../M3_3_RESULTS_REPAIRED.md).
 
 **The verdict is unchanged: no learned configuration passes Tier 1** — 0 of 8, on the same
 leave-one-window-out folds, same nine observations, same two model classes.
@@ -455,6 +461,19 @@ unless you want the shape of the problem visible before deciding on 4.
 
 ### 6.1 Deploy the re-derived rule and the guard to `fluxtrader-1` (step 8 of CANDLE_POLL_DEFECT §7)
 
+✅ **DONE — verified live 2026-09-09.** All six checks below pass on `fluxtrader-1`: cut and
+`frozen_threshold` both `0.6296127438545227`, `checkpoint` == `frozen_checkpoint` with
+`checkpoint_bound: true`, `regime.frozen_p80` `0.025596268475055695` as the ladder's last edge,
+`n_days: 65` with `fired: false`, no `checkpoint_mismatch`/`checkpoint_unverified` skips, and
+`paper_trades` = 0. ⚠️ **Two things the verification found, both now fixed and deployed:** the
+retrain trigger could never fire (M3_FIDELITY_RESULTS §7.3), and `/api/health`'s `source` cited
+the pre-repair derivation. And one it found that is NOT fixed: the forward test is taking no
+trades at all, because the served cut sits above the live maximum confidence —
+[M3_FIDELITY_RESULTS §7](../M3_FIDELITY_RESULTS.md), now the top open item.
+
+*The original text follows, and its opening sentence was already stale when it was read: the
+services were found running the re-derived constants, so nothing had to be swapped.*
+
 Nothing on the VM has changed yet. The VM still serves the pre-repair cut (0.6319) and its
 `ml_inference` does not yet report a checkpoint hash — so the moment the new app code is deployed
 it will **refuse to trade** (`skips.checkpoint_unverified`) until `ml_inference` is also
@@ -500,7 +519,13 @@ curl -s localhost:4000/api/health | jq '{policy, regime}'
 The forward clock restarts at this deploy by definition: every row from here carries the
 checkpoint tag, and the A/B is read on tagged rows.
 
-### 6.2 The fold queue — harness ✅ built 2026-09-04; 0 of 12 folds banked
+### 6.2 The fold queue — ✅ COMPLETE 2026-09-09, all 12 folds banked and scored
+
+*§3's verdict is CONFIRMED: W1 = +33.23 net bps at taker on F2+F3, clustered 95% CI
+[+9.28, +57.17]. Record: [WALKFORWARD_PROTOCOL.md](../WALKFORWARD_PROTOCOL.md) §7. The brief
+below is what was outstanding on 2026-09-04 and is kept for provenance.*
+
+### 6.2 (as written 2026-09-04) The fold queue — harness ✅ built; 0 of 12 folds banked
 
 **Decided 2026-09-04, before any fold was trained: §3 is scored on the TWELVE served pairs**
 (WALKFORWARD_PROTOCOL §6). **Vadim launches the runs; this session records and scores them.**
@@ -516,7 +541,7 @@ variables arrived correctly; the recipe did not. Recorded in WALKFORWARD_PROTOCO
 carries the whole recipe plus a five-line pre-record checklist, and `gcp_train.sh` refuses a
 split-moving run whose recipe is not the incumbent's.
 
-[WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §5, **F2 first**. Before the first launch:
+[WALKFORWARD_PROTOCOL.md](../WALKFORWARD_PROTOCOL.md) §5, **F2 first**. Before the first launch:
 clear the VM dump cache; the `M3_ERA=walkforward` harness support (§2 of that protocol) is built
 and committed. Twelve serial runs at roughly four hours each; verify each against §5.1's
 checklist, then record it in §6 of the protocol from its own `Split` line.

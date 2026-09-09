@@ -23,29 +23,36 @@ file is tables.*
 
 ---
 
-## 🔴 Right now — what 2026-09-04 left open
+## 🔴 Right now — what 2026-09-09 left open
 
-The rules review answered three questions — are the rules too tight, what can be cleaned up, and
-why not re-assess M3 (rule *and* RL) on corrected validation — and all eight decisions it raised
-were taken and carried out the same day. Record: [RULES_REVIEW.md](./RULES_REVIEW.md).
-**Three things remain, in this order:**
+**All three items the 2026-09-04 rules review left open are now closed.** The deploy is
+verified live, the twelve walk-forward folds are banked and scored, and the document
+restructuring finished when [archive/RULES_REVIEW.md](./archive/RULES_REVIEW.md) was archived
+— which its own §6.3 item 6 made conditional on the first two.
+
+**The headline: the rule is CONFIRMED out of sample, and the forward test is producing
+nothing.** Those are not in tension — the first is measured offline on fold dumps, the second
+is about the live serving path — but the second is what is urgent.
 
 | # | item | owner | state |
 |---|---|---|---|
-| 1 | **Deploy the re-derived rule and the checkpoint guard to `fluxtrader-1`** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.1 | ✅ **DONE — verified live 2026-09-09.** The §6.1 text saying "nothing on the VM has changed yet" was stale: the services were already running the re-derived constants. All six checks pass — cut `0.6296127438545227` == frozen, checkpoint `882cd415…` == frozen with `checkpoint_bound: true`, `regime.frozen_p80` `0.025596268475055695` as the ladder's last edge, `n_days: 65` / `fired: false`, no `checkpoint_mismatch`/`checkpoint_unverified` skips, `paper_trades` = 0 |
-| 2 | **The walk-forward fold queue** — 12 serial runs | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §7 | ✅ **COMPLETE 2026-09-09. All 12 runs banked, all six §5.1 checks pass on every one, C3 passes 12/12, and §3's verdict is CONFIRMED: W1 = +33.23 net bps at taker on F2+F3, clustered 95% CI [+9.28, +57.17], LB > 0, with W2–W5 all holding.** The first positive evidence in the project rather than absence-of-refutation. 🔴 Read §7.2 before quoting any fold number: the F0 control lands at −0.66 net bps against the incumbent's +13.82 on the same era, so the fixed-width train window costs ~14 bps — which makes W1 *conservative* but **confounds the freshness reading, so §4.1 may not be read off this table** |
-| 3 | **The document restructuring** | [RULES_REVIEW.md](./RULES_REVIEW.md) §6.3 | 🔵 in progress 2026-09-04 |
+| 1 | 🔴 **The live confidence tail gap** — the forward test takes no trades | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7 | **THE TOP OPEN ITEM.** The served cut (0.6296) is *above* the highest confidence the live model has produced in 11 days (max 0.5856), so `paper_trades` is empty and stays empty. On five overlapping days, the same checkpoint and the same eight pairs, offline and live agree to ~p95 and then the live tail is truncated (p99 0.5577 vs 0.5944, max 0.5628 vs 0.6925). Part is a genuine regime shift visible offline too (2.000% of bars clear the cut over the full split, 0.346% over its last five days); the residual gap is **not explained** — book availability and the 12-vs-8 universe are ruled out. **Next: diff `serve.py`'s feature pipeline against `eval_m2.py` — sequence warmup, normalization statistics, feature staleness.** 🔴 **Do not respond by lowering the cut**; §6.1 and NEXT_TRAINING_PLAN §1.5 both record that as the defect rather than the remedy |
+| 2 | **§4.3's four confirmations** — the payoff of a CONFIRMED verdict | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §9 | 🟡 **registered 2026-09-09, none run.** Served coverage at twelve pairs, hour-of-day, market-neutral, and a learned/RL policy. §9.0 states the two rules that govern all four: explore on F0+F1 and confirm on F2+F3 *once* (there is no second copy of untouched history), and write every one as a within-fold contrast because the §7.2 training-size penalty makes absolute claims invalid |
+| 3 | **Restate the retrain trigger's N** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §8.5 | 🟡 **§8 ran and returned NOT DECIDABLE; N = 65 stands.** §8.5 records honestly that the registered statistic was the wrong one — p95 of inter-bar gaps measures signal density, not silence. Needs a fresh pre-registration choosing a tail statistic |
 
-**🔴 What 2026-09-09 opened, and it outranks everything below.** Verifying row 1 turned up
-that **the forward paper test is producing nothing**: the served cut (0.6296) sits *above* the
-highest confidence the live model has produced in 11 days (max 0.5856), so `paper_trades` is
-empty and stays empty. Same checkpoint, same 8 pairs, same 5 overlapping days: the offline and
-live distributions agree to ~p95 and then the live tail is truncated (p99 0.5577 vs 0.5944, max
-0.5628 vs 0.6925). Part is a real regime shift visible offline too (2.000% of bars clear the cut
-over the full split, 0.346% over the last five days); part is an unexplained live-vs-offline tail
-gap. Full evidence and what is already ruled out:
-[M3_FIDELITY_RESULTS.md §7](./M3_FIDELITY_RESULTS.md). 🔴 **Do not respond by lowering the cut** —
-§6.1 and NEXT_TRAINING_PLAN §1.5 both record that as the defect rather than the remedy.
+**Closed on 2026-09-09, with links to the record:**
+
+| item | record |
+|---|---|
+| ✅ Deploy the re-derived rule and the checkpoint guard | [archive/RULES_REVIEW.md](./archive/RULES_REVIEW.md) §6.1 — verified live; all six checks pass |
+| ✅ The walk-forward fold queue, 12 runs | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §7 — **verdict CONFIRMED**, W1 = +33.23 net bps, CI [+9.28, +57.17] |
+| ✅ The document restructuring | [archive/RULES_REVIEW.md](./archive/RULES_REVIEW.md) §6.3 — finished by archiving that file |
+| ✅ The retrain trigger could never fire | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.3 — two independent defects, fixed and deployed with regression tests |
+
+🔴 **Before quoting any fold number, read [WALKFORWARD_PROTOCOL §7.2](./WALKFORWARD_PROTOCOL.md).**
+The F0 control lands at −0.66 net bps against the incumbent's +13.82 on the same era, so the
+fixed-width train window costs ~14 bps. That makes W1 *conservative*, but it confounds boundary
+age with training size — **§4.1's freshness reading may not be taken off this table.**
 
 **What the review established, in one line each:** the bars are right and the friction is four
 structural gaps around them, all four fixed by [M3_PROTOCOL.md](./M3_PROTOCOL.md) §9

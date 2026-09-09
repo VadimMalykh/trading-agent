@@ -389,7 +389,7 @@ of M3-2 and M3-3 (§9.2) that this amendment makes the verdict of record. The sa
 §8.0 applies: nothing here re-chooses a searched dimension, lowers a Tier-1 criterion, or retires
 Tier 2. Where it changes how *future* protocols rank (§9.4), that rule binds only protocols
 registered after this date and never re-reads a completed one. The review that produced it,
-with the reasoning in full, is [RULES_REVIEW.md](./RULES_REVIEW.md).
+with the reasoning in full, is [RULES_REVIEW.md](./archive/RULES_REVIEW.md).
 
 ### 9.1 §8.6 answered — Amendment 1 is in force
 

@@ -632,7 +632,7 @@ learned runs were re-executed too and 0 of 8 pass (best −6.6). Records:
 [M3_2_RESULTS_REPAIRED.md](./M3_2_RESULTS_REPAIRED.md), [M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md);
 logs `logs/Q0-repaired-all.log`, `logs/Q0-learn-repaired.log`. Whether this becomes the verdict of
 record, and the C4 re-derivation of `policy.ex`'s constants that follows, is
-[RULES_REVIEW.md](./RULES_REVIEW.md) §4 decision 3. *Original question follows.* **Does the incumbent still clear its own promotion bar
+[RULES_REVIEW.md](./archive/RULES_REVIEW.md) §4 decision 3. *Original question follows.* **Does the incumbent still clear its own promotion bar
 on repaired data?** §5.5 shows arm A's worst window at **−4.61 bps** against the **+0.25 bps**
 M3_2_RESULTS §D fixed as M3-3's bar, and §5.2 shows the regime ladder its sizing overlay rests
 on has flattened by half at Q5. Neither is certified — a Tier-1 re-score of the incumbent

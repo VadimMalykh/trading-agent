@@ -1,4 +1,4 @@
-> **ERA: REPAIRED — generated 2026-09-04 with `M3_ERA=repaired`, on the post-candle-repair dumps (`20260904T061948Z` / `051921Z` / `073714Z`). This is the pre-registered M3-2 protocol re-executed on corrected data under the data-correction clause proposed in [RULES_REVIEW.md](./RULES_REVIEW.md) §1.3 D; whether it is the verdict of record is decision 3 there. The 2026-08-27 original is [M3_2_RESULTS.md](./M3_2_RESULTS.md). Do not hand-edit: re-run the command.**
+> **ERA: REPAIRED — generated 2026-09-04 with `M3_ERA=repaired`, on the post-candle-repair dumps (`20260904T061948Z` / `051921Z` / `073714Z`). This is the pre-registered M3-2 protocol re-executed on corrected data under the data-correction clause proposed in [RULES_REVIEW.md](./archive/RULES_REVIEW.md) §1.3 D; whether it is the verdict of record is decision 3 there. The 2026-08-27 original is [M3_2_RESULTS.md](./M3_2_RESULTS.md). Do not hand-edit: re-run the command.**
 
 # M3-2 — the rules baseline: results
 

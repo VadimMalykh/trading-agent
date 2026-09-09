@@ -13,7 +13,7 @@ Tier 1), the constants re-derived under C4 (cut 0.6296127438545227, p80 0.025596
 now in `policy.ex`), and the arrival question answered on true data: **the served cut fires on
 repaired candles** — last bar over the cut 2026-08-31, longest dry spell 51.8 days — so the
 forward test was never regime-blocked, it was reading partial bars. **Step 8 (deploy and restart
-the forward clock) is pending**; the checklist is [RULES_REVIEW.md](./RULES_REVIEW.md) §6, and
+the forward clock) is pending**; the checklist is [RULES_REVIEW.md](./archive/RULES_REVIEW.md) §6, and
 the clock is no longer reset by truncation (M3_PROTOCOL §9.6).
 *Original status follows.* 🟡 IN REPAIR, found and fixed 2026-09-03.** The collector no longer stores partial
 bars (deployed to `fluxtrader-1`, commit `0b1d743`) and the history repair has been run. The

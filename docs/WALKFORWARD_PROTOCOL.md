@@ -11,9 +11,9 @@ satisfy). **Owner of the plumbing:** [RETRAIN_PLAN.md](./RETRAIN_PLAN.md) §2–
 launched.** A better fold shape, a better statistic or a different k is a proposal for a future
 pre-registration, never a re-scoring of these runs.
 
-⚠️ **Two edits have been made since a fold was first launched, and both are recorded here rather
-than made quietly. Both are to §5, which is an operating instruction; nothing that decides
-anything has moved.** The fold design (§1), what is scored (§2), the five criteria (§3), the
+⚠️ **Three edits have been made since a fold was first launched, and all three are recorded here
+rather than made quietly. All three are to §5, which is an operating instruction; nothing that
+decides anything has moved.** The fold design (§1), what is scored (§2), the five criteria (§3), the
 confirmatory status of each fold (§4) and the twelve-pair universe (§6) are untouched, and **no
 fold number has ever been read** — the registry has been empty at every point below.
 
@@ -24,6 +24,12 @@ fold number has ever been read** — the registry has been empty at every point 
    already passed were scored on the wrong window (§6.1) — `eval_m2.py` took the newest
    `VAL_FRACTION` of history regardless of the fold, and §5.1's five checks all read the training
    `Split` line, so none of them looked at the eval. The sixth check reads the eval block.
+3. **2026-09-09, a path only.** `docs/RULES_REVIEW.md` in §5's recipe comment became
+   `docs/archive/RULES_REVIEW.md`, because that file was archived on 2026-09-09 once its §6.1
+   and §6.2 were both complete (its own §6.3 item 6 asked for the move). **No value, knob,
+   criterion or number changed.** This entry exists only so that no edit to this file is silent.
+   Unlike the first two it was made *after* all twelve runs were banked and scored, which is why
+   it is confined to a file path.
 
 ---
 
@@ -176,7 +182,7 @@ lines below carry §1's recipe explicitly; **`VAL_OFFSET` and `SEED` are the onl
 between the twelve runs.**
 
 ```sh
-# ---- the recipe, identical in all twelve runs (docs/RULES_REVIEW.md §6.2, §1 above) ----
+# ---- the recipe, identical in all twelve runs (docs/archive/RULES_REVIEW.md §6.2, §1 above) ----
 export FEATURE_GROUPS=legacy CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
 export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
 export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
