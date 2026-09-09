@@ -88,10 +88,10 @@ FOLD_TRAIN_FRACTION = 0.5
 FOLD_RUN_ORDER = ("F2", "F3", "F1", "F0")
 
 WALKFORWARD_RUNS: dict[str, str | None] = {
-    "F0s1": None, "F0s2": None, "F0s3": None,
-    "F1s1": None, "F1s2": None, "F1s3": None,
-    "F2s1": "20260905T164940Z", "F2s2": "20260906T034840Z", "F2s3": None,
-    "F3s1": None, "F3s2": None, "F3s3": None,
+    "F0s1": "20260908T045913Z", "F0s2": "20260908T085950Z", "F0s3": "20260908T141818Z",
+    "F1s1": "20260907T123158Z", "F1s2": "20260907T145404Z", "F1s3": "20260907T175833Z",
+    "F2s1": "20260905T164940Z", "F2s2": "20260906T034840Z", "F2s3": "20260906T151425Z",
+    "F3s1": "20260907T004430Z", "F3s2": "20260907T045358Z", "F3s3": "20260907T075701Z",
 }
 
 # The val span each fold's own `Split` line reports, as (start, end) ISO strings. Recorded
@@ -108,7 +108,10 @@ WALKFORWARD_RUNS: dict[str, str | None] = {
 # (protocol §2), so `add_window` keeps working and every per-window table becomes a per-fold
 # table with no special case downstream.
 WALKFORWARD_SPLITS: dict[str, tuple[str, str] | None] = {
-    "F0": None, "F1": None, "F2": ("2025-04-15 14:05", "2025-10-04 04:35"), "F3": None,
+    "F0": ("2026-03-23 03:25", "2026-09-07 05:05"),
+    "F1": ("2025-10-05 13:20", "2026-03-22 13:00"),
+    "F2": ("2025-04-15 14:05", "2025-10-04 04:35"),
+    "F3": ("2024-10-15 07:10", "2025-04-16 11:45"),
 }
 
 

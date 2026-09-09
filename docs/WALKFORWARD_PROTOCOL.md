@@ -338,13 +338,106 @@ dump to its fold's val span, these dumps hold **zero** rows there, and every fol
 |---|---|---|---|---|---|
 | F2 | 1 | `20260905T164940Z` | train [2023-03-31 16:30 → 2025-04-15 14:00] / val [2025-04-15 14:05 → 2025-10-04 04:35] | 12 | ✅ all six §5.1 checks pass; recorded |
 | F2 | 2 | `20260906T034840Z` | train [2023-03-31 18:20 → 2025-04-15 21:30] / val [2025-04-15 21:30 → 2025-10-04 12:45] | 12 | ✅ all six §5.1 checks pass; recorded |
-| F2 | 3 | | | | ⚪ |
-| F3 | 1 | | | | ⚪ |
-| F3 | 2 | | | | ⚪ |
-| F3 | 3 | | | | ⚪ |
-| F1 | 1 | | | | ⚪ |
-| F1 | 2 | | | | ⚪ |
-| F1 | 3 | | | | ⚪ |
-| F0 | 1 | | | | ⚪ |
-| F0 | 2 | | | | ⚪ |
-| F0 | 3 | | | | ⚪ |
+| F2 | 3 | `20260906T151425Z` | train [2023-03-31 20:15 → 2025-04-16 05:15] / val [2025-04-16 05:15 → 2025-10-04 21:20] | 12 | ✅ all six §5.1 checks pass; recorded |
+| F3 | 1 | `20260907T004430Z` | train [2022-08-19 21:45 → 2024-10-15 07:10] / val [2024-10-15 07:10 → 2025-04-16 11:45] | 11 | ✅ all six §5.1 checks pass; recorded |
+| F3 | 2 | `20260907T045358Z` | train [2022-08-19 21:45 → 2024-10-15 09:25] / val [2024-10-15 09:25 → 2025-04-16 14:35] | 11 | ✅ all six §5.1 checks pass; recorded |
+| F3 | 3 | `20260907T075701Z` | train [2022-08-19 21:45 → 2024-10-15 11:10] / val [2024-10-15 11:10 → 2025-04-16 16:40] | 11 | ✅ all six §5.1 checks pass; recorded |
+| F1 | 1 | `20260907T123158Z` | train [2023-10-15 01:20 → 2025-10-05 13:20] / val [2025-10-05 13:20 → 2026-03-22 13:00] | 12 | ✅ all six §5.1 checks pass; recorded |
+| F1 | 2 | `20260907T145404Z` | train [2023-10-15 02:00 → 2025-10-05 15:15] / val [2025-10-05 15:15 → 2026-03-22 15:15] | 12 | ✅ all six §5.1 checks pass; recorded |
+| F1 | 3 | `20260907T175833Z` | train [2023-10-15 02:45 → 2025-10-05 17:25] / val [2025-10-05 17:25 → 2026-03-22 17:45] | 12 | ✅ all six §5.1 checks pass; recorded |
+| F0 | 1 | `20260908T045913Z` | train [2024-04-15 14:15 → 2026-03-23 03:25] / val [2026-03-23 03:25 → 2026-09-07 05:05] | 12 | ✅ all six §5.1 checks pass; recorded |
+| F0 | 2 | `20260908T085950Z` | train [2024-04-15 15:50 → 2026-03-23 06:50] / val [2026-03-23 06:50 → 2026-09-07 09:00] | 12 | ✅ all six §5.1 checks pass; recorded |
+| F0 | 3 | `20260908T141818Z` | train [2024-04-15 18:00 → 2026-03-23 11:30] / val [2026-03-23 11:30 → 2026-09-07 14:20] | 12 | ✅ all six §5.1 checks pass; recorded |
+
+---
+
+## §7 — THE RESULT (recorded 2026-09-09, after all twelve runs passed §5.1 and C3)
+
+### 7.0 In plain language
+
+**The trading rule held up on history it had never been tested on.** Four models were
+retrained with the cut-off moved back in time, and the same rule was run on the months
+right after each cut-off. On the two folds no policy search has ever looked at, the rule
+made **+33.2 basis points per trade after costs** — a basis point is 0.01%, so that is
+about **0.33% of the traded amount per round trip, net of the 14 bps taker fee-plus-slippage
+assumption**. On a $1,000 position that is roughly **$3.30 a trade**, at about **4 trades a
+day per model**.
+
+**The number that decides is the lower end of the error bar, not the average**, because with
+285 independent trading days the average alone could be luck. That lower bound is **+9.3 bps**
+— still comfortably above zero. That is what "CONFIRMED" means here: **this is the first
+result in the project that is positive evidence, rather than merely the absence of a
+refutation.**
+
+**Bottom line: the edge is real and now demonstrated out of sample — but this does not by
+itself say "go trade real money."** Two things are unchanged by it. The fold models are
+*handicapped* copies of the served model (see §7.2), so this measures the rule, not the
+incumbent checkpoint; and nothing here touches the open real-money blockers, which are
+about execution and operations, not about whether the signal exists.
+
+### 7.1 §3's five criteria — the verdict
+
+Command: `M3_ERA=walkforward ./scripts/m3.sh -m m3 folds`. Twelve pairs, taker 14 bps round
+trip, day-clustered throughout.
+
+| # | criterion | result |
+|---|---|---|
+| **W1** | pooled net at taker on F2+F3, clustered 95% **lower** bound | **+33.23 bps, CI [+9.28, +57.17]** — LB **+9.28 > 0** ✅ |
+| **W2** | each decision fold's clustered **upper** bound > 0 | F2 +39.89 (hi +73.92) ✅ · F3 +25.26 (hi +58.74) ✅ |
+| **W3** | ≥ 100 trades and ≥ 40 exit-day clusters per fold | F2 2318/144 · F3 1940/142 · F1 1406/93 · F0 2009/166 ✅ |
+| **W4** | all three seeds pooled-positive on the decision folds | s1 +44.87 · s2 +29.78 · s3 +24.36 ✅ |
+| **W5** | trade rate ≥ 0.5/day/seed on every fold | 4.48 · 3.53 · 2.79 · 3.98 ✅ |
+
+**Verdict: CONFIRMED — W1 > 0 with W2–W5 holding.** Pooled n = 4,258 trades in 285
+day-clusters. Under §3's readings this is the precondition for confirming any parked
+finding (§4.3) on these folds.
+
+### 7.2 🔴 §1.1's control fires — read this before quoting any fold number
+
+**F0, the control, comes in at −0.66 net bps** (gross +15.51), against the incumbent's
++13.82 net pooled on the same era. F0 is the same calendar window as the published split
+and differs from the incumbent only in training-set size (`TRAIN_FRACTION` 0.5 versus 0.8).
+§1.1 pre-registered exactly this comparison and what it would mean: **the fixed-width train
+window is costing real accuracy — on the order of 14 bps.**
+
+Two consequences, and they point in opposite directions:
+
+* **It makes W1 conservative, not suspect.** The confirmation was obtained with models
+  handicapped by roughly half the training data. A fold family that clears zero *despite*
+  that handicap is stronger evidence for the rule than the same result from full-size
+  models would have been. The verdict stands as §3 wrote it.
+* **It confounds the freshness reading (§4.1), as §1.1 warned.** Fold-to-fold differences
+  now mix boundary age with a known ~14 bps training-size penalty. §4.1 must therefore be
+  registered with that penalty as an explicit term, or on same-size models. **Do not read
+  §4.1 off this table.**
+
+Also as §1.1 required: **F3 holds 11 pairs, not 12** (HYPE is a late listing). The restricted
+11-pair table is printed by `m3 folds` and is the control for any fold-to-fold comparison.
+On it, F2's own CI is [−1.7, +69.1] — F2 alone is not significant at 11 pairs, which is why
+§3 pools F2+F3 rather than vetoing on a per-fold lower bound.
+
+### 7.3 One amendment was made to the harness, after C3 first failed
+
+**Nothing that decides anything moved; the change is to a comparison, not to a criterion.**
+On the first run, C3 reported FAIL on 3 of 60 cells, all in the `win` column, all off by
+~0.0005 — F1s3 @0.01, F3s2 @0.05, F3s2 @0.20. `trades` and `gross_bps` matched digit-exact
+in all 60 cells, then and now.
+
+Cause: `eval_m2.py` stores `win_rate` as `round(float(wins.mean()), 4)` (line 359) and prints
+it with `%5.3f` (line 1392) — a **double rounding**. `validate.py` compared a singly-rounded
+value against that doubly-rounded reference with tolerance `< 0.0005`, which is precisely the
+width at which a 4dp value sitting on a 3dp half-way point crosses. All three cells are
+reproduced exactly by replaying the trainer's pipeline and by no other reading:
+
+```
+F1s3 0.01: raw=0.5874587459 -> round4=0.5875 -> "%.3f"=0.588 (log 0.588); single-round=0.587
+F3s2 0.05: raw=0.5575146935 -> round4=0.5575 -> "%.3f"=0.557 (log 0.557); single-round=0.558
+F3s2 0.20: raw=0.5225269344 -> round4=0.5225 -> "%.3f"=0.522 (log 0.522); single-round=0.523
+```
+
+The fix replicates that pipeline rather than widening a tolerance, so a genuine
+one-in-last-place disagreement still fails. It was **put to the operator as an explicit
+choice before any fold number was read**, because amending an acceptance test after seeing
+it fail is the move a pre-registration exists to prevent; the alternatives offered were a
+widened tolerance, dropping `win` from C3, and staying blocked. C3 then passed 12 of 12 with
+no mismatches, and only then was `m3 folds` run.

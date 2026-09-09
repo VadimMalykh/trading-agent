@@ -91,6 +91,46 @@ PUBLISHED_FIXED_COV_WALKFORWARD: dict[str, dict[float, tuple[int, float, float]]
     "F2s2": {0.01: (481, +54.23, 0.624), 0.02: (841, +47.46, 0.603),
              0.05: (1921, +17.54, 0.553), 0.10: (3554, +11.47, 0.522),
              0.20: (6024, +6.15, 0.527)},
+    # F2 seed 3, run 20260906T151425Z, logs/WF-F2-s3.log "--- Horizon 240m (PRIMARY) ---"
+    "F2s3": {0.01: (440, +62.88, 0.616), 0.02: (742, +40.85, 0.578),
+             0.05: (1617, +25.60, 0.549), 0.10: (3479, +6.10, 0.527),
+             0.20: (6050, +1.74, 0.514)},
+    # F3 seed 1, run 20260907T004430Z, logs/WF-F3-s1.log "--- Horizon 240m (PRIMARY) ---"
+    "F3s1": {0.01: (504, +30.15, 0.591), 0.02: (725, +36.95, 0.583),
+             0.05: (1321, +20.94, 0.557), 0.10: (2206, +15.63, 0.541),
+             0.20: (4357, +9.74, 0.543)},
+    # F3 seed 2, run 20260907T045358Z, logs/WF-F3-s2.log "--- Horizon 240m (PRIMARY) ---"
+    "F3s2": {0.01: (331, +49.29, 0.589), 0.02: (568, +26.23, 0.585),
+             0.05: (1191, +17.92, 0.557), 0.10: (2356, +5.49, 0.527),
+             0.20: (4084, +6.17, 0.522)},
+    # F3 seed 3, run 20260907T075701Z, logs/WF-F3-s3.log "--- Horizon 240m (PRIMARY) ---"
+    "F3s3": {0.01: (394, +44.05, 0.571), 0.02: (655, +14.64, 0.571),
+             0.05: (1393, +15.13, 0.561), 0.10: (2505, +15.09, 0.554),
+             0.20: (4321, +8.14, 0.526)},
+    # F1 seed 1, run 20260907T123158Z, logs/WF-F1-s1.log "--- Horizon 240m (PRIMARY) ---"
+    "F1s1": {0.01: (296, +62.53, 0.628), 0.02: (455, +34.66, 0.552),
+             0.05: (929, +48.83, 0.553), 0.10: (2015, +15.97, 0.526),
+             0.20: (4453, -4.70, 0.513)},
+    # F1 seed 2, run 20260907T145404Z, logs/WF-F1-s2.log "--- Horizon 240m (PRIMARY) ---"
+    "F1s2": {0.01: (276, +80.53, 0.620), 0.02: (477, +62.13, 0.612),
+             0.05: (1208, +26.68, 0.541), 0.10: (2685, +6.43, 0.528),
+             0.20: (4770, +11.54, 0.517)},
+    # F1 seed 3, run 20260907T175833Z, logs/WF-F1-s3.log "--- Horizon 240m (PRIMARY) ---"
+    "F1s3": {0.01: (303, +163.37, 0.588), 0.02: (474, +48.29, 0.559),
+             0.05: (1034, +7.20, 0.554), 0.10: (2086, +2.25, 0.518),
+             0.20: (4423, +0.09, 0.509)},
+    # F0 seed 1, run 20260908T045913Z, logs/WF-F0-s1.log "--- Horizon 240m (PRIMARY) ---"
+    "F0s1": {0.01: (355, +12.75, 0.558), 0.02: (567, +5.16, 0.557),
+             0.05: (1198, +9.16, 0.538), 0.10: (2093, +4.96, 0.527),
+             0.20: (3774, -0.58, 0.507)},
+    # F0 seed 2, run 20260908T085950Z, logs/WF-F0-s2.log "--- Horizon 240m (PRIMARY) ---"
+    "F0s2": {0.01: (464, +7.60, 0.560), 0.02: (831, +14.54, 0.572),
+             0.05: (1729, -0.42, 0.543), 0.10: (2884, +0.32, 0.536),
+             0.20: (4855, -0.34, 0.525)},
+    # F0 seed 3, run 20260908T141818Z, logs/WF-F0-s3.log "--- Horizon 240m (PRIMARY) ---"
+    "F0s3": {0.01: (343, -2.58, 0.531), 0.02: (627, +8.12, 0.558),
+             0.05: (1302, +2.28, 0.535), 0.10: (2353, +1.66, 0.515),
+             0.20: (4205, -2.29, 0.511)},
 }
 
 # NEXT_TRAINING_PLAN §1.3's pooled table (trade-weighted across the three seeds). Published
@@ -138,7 +178,17 @@ def test_fixed_coverage(ds: list[dumps.Dump]) -> bool:
             g = t["signed_ret"].mean() * BPS
             w = float((t["signed_ret"] > 0).mean())
             p_tr, p_g, p_w = published[d.seed][cov]
-            match = (len(t) == p_tr) and abs(g - p_g) < 0.005 and abs(w - p_w) < 0.0005
+            # `win` is compared through the trainer's OWN rounding pipeline, not with a
+            # tolerance. eval_m2.py stores win_rate as `round(float(wins.mean()), 4)`
+            # (line 359) and then prints it with `%5.3f` (line 1392) — a double rounding.
+            # Comparing a singly-rounded value against a doubly-rounded reference fails
+            # whenever the 4dp value lands on a 3dp half-way point, which is a defect in
+            # this comparison and not in the dump. Reproducing the pipeline is exact: a
+            # genuine one-in-last-place disagreement still fails. Fixed 2026-09-09, after
+            # F1s3 @0.01 and F3s2 @0.05/@0.20 tripped it; trades and gross_bps matched
+            # digit-exact in all 60 cells at the time, and still must.
+            match = (len(t) == p_tr) and abs(g - p_g) < 0.005 \
+                and float(f"{round(w, 4):.3f}") == p_w
             # The tie cell is a property of one dump's boundary, not of the harness, so the
             # tolerance is only granted where it was actually measured (prerepair s3/cov05).
             tie_cell = (dumps.ERA == "prerepair" and d.seed == "s3" and cov == 0.05)
@@ -283,7 +333,17 @@ def test_fold_reproduction() -> bool:
             g = float(t["signed_ret"].mean() * BPS)
             w = float((t["signed_ret"] > 0).mean())
             p_tr, p_g, p_w = ref[cov]
-            match = (len(t) == p_tr) and abs(g - p_g) < 0.005 and abs(w - p_w) < 0.0005
+            # `win` is compared through the trainer's OWN rounding pipeline, not with a
+            # tolerance. eval_m2.py stores win_rate as `round(float(wins.mean()), 4)`
+            # (line 359) and then prints it with `%5.3f` (line 1392) — a double rounding.
+            # Comparing a singly-rounded value against a doubly-rounded reference fails
+            # whenever the 4dp value lands on a 3dp half-way point, which is a defect in
+            # this comparison and not in the dump. Reproducing the pipeline is exact: a
+            # genuine one-in-last-place disagreement still fails. Fixed 2026-09-09, after
+            # F1s3 @0.01 and F3s2 @0.05/@0.20 tripped it; trades and gross_bps matched
+            # digit-exact in all 60 cells at the time, and still must.
+            match = (len(t) == p_tr) and abs(g - p_g) < 0.005 \
+                and float(f"{round(w, 4):.3f}") == p_w
             ok &= match
             print(f"  {cov:6.2f} {len(t):8,} {p_tr:8,} {g:+10.2f} {p_g:+10.2f} "
                   f"{w:6.3f} {p_w:8.3f}  {'MATCH' if match else '🔴 MISMATCH'}")
