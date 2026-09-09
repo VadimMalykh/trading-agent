@@ -543,6 +543,12 @@ revival trigger are in [BACKLOG.md](./BACKLOG.md).
 *served* checkpoint's own repaired split (24.9 and 12.7 days on seeds 1 and 3). The folds'
 longest spell, across four eras and twelve models, is **21.49 days** — less than half of it.
 
+**The measurement code is validated against those published numbers.** Running
+`walkforward.dry_spells` over the three repaired-era baseline dumps reproduces
+M3_PROTOCOL §9.1 Q3 (b) exactly — s1 **24.9d**, s2 **51.8d**, s3 **12.7d**, against published
+24.9 / 51.8 / 12.7 — so the 21.49-day fold maximum is a correctly measured number and the gap
+below is real rather than an implementation artifact.
+
 The two are not measuring the same thing, and the difference is diagnostic rather than
 contradictory. **Each fold derives its own cut on its own window (C4), so a fold's qualifying
 bars are ~2% of that window throughout.** The served checkpoint's cut is derived over its
