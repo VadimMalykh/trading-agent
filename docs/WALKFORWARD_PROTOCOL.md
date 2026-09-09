@@ -441,3 +441,57 @@ choice before any fold number was read**, because amending an acceptance test af
 it fail is the move a pre-registration exists to prevent; the alternatives offered were a
 widened tolerance, dropping `win` from C3, and staying blocked. C3 then passed 12 of 12 with
 no mismatches, and only then was `m3 folds` run.
+
+---
+
+## §8 — REGISTRATION: the retrain trigger's N (§4.2)
+
+**Written 2026-09-09, before any dry-spell number was computed.** Registered under §4, which
+requires each downstream use of the folds to be pre-registered separately. This one is
+eligible now because §3 returned CONFIRMED, and it is the §4 item **not** confounded by the
+§7.2 training-size penalty: a dry spell is a property of *when a fold's own cut is met*, and
+each fold derives its own cut on its own window (C4), so a uniformly weaker model shifts the
+cut down with it rather than lengthening the gaps.
+
+### 8.1 What is being replaced
+
+M3_PROTOCOL §9.1 Q3 (b) fixes the retrain trigger at **N = 65 days without a served bar
+meeting the cut**, estimated from a single split. §4.2 restates it from the folds.
+
+### 8.2 The statistic, fixed before it is read
+
+* **Population:** all twelve `(fold, seed)` dumps, at the primary 240m head, twelve pairs —
+  the same population and universe §3 decided on.
+* **The cut, per dump:** that dump's own `backtest.coverage_threshold(conf, 0.02)`, exactly
+  as §2/C4 defines it. Nothing is inherited across folds.
+* **A dry spell:** the gap, in days, between consecutive *bar timestamps* whose confidence
+  meets that dump's cut, pooled over pairs — i.e. the wait between one served-eligible bar
+  anywhere in the universe and the next. Measured on bar timestamps, not on trades, because
+  the trigger fires on bars (`Ledger.last_cut_exceeded_at` reads `policy_bars`), and a bar can
+  meet the cut while the risk manager declines the trade.
+* **Edge handling:** the interval from a fold's val start to its first qualifying bar, and
+  from its last qualifying bar to its val end, are **censored** and excluded — neither is a
+  completed spell, and including them would bias N by the arbitrary placement of the window.
+* **N := the 95th percentile** of that pooled distribution, rounded up to a whole day.
+* **Reported alongside, never in place of it:** the per-fold p95, the pooled p50/p90/p99 and
+  max, the count of spells, and the same table restricted to the 11 pairs present in every
+  fold (§1.1's control).
+
+### 8.3 The readings, fixed now
+
+* The folds' N **replaces** the 65-day estimate in M3_PROTOCOL §9.1 Q3 (b) whatever it comes
+  out as — that is the point of restating it on more history, and a value that happens to be
+  larger is not a reason to keep 65.
+* If the per-fold p95s disagree by more than 2x, N is reported as **NOT DECIDABLE** on four
+  folds and 65 stands, because a trigger whose value depends on which era measured it is not
+  a trigger. The spread is printed before the pooled number.
+* This registration reads **all four folds**, F0 and F1 included, and that is deliberate and
+  permitted: §3's last bullet bars F0/F1 from *promotion or confirmation* arguments, and N is
+  neither — it is an operational constant, and excluding the two most recent eras from a
+  staleness estimate would bias it toward older market conditions.
+
+### 8.4 Command
+
+```sh
+M3_ERA=walkforward ./scripts/m3.sh -m m3 dryspells      # §8's table and N
+```
