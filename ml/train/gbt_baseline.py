@@ -58,6 +58,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 
@@ -66,6 +67,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import (
     CANDLE_INTERVAL,
     HORIZONS_MINUTES,
+    MAKER_ROUND_TRIP_COST,
     OUTPUT_DIR,
     PAIRS,
     PRIMARY_HORIZON,
@@ -93,7 +95,7 @@ from gate import (
     fixed_coverage_metrics,
     side_split_metrics,
 )
-from eval_m2 import simulate_pnl, walk_forward_edge  # reuse identical P&L + WF
+from eval_m2 import calibration_report, simulate_pnl, walk_forward_edge  # identical P&L + WF
 
 FIXED_COVERAGES = [0.01, 0.02, 0.05, 0.10, 0.20]
 
@@ -165,6 +167,73 @@ def build_x(bundle, sample_idx, flatten: bool, out: np.ndarray | None = None):
         else:
             _fill_summary(win, X[i], f)
     return X
+
+
+_SUMMARY_BLOCKS = ("last", "mean", "std", "min", "max", "delta")
+
+
+def importance_table(
+    gain: np.ndarray,
+    splits: np.ndarray,
+    n_feats: int,
+    names: Sequence[str],
+    flatten: bool,
+    top: int = 15,
+) -> dict:
+    """Fold LightGBM's per-column importances back onto the FEATURE_COLS names.
+
+    The design matrix is laid out in blocks of `n_feats` columns — the six
+    `_fill_summary` statistics (last|mean|std|min|max|delta) in compact mode, or
+    the SEQ_LEN lags oldest-first in `--flatten` mode — so column j belongs to
+    feature `j % n_feats` and block `j // n_feats`. Gain is reported as a SHARE of
+    total gain (sums to 1 over features, and separately to 1 over blocks) so two
+    runs with different tree counts stay comparable; `splits` is the raw count.
+    Pure function so it can be unit-tested without a bundle.
+    """
+    gain = np.asarray(gain, dtype=np.float64)
+    splits = np.asarray(splits, dtype=np.int64)
+    d = int(gain.shape[0])
+    if n_feats <= 0 or d % n_feats != 0:
+        raise ValueError(f"D={d} is not a multiple of n_feats={n_feats}")
+    n_blocks = d // n_feats
+    if len(names) != n_feats:
+        names = [f"f{i}" for i in range(n_feats)]
+    block_names = (
+        [f"lag-{n_blocks - 1 - b}" for b in range(n_blocks)]
+        if flatten
+        else list(_SUMMARY_BLOCKS[:n_blocks])
+    )
+    g = gain.reshape(n_blocks, n_feats)
+    s = splits.reshape(n_blocks, n_feats)
+    total = float(g.sum())
+    feat_gain = g.sum(axis=0)
+    feat_split = s.sum(axis=0)
+    block_gain = g.sum(axis=1)
+    order = np.argsort(-feat_gain)
+    rows = []
+    for i in order:
+        best_b = int(np.argmax(g[:, i]))
+        rows.append(
+            {
+                "feature": str(names[i]),
+                "gain_share": round(float(feat_gain[i] / total), 4) if total > 0 else 0.0,
+                "splits": int(feat_split[i]),
+                "best_block": block_names[best_b],
+                "best_block_share": (
+                    round(float(g[best_b, i] / feat_gain[i]), 3) if feat_gain[i] > 0 else 0.0
+                ),
+            }
+        )
+    return {
+        "total_gain": round(total, 3),
+        "n_blocks": n_blocks,
+        "by_feature": rows,
+        "by_block": {
+            block_names[b]: round(float(block_gain[b] / total), 4) if total > 0 else 0.0
+            for b in range(n_blocks)
+        },
+        "top": [r["feature"] for r in rows[:top]],
+    }
 
 
 def labels_for(bundle, sample_idx, horizon_key: str):
@@ -417,7 +486,13 @@ def main():
             f"lb={fc['dir_acc_wilson_lb']:.4f}  n_dir={fc['n_true_directional_gated']}"
         )
 
-    print("\n=== Serial P&L (14bps round-trip default) by gate coverage ===")
+    taker_bps = ROUND_TRIP_COST * 1e4
+    maker_bps = MAKER_ROUND_TRIP_COST * 1e4
+    print(
+        f"\n=== Serial P&L ({taker_bps:g}bps round-trip default) by gate coverage ===\n"
+        f"  (per-trade columns: gross = before costs; net@taker = at {taker_bps:g} bps; "
+        f"net@maker = at {maker_bps:g} bps — the BOOK_ERA_PLAN §4.3 gate reads net@maker)"
+    )
     side, conf = directional_signal(gate_logits)
     pnl_rows = []
     for cov in FIXED_COVERAGES:
@@ -428,11 +503,23 @@ def main():
         mask = conf >= thr
         pnl = simulate_pnl(side, conf, mask, fwd_ret, tva, pva, hold_bars, ROUND_TRIP_COST)
         pnl["gate_coverage"] = cov
+        # simulate_pnl books side*r - cost per trade and selection is cost-independent,
+        # so per-trade gross and any other cost line follow exactly (config.py note).
+        n_tr = max(int(pnl["n_trades"]), 1)
+        net_taker = pnl["total_net_ret"] / n_tr * 1e4
+        gross = net_taker + taker_bps
+        pnl["per_trade_bps"] = {
+            "gross": round(gross, 2),
+            "net_taker": round(net_taker, 2),
+            "net_maker": round(gross - maker_bps, 2),
+        }
         pnl_rows.append(pnl)
         print(
             f"  cov={cov:.3f}  net={pnl['total_net_ret']:+.4f}  "
             f"trades={pnl['n_trades']}  win={pnl['win_rate']:.3f}  "
-            f"sharpe={pnl['daily_sharpe']}  maxdd={pnl['max_dd']:+.4f}"
+            f"sharpe={pnl['daily_sharpe']}  maxdd={pnl['max_dd']:+.4f}  "
+            f"| per-trade bps: gross={gross:+.2f}  net@taker={net_taker:+.2f}  "
+            f"net@maker={gross - maker_bps:+.2f}"
         )
 
     print("\n=== Side split @cov0.05 (one-mode check) ===")
@@ -450,6 +537,42 @@ def main():
         print(
             f"  fold {w['window']}: n={w['n']}  cov05 lb={fc5.get('wilson_lb', 0):.4f}"
         )
+
+    # Reliability of p(up) on moved val bars — the "calibration bins" BOOK_ERA_PLAN
+    # §B3 asks to bring back. Same helper the LSTM eval uses.
+    print("\n=== Calibration of p(up) on moved val bars (10 bins) ===")
+    calib = calibration_report(dir_logits, y_true, n_bins=10)
+    for b in calib["bins"]:
+        if b["n"]:
+            print(
+                f"  {b['bin']}  n={b['n']:6d}  mean_pred={b['mean_pred']:.3f}  "
+                f"empirical_up={b['empirical_up']:.3f}"
+            )
+    print(f"  brier={calib['brier']}  n_moved={calib['n_moved']}")
+
+    # Within-model attribution (BOOK_ERA_PLAN O5). Gain share per FEATURE_COLS name,
+    # summed over the six summary statistics; block shares say which statistic of
+    # the window the trees actually split on.
+    f_cols = int(bundle.series[0].feats.shape[1])
+    imp = importance_table(
+        booster.feature_importance(importance_type="gain"),
+        booster.feature_importance(importance_type="split"),
+        f_cols,
+        list(FEATURE_COLS),
+        args.flatten,
+    )
+    print(f"\n=== Feature importance (LightGBM gain share, {D} cols -> {f_cols} features) ===")
+    for r in imp["by_feature"]:
+        if r["gain_share"] > 0:
+            print(
+                f"  {r['feature']:<22s} gain={r['gain_share']*100:5.1f}%  "
+                f"splits={r['splits']:5d}  best={r['best_block']} "
+                f"({r['best_block_share']*100:.0f}% of its gain)"
+            )
+    print(
+        "  by block: "
+        + "  ".join(f"{k}={v*100:.1f}%" for k, v in imp["by_block"].items())
+    )
 
     report = {
         "kind": "gbt_baseline",
@@ -472,6 +595,9 @@ def main():
         "pnl": pnl_rows,
         "side_split_cov05": ss,
         "walk_forward": wf,
+        "calibration": calib,
+        "importance": imp,
+        "cost_model_bps": {"taker_round_trip": taker_bps, "maker_round_trip": maker_bps},
         "gbt_params": {
             "n_estimators": args.n_estimators,
             "num_leaves": args.num_leaves,

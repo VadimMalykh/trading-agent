@@ -162,7 +162,7 @@ Each line is here because its absence voided a real run.
 | `primary=` | matches intent | R3 |
 | `Split global_time … train [..] val [..]` | **record it** — a backfill moves it | E2b comparability |
 | `WARNING [norm] …` | how many columns degenerate, and which | — |
-| `[norm] <pair>: max\|z\|=` | must NOT say `BROKEN SCALE` | all pre-`2e7b272` runs |
+| `[norm] <pair>: max\|z\|=` | must NOT say `BROKEN SCALE` — with one traced exception: `ETHUSDT … on 'spread_bps'` on any run whose val window contains **2026-09-01 18:30 UTC**. That is a single 8.2-bps bar against a spread pinned at one tick for the whole era (train std 0.013 bps), clipped to ±50 and absent from training; BOOK_ERA_PLAN §R.2. Any *other* pair or column saying it is still a void | all pre-`2e7b272` runs |
 | `P&L sim: … hold=N bars` | N == horizon_minutes / bar_minutes | F4 prereq |
 | `WARNING: at the SERVED gate` | absent — if present, the checkpoint never reaches the served confidence and would trade nothing | N3 (fired; correctly) |
 | `Fixed-coverage P&L` | present — if missing, the run predates C2 | resolved by O0 for F4 |
@@ -435,38 +435,53 @@ it is not what R1 tests, because R1 has one variable already.
 * **The walk-forward folds** — twelve serial `gcp_train.sh` runs, pre-registered in
   [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md). They retrain the §1.3 recipe with the
   split boundary moved back; they are not a change to M2 and they do not reopen §5.
-* **B3**, below, which is blocked.
+* **B3b**, below — the completion of B3's registration, two serial CPU runs.
 
-### 🟢 B3 — the book-era GBT. AUTHORISED 2026-09-10, launch pending a push
+### 🟢 B3b — finish the book-era GBT registration. Two CPU runs, launch pending a push
 
-**This is the only training run any current plan calls for.** One LightGBM run on its own
-throwaway CPU VM (`scripts/gcp_gbt.sh`), pre-registered in
-[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §B3, gated on B1 clearing §4.1.
+**B3 ran 2026-09-10 and its 5m arm fails the gate** (`logs/b3_gbt_20260910.log`; reading in
+[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §R.2): gross +2.4 bps/trade at cov 5% on n_dir 750,
+net at maker −2.6 against a +5 gate, LB 0.540. But the run **did not produce two things the
+registration asked for**, because `gbt_baseline.py` never had them: it scores only the primary
+horizon, so §4.3's **15m arm was never measured**, and it had **no feature-importance output**
+(O5). Both were added on 2026-09-11, together with per-trade gross / net-at-maker /
+net-at-taker columns so the gate reads straight off the log. B3b is that same registration
+completed — **same three hyperparameters, same era, same pairs; not a sweep, not a new
+setting** — and the wave closes on its verdict.
 
-B1 was re-run on 2026-09-10 over the full book era (2026-07-17..09-09, 54 days, **repaired**
-candles — the 2026-08-31 run had used partial bars) and **§4.1 passed as written**: `imbalance`
-at 60m, +10.37 bps raw on n=3,158, sign agreeing across halves. Of that, +5.62 is the period's
-drift; the feature-attributable +4.75 has a day-clustered CI of [−2.45, +11.94]. The pass is
-by the letter of the rule, and the rule is not renegotiated after the fact in either direction.
-Plain reading and caveats: BOOK_ERA_PLAN §R.1.
-
-**To launch (Vadim):** commit and push `ml/train/gbt_baseline.py` — its `--tail-days` arithmetic
-assumed 1m bars and would have loaded 275 days at 5m; `gcp_gbt.sh` clones `main` — then:
+**To launch (Vadim):** commit and push `ml/train/gbt_baseline.py` (`gcp_gbt.sh` clones `main`),
+then the two runs **serially** — the launcher uses one fixed VM name:
 
 ```sh
+# run 1 — the identical 5m fit, re-run only to emit O5 + calibration (seed 42 is fixed;
+#         the P&L table must reproduce logs/b3_gbt_20260910.log to the digit)
 GBT_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
 GBT_HORIZONS=5,15,60 GBT_PRIMARY=5 CANDLE_INTERVAL=5m \
   ./scripts/gcp_gbt.sh --tail-days 55 --num-leaves 15 --n-estimators 200 --learning-rate 0.03
-./scripts/gcp_gbt.sh --status          # until the marker says done
-./scripts/gcp_gbt.sh --fetch           # summary + JSON
-./scripts/gcp_gbt.sh --log > logs/b3_gbt_20260910.log
+./scripts/gcp_gbt.sh --status          # until the marker says DONE (~40 min)
+./scripts/gcp_gbt.sh --fetch
+./scripts/gcp_gbt.sh --log > logs/b3b_gbt_5m_$(date +%Y%m%d).log
+
+# run 2 — the 15m arm of §4.3, only after run 1's marker says DONE
+GBT_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+GBT_HORIZONS=5,15,60 GBT_PRIMARY=15 CANDLE_INTERVAL=5m \
+  ./scripts/gcp_gbt.sh --tail-days 55 --num-leaves 15 --n-estimators 200 --learning-rate 0.03
+./scripts/gcp_gbt.sh --status
+./scripts/gcp_gbt.sh --fetch
+./scripts/gcp_gbt.sh --log > logs/b3b_gbt_15m_$(date +%Y%m%d).log
 ```
 
-**Bring back:** the fixed-coverage P&L at 5/15/60m, `dir_acc`/LB with `n_dir`, calibration
-bins, the "Tail window" and "Val window" lines (expect ~15,840 candles/pair and a val window
-opening ~2026-08-29), and the feature importances. Verdict against §4.3: +5 bps **net at
-maker** at 5m or 15m, cov ≤ 0.05, `n_dir` ≥ 500. 🔴 One run. If it lands near the gate, the
-answer is more calendar, not a second setting. A pass promotes nothing (§4.3).
+**Bring back (both logs):** the `Val window` line (expect 2026-08-30 19:45 → the dump time);
+the `Serial P&L` table with its new `per-trade bps: gross / net@taker / net@maker` columns; the
+`=== Feature importance` block (gain share per feature and the `by block:` line); the
+`=== Calibration` block; the walk-forward folds; and the `[norm]` lines. **Expect the
+`ETHUSDT … BROKEN SCALE` flag again** — it is one 8.2-bps spread bar on 2026-09-01 in the val
+window against a one-tick spread everywhere else (§R.2), known and not a void. Run 1 is a
+reproduction: its `dir_acc`/`n_dir`/`net` values must match the 09-10 log; if they do not, say
+so first. **Verdict for run 2, against §4.3 as written:** +5 bps **net at maker** at 15m,
+cov ≤ 0.05, `n_dir` ≥ 500. Expectation recorded in advance (§R.2): ~+3 gross, a fail. 🔴 If
+it lands near the gate, the answer is more calendar, not a third setting. A pass promotes
+nothing (§4.3). Either way the importance tables are O5 and get filed in BOOK_ERA_PLAN.
 
 **Nothing else in the B-wave needs a GPU or a training run.** B0, B1 and B2 are all done and all
 ran on the laptop's `ml_analysis` container.

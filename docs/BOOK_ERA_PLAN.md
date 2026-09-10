@@ -157,9 +157,78 @@ the other way — and the live policy's size ladder is keyed on that observable.
 the strongest argument in this wave for a *contemporaneous* regime observable, and it is filed
 in BACKLOG under the live policy, not here.
 
-**What happens next, and only this:** B3 once, as §B3 specifies (the command there is updated
-for the 55-day era and needs the `--tail-days` fix pushed to `main` first). No coverage change,
-no second setting, no policy edit.
+**What happened next:** B3 ran once on 2026-09-10 (§R.2). Its 5m arm fails §4.3; its 15m arm
+and the importance table were not produced by the script as it stood, and are the one follow-up.
+
+### §R.2 — B3, read 2026-09-11 (run `gbt-20260910T181935Z`, `logs/b3_gbt_20260910.log`)
+
+**In plain language.** The tree model was trained on the 8 main pairs over the 55-day book era
+and asked to call the direction of the next 5 minutes. It can, a little: on its most confident
+5% of bars it is right **57.6%** of the time (750 calls; the conservative lower bound is 54.0%).
+But 5 minutes of price movement is small, so being right that often is worth only about
+**+2.4 bps per trade before costs** — a basis point is 0.01%, so on a $1,000 position that is
+about 24 cents. A resting (maker) round trip costs about 5 bps and a market-order (taker) round
+trip 14–16 bps, so every cost line turns it negative: **−2.6 bps per trade at maker, −11.6 at
+the 14-bps taker line**. The gate needed **+5 at maker**. The miss is about 7.6 bps on a number
+whose 95% band is roughly ±2 bps wide, so this is a clear fail, not a near miss. **Three
+independent methods now agree at 5m** — §1.2's √t estimate (~3 bps), B1's best single feature
+(+3.4 raw), and this model (+2.4 to +3.2) — and the model's lower bound (0.540) sits at the
+LSTM's (0.566), which is the "signal-limited, not architecture-limited" reading the script's own
+key defines. Nothing here is tradeable and nothing is promoted; that was pre-committed.
+
+**The numbers.** VM 4 vCPU, 41 min wall. `Tail window: last 55d (~15,840 5m candles/pair)`;
+train 100,480 / val 25,120 samples; **val window 2026-08-30 19:45 → 2026-09-10 17:20 UTC**
+(10.9 days); fit on 51,007 moved train bars, 180 columns (30 features × 6 window statistics);
+`--num-leaves 15 --n-estimators 200 --learning-rate 0.03`, seed 42.
+
+| cov | dir_acc | Wilson LB | n_dir | trades | gross bps/trade | net @ maker 5 | net @ taker 14 |
+|---|---|---|---|---|---|---|---|
+| 1% | 0.631 | 0.551 | 149 | 251 | **+3.16** | −1.84 | −10.84 |
+| 2% | 0.581 | 0.525 | 303 | 502 | +1.72 | −3.28 | −12.28 |
+| **5%** | 0.576 | 0.540 | **750** | 1,256 | **+2.39** | **−2.61** | −11.61 |
+| 10% | 0.556 | 0.531 | 1,497 | 2,512 | +1.83 | −3.17 | −12.17 |
+| 20% | 0.539 | 0.521 | 2,950 | 5,024 | +0.64 | −4.36 | −13.36 |
+
+Per-trade columns are the log's cumulative `net` divided by `trades`, plus the 14-bps cost back
+(the sim books `side·r − cost`, so every other cost line follows exactly). At the account's true
+taker tier (REAL_MONEY_TRACK §5, 16 bps) subtract 2 more. Gross falls with coverage (one wobble
+at 2%), no sign flip — §0.4's ordering check passes. Side split at cov 5%: up n=454, acc 0.593
+(LB 0.547); down n=296, acc 0.551 (LB 0.494) — the down side is at chance. Walk-forward inside
+the val window (four ~2.7-day folds): LB **0.574 / 0.448 / 0.481 / 0.520** — the edge lives in
+the first fold (08-30 → 09-02) and is absent in the middle two. It is **not drift**: the val
+window's mean 5m return is +0.18 bps with P(up)=0.493, and fold 1's tape is slightly *down*
+(−0.65 bps, P(up)=0.480).
+
+**Validity flags (§0.4), read before quoting.** Constant columns are the expected ones
+(`has_market` everywhere; `btc_rel_ret_1h`, `beta_btc_1d` on BTC). `[norm] ETHUSDT max|z|=1186
+on 'spread_bps' <== BROKEN SCALE` fired. Traced in `book_era_5m.parquet`: ETH's quoted spread is
+pinned at one tick for the whole era (p50 0.052 bps, p99 0.054, train max 0.29, train std
+0.013), and **one** 5m bar — **2026-09-01 18:30 UTC, 8.2 bps** — sits in the val window. The
+value was clipped to ±50 before the trees saw it, it is a single row of 25,120, and no such row
+exists in training. The flag is real (that column is uninformative on ETH by construction) but
+it does not void this run; a re-run on the same era will print it again.
+
+**What the run did not deliver, and why.** `gbt_baseline.py` scores **only the primary
+horizon** — `GBT_HORIZONS=5,15,60` builds the labels but nothing reads the 15m or 60m ones — so
+**§4.3's 15m arm was never measured**. It also had **no feature-importance output** and no
+calibration table, so O5, which §B3 called "arguably the most durable output of the whole
+wave", was not produced. Both are reporting gaps in the script, not in the fit. Fixed
+2026-09-11 (gain-share importances folded back onto `FEATURE_COLS`, the ten-bin p(up)
+reliability table the LSTM eval uses, and per-trade gross / net-at-maker / net-at-taker columns
+so the gate reads straight off the log); tested in a throwaway Linux container because the
+local `ml_trainer` image cannot be rebuilt on Apple Silicon (`torch==2.5.1+cpu` has no arm64
+wheel — the VM builds it fine).
+
+**Verdict and what follows.** 5m: **FAIL §4.3**, decisively. 15m: **not measured**. The one
+follow-up is B3b in [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2 — the same
+registration completed, not a new setting: the identical 5m fit re-run to emit O5 (seed fixed;
+the P&L table should reproduce to the digit, and a mismatch would itself be a finding), then
+the 15m primary with the same three hyperparameters. **Expectation, written before it runs:**
+B1's best 15m excess is +1.65 bps (`depth_near_imb`, cov 1%, CI [−1.2, +4.6]) and the 15m sd on
+true candles is 38.4 bps, so §1.2's capture rate predicts ~+3 gross — a fail at maker. If the
+15m arm also fails, the wave closes on B3's verdict per §4.4, with the importance tables filed
+as O5 and B2's `spread_bps_mkt_lo` hypothesis left as the only live book item, to re-test when
+its window resolves ±30 bps. **No third setting, no coverage change, no policy edit.**
 
 ---
 
@@ -531,6 +600,11 @@ per-seed as well as pooled, with `n_trades` on every row.
 </details>
 
 ### B3 — one book-era model, gated on B1
+
+✅ **RAN 2026-09-10 — 5m arm FAILS §4.3 (gross +2.4, net at maker −2.6 bps/trade at cov 5%,
+n_dir 750); 15m arm and O5 importances not produced by the script as it stood.** Full reading
+§R.2; the completing run (B3b: same fit re-emitted with importances, then the 15m primary) is
+specified in NEXT_TRAINING_PLAN §2. The text below is the registration as it was run.
 
 🟢 **AUTHORISED 2026-09-10: B1 passed §4.1 as written.** One run, as specified below, with two
 mechanical updates: `--tail-days 55` covers the era from 2026-07-17, and `gbt_baseline.py`'s
