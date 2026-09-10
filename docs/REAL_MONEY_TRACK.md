@@ -10,7 +10,7 @@ what remains.** Opened 2026-09-01. Owner of the detail for the three rows filed 
 |---|---|
 | 1 fee tier | ✅ **VERIFIED — and the assumption was wrong.** `mix flux.fee_tier` on `fluxtrader-1` with a read-only key: **taker 5.000 / maker 2.000 bps per side** (BTCUSDT). M3-4 assumed 4.0. The correction is +2.0 bps per round trip on every measured cost; `Trading.ExecCost` now charges it (§5 below). Only BTCUSDT was read; the fee is account-level on USDⓈ-M, so the ETHUSDT control is a formality — run it when convenient |
 | 2 stop/target | ✅ **DECIDED: (a) keep.** The brake is now actually placed on the exchange on the auto path — until this build it was computed and dropped |
-| 3 signing | 🟢 **BUILT, 122/122 tests pass, not yet demonstrated on the testnet.** Signed order path, filters, reconciliation, brake, user-data stream, health block, and a one-shot testnet task (§6 below) |
+| 3 signing | ✅ **BUILT AND DEMONSTRATED ON THE TESTNET, 2026-09-10** (§6.1 below): signed open, reconciled fill, both brakes attached as algo orders, reduce-only close, flat after. 123/123 tests. Still not exercised live: the user-data stream against a running `auto` executor, which is the local-stack step of the runbook |
 
 **Q1 (a)** — the read-only key lives in `fluxtrader-1`'s `.env`. **Q2 (a)** — keep.
 **Q3 (a)** — build it all now. All three answered by Vadim on 2026-09-10.
@@ -316,6 +316,47 @@ code; `-2019` is testnet margin (top up the testnet wallet), `-4164` is min noti
 `--notional`), `-1022` is a signature problem and is a bug here, not there. A failed run can
 leave a position behind (the first one did, unbraked); `--flatten` closes it through the same
 close path before the smoke proceeds.
+
+### §6.1 — The testnet run, 2026-09-10 (from `fluxtrader-1`, demo keys)
+
+```
+Trading host: https://demo-fapi.binance.com  symbol: BTCUSDT  leverage: 5
+filters: step 0.0001 tick 0.1 min_notional 50.0
+  position (before): amt=0.0000 entry=0.0 mark=78126.37161232 upnl=0.00000000 lev=5
+mark price (premiumIndex): 78126.35856884
+
+OPEN  BUY ~7.68e-4 @ ~78126.35856884 (notional ~60.0 USDT)
+  filled qty=0.0007 avg=78128.9 order=28579013634
+  stop=1000000200223304 target=1000000200223309
+
+HOLD 10s
+  position (during): amt=0.0007 entry=78128.90000000001 mark=78124.17423194 upnl=-0.00330803 lev=5
+
+CLOSE SELL reduceOnly 0.0007
+  filled qty=0.0007 avg=78069.5 order=28579013806 reason=timer
+  round trip: -7.6 bps before fees
+  position (after): amt=0.0000 entry=0.0 mark=78123.18329710 upnl=0.00000000 lev=5
+
+TESTNET_OK — open, brake, close and reconcile all succeeded on BTCUSDT
+```
+
+Three things the runs before this one taught, all fixed the same day:
+
+* **A `FILLED` response can carry no fill.** The demo answered the first market order
+  `status: FILLED, avgPrice: 0, executedQty: 0`; only the read-back had the numbers.
+  `ExchangeOrders` now polls a FILLED order with empty fill fields like a NEW one. That first
+  run left a 0.0007 BTC position open and unbraked on the demo; by the time `--flatten` ran
+  it was already flat (not closed by us — noted, not explained).
+* **Conditional orders are refused on `/fapi/v1/order` (`-4120`).** `STOP_MARKET` and
+  `TAKE_PROFIT_MARKET` go through `POST /fapi/v1/algoOrder` (`algoType=CONDITIONAL`,
+  `triggerPrice`); the row stores **algo ids**, a triggered brake creates a normal order whose
+  id is the algo's `actualOrderId`, and both the `-2022` read-back and the user-stream match
+  go through that id. The smoke now **fails** (`TESTNET_UNBRAKED`) if either brake is missing.
+* **Compile before running a task after a pull.** A `mix <task>` that compiles on the way in
+  still runs the already-loaded old beam; both "stale" failures of the day were this.
+
+⚠️ The −7.6 bps slip on 0.0007 BTC is the **demo book**, which is thin; it says nothing about
+production slippage, which M3-4 measured.
 
 **Not built, on purpose:** limit orders (M3-4 §3), hedge-mode position sides (the account is
 one-way), and any automatic switch to production. `TRADING_MODE=auto` on `fluxtrader-1`
