@@ -291,6 +291,10 @@ they work against is `https://demo-fapi.binance.com`, which `BINANCE_TESTNET=tru
 
 ```sh
 # 1. one tiny round trip, entirely on the testnet, without the trading app running
+# ⚠️ After a pull, compile FIRST. A `mix <task>` that compiles on the way in still runs the
+# task module it had already loaded from the old beam — seen twice on 2026-09-10 (stale
+# line numbers, an ignored flag). Running the task twice also works; this is cleaner.
+docker compose exec app mix compile
 # ⚠️ `docker compose exec` does not forward host env vars: pass each with -e
 docker compose exec -e BINANCE_TESTNET=true \
   -e BINANCE_API_KEY=<testnet key> -e BINANCE_API_SECRET=<testnet secret> \
@@ -309,7 +313,9 @@ curl -s localhost:4001/api/health | jq '{mode, executor, user_stream}'
 **Bring back:** the full stdout of `flux.testnet_smoke`, verbatim, and the `/api/health`
 excerpt. If the smoke fails at `open`, the message names the step and the exchange's error
 code; `-2019` is testnet margin (top up the testnet wallet), `-4164` is min notional (raise
-`--notional`), `-1022` is a signature problem and is a bug here, not there.
+`--notional`), `-1022` is a signature problem and is a bug here, not there. A failed run can
+leave a position behind (the first one did, unbraked); `--flatten` closes it through the same
+close path before the smoke proceeds.
 
 **Not built, on purpose:** limit orders (M3-4 §3), hedge-mode position sides (the account is
 one-way), and any automatic switch to production. `TRADING_MODE=auto` on `fluxtrader-1`

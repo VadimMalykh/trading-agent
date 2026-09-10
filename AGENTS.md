@@ -26,6 +26,7 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 | Elixir tests | `docker compose run --rm -e MIX_ENV=test -e POSTGRES_HOST=postgres app mix test` (workers do not start under `MIX_ENV=test`, so a run never touches Binance) |
 | Live policy state | `curl -s localhost:4001/api/health \| jq` — signal liveness, the live coverage cut, named skip reasons, both A/B arms (`docs/M3_5_INTEGRATION.md` §2) |
 | Inference | `curl http://localhost:8001/…` (or exec into `ml_inference`) |
+| Mix task after a `git pull` | `docker compose exec app mix compile` **first** — a task that compiles on the way in still runs the already-loaded old beam |
 | Restart after Elixir code change | `docker compose restart app` (code is bind-mounted; `_build` is a volume) |
 
 ### Layout reminder
