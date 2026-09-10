@@ -1171,3 +1171,175 @@ def marketneutral_report(spec_fields: dict, stage: str, exploration_recorded: bo
         print(f"  - Read against the MDE above: a per-notional effect smaller than {1.96 * se:.1f}")
         print("    bps could not have been confirmed by this test. Not a negative result.")
     return 0
+
+
+# --------------------------------------------------------------------------------------
+# §9.4 — the learned / sequential (RL) policy's ELIGIBILITY GATE (WALKFORWARD_PROTOCOL §4.3
+# item 3, registered in §9.4 on 2026-09-09; the bar and every constant below were pinned in
+# §9.4 on 2026-09-10 before this code existed). Nothing is fitted here.
+#
+# THE QUESTION. Could the registered statistic — a day-clustered 95% lower bound of
+# (learned − incumbent) on the held-out folds — detect a challenger that beats the incumbent
+# by LESS than the incumbent's own edge? If not, a "win" would need the challenger to double
+# the edge, and fitting is not funded. §4 item 1 uses the identical reading for freshness:
+# NOT DECIDABLE if the minimum detectable effect exceeds the incumbent's pooled edge.
+#
+# WHAT IS READ. E, the edge, is the incumbent on all four folds as `m3 folds` scores it —
+# every per-fold input is public in §7.1, so pooling them reads nothing new. The contrast's
+# SE is calibrated on F0+F1 ONLY (§9.0 rule 2), with two fitting-free stand-ins that bracket
+# how much a challenger's trade set can overlap the incumbent's, and forecast to four folds
+# by the incumbent's own cluster counts. F2 and F3 are never touched by a contrast here.
+# --------------------------------------------------------------------------------------
+
+RLG_CALIB_FOLDS = COV91_EXPLORE_FOLDS         # §9.4: the contrast SE is read on F0+F1 only
+RLG_ALL_FOLDS = ("F0", "F1", "F2", "F3")      # the leave-one-out shape holds each out once
+RLG_Z_MDE = 1.96                              # §9.4: the convention §9.2/§9.3 read against
+RLG_Z_POWER80 = 1.96 + 0.8416                 # information only, decides nothing
+# §9.4 stand-in (ii): M3-1's cov05 slice, the candidate pool M3_3_PROTOCOL §3.4 fitted over.
+RLG_POOL_SPEC = dict(coverage=0.05, signal_horizon=240, hold_horizon=240)
+
+
+def _rlg_contrast(label: str, arm: pd.DataFrame, inc: pd.DataFrame, cost: float) -> dict:
+    """diff = arm − incumbent, day-clustered on the union of exit days (§9.4)."""
+    from . import universe as _u
+    ca, ci = metrics.clustered_mean_bps(arm, cost), metrics.clustered_mean_bps(inc, cost)
+    d = _u.paired_diff_bps(arm, inc, cost)
+    return {"unit": label, "n_arm": ca["n"], "net_arm": ca["mean_bps"],
+            "n_inc": ci["n"], "net_inc": ci["mean_bps"], "diff": d["diff_bps"],
+            "se": d["se_bps"], "clusters": d["clusters"], "shared_days": d["shared_days"],
+            "lo95": d["lo95_bps"], "hi95": d["hi95_bps"]}
+
+
+def _rlg_fmt(rows: list[dict]) -> str:
+    t = pd.DataFrame(rows)
+    t["95% CI of diff"] = [f"[{lo:+.2f}, {hi:+.2f}]" if np.isfinite(lo) else "n/a"
+                           for lo, hi in zip(t["lo95"], t["hi95"])]
+    t = t.drop(columns=["lo95", "hi95"])
+    return t.to_string(index=False, float_format=lambda v: f"{v:+.2f}")
+
+
+def rlgate_report(sized_fields: dict, flat_fields: dict) -> int:
+    """§9.4's eligibility gate. Reads the incumbent on four folds and two stand-in contrasts
+    on F0+F1; fits nothing; prints FUNDABLE / STILL UNFUNDABLE under the registered bar."""
+    require_walkforward_era()
+    print("=" * 96)
+    print("§9.4 — THE LEARNED / RL POLICY: ELIGIBILITY GATE (nothing is fitted)")
+    print("=" * 96)
+    print(registry_state())
+    missing = dumps.missing_runs()
+    if missing:
+        print(f"\n🔴 refusing: the gate is over all four folds and {missing} are not recorded.")
+        return 2
+
+    sized = backtest.PolicySpec(label="incumbent SIZED", **sized_fields)
+    flat = backtest.PolicySpec(label="flat anchor (stand-in i)", **flat_fields)
+    pool = backtest.PolicySpec(label="cov0.05 flat (stand-in ii)", **RLG_POOL_SPEC)
+    print(f"\nincumbent:    {sized}")
+    print(f"stand-in (i): {flat}")
+    print(f"stand-in (ii): {pool}")
+    print(f"taker {COST:.0f} bps decides; {VERIFIED_TAKER_LINE_BPS:.2f} printed for information")
+
+    # One fold at a time: twelve dumps do not fit the analysis container together (the
+    # first run of this gate was OOM-killed loading them), and nothing here needs two folds
+    # in memory at once. Only trades survive each fold; the dumps are released.
+    inc_parts, tbl_parts = [], []
+    flat_parts, pool_parts = [], []
+    for fold in RLG_ALL_FOLDS:
+        ds_f = _cov91_load((fold,))
+        for d in ds_f:
+            h = d.at(240)
+            t = pd.to_datetime(h["ts"], unit="ns", utc=True)
+            print(f"  {d.seed}  {d.run_id}  {len(h):>8,} bars  {h['pair'].nunique():>2} pairs  "
+                  f"{t.min():%Y-%m-%d} .. {t.max():%Y-%m-%d}")
+        inc_f = run_policy(ds_f, sized)
+        inc_parts.append(inc_f)
+        tbl_parts.append(fold_table(inc_f, {fold: ds_f}))
+        if fold in RLG_CALIB_FOLDS:
+            flat_parts.append(run_policy(ds_f, flat))
+            pool_parts.append(run_policy(ds_f, pool))
+        del ds_f
+    inc = pd.concat(inc_parts, ignore_index=True)
+    tbl = pd.concat(tbl_parts, ignore_index=True)
+    tbl = tbl.set_index("fold").loc[list(dumps.FOLD_RUN_ORDER)].reset_index()
+
+    # ---- A. E, the incumbent's edge — as `m3 folds`, every input public in §7.1 ---------
+    print("\n" + "=" * 96)
+    print(f"A. E — THE INCUMBENT'S EDGE, net bps at taker {COST:.0f}, day-clustered "
+          f"(reproduces §7.1; reads nothing new)")
+    print("=" * 96)
+    print(_fmt(tbl))
+    D = {r["fold"]: int(r["clusters"]) for _, r in tbl.iterrows()}
+    e_all = metrics.clustered_mean_bps(inc, COST)
+    e_dec = w1(inc)
+    e_all_alt = metrics.clustered_mean_bps(inc, VERIFIED_TAKER_LINE_BPS)
+    print(f"\n   E (four folds pooled) = {e_all['mean_bps']:+.2f} bps  "
+          f"[{e_all['lo95_bps']:+.2f}, {e_all['hi95_bps']:+.2f}]  n={e_all['n']:,}  "
+          f"clusters={e_all['clusters']}  (at {VERIFIED_TAKER_LINE_BPS:.2f}: "
+          f"{e_all_alt['mean_bps']:+.2f})")
+    print(f"   F2+F3 only (W1)       = {e_dec['mean_bps']:+.2f} bps  "
+          f"[{e_dec['lo95_bps']:+.2f}, {e_dec['hi95_bps']:+.2f}]  n={e_dec['n']:,}  "
+          f"clusters={e_dec['clusters']}")
+
+    # ---- B. the contrast SE, calibrated on F0+F1 only ---------------------------------
+    inc_cal = inc[inc["seed"].map(dumps.fold_of).isin(RLG_CALIB_FOLDS)]
+    flat_cal = pd.concat(flat_parts, ignore_index=True)
+    pool_cal = pd.concat(pool_parts, ignore_index=True)
+    print("\n" + "=" * 96)
+    print(f"B. THE CONTRAST SE — fitting-free stand-ins on {' + '.join(RLG_CALIB_FOLDS)} ONLY, "
+          f"diff = stand-in − incumbent, day-clustered on the union of exit days")
+    print("=" * 96)
+    rows = []
+    for label, arm in (("(i) flat anchor", flat_cal), ("(ii) cov0.05 flat", pool_cal)):
+        for f in RLG_CALIB_FOLDS:
+            m = lambda t: t[t["seed"].map(dumps.fold_of) == f]   # noqa: E731
+            rows.append(_rlg_contrast(f"{label} {f}", m(arm), m(inc_cal), COST))
+        rows.append(_rlg_contrast(f"{label} {'+'.join(RLG_CALIB_FOLDS)}", arm, inc_cal, COST))
+    print(_rlg_fmt(rows))
+    se_i = rows[len(RLG_CALIB_FOLDS)]["se"]
+    se_ii = rows[-1]["se"]
+    se_cal = max(se_i, se_ii)
+    which = "(ii) cov0.05 flat" if se_ii >= se_i else "(i) flat anchor"
+    print(f"\n   SE(i) = {se_i:.2f}   SE(ii) = {se_ii:.2f}   -> calibration = the larger, "
+          f"{se_cal:.2f} bps from {which}")
+    ladder = -rows[len(RLG_CALIB_FOLDS)]["diff"]
+    print(f"   for information: the ladder's own contribution on F0+F1 (sized − flat) = "
+          f"{ladder:+.2f} bps/trade — the size of the last improvement that passed; not the bar")
+
+    # ---- C. forecast to the held-out shapes ---------------------------------------------
+    d_cal = sum(D[f] for f in RLG_CALIB_FOLDS)
+    d_all = sum(D[f] for f in RLG_ALL_FOLDS)
+    d_dec = sum(D[f] for f in DECISION_FOLDS)
+    se_all = se_cal * np.sqrt(d_cal / d_all)
+    se_dec = se_cal * np.sqrt(d_cal / d_dec)
+    mde_all, mde_dec = RLG_Z_MDE * se_all, RLG_Z_MDE * se_dec
+    print("\n" + "=" * 96)
+    print("C. THE FORECAST — SE scaled by sqrt(D_F0+F1 / D_shape), D = the incumbent's exit-day "
+          "clusters from A")
+    print("=" * 96)
+    print(f"   D: F0+F1 = {d_cal}   four folds = {d_all}   F2+F3 = {d_dec}")
+    print(f"   {'shape':<28}{'SE':>8}{'MDE (1.96·SE)':>16}{'80% power (2.80·SE)':>22}{'E':>10}")
+    print(f"   {'four folds (leave-one-out)':<28}{se_all:>8.2f}{mde_all:>16.2f}"
+          f"{RLG_Z_POWER80 * se_all:>22.2f}{e_all['mean_bps']:>+10.2f}")
+    print(f"   {'F2+F3 only (confirmation)':<28}{se_dec:>8.2f}{mde_dec:>16.2f}"
+          f"{RLG_Z_POWER80 * se_dec:>22.2f}{e_dec['mean_bps']:>+10.2f}")
+
+    # ---- D. the reading, fixed in §9.4 --------------------------------------------------
+    fundable = bool(np.isfinite(mde_all) and mde_all < e_all["mean_bps"])
+    print("\n" + "=" * 96)
+    print(f"§9.4 GATE: {'FUNDABLE' if fundable else 'STILL UNFUNDABLE'} — MDE {mde_all:.2f} "
+          f"{'<' if fundable else '>='} E {e_all['mean_bps']:+.2f} bps/trade "
+          f"(four-fold shape, larger calibration)")
+    print("=" * 96)
+    dec_ok = bool(np.isfinite(mde_dec) and mde_dec < e_dec["mean_bps"])
+    print(f"  - Confirmation-only shape, for information: MDE {mde_dec:.2f} vs W1 "
+          f"{e_dec['mean_bps']:+.2f} -> {'would pass' if dec_ok else 'would not pass'}.")
+    if fundable:
+        print("  - The folds can see a challenger that adds less than the incumbent's whole edge.")
+        print("    This licenses WRITING the fitting registration (M3_3_PROTOCOL's shape with")
+        print("    folds as units), not fitting: that registration must first settle how")
+        print("    leave-one-out over folds squares with §9.0 rule 2 (F2/F3 as training data).")
+        print(f"  - A challenger adding less than {mde_all:.1f} bps/trade would still be invisible.")
+    else:
+        print("  - No model is fitted. Revival trigger: more independent days — forward paper")
+        print("    days, or further folds under a new registration.")
+    return 0

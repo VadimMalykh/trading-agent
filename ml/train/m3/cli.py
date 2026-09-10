@@ -1100,6 +1100,15 @@ def cmd_marketneutral(args) -> int:
                                             exploration_recorded=args.exploration_recorded)
 
 
+def cmd_rlgate(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.4 — the learned/RL eligibility gate, on the folds.
+
+    Both specs come from WINNER_SPEC / GRID_WINNER_SPEC for cmd_folds' reason; the second
+    stand-in and every constant live in `walkforward`. Nothing is fitted.
+    """
+    return walkforward.rlgate_report(WINNER_SPEC, GRID_WINNER_SPEC)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1610,6 +1619,11 @@ def main() -> int:
                     help="required by --stage confirm: asserts the F0+F1 table has been "
                          "written into WALKFORWARD_PROTOCOL §9.3")
     mn.set_defaults(fn=cmd_marketneutral)
+
+    rlg = sub.add_parser("rlgate", help="WALKFORWARD_PROTOCOL §9.4: is a learned/RL challenger "
+                         "fundable on the folds? Reads the incumbent's public numbers and two "
+                         "fitting-free contrasts on F0+F1; fits nothing (needs M3_ERA=walkforward)")
+    rlg.set_defaults(fn=cmd_rlgate)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

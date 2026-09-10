@@ -572,7 +572,8 @@ first; it is the live half of this observation and it is the more urgent one.
 **Written 2026-09-09, before any of the numbers below were computed.** §4.3 requires each
 parked finding to carry its own registration naming which folds it may read. These are those
 registrations. §9.1 (closed at the F0+F1 gate), §9.2 (confirmed once on F2+F3: NOT
-CONFIRMED) and §9.3 were run on 2026-09-10; §9.4 has not been run.
+CONFIRMED) and §9.3 were run on 2026-09-10; §9.4's eligibility gate was pinned and run the
+same day (its outcome is at the end of §9.4).
 
 ### 9.0 🔴 Read before running any of these
 
@@ -928,3 +929,95 @@ independent days". The folds roughly triple that. Is it fundable now?
 * 🔴 **0 of 8 learned runs have ever passed on the published split**
   ([M3_3_RESULTS_REPAIRED.md](./M3_3_RESULTS_REPAIRED.md)). This registration does not
   re-open that; it asks the narrower question of whether more history changes it.
+* **Fixed 2026-09-10, before the first run** — harness `walkforward.rlgate_report`, run as
+  `M3_ERA=walkforward ./scripts/m3.sh -m m3 rlgate`. The bullet above says "M3_3_PROTOCOL's
+  minimum-detectable-effect bar", but that document never wrote one down as a number — it
+  sized the model class against a *capacity* budget (≈188 clusters per fit, its §4.1) and
+  M3_PROTOCOL §2 made the fundability argument in words (220 independent days cannot certify
+  a 15-bps edge net of a 14-bps round trip). So the bar is pinned here, in the same form §4
+  item 1 already uses for freshness: **the reading is NOT DECIDABLE if the minimum detectable
+  effect exceeds the incumbent's pooled edge.** Everything below is fixed before the command
+  exists.
+  * **The gate asks one question:** could the registered statistic — a day-clustered 95%
+    lower bound of (learned − incumbent) on the held-out folds — detect a challenger that
+    beats the incumbent by less than the incumbent's own edge? If not, a "win" would require
+    the challenger to roughly *double* the edge, and fitting is not funded.
+  * **E, the edge:** the incumbent's pooled net at taker 14 over **all four folds**, day-
+    clustered, exactly as `m3 folds` computes it — the leave-one-out shape holds every fold
+    out once, so all four are the challenger's sample. Every per-fold input is already public
+    in §7.1 (F2 +39.89, F3 +25.26, F1 +61.20, F0 −0.66); pooling them reads nothing new. The
+    F2+F3-only figure (W1, +33.23) is printed beside it for the confirmation-only shape.
+  * **SE, the contrast's standard error — forecast from F0+F1 only.** No learned arm exists,
+    so the SE of (challenger − incumbent) is calibrated on **fitting-free stand-ins** that
+    bracket how much a challenger's trade set can overlap the incumbent's, run on the
+    exploration folds F0+F1 (which §9.0 rule 2 lets anything read) and never on F2/F3:
+    * **stand-in (i), same entries:** the flat-size anchor `cov0.02_hold240_rqnone_mcnone`
+      against the incumbent — identical bars, only the ladder differs. The smallest SE a
+      challenger can plausibly have.
+    * **stand-in (ii), different entries:** M3-1's `cov0.05_hold240` slice (flat size, the
+      candidate pool M3_3_PROTOCOL §3.4 fitted over) against the incumbent — a superset
+      entry set with 2.5× the trades. The least overlap a learned arm on the same
+      observation vector has shown.
+    * The contrast SE is `universe.paired_diff_bps` on F0+F1 pooled, the estimator every
+      §9 probe used. **The larger of the two is the calibration** — the gate is conservative
+      by construction, so a "fundable" reading is not an artefact of picking the tight one.
+  * **The forecast to four folds** scales the F0+F1 SE by
+    `sqrt(D_F0+F1 / D_all)`, where D is the incumbent's own exit-day cluster count on those
+    folds (public: 166 + 93 = 259 versus 545 over four). The F2+F3-only forecast uses
+    D_F2+F3 = 286 the same way. Both are printed.
+  * **MDE** = 1.96 × forecast SE, the convention §9.2 and §9.3 printed and read against; the
+    80%-power figure, 2.80 × SE, is printed for information and decides nothing.
+  * **The reading, fixed now:** **FUNDABLE iff MDE (at the larger calibration, four-fold
+    shape) < E.** Otherwise **STILL UNFUNDABLE**, no model is fitted, and the row closes with
+    the revival trigger "more independent days" — forward paper days or further folds under
+    a new registration. FUNDABLE does **not** start any fitting: it licenses writing the
+    fitting registration, which must also settle how the leave-one-out shape (fitting on
+    F2/F3 to score F0/F1) squares with §9.0 rule 2, a question this gate does not answer.
+  * **For information only, printed and not part of the gate:** the ladder's own
+    contribution on F0+F1 (stand-in (i) with the sign reversed, sized − flat), because it is
+    the size of the last improvement that actually passed and the natural scale for what a
+    challenger could plausibly add. It is not the bar, because the bullet at the top of
+    this section names the incumbent's edge, and that was written before any of this.
+  * **Fee** as §9.1: taker 14 decides; the verified 11.84 line is printed for information.
+
+**OUTCOME (2026-09-10) — FUNDABLE under the registered bar, by a margin that deserves a plain
+reading.** Log: `logs/rlgate_20260910.log`. Section A reproduces §7.1 line for line (F2 +39.89,
+F3 +25.26, F1 +61.20, F0 −0.66), so the gate's harness agrees with the fold verdict. Nothing
+was fitted; F2/F3 entered no contrast.
+
+| quantity | value |
+|---|---|
+| **E**, incumbent pooled over four folds, taker 14, day-clustered | **+29.48 bps/trade** [+5.59, +53.37], 7,673 trades, 544 clusters (545 summed per fold; one exit day is shared at the F2/F3 boundary) |
+| W1, F2+F3 only | +33.23 [+9.28, +57.17], 285 clusters |
+| contrast SE on F0+F1, stand-in (i) flat anchor − incumbent | 8.72 bps (diff −13.04 [−30.14, +4.05], 260 clusters) |
+| contrast SE on F0+F1, stand-in (ii) cov0.05 flat − incumbent | **13.10 bps** (diff −25.53 [−51.20, +0.14], 317 clusters) — the calibration |
+| forecast SE, four-fold shape (D 259 → 545) | 9.03 bps |
+| **MDE, four-fold shape (1.96 × SE)** | **17.70 bps/trade** (80% power: 25.30) |
+| MDE, F2+F3-only shape (D 259 → 286) | 24.43 bps/trade (80% power: 34.92) |
+| ladder's own contribution on F0+F1, sized − flat (information) | +13.04 bps/trade |
+
+**The gate: MDE 17.70 < E +29.48 → FUNDABLE.** The confirmation-only shape would also pass
+(24.43 < 33.23).
+
+**Reading, in plain terms.** The folds hold enough independent days that a learned challenger
+adding *at least ~18 bps per trade* on top of the incumbent — roughly 60% more edge — could be
+seen at the conventional bar, and ~25 bps could be seen with 80% power. That is what "fundable"
+means here and all it means. Two things it does not mean. (1) A challenger the size of the
+last improvement that actually passed — the regime ladder, worth +13 bps on these same folds —
+would still be **invisible**: 13 < 17.7. So this gate funds a search for a *large* improvement,
+not an incremental one, and the bar was set that way in the bullet at the top of this section
+before any of this was measured. (2) It does not re-open M3-3's result: 0 of 8 learned runs
+passed on the published split, and the extra observations there *cost* money
+(M3_3_RESULTS_REPAIRED §F). More history makes a win detectable; it does not make one likely.
+
+**What FUNDABLE licenses: writing the fitting registration, and nothing else.** That
+registration has to settle, before any fit, at least: (a) the leave-one-out shape — fitting on
+F2/F3 to score F0/F1 uses the untouched folds as training data, which §9.0 rule 2 did not
+anticipate; the clean alternative is fit on F0+F1 (the folds anything may read), confirm once
+on F2+F3, at MDE 24.4; (b) whether the class is M3_3_PROTOCOL §4's two ridge models unchanged
+(the honest replication) or one of §7.1's logged proposals; (c) the per-fold training-size
+penalty of §7.2, which makes every comparison within-fold only. **Whether to spend on this at
+all is a decision, not a consequence**: the expected payoff is low (M3-3's history), the cost is
+a protocol plus CPU only, and it competes with nothing that needs the market. It is filed in
+BACKLOG.md as parked with that framing. **Revival trigger for a larger effect window:** forward
+paper days, or further folds under a new registration, both of which lower the MDE.

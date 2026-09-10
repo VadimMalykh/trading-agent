@@ -9,7 +9,7 @@ Opened 2026-09-01. Owner of the detail for the three rows filed under
 
 | step | state |
 |---|---|
-| 1 fee tier | ✅ **VERIFIED — and the assumption was wrong.** `mix flux.fee_tier` on `fluxtrader-1` with a read-only key: **taker 5.000 / maker 2.000 bps per side** (BTCUSDT). M3-4 assumed 4.0. The correction is +2.0 bps per round trip on every measured cost; `Trading.ExecCost` now charges it (§5 below). Only BTCUSDT was read; the fee is account-level on USDⓈ-M, so the ETHUSDT control is a formality — run it when convenient |
+| 1 fee tier | ✅ **VERIFIED — and the assumption was wrong.** `mix flux.fee_tier` on `fluxtrader-1` with a read-only key: **taker 5.000 / maker 2.000 bps per side** (BTCUSDT). M3-4 assumed 4.0. The correction is +2.0 bps per round trip on every measured cost; `Trading.ExecCost` now charges it (§5 below). The ETHUSDT control was run on 2026-09-10 (Vadim, on the VM): **MATCH** — the tier is account-level as expected, and the verified constant holds for every pair |
 | 2 stop/target | ✅ **DECIDED: (a) keep.** The brake is now actually placed on the exchange on the auto path — until this build it was computed and dropped |
 | 3 signing | ✅ **BUILT AND DEMONSTRATED, 2026-09-10** — on the demo exchange from the VM (§6.1: signed open, reconciled fill, both brakes as algo orders, reduce-only close, flat after) **and** against a running `auto` executor on the local stack (§6.2: listenKey, fills, positions, ledger mismatch, brake-fill matching). 123/123 tests |
 
@@ -267,6 +267,12 @@ enabled; the undiscounted VIP-0 rate is 5.0. What changes and what does not:
 
 `mix flux.fee_tier` now compares the account against the *verified* constant, so re-running
 it is a standing check: MATCH means the correction still holds.
+
+**The ETHUSDT control, 2026-09-10 — MATCH.** Run by Vadim on `fluxtrader-1` with `--symbol
+ETHUSDT` after the constant was corrected; reported as MATCH (the stdout was not transcribed
+here). It confirms what the USDⓈ-M fee schedule says — the tier is per account, not per
+symbol — so the 5.0/2.0 line applies to all twelve served pairs and step 1 is closed on both
+symbols.
 
 ---
 
