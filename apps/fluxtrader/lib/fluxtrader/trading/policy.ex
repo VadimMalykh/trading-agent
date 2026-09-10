@@ -125,6 +125,9 @@ defmodule FluxTrader.Trading.Policy do
   # settle the parked "coverage at twelve pairs" pre-registration (T6's count-matched cut is
   # 0.01288) as a side effect. M3_PROTOCOL §0 says that question needs its own
   # pre-registration, so it is left open rather than answered by accident.
+  # Sized on the walk-forward folds 2026-09-10 (WALKFORWARD_PROTOCOL §9.1): an eight-derived
+  # cut applied to twelve realizes 1.77–1.99% coverage, not 2.00%, and the trades it leaves
+  # out earned nothing on F0+F1 (diff −7.34 bps [−21.85, +7.17]) — a small gap, not a lever.
 
   # `coverage_threshold(conf, 0.02)` over the split — the k-th largest confidence,
   # k = round(n * 0.02). Selection is `conf >= threshold`, tie-inclusive.

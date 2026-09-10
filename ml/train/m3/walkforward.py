@@ -495,3 +495,364 @@ def dryspell_report(universe: str = "12") -> int:
         print(f"  as §8.3 fixed in advance — including if it is larger.")
     print("=" * 96)
     return 0
+
+
+# --------------------------------------------------------------------------------------
+# §9.1 — served coverage at twelve pairs (WALKFORWARD_PROTOCOL §4.3 item 3, registered in
+# §9.1 on 2026-09-09 before this code existed; the 2026-09-10 clarifications in that section
+# were written before the first run). Every constant below is the registration's.
+#
+# THE QUESTION. The served cut was derived over the checkpoint's EIGHT-pair split while
+# TWELVE pairs are served. On the folds, does a cut derived over the twelve-pair population
+# beat the same coverage derived over the eight and applied to the twelve? One variable —
+# the population the cut is derived on. The regime ladder, the seeds, the bars are shared.
+#
+# THE ORDER. `explore` reads F0+F1 only; `confirm` reads F2+F3, once, after the explore
+# table is in §9.1, and refuses without the flag that says so. The code cannot read the
+# document, so the flag is the reader's signature that the order was kept.
+# --------------------------------------------------------------------------------------
+
+COV91_COVERAGE = 0.02                     # §9.1: the incumbent's coverage
+COV91_EXPLORE_FOLDS = ("F0", "F1")        # §9.1 / §9.0 rule 2
+COV91_CONFIRM_FOLDS = DECISION_FOLDS      # F2 + F3
+# REAL_MONEY_TRACK §5: 5.0 + 5.0 fee + M3-4's measured pooled slippage. Printed beside the
+# registered line for information; it decides nothing (§9.1, "Fee").
+VERIFIED_TAKER_LINE_BPS = 11.842
+
+
+def _cov91_folds(stage: str) -> tuple[str, ...]:
+    if stage == "explore":
+        return COV91_EXPLORE_FOLDS
+    if stage == "confirm":
+        return COV91_CONFIRM_FOLDS
+    raise SystemExit(f"stage must be 'explore' or 'confirm', got {stage!r}")
+
+
+def _cov91_load(folds: tuple[str, ...]) -> list[dumps.Dump]:
+    """Only the stage's folds are read from disk — the other two are not loaded at all."""
+    require_walkforward_era()
+    wanted = {k: v for k, v in dumps.recorded_runs().items() if dumps.fold_of(k) in folds}
+    missing = [k for k in dumps.WALKFORWARD_RUNS if dumps.fold_of(k) in folds
+               and k not in wanted]
+    if missing:
+        raise SystemExit(f"§9.1 needs every seed of {', '.join(folds)}; missing {missing}")
+    return [dumps.load(rid, seed=seed) for seed, rid in wanted.items()]
+
+
+def coverage12_arms(d: dumps.Dump, spec: backtest.PolicySpec) -> dict:
+    """Both §9.1 arms for ONE fold-seed, with the provenance the section asks to see."""
+    from . import universe as _u   # local: universe imports backtest/metrics, not us
+    h = d.at(240)
+    conf = h["conf"].to_numpy(np.float64)
+    present = set(h["pair"].unique())
+    base8 = [p for p in dumps.BASE8 if p in present]
+    extra = sorted(present - set(dumps.BASE8))
+    cut12 = backtest.coverage_threshold(conf, COV91_COVERAGE)
+    cut8 = backtest.coverage_threshold(
+        h.loc[h["pair"].isin(base8), "conf"].to_numpy(np.float64), COV91_COVERAGE)
+    regimes = {d.seed: regime.build(d.df)}
+
+    # Arm A: the engine derives the cut over the fold-seed's whole population, as `m3 folds`.
+    res12 = backtest.run([d], spec, regimes)
+    if abs(res12.thresholds[d.seed] - cut12) > 1e-12:
+        raise SystemExit(f"{d.seed}: engine cut {res12.thresholds[d.seed]!r} != {cut12!r}")
+    # Self-check (§9.1, "regime ladder held fixed"): the fixed-threshold path must reproduce
+    # the derived path exactly at the same cut, so arm B differs only in the cut's value.
+    fixed_spec = _u.with_fields(spec, score_col="conf", score_min=cut12)
+    chk = backtest.run([d], fixed_spec, regimes).trades
+    if len(chk) != len(res12.trades) or not np.allclose(
+            chk["signed_ret"].to_numpy(), res12.trades["signed_ret"].to_numpy()):
+        raise SystemExit(f"{d.seed}: fixed-threshold path does not reproduce the derived path")
+    # Arm B: the eight-pair cut, applied to every pair present.
+    res8 = backtest.run([d], _u.with_fields(spec, score_col="conf", score_min=cut8), regimes)
+
+    is_extra = h["pair"].isin(extra).to_numpy()
+    return {
+        "seed": d.seed, "fold": dumps.fold_of(d.seed),
+        "pairs": len(present), "base8_present": len(base8), "extra": len(extra),
+        "cut12": cut12, "cut8": cut8,
+        "cov12": float((conf >= cut12).mean()),
+        "cov8_on12": float((conf >= cut8).mean()),
+        "cov8_on_extra": float((conf[is_extra] >= cut8).mean()) if is_extra.any() else np.nan,
+        "trades12": res12.trades, "trades8": res8.trades,
+    }
+
+
+def _cov91_row(label: str, a: pd.DataFrame, b: pd.DataFrame, cost: float) -> dict:
+    from . import universe as _u
+    ca, cb = metrics.clustered_mean_bps(a, cost), metrics.clustered_mean_bps(b, cost)
+    d = _u.paired_diff_bps(a, b, cost)
+    return {"unit": label, "n12": ca["n"], "net12": ca["mean_bps"],
+            "n8": cb["n"], "net8": cb["mean_bps"],
+            "diff": d["diff_bps"], "lo95": d["lo95_bps"], "hi95": d["hi95_bps"],
+            "clusters": d["clusters"]}
+
+
+def _cov91_fmt(rows: list[dict]) -> str:
+    t = pd.DataFrame(rows)
+    t["95% CI of diff"] = [f"[{lo:+.2f}, {hi:+.2f}]" if np.isfinite(lo) else "n/a"
+                           for lo, hi in zip(t["lo95"], t["hi95"])]
+    t = t.drop(columns=["lo95", "hi95"])
+    return t.to_string(index=False, float_format=lambda v: f"{v:+.2f}")
+
+
+def coverage12_report(spec_fields: dict, stage: str, exploration_recorded: bool = False) -> int:
+    """§9.1's table for one stage. `explore` = F0+F1, `confirm` = F2+F3 (once)."""
+    folds = _cov91_folds(stage)
+    print("=" * 96)
+    print(f"§9.1 — SERVED COVERAGE AT TWELVE PAIRS — stage {stage.upper()} "
+          f"({' + '.join(folds)})")
+    print("=" * 96)
+    print(registry_state())
+    if stage == "confirm" and not exploration_recorded:
+        print("\n🔴 refusing: --stage confirm reads F2+F3, the only untouched history. Pass")
+        print("   --exploration-recorded only after the F0+F1 table is written into §9.1.")
+        return 2
+    if stage == "explore":
+        print("\nF0 and F1 overlap history the policy search has read (§3, last bullet). This")
+        print("stage spends nothing and decides nothing; a positive pooled point estimate")
+        print("authorises ONE confirmation run on F2+F3 (§9.1).")
+    else:
+        print("\n🔴 F2 + F3 are being read for §9.1. This happens once.")
+
+    spec = backtest.PolicySpec(label="incumbent SIZED", **spec_fields)
+    print(f"\narms: A = cut derived over the fold-seed's full population (as `m3 folds`)")
+    print(f"      B = cut derived over its dumps.BASE8 pairs, applied to every pair present")
+    print(f"      both at coverage {COV91_COVERAGE}, same regime ladder, same seeds, same bars")
+    print(f"diff = A − B; registered line taker {COST:.0f} bps; the verified "
+          f"{VERIFIED_TAKER_LINE_BPS:.2f} line is printed for information only")
+
+    ds = _cov91_load(folds)
+    cards = []
+    for d in ds:
+        h = d.at(240)
+        t = pd.to_datetime(h["ts"], unit="ns", utc=True)
+        print(f"  {d.seed}  {d.run_id}  {len(h):>8,} bars  {h['pair'].nunique():>2} pairs  "
+              f"{t.min():%Y-%m-%d} .. {t.max():%Y-%m-%d}")
+        cards.append(coverage12_arms(d, spec))
+
+    print("\n" + "=" * 96)
+    print("A. THE CUTS AND THEIR REALIZED COVERAGE, PER FOLD-SEED (§9.1, 'reported with it')")
+    print("=" * 96)
+    prov = pd.DataFrame([{
+        "seed": c["seed"], "pairs": c["pairs"], "base8": c["base8_present"],
+        "cut A (12)": c["cut12"], "cut B (8)": c["cut8"],
+        "cov A on 12": c["cov12"], "cov B on 12": c["cov8_on12"],
+        "cov B on the 4 extra": c["cov8_on_extra"],
+        "trades A": len(c["trades12"]), "trades B": len(c["trades8"]),
+    } for c in cards])
+    print(prov.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+    print("cut B is tighter than cut A when the eight carry higher confidence than the four")
+    print("added pairs; the 'cov B on the 4 extra' column is the under-/over-trading of the")
+    print("added pairs that an eight-pair cut produces.")
+
+    print("\n" + "=" * 96)
+    print(f"B. THE CONTRAST — net bps at taker {COST:.0f}, day-clustered, diff = A − B")
+    print("=" * 96)
+    rows = [_cov91_row(c["seed"], c["trades12"], c["trades8"], COST) for c in cards]
+    for f in folds:
+        cs = [c for c in cards if c["fold"] == f]
+        rows.append(_cov91_row(f"{f} pooled", pd.concat([c["trades12"] for c in cs]),
+                               pd.concat([c["trades8"] for c in cs]), COST))
+    all12 = pd.concat([c["trades12"] for c in cards])
+    all8 = pd.concat([c["trades8"] for c in cards])
+    pooled = _cov91_row(f"{'+'.join(folds)} pooled", all12, all8, COST)
+    rows.append(pooled)
+    print(_cov91_fmt(rows))
+
+    alt = _cov91_row(f"{'+'.join(folds)} pooled @ {VERIFIED_TAKER_LINE_BPS:.2f}", all12, all8,
+                     VERIFIED_TAKER_LINE_BPS)
+    print(f"\n   for information (decides nothing): at the verified line the pooled diff is "
+          f"{alt['diff']:+.2f} [{alt['lo95']:+.2f}, {alt['hi95']:+.2f}]")
+
+    print("\n" + "=" * 96)
+    if stage == "explore":
+        pos = pooled["diff"] > 0
+        print(f"§9.1 EXPLORE READING: pooled F0+F1 point estimate {pooled['diff']:+.2f} bps "
+              f"-> {'POSITIVE' if pos else 'NOT POSITIVE'}")
+        print("=" * 96)
+        if pos:
+            print("  - §9.1 authorises ONE confirmation run on F2+F3. Write this table into §9.1")
+            print("    first, then: m3 coverage12 --stage confirm --exploration-recorded")
+        else:
+            print("  - §9.1 closes here: F2/F3 are NOT read. Record the table and the closure.")
+        return 0
+    ok = bool(pooled["clusters"] >= 2 and pooled["lo95"] > 0)
+    print(f"§9.1 VERDICT: {'CONFIRMED' if ok else 'NOT CONFIRMED'} — F2+F3 clustered 95% "
+          f"lower bound of the difference {pooled['lo95']:+.2f} ({'>' if ok else '<='} 0)")
+    print("=" * 96)
+    if ok:
+        print("  - A cut derived over the served population beats one derived over eight and")
+        print("    applied to twelve, on untouched history. That is the evidence the parked")
+        print("    'Re-pre-register the served coverage' item (BACKLOG) was waiting for; the")
+        print("    re-registration itself is still a document written before anything is scored.")
+    else:
+        print("  - Not confirmed on untouched history. The served eight-derived cut stands; the")
+        print("    point estimate and interval above are the record, not a negative result.")
+    return 0
+
+
+# --------------------------------------------------------------------------------------
+# §9.2 — the hour-of-day probe (WALKFORWARD_PROTOCOL §4.3 item 3, registered in §9.2 on
+# 2026-09-09; the choice rule and the rest were fixed there on 2026-09-10 before the first
+# run). Every constant below is the registration's.
+#
+# THE SHAPE. `explore` runs the incumbent unrestricted on F0+F1, ranks the 24 UTC entry
+# hours by mean net, and takes hours from the top until >= 60% of trades are kept. That set
+# is written into §9.2 by the reader. `confirm` takes the set ONLY from --hours, so the
+# document, not a recomputation, is what is confirmed on F2+F3 — once.
+# --------------------------------------------------------------------------------------
+
+HOD_RETENTION_FLOOR = 0.60          # §9.2: the filter must keep >= 60% of trades
+HOD_EXPLORE_FOLDS = COV91_EXPLORE_FOLDS
+HOD_CONFIRM_FOLDS = DECISION_FOLDS
+
+
+def _hod_hours(trades: pd.DataFrame) -> pd.Series:
+    return pd.to_datetime(trades["entry_ts"], unit="ns", utc=True).dt.hour
+
+
+def hod_hour_table(trades: pd.DataFrame, cost: float = COST) -> pd.DataFrame:
+    """Per UTC entry hour: trades, share, mean net at `cost`. The ranking input of §9.2."""
+    net = (trades["signed_ret"] - cost / metrics.BPS * trades.get("size", 1.0)) * metrics.BPS
+    t = pd.DataFrame({"hour": _hod_hours(trades).to_numpy(), "net": net.to_numpy()})
+    g = t.groupby("hour")["net"].agg(["size", "mean"]).reindex(range(24), fill_value=0)
+    g.columns = ["trades", "net_bps"]
+    g["net_bps"] = g["net_bps"].where(g["trades"] > 0, np.nan)
+    g["share"] = g["trades"] / max(len(t), 1)
+    return g
+
+
+def hod_choose(tbl: pd.DataFrame, floor: float = HOD_RETENTION_FLOOR) -> tuple[int, ...]:
+    """§9.2's choice rule: hours in descending mean net until cumulative share >= floor."""
+    ranked = tbl.dropna(subset=["net_bps"]).sort_values("net_bps", ascending=False)
+    chosen, cum = [], 0.0
+    for hour, row in ranked.iterrows():
+        chosen.append(int(hour))
+        cum += float(row["share"])
+        if cum >= floor:
+            break
+    return tuple(sorted(chosen))
+
+
+def _hod_arms(d: dumps.Dump, spec: backtest.PolicySpec,
+              hours: tuple[int, ...] | None) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    from . import universe as _u
+    regimes = {d.seed: regime.build(d.df)}
+    free = backtest.run([d], spec, regimes).trades
+    if hours is None:
+        return free, None
+    kept = backtest.run([d], _u.with_fields(spec, entry_hours=tuple(hours)), regimes).trades
+    return free, kept
+
+
+def hourofday_report(spec_fields: dict, stage: str, exploration_recorded: bool = False,
+                     hours: tuple[int, ...] | None = None) -> int:
+    """§9.2. `explore` chooses the hour set on F0+F1; `confirm` tests --hours on F2+F3."""
+    folds = HOD_EXPLORE_FOLDS if stage == "explore" else HOD_CONFIRM_FOLDS
+    print("=" * 96)
+    print(f"§9.2 — THE HOUR-OF-DAY PROBE — stage {stage.upper()} ({' + '.join(folds)})")
+    print("=" * 96)
+    print(registry_state())
+    if stage == "confirm":
+        if not exploration_recorded:
+            print("\n🔴 refusing: --stage confirm reads F2+F3. Pass --exploration-recorded only")
+            print("   after the chosen hour set is written into §9.2.")
+            return 2
+        if not hours:
+            print("\n🔴 refusing: --stage confirm takes the hour set from --hours, transcribed")
+            print("   from §9.2. It never recomputes it.")
+            return 2
+        print(f"\n🔴 F2 + F3 are being read for §9.2. This happens once. Hour set under test "
+              f"(from --hours): {list(hours)}")
+    else:
+        print("\nF0 and F1 overlap history the search has read (§3, last bullet). This stage")
+        print("chooses the hour set by §9.2's rule and decides nothing; its contrast is")
+        print("in-sample by construction.")
+
+    spec = backtest.PolicySpec(label="incumbent SIZED", **spec_fields)
+    print(f"\narms: unrestricted = the incumbent as `m3 folds` scores it")
+    print(f"      restricted   = same cut, entries kept only in the hour set, re-simulated")
+    print(f"diff = restricted − unrestricted; taker {COST:.0f} bps decides; "
+          f"{VERIFIED_TAKER_LINE_BPS:.2f} printed for information")
+
+    ds = _cov91_load(folds)
+    for d in ds:
+        h = d.at(240)
+        t = pd.to_datetime(h["ts"], unit="ns", utc=True)
+        print(f"  {d.seed}  {d.run_id}  {len(h):>8,} bars  {h['pair'].nunique():>2} pairs  "
+              f"{t.min():%Y-%m-%d} .. {t.max():%Y-%m-%d}")
+
+    if stage == "explore":
+        free = {d.seed: _hod_arms(d, spec, None)[0] for d in ds}
+        pooled_free = pd.concat(free.values())
+        print("\n" + "=" * 96)
+        print(f"A. THE 24 UTC ENTRY HOURS, F0+F1 UNRESTRICTED, POOLED OVER SIX SEEDS "
+              f"(n={len(pooled_free):,})")
+        print("=" * 96)
+        tbl = hod_hour_table(pooled_free)
+        show = tbl.copy()
+        show["rank"] = show["net_bps"].rank(ascending=False, method="first").astype("Int64")
+        print(show.to_string(float_format=lambda v: f"{v:+.2f}"))
+        hours = hod_choose(tbl)
+        share = float(tbl.loc[list(hours), "share"].sum())
+        print("\n" + "=" * 96)
+        print(f"B. §9.2's CHOICE RULE -> hour set {list(hours)}  ({len(hours)} hours, "
+              f"{share:.1%} of F0+F1 unrestricted trades)")
+        print("=" * 96)
+        print("🔴 Write this set into WALKFORWARD_PROTOCOL §9.2 before anything else is run.")
+        kept = {d.seed: _hod_arms(d, spec, hours)[1] for d in ds}
+    else:
+        free, kept = {}, {}
+        for d in ds:
+            free[d.seed], kept[d.seed] = _hod_arms(d, spec, hours)
+
+    print("\n" + "=" * 96)
+    print(f"C. THE CONTRAST — net bps at taker {COST:.0f}, day-clustered, "
+          f"diff = restricted − unrestricted")
+    print("=" * 96)
+    rows = []
+    for d in ds:
+        r = _cov91_row(d.seed, kept[d.seed], free[d.seed], COST)
+        rows.append(r)
+    for f in folds:
+        seeds = [d.seed for d in ds if dumps.fold_of(d.seed) == f]
+        rows.append(_cov91_row(f"{f} pooled", pd.concat([kept[s] for s in seeds]),
+                               pd.concat([free[s] for s in seeds]), COST))
+    all_kept, all_free = pd.concat(kept.values()), pd.concat(free.values())
+    pooled = _cov91_row(f"{'+'.join(folds)} pooled", all_kept, all_free, COST)
+    rows.append(pooled)
+    out = _cov91_fmt(rows).replace("n12", "n_restr").replace("net12", "net_restr") \
+                          .replace(" n8 ", " n_free ").replace("net8", "net_free")
+    print(out)
+    retention = len(all_kept) / max(len(all_free), 1)
+    alt = _cov91_row("alt", all_kept, all_free, VERIFIED_TAKER_LINE_BPS)
+    print(f"\n   retention (re-simulated): {len(all_kept):,} / {len(all_free):,} = "
+          f"{retention:.1%}  (floor {HOD_RETENTION_FLOOR:.0%})")
+    print(f"   for information: at the verified line the pooled diff is {alt['diff']:+.2f} "
+          f"[{alt['lo95']:+.2f}, {alt['hi95']:+.2f}]")
+    se = (pooled["hi95"] - pooled["lo95"]) / (2 * 1.96)
+    print(f"   clustered SE of the difference {se:.2f} bps -> minimum detectable effect "
+          f"(1.96 × SE) {1.96 * se:.2f} bps"
+          + (" — a FORECAST for F2+F3, from F0+F1" if stage == "explore" else ""))
+
+    print("\n" + "=" * 96)
+    if stage == "explore":
+        print(f"§9.2 EXPLORE: hour set {list(hours)} chosen; in-sample diff {pooled['diff']:+.2f} "
+              f"bps (decides nothing).")
+        print("=" * 96)
+        print("  - Record section A, the set and section C in §9.2, then run ONCE:")
+        print(f"    m3 hourofday --stage confirm --exploration-recorded "
+              f"--hours {','.join(str(h) for h in hours)}")
+        return 0
+    ok_lb = bool(pooled["clusters"] >= 2 and pooled["lo95"] > 0)
+    ok_ret = retention >= HOD_RETENTION_FLOOR
+    ok = ok_lb and ok_ret
+    print(f"§9.2 VERDICT: {'CONFIRMED' if ok else 'NOT CONFIRMED'} — lower bound "
+          f"{pooled['lo95']:+.2f} ({'>' if ok_lb else '<='} 0); retention {retention:.1%} "
+          f"({'>=' if ok_ret else '<'} {HOD_RETENTION_FLOOR:.0%})")
+    print("=" * 96)
+    if not ok:
+        print(f"  - Read against the MDE above: an hour effect smaller than {1.96 * se:.1f} bps")
+        print("    per trade could not have been confirmed by this test. Not a negative result.")
+    return 0

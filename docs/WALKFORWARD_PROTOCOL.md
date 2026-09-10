@@ -571,7 +571,8 @@ first; it is the live half of this observation and it is the more urgent one.
 
 **Written 2026-09-09, before any of the numbers below were computed.** §4.3 requires each
 parked finding to carry its own registration naming which folds it may read. These are those
-registrations. **None of them has been run**, deliberately — see §9.0.
+registrations. §9.1 (closed at the F0+F1 gate) and §9.2 (confirmed once on F2+F3: NOT
+CONFIRMED) were run on 2026-09-10; §9.3–§9.4 have not been run.
 
 ### 9.0 🔴 Read before running any of these
 
@@ -603,6 +604,72 @@ coverage at twelve pairs beat coverage at eight, on the same bars?
   **Confirmed iff** the F2+F3 clustered 95% lower bound of the difference > 0.
 * **Reported with it:** realized coverage per arm per fold, because the whole defect this
   probes is that a threshold's realized coverage moves with the universe.
+* **Fixed 2026-09-10, before the first run** — the harness is `walkforward.coverage12_report`,
+  run as `M3_ERA=walkforward ./scripts/m3.sh -m m3 coverage12 --stage explore|confirm`. These
+  resolve what the 09-09 text left open; none was chosen with a number in view:
+  * **Sign.** The difference is *twelve-derived minus eight-derived*. Positive means the cut
+    derived over the population actually served beats the cut derived the way the served
+    constant was — over the eight-pair population — and applied to twelve.
+  * **Fee.** "At taker" is `metrics.TAKER_COST_BPS` = 14, as in W1 and every registration in
+    this file. The account's taker fee was corrected to 5.0/side on 2026-09-10
+    ([REAL_MONEY_TRACK §5](./REAL_MONEY_TRACK.md)) and the published constant deliberately
+    kept; the same contrast at the verified 11.84 line is printed beside it for information
+    and decides nothing. In a within-fold contrast the fee enters only through the two arms'
+    mean size, so it cannot move the sign.
+  * **"Positive" for the explore gate** = the pooled F0+F1 point estimate of the difference
+    > 0. Not its lower bound: §9.0 says looking at F0+F1 spends nothing, and a lower-bound
+    gate on the exploration folds would make the confirmation redundant.
+  * **The regime ladder is held fixed.** Both arms use the fold-seed's own bar-quintile edges
+    over its full dump, so the population the cut is derived on is the only variable. The
+    eight-derived arm is run through `backtest.run`'s fixed-threshold path
+    (`score_col="conf", score_min=<cut>`); the harness checks on every fold-seed that this
+    path reproduces the derived path exactly at the same cut, so the two arms differ in the
+    cut and in nothing else.
+  * **Realized coverage** = share of the fold-seed's *twelve-pair* 240m bars at or above the
+    arm's cut. Also reported: the eight-derived cut's realized coverage on the four added
+    pairs alone, because that is where an eight-pair cut mis-sizes.
+  * **F3 holds 11 pairs and 7 of `dumps.BASE8`** (HYPE is a late listing); its "eight" arm is
+    derived over the seven present. F0–F2 hold all eight.
+  * **Order.** `--stage explore` reads F0+F1 only. `--stage confirm` reads F2+F3, refuses
+    without `--exploration-recorded`, and is run **once**, after the explore table has been
+    written into this section.
+
+**EXPLORATION (F0+F1), run 2026-09-10 — NOT POSITIVE; F2/F3 not read; §9.1 closes here.**
+Log: `logs/coverage12_explore_20260910.log`. The self-check passed on all six fold-seeds
+(the fixed-threshold path reproduces the derived path exactly at the same cut).
+
+| unit | trades A (12-derived) | net A | trades B (8-derived) | net B | diff A − B | clusters | 95% CI of diff |
+|---|---|---|---|---|---|---|---|
+| F0s1 | 562 | −1.81 | 556 | −2.90 | +1.09 | 107 | [−1.11, +3.28] |
+| F0s2 | 825 | +3.36 | 821 | +3.48 | −0.12 | 159 | [−0.86, +0.61] |
+| F0s3 | 622 | −4.96 | 610 | −5.17 | +0.21 | 145 | [−1.72, +2.13] |
+| F1s1 | 455 | +35.20 | 433 | +41.80 | −6.60 | 58 | [−16.97, +3.77] |
+| F1s2 | 477 | +80.88 | 432 | +77.64 | +3.24 | 69 | [−16.78, +23.26] |
+| F1s3 | 474 | +66.36 | 440 | +127.49 | −61.12 | 78 | [−176.40, +54.16] |
+| F0 pooled | 2,009 | −0.66 | 1,987 | −0.96 | +0.29 | 166 | [−0.67, +1.26] |
+| F1 pooled | 1,406 | +61.20 | 1,305 | +82.55 | −21.35 | 94 | [−59.87, +17.17] |
+| **F0+F1 pooled** | 3,415 | +24.81 | 3,292 | +32.15 | **−7.34** | 260 | [−21.85, +7.17] |
+
+At the verified 11.84 line the pooled difference is −7.34 [−21.84, +7.17] — identical to two
+decimals, as the fee bullet above predicted.
+
+Realized coverage, the column the registration asked for: the eight-derived cut is **tighter**
+on every fold-seed (cut B ≥ cut A), so on the twelve it realizes 1.77–1.99% instead of 2.00%,
+and on the four added pairs alone 1.30–1.97%. The served "KNOWN GAP" is therefore an
+under-trading of the added pairs by at most 0.7 percentage points of coverage, not a
+mis-sizing of the whole book.
+
+**Reading, with the same scrutiny a positive result would get.** The pooled point estimate is
+negative, so the explore gate is not met and the confirmation is not run — that is the whole
+of what §9.1 decides. It is *not* evidence that the twelve-derived cut is worse: the interval
+is wide and includes zero, and the point estimate is carried by F1s3, where the ~34 marginal
+trades that arm A adds happen to be very bad (net +66 against +127 on a base of 440). F0, the
+fold with the tightest intervals, is +0.29 [−0.67, +1.26] — nil. What the table does say is
+directionally consistent with T6: since B ⊂ A on every fold-seed, the difference *is* the
+marginal trades a looser cut admits, and on these folds they earn nothing. Consequence for the
+parked "Re-pre-register the served coverage" item: re-deriving the served cut over twelve is
+not a lever worth a registration; the lever T6 pointed at — the cut *level* — is untouched by
+this test and stays parked on its own terms.
 
 ### 9.2 The hour-of-day probe
 
@@ -615,8 +682,101 @@ seen on the published split an artifact of it?
 * **Statistic:** as §9.1. **Confirmed iff** the F2+F3 clustered 95% lower bound of the
   difference > 0 **and** the chosen hour set retains ≥ 60% of trades — a filter that confirms
   by discarding most of the sample is a coverage change wearing a costume.
-* 🔴 **The hour set MUST be recorded here before F2/F3 is read.** Chosen set: *(not yet
-  chosen — F0+F1 exploration has not been run).*
+* 🔴 **The hour set MUST be recorded here before F2/F3 is read.** Chosen set: *(see
+  "Exploration" below once run).*
+* **Fixed 2026-09-10, before the first run** — harness `walkforward.hourofday_report`, run as
+  `M3_ERA=walkforward ./scripts/m3.sh -m m3 hourofday --stage explore` and then
+  `--stage confirm --exploration-recorded --hours <set>`, the set transcribed from this section:
+  * **There is no published-split hour effect to confirm.** The probe was filed in
+    CANDLE_POLL_DEFECT §(exploratory lane) and archive/RULES_REVIEW notes the lane was never
+    used; §9.2's "hour effect seen on the published split" does not exist in the record. So
+    F0+F1 is the first look, and the choice rule below is the whole of the exploration.
+  * **The hour** of a trade is the UTC hour of its entry bar's timestamp (`entry_ts`).
+  * **The choice rule, mechanical.** Run the incumbent unrestricted on F0+F1 (six seeds
+    pooled). Rank the 24 UTC hours by mean net bps at taker of the trades entered in that
+    hour. Take hours in descending order until the cumulative share of F0+F1 unrestricted
+    trades reaches ≥ 60%. That set, and no other, is the hour set. No contiguity is imposed
+    and no hour is hand-added or hand-removed.
+  * **The restricted arm** keeps the incumbent's cut — derived over the fold-seed's full
+    population exactly as `m3 folds` — and drops selected bars whose hour is outside the
+    set *before* the serial-per-pair simulation, so a freed pair may take a later bar. It is
+    re-simulated, not sub-sampled: this is what a served hour filter would do.
+  * **Sign.** diff = restricted − unrestricted. Positive means the filter helps.
+  * **Retention** = restricted-arm trades ÷ unrestricted-arm trades on the re-simulated arms,
+    checked on F2+F3 at confirmation (the registered ≥ 60%); reported on F0+F1 too.
+  * **Fee** as §9.1: `metrics.TAKER_COST_BPS` = 14 decides; the verified 11.84 line is
+    printed for information.
+  * **Power.** The confirmation report prints the F2+F3 clustered SE of the difference and
+    1.96 × SE as the minimum detectable effect, so "not confirmed" is read against what the
+    test could have seen. The F0+F1 SE is printed at exploration as a forecast.
+  * **Order.** `explore` reads F0+F1 only and has no gate: the in-sample contrast is positive
+    by construction and decides nothing. `confirm` reads F2+F3 once, refuses without
+    `--exploration-recorded`, and takes the hour set only from `--hours`, so the recorded set
+    is the one that is run.
+
+**EXPLORATION (F0+F1), run 2026-09-10.** Log: `logs/hourofday_explore_20260910.log`. The
+unrestricted F0 arm reproduces §7.2's −0.66, so the backtester's new `entry_hours` field is a
+no-op when unset.
+
+The 24 UTC entry hours, F0+F1 unrestricted, six seeds pooled (3,415 trades), mean net bps at
+taker 14 — the ranking input of the choice rule:
+
+| hour | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| trades | 144 | 143 | 125 | 139 | 125 | 147 | 139 | 150 | 140 | 119 | 119 | 128 |
+| net | +165.0 | +41.3 | +16.3 | +83.2 | +15.8 | +6.8 | +2.1 | +26.9 | −48.5 | +11.9 | +68.3 | +36.4 |
+
+| hour | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| trades | 130 | 169 | 157 | 154 | 162 | 143 | 134 | 180 | 170 | 139 | 120 | 139 |
+| net | +71.7 | +29.6 | +26.9 | −49.3 | −125.5 | −85.2 | +31.8 | −0.2 | −20.1 | +314.7 | +42.0 | −9.1 |
+
+🔴 **CHOSEN HOUR SET (UTC), by the rule, recorded before F2/F3 is read:**
+**{0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22}** — 16 hours, 64.1% of the
+unrestricted F0+F1 trades by entry hour. Excluded: 6, 8, 15, 16, 17, 19, 20, 23. Read as a
+texture only: the excluded block is mostly the US afternoon (15–17, 19–20 UTC).
+
+In-sample contrast on F0+F1 (restricted − unrestricted, day-clustered, taker 14):
+
+| unit | n restricted | net restricted | n unrestricted | net unrestricted | diff | clusters | 95% CI |
+|---|---|---|---|---|---|---|---|
+| F0 pooled | 1,716 | +3.42 | 2,009 | −0.66 | +4.08 | 167 | [−2.58, +10.73] |
+| F1 pooled | 1,207 | +89.83 | 1,406 | +61.20 | +28.63 | 94 | [+0.51, +56.74] |
+| F0+F1 pooled | 2,923 | +39.10 | 3,415 | +24.81 | +14.29 | 261 | [+1.51, +27.08] |
+
+Re-simulated retention 85.6% (the by-hour share is 64.1%; freed pairs take later bars).
+Power forecast for F2+F3 from the F0+F1 clustered SE of 6.52 bps: minimum detectable effect
+≈ 12.8 bps per trade. The in-sample +14.29 is selected on these very trades and is not
+evidence of anything.
+
+**CONFIRMATION (F2+F3), run once 2026-09-10 — NOT CONFIRMED.** Log:
+`logs/hourofday_confirm_20260910.log`, hour set passed verbatim from above. The unrestricted
+F2+F3 arm reproduces W1's +33.23 on 4,258 trades, so the two harnesses agree.
+
+| unit | n restricted | net restricted | n unrestricted | net unrestricted | diff | clusters | 95% CI |
+|---|---|---|---|---|---|---|---|
+| F2s1 | 585 | +37.42 | 747 | +49.26 | −11.83 | 110 | [−34.63, +10.96] |
+| F2s2 | 652 | +37.18 | 830 | +36.37 | +0.81 | 135 | [−21.25, +22.87] |
+| F2s3 | 606 | +35.05 | 741 | +34.40 | +0.65 | 105 | [−20.95, +22.25] |
+| F3s1 | 631 | +50.13 | 725 | +40.35 | +9.79 | 87 | [−13.79, +33.37] |
+| F3s2 | 498 | +34.54 | 567 | +20.14 | +14.41 | 92 | [−10.99, +39.80] |
+| F3s3 | 549 | +26.08 | 648 | +12.87 | +13.21 | 137 | [−7.57, +33.99] |
+| F2 pooled | 1,843 | +36.56 | 2,318 | +39.89 | −3.34 | 144 | [−22.03, +15.36] |
+| F3 pooled | 1,678 | +37.64 | 1,940 | +25.26 | +12.38 | 143 | [−5.88, +30.64] |
+| **F2+F3 pooled** | 3,521 | +37.07 | 4,258 | +33.23 | **+3.84** | 286 | **[−9.50, +17.19]** |
+
+Retention 82.7% (passes the 60% floor). At the verified 11.84 line: +3.89 [−9.46, +17.23].
+Clustered SE of the difference 6.81 bps; **minimum detectable effect 13.3 bps per trade.**
+
+**Reading.** The registered criterion — lower bound > 0 — is not met, so the hour filter is
+**not confirmed** and does not enter the served rule. The in-sample +14.29 on F0+F1 shrank to
++3.84 out of sample, which is the ordinary fate of a 24-way selection. The two decision folds
+split in sign (F2 −3.3, F3 +12.4). Under the negative-results discipline this is **"not
+detectable at this power"**, not "hours do not matter": an effect under ~13 bps per trade is
+invisible to this test, and the point estimate sits inside that band. Closed on these folds;
+🔴 the hour set may not be re-chosen or re-tested on F2/F3 — those folds have now been read
+for this question. **Revival trigger:** a larger untouched sample (more folds under a new
+registration, or forward paper days), scored against the *same* recorded set.
 
 ### 9.3 The market-neutral probe
 

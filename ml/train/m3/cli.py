@@ -16,6 +16,8 @@
 
     M3_ERA=walkforward ./scripts/m3.sh -m m3 validate   # C3: every fold reproduces its log
     M3_ERA=walkforward ./scripts/m3.sh -m m3 folds      # WALKFORWARD_PROTOCOL §3's verdict
+    M3_ERA=walkforward ./scripts/m3.sh -m m3 coverage12 --stage explore   # §9.1
+    M3_ERA=walkforward ./scripts/m3.sh -m m3 hourofday --stage explore    # §9.2
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -1071,6 +1073,26 @@ def cmd_dryspells(args) -> int:
     return walkforward.dryspell_report(universe=args.universe)
 
 
+def cmd_coverage12(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.1 — served coverage at twelve pairs, on the folds.
+
+    Same incumbent spec as cmd_folds, for the same reason. The stage decides which folds
+    are read; the constants live in `walkforward`, not here.
+    """
+    return walkforward.coverage12_report(WINNER_SPEC, stage=args.stage,
+                                         exploration_recorded=args.exploration_recorded)
+
+
+def cmd_hourofday(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.2 — the hour-of-day probe, on the folds."""
+    hours = tuple(int(h) for h in args.hours.split(",")) if args.hours else None
+    if hours and any(h < 0 or h > 23 for h in hours):
+        raise SystemExit("--hours takes UTC hours 0..23")
+    return walkforward.hourofday_report(WINNER_SPEC, stage=args.stage,
+                                        exploration_recorded=args.exploration_recorded,
+                                        hours=hours)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1546,6 +1568,30 @@ def main() -> int:
                      help="12 (default, the served universe §6 pins the folds to) or the "
                           "8-pair diagnostic")
     dsp.set_defaults(fn=cmd_dryspells)
+
+    c12 = sub.add_parser("coverage12", help="WALKFORWARD_PROTOCOL §9.1: does a coverage cut "
+                         "derived over the twelve-pair population beat one derived over "
+                         "eight and applied to twelve? (needs M3_ERA=walkforward)")
+    c12.add_argument("--stage", choices=["explore", "confirm"], required=True,
+                     help="explore = F0+F1 (spends nothing); confirm = F2+F3, run ONCE after "
+                          "the explore table is recorded in §9.1")
+    c12.add_argument("--exploration-recorded", action="store_true",
+                     help="required by --stage confirm: asserts the F0+F1 table has been "
+                          "written into WALKFORWARD_PROTOCOL §9.1")
+    c12.set_defaults(fn=cmd_coverage12)
+
+    hod = sub.add_parser("hourofday", help="WALKFORWARD_PROTOCOL §9.2: does restricting entries "
+                         "to a UTC hour set chosen on F0+F1 improve net bps on F2+F3? "
+                         "(needs M3_ERA=walkforward)")
+    hod.add_argument("--stage", choices=["explore", "confirm"], required=True,
+                     help="explore = choose the set on F0+F1 by §9.2's rule; confirm = F2+F3, "
+                          "run ONCE with the recorded set")
+    hod.add_argument("--exploration-recorded", action="store_true",
+                     help="required by --stage confirm: the chosen set is written in §9.2")
+    hod.add_argument("--hours", default=None,
+                     help="--stage confirm only: the hour set, comma-separated UTC hours, "
+                          "transcribed from §9.2 (never recomputed)")
+    hod.set_defaults(fn=cmd_hourofday)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

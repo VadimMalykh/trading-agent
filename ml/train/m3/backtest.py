@@ -68,12 +68,13 @@ class PolicySpec:
     score_col: str | None = None           # rank entries on this column, not on `conf`
     score_min: float | None = None         # or take every bar with score >= this (rule R1)
     size_col: str | None = None            # per-bar size, already normalised by the fitter
+    entry_hours: tuple[int, ...] | None = None  # WALKFORWARD §9.2: keep entries only in these UTC hours
     label: str = ""
 
     def degrees_of_freedom(self) -> int:
         knobs = [self.coverage, self.hold_horizon, self.regime_col,
                  self.regime_min or self.regime_quantile,
-                 self.size_by_regime, self.max_concurrent]
+                 self.size_by_regime, self.max_concurrent, self.entry_hours]
         return sum(1 for k in knobs if k not in (None, False))
 
     def __post_init__(self) -> None:
@@ -237,6 +238,14 @@ def run(dumps: list[Dump], spec: PolicySpec,
             sel = sel[sel["side"] > 0]
         elif spec.sides == "short":
             sel = sel[sel["side"] < 0]
+
+        # --- the hour filter (WALKFORWARD_PROTOCOL §9.2) --------------------------------
+        # Applied AFTER the coverage cut and BEFORE the simulation: the cut is the
+        # incumbent's, derived over every bar, and a selected bar outside the hour set is
+        # simply not entered — so a pair it would have occupied is free for a later bar.
+        if spec.entry_hours is not None:
+            hour = pd.to_datetime(sel["ts"], unit="ns", utc=True).dt.hour
+            sel = sel[hour.isin(spec.entry_hours)]
 
         sel["size"] = 1.0
         if spec.size_col is not None:
