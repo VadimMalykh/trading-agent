@@ -22,7 +22,7 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 | ML train/backfill | `docker compose --profile ml run --rm ml_trainer python …` |
 | M3 offline policy analysis | `./scripts/m3.sh -m m3 validate` (torch-free `ml_analysis` image; see `docs/M3_PLAN.md` §0.0) |
 | Fee tier check (read-only key) | `docker compose exec app mix flux.fee_tier` — compares the account against the fee `ExecCost` charges |
-| Testnet order-path smoke | `BINANCE_TESTNET=true BINANCE_API_KEY=… BINANCE_API_SECRET=… docker compose exec app mix flux.testnet_smoke` (refuses without the testnet flag; `docs/REAL_MONEY_TRACK.md` §6) |
+| Testnet order-path smoke | `docker compose exec -e BINANCE_TESTNET=true -e BINANCE_API_KEY=… -e BINANCE_API_SECRET=… app mix flux.testnet_smoke` (`exec` needs `-e`; host env vars are not forwarded) (refuses without the testnet flag; `docs/REAL_MONEY_TRACK.md` §6) |
 | Elixir tests | `docker compose run --rm -e MIX_ENV=test -e POSTGRES_HOST=postgres app mix test` (workers do not start under `MIX_ENV=test`, so a run never touches Binance) |
 | Live policy state | `curl -s localhost:4001/api/health \| jq` — signal liveness, the live coverage cut, named skip reasons, both A/B arms (`docs/M3_5_INTEGRATION.md` §2) |
 | Inference | `curl http://localhost:8001/…` (or exec into `ml_inference`) |

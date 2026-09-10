@@ -55,8 +55,8 @@ defmodule Mix.Tasks.Flux.FeeTier do
       BINANCE_API_KEY / BINANCE_API_SECRET are not set in this container, so the account's
       real tier CANNOT be read. The constant above stays UNVERIFIED for today.
 
-      Set them (a read-only key) and re-run:
-        BINANCE_API_KEY=... BINANCE_API_SECRET=... docker compose exec app mix flux.fee_tier
+      Set them (a read-only key) and re-run — `exec` needs -e, host env is not forwarded:
+        docker compose exec -e BINANCE_API_KEY=... -e BINANCE_API_SECRET=... app mix flux.fee_tier
       """)
 
       exit({:shutdown, 1})

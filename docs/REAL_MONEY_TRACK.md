@@ -103,9 +103,10 @@ that has trading rights, and do not commit it — `.env` is gitignored (see `.gi
 ```sh
 # on fluxtrader-1
 cd ~/trading_agent
-# put BINANCE_API_KEY / BINANCE_API_SECRET in the app container's env, then:
+# put BINANCE_API_KEY / BINANCE_API_SECRET in .env and recreate app (docker compose up -d app),
+# or pass them for one run — `exec` does NOT forward host env vars, so use -e:
 docker compose exec app mix flux.fee_tier
-docker compose exec app mix flux.fee_tier --symbol ETHUSDT   # a second symbol, as a control
+docker compose exec -e BINANCE_API_KEY=... -e BINANCE_API_SECRET=... app mix flux.fee_tier --symbol ETHUSDT
 ```
 
 The task is already written (`apps/fluxtrader/lib/mix/tasks/flux.fee_tier.ex`) and signs the
@@ -280,8 +281,10 @@ they work against is `https://demo-fapi.binance.com`, which `BINANCE_TESTNET=tru
 
 ```sh
 # 1. one tiny round trip, entirely on the testnet, without the trading app running
-BINANCE_TESTNET=true BINANCE_API_KEY=<testnet key> BINANCE_API_SECRET=<testnet secret> \
-  docker compose exec app mix flux.testnet_smoke
+# ⚠️ `docker compose exec` does not forward host env vars: pass each with -e
+docker compose exec -e BINANCE_TESTNET=true \
+  -e BINANCE_API_KEY=<testnet key> -e BINANCE_API_SECRET=<testnet secret> \
+  app mix flux.testnet_smoke
 #    expect: filters, OPEN with a reconciled fill and two brake ids, HOLD, CLOSE with
 #    reason=timer, position flat before and after, and the last line TESTNET_OK
 

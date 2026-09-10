@@ -7,9 +7,12 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
   `Trading.ExchangeOrders` over `Binance.Trade.Rest` — without starting the trading
   application, and prints everything the exchange said.
 
-      BINANCE_TESTNET=true BINANCE_API_KEY=<testnet key> BINANCE_API_SECRET=<testnet secret> \\
-        docker compose exec app mix flux.testnet_smoke
-      ... mix flux.testnet_smoke --symbol ETHUSDT --hold-seconds 30 --notional 120
+      docker compose exec -e BINANCE_TESTNET=true \\
+        -e BINANCE_API_KEY=<testnet key> -e BINANCE_API_SECRET=<testnet secret> \\
+        app mix flux.testnet_smoke
+      ... app mix flux.testnet_smoke --symbol ETHUSDT --hold-seconds 30 --notional 120
+
+  (`docker compose exec` does not forward the host's environment; each variable needs `-e`.)
 
   🔴 **It refuses to run unless `BINANCE_TESTNET=true`.** There is no flag to point it at
   production; a production smoke test is a real trade, and that decision does not belong

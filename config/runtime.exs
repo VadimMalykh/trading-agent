@@ -76,7 +76,19 @@ if config_env() != :test do
       System.get_env("BINANCE_USER_STREAM_HOST") ||
         if(testnet?, do: "demo-fstream.binance.com", else: "fstream.binance.com")
 
-  config :fluxtrader, :trading, mode: System.get_env("TRADING_MODE", "simulation")
+  # A blank or unknown value is simulation, not a crash: `.env` on the VM carries an empty
+  # `TRADING_MODE=` line, and an executor started in mode "" would match no clause.
+  mode =
+    case System.get_env("TRADING_MODE", "simulation") do
+      m when m in ~w(simulation signal manual auto) ->
+        m
+
+      other ->
+        IO.warn("ignoring TRADING_MODE=#{inspect(other)}; running in simulation")
+        "simulation"
+    end
+
+  config :fluxtrader, :trading, mode: mode
 end
 
 # Ecto query logging — every environment, resolved at boot rather than at compile time so
