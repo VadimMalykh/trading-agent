@@ -23,24 +23,37 @@ file is tables.*
 
 ---
 
-## 🔴 Right now — what 2026-09-10 left open
+## 🔴 Right now — where 2026-09-10 ended, and where to continue
 
-**The forward test's silence is root-caused, and the fix is deployed — the forward clock restarted at 2026-09-10 04:50 UTC.**
-Since the 2026-08-24 promotion `ml_inference` on `fluxtrader-1` has been building the 5m
-checkpoint's features from **1-minute candles** (`docker-compose.yml` sets no
-`CANDLE_INTERVAL` for that service; `config.py` defaults to `1m`). Every input at a fifth of
-its trained scale compresses the confidence tail, and the checkpoint hash matched the whole
-time, so the §9.5 guard could not see it. Replaying serve at 1m reproduces the live rows to
-4 dp; the corrected serve equals `eval_m2.py` to 6e-8. Full record:
-[M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.5.
+**Three things happened on 2026-09-10, in this order.** (1) The forward paper test was
+restarted on the right bar size at **04:50 UTC** — `ml_inference` had been feeding the 5m
+checkpoint 1-minute candles since 08-24 ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md)
+§7.5); the pre-deploy `policy_bars` were deleted, `paper_trades` is empty, the clock starts
+there. (2) The fee tier was read off the account for the first time: **taker 5.0 bps/side, not
+4.0**; every measured cost now carries +2.0 bps per round trip, and M3_4_RESULTS §7 was re-run
+at the true fee ([REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §5). (3) The real-money track's
+three steps were **all finished**: the order path is signed, reconciled, braked through the
+Algo Order API, watched by the user-data stream, and **demonstrated on the Binance demo
+exchange end to end** (§6.1, §6.2 there). Nothing is authorised to trade real money — the
+evidence blocker is untouched — but the mechanics no longer are one.
 
-**The walk-forward verdict (CONFIRMED) is untouched** — it is measured offline on 5m bars.
+**The mode is: build, with the forward clock running in the background.** The one question
+only calendar answers is whether the policy earns money forward. Everything below is work
+that needs no market. What the wait forbids is changing the model or the rule *because* the
+test is silent.
 
-| # | item | owner | state |
+| # | item | owner | state / what to do |
 |---|---|---|---|
-| 1 | ✅ **Deploy the candle-interval fix and restart the forward clock** | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.5 | **DONE 2026-09-10 04:50 UTC.** Verified live: `ml_inference` `/health` reads `candle_interval: 5m, source: checkpoint`, sha `882cd415…`; `/api/health` reads `checkpoint_bound: true`, `served_candle_interval: 5m` = `expected_candle_interval: 5m`, no skips other than `below_coverage`. **The open decision was resolved as delete:** `policy_bars` was cleared, so the first row is 04:50:50 and the retrain trigger's `watching_since` is the deploy. `paper_trades` is empty. Nothing scored before this moment survives anywhere |
-| 2 | **§4.3's four confirmations** — the payoff of a CONFIRMED verdict | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §9 | 🟡 **registered 2026-09-09, none run.** Served coverage at twelve pairs, hour-of-day, market-neutral, and a learned/RL policy. §9.0 states the two rules that govern all four: explore on F0+F1 and confirm on F2+F3 *once* (there is no second copy of untouched history), and write every one as a within-fold contrast because the §7.2 training-size penalty makes absolute claims invalid |
-| 3 | **Restate the retrain trigger's N** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §8.5 | 🟡 **§8 ran and returned NOT DECIDABLE; N = 65 stands.** §8.5 records honestly that the registered statistic was the wrong one — p95 of inter-bar gaps measures signal density, not silence. Needs a fresh pre-registration choosing a tail statistic |
+| 1 | **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔵 **RUNNING since 2026-09-10 04:50 UTC, mode `simulation`, corrected fee.** Check on the VM: `curl -s localhost:4000/api/health \| jq '{policy, ab, exec_cost}'` — expect `checkpoint_bound: true`, both candle-interval fields `5m`, `fee_tier_verified: true`, `executor.auto_refused: null`. First trade expected in **days, not weeks** (offline: 11 of the 15 days 08-20 → 09-03 cleared the cut); a calm day fires nothing; the longest dry spell ever measured is 21.5 days. 🔴 Do not change anything on the VM while it accumulates |
+| 2 | **§4.3's four confirmations on the folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §9 | 🟡 **THE RECOMMENDED NEXT WORK — registered 2026-09-09, none run, needs no market and no GPU.** Served coverage at twelve pairs, hour-of-day, market-neutral, a learned/RL policy. §9.0's two rules: explore on F0+F1, confirm on F2+F3 once; write every one as a within-fold contrast |
+| 3 | **Going live, when the evidence exists** | [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §4, §6 | 🟢 **MECHANICALLY READY, NOT AUTHORISED.** What it would take, and nothing here is to be done now: a production key **with** futures-trading rights (the one in `.env` is read-only), `TRADING_MODE=auto` on the VM, `BINANCE_TESTNET` unset, and an explicit decision recorded here with the forward evidence it rests on. 🔴 Switching the VM to `auto` puts exchange-filled rows into the same ledger the A/B is registered on paper; that is a new registration, not a config change |
+| 4 | **Restate the retrain trigger's N** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §8.5 | 🟡 N = 65 stands; needs a fresh pre-registration choosing a tail statistic |
+| 5 | **The `flux.fee_tier` ETHUSDT control** | [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §2 step 1 | 🟡 a formality — the fee is account-level — `docker compose exec app mix fee_tier --symbol ETHUSDT` on the VM, expect MATCH |
+
+**Operational rules learned today, so nobody re-learns them:** after a `git pull`, run
+`docker compose exec app mix compile` **before** any `mix <task>` (a task that compiles on the
+way in still runs the old beam); `docker compose exec` needs `-e` for every env var; the demo
+exchange's fee is 4.0 bps and its book is thin, so nothing measured there is a production number.
 
 **Closed on 2026-09-09, with links to the record:**
 

@@ -1,7 +1,8 @@
 # The real-money track — the three blockers, in the order they must be done
 
-**Status: 🔵 ACTIVE — steps 1 and 2 DONE, step 3 BUILT on 2026-09-10; the testnet run is
-what remains.** Opened 2026-09-01. Owner of the detail for the three rows filed under
+**Status: ✅ ALL THREE STEPS DONE 2026-09-10 — the mechanical blockers are cleared; the
+evidence blocker (§4) is not, and this document still does not authorise real money.**
+Opened 2026-09-01. Owner of the detail for the three rows filed under
 "🔴 Open — blockers on trading anything but paper" in [BACKLOG.md](./BACKLOG.md).
 
 ## §-1 — Where this stands on 2026-09-10, and what to run next
@@ -10,7 +11,7 @@ what remains.** Opened 2026-09-01. Owner of the detail for the three rows filed 
 |---|---|
 | 1 fee tier | ✅ **VERIFIED — and the assumption was wrong.** `mix flux.fee_tier` on `fluxtrader-1` with a read-only key: **taker 5.000 / maker 2.000 bps per side** (BTCUSDT). M3-4 assumed 4.0. The correction is +2.0 bps per round trip on every measured cost; `Trading.ExecCost` now charges it (§5 below). Only BTCUSDT was read; the fee is account-level on USDⓈ-M, so the ETHUSDT control is a formality — run it when convenient |
 | 2 stop/target | ✅ **DECIDED: (a) keep.** The brake is now actually placed on the exchange on the auto path — until this build it was computed and dropped |
-| 3 signing | ✅ **BUILT AND DEMONSTRATED ON THE TESTNET, 2026-09-10** (§6.1 below): signed open, reconciled fill, both brakes attached as algo orders, reduce-only close, flat after. 123/123 tests. Still not exercised live: the user-data stream against a running `auto` executor, which is the local-stack step of the runbook |
+| 3 signing | ✅ **BUILT AND DEMONSTRATED, 2026-09-10** — on the demo exchange from the VM (§6.1: signed open, reconciled fill, both brakes as algo orders, reduce-only close, flat after) **and** against a running `auto` executor on the local stack (§6.2: listenKey, fills, positions, ledger mismatch, brake-fill matching). 123/123 tests |
 
 **Q1 (a)** — the read-only key lives in `fluxtrader-1`'s `.env`. **Q2 (a)** — keep.
 **Q3 (a)** — build it all now. All three answered by Vadim on 2026-09-10.
@@ -356,7 +357,44 @@ Three things the runs before this one taught, all fixed the same day:
   still runs the already-loaded old beam; both "stale" failures of the day were this.
 
 ⚠️ The −7.6 bps slip on 0.0007 BTC is the **demo book**, which is thin; it says nothing about
-production slippage, which M3-4 measured.
+production slippage, which M3-4 measured. Likewise the demo charges **4.0 bps** commission
+(0.0218762 on 54.69 USDT), not the 5.0 the production account pays.
+
+### §6.2 — The user-data stream against a running `auto` executor, 2026-09-10 (local stack)
+
+Local `app` started with `BINANCE_TESTNET=true TRADING_MODE=auto` and the demo keys in the
+shell environment (never in a file); `ml_inference` locally serves a different checkpoint, so
+the policy guard (`checkpoint_bound: false`) kept real signals from trading — the executor
+and the stream were live, the rule was not. Then `flux.testnet_smoke --hold-seconds 45` drove
+a demo position through while `/api/health` was read:
+
+```
+user_stream (before):  status connected, listen_key_present true, positions {}, mismatches []
+user_stream (during):  positions {BTCUSDT: amount 0.0007, entry 78129.3}
+                       mismatches [{symbol BTCUSDT, on exchange_only}]   <- correct: the smoke bypasses the ledger
+                       recent_fills: 28579020761 MARKET BUY NEW, then FILLED qty 0.0007 @78129.3 fee 0.0218762
+user_stream (after):   positions {}, mismatches [], 4 fills (BUY NEW/FILLED, SELL reduceOnly NEW/FILLED)
+app log:               [AUTO] fill on BTCUSDT order 28579021315 is not an open row's brake — ignored
+```
+
+So: the listenKey lifecycle, `ORDER_TRADE_UPDATE`, `ACCOUNT_UPDATE`, the exchange-vs-ledger
+mismatch, and the brake-fill matcher (which correctly declined a reduce-only fill that no row
+owned) all ran against the real stream. **Not exercised live, by construction:** a brake
+actually triggering on the exchange and being booked onto a row. That path is
+`executor_auto_test.exs` ("a brake fill reported by the user stream closes the row") against
+the fake; exercising it live needs a position opened *by the executor* with a trigger price
+inside the noise, which is a deliberate test to design, not a smoke to run. The local `app`
+was recreated back in `simulation` afterwards.
+
+### §6.3 — Where to continue from here
+
+1. Nothing on this track is pending. The forward test runs; see BACKLOG "Right now".
+2. If a brake-trigger live test is wanted: give `flux.testnet_smoke` a `--stop-pct` option
+   *and* have it write a ledger row through `Executor.open/3` (needs the app's node, so it
+   would be an HTTP or remote-shell entry point, not a Mix task) — then watch
+   `exit_reason: stop` appear on the row. Design it before running it.
+3. Going live is BACKLOG "Right now" row 3: a trading-enabled production key, `TRADING_MODE=auto`,
+   `BINANCE_TESTNET` unset, and — first — a recorded decision resting on forward evidence.
 
 **Not built, on purpose:** limit orders (M3-4 §3), hedge-mode position sides (the account is
 one-way), and any automatic switch to production. `TRADING_MODE=auto` on `fluxtrader-1`
