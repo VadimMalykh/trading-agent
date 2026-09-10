@@ -247,10 +247,20 @@ enabled; the undiscounted VIP-0 rate is 5.0. What changes and what does not:
   14 = 4 + 4 + 3 + 3 assumed; the true line is now 5 + 5 + measured slippage ≈ **11.84**
   pooled, so every net-at-14 number (M3-2, the walk-forward W1 +33.23) is still ~2 bps
   *below* the truth rather than ~4. Nothing flips.
-* **M3_4_RESULTS §7's re-score at measured cost** — every net number there is ~2.0 bps × mean
-  size too high. The winner's worst window was +2.43 against the +0.25 bar; ~+0.4 after
-  the correction, still above it, but close enough that it should be re-read off a re-run,
-  not inferred. Filed in BACKLOG as a one-command follow-up, not done here.
+* **M3_4_RESULTS §7's re-score, RE-RUN at the corrected fee (2026-09-10, probe
+  `ml/train/output/probe/rescore_fee.py`, both eras, re-score only — nothing re-searched):**
+
+  | era | winner worst window @14 | @measured 4.0 (as published) | **@measured 5.0** | pooled @5.0 | eligible configs clearing +0.25 |
+  |---|---|---|---|---|---|
+  | pre-repair (§7 as published) | +0.25 | +2.43 | **+0.38** | +18.37 | 3 → **1** (the winner only) |
+  | repaired (the era in force) | −4.61 | −2.38 | **−4.43** | +17.06 | 0 → 0 |
+
+  So on the published era the winner still clears the +0.25 promotion bar, by 0.13 bps —
+  a coin toss, not a margin. On repaired data the verdict is what M3_2_RESULTS_REPAIRED
+  already says: it fails the +0.25 bar and passes Tier 1's −5 floor, and the true cost
+  (−4.43) lands *between* the published −4.61 at 14 and −2.38 at the too-optimistic fee.
+  Nothing flips in either direction; the "measured cost moved things in our favour" reading
+  of M3_PLAN §0 item 2 is now worth about +2 bps a trade rather than +4.
 * **An exchange-filled row** is charged **10.0 bps** (two taker fees) and nothing else,
   because slippage is already inside a real fill price — `ExecCost.fee_only_round_trip_bps/0`.
 

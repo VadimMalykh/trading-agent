@@ -28,8 +28,10 @@ Against the assumed **14 bps taker** and **5 bps maker** in `metrics.py`. `delta
 the account pays **taker 5.0 bps/side**, not the 4.0 this study decomposed to. Every `C_taker`
 in §1, §6 and §7 is therefore **2.0 bps per round trip too low**; Q1 is **+11.842**, not
 +9.842, and the interval still excludes 14. The tables are left as measured; the correction is
-applied in one place, `Trading.ExecCost`, and §7's re-score should be re-run before its numbers
-are quoted (BACKLOG). Record: [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §5.
+applied in one place, `Trading.ExecCost`. §7 re-run at the corrected fee (same era as this
+file): the winner's worst window is **+0.38**, not +2.43 — still over the +0.25 bar, by 0.13 —
+and it is the only eligible configuration that still clears. On repaired data it is −4.43.
+Record: [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §5.
 
 * **Q1 — C_taker** = +9.842 bps  t95 [+9.752, +9.932]  boot95 [+9.753, +9.930]  (G=23, n=51,398)
   * against 14 bps: **EXCLUDES 14 (below)**
