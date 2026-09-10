@@ -44,17 +44,19 @@ defmodule FluxTrader.Trading.ExchangeOrdersTest do
 
     assert [{:set_leverage, ["BTCUSDT", 5]}] = Fake.calls(:set_leverage)
 
-    [{:place_order, [market]}, {:place_order, [stop]}, {:place_order, [target]}] =
-      Fake.calls(:place_order)
-
+    [{:place_order, [market]}] = Fake.calls(:place_order)
     assert market[:type] == "MARKET" and market[:quantity] == 0.008
     assert market[:newOrderRespType] == "RESULT"
     refute Keyword.has_key?(market, :reduceOnly)
 
+    # The brake goes through the Algo Order API (-4120 on the plain endpoint, 2026-09-10).
+    [{:place_algo_order, [stop]}, {:place_algo_order, [target]}] = Fake.calls(:place_algo_order)
+    assert stop[:algoType] == "CONDITIONAL"
     assert stop[:type] == "STOP_MARKET" and stop[:side] == "SELL"
-    assert stop[:stopPrice] == 98_000.0 and stop[:closePosition] == "true"
+    assert stop[:triggerPrice] == 98_000.0 and stop[:closePosition] == "true"
     assert stop[:workingType] == "MARK_PRICE"
-    assert target[:type] == "TAKE_PROFIT_MARKET" and target[:stopPrice] == 104_000.1
+    refute Keyword.has_key?(stop, :quantity)
+    assert target[:type] == "TAKE_PROFIT_MARKET" and target[:triggerPrice] == 104_000.1
   end
 
   test "open: a response without the fill is reconciled against GET /order until terminal" do
@@ -128,8 +130,7 @@ defmodule FluxTrader.Trading.ExchangeOrdersTest do
     {:ok, _} =
       Fake.start(
         responses: %{
-          place_order: [
-            {:ok, %{"orderId" => 1, "status" => "FILLED", "avgPrice" => "100010", "executedQty" => "0.008"}},
+          place_algo_order: [
             {:error, {400, %{"code" => -2021, "msg" => "Order would immediately trigger."}}}
           ]
         }
@@ -149,6 +150,7 @@ defmodule FluxTrader.Trading.ExchangeOrdersTest do
     assert fill.executed_qty == 0.008
 
     assert [{:cancel_all_open_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_open_orders)
+    assert [{:cancel_all_algo_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_algo_orders)
     [{:place_order, [market]}] = Fake.calls(:place_order)
     assert market[:reduceOnly] == "true" and market[:side] == "SELL"
   end
@@ -160,10 +162,13 @@ defmodule FluxTrader.Trading.ExchangeOrdersTest do
           place_order: [
             {:error, {400, %{"code" => -2022, "msg" => "ReduceOnly Order is rejected."}}}
           ],
+          get_algo_order: [
+            # stop (algo 2): never triggered; target (algo 3): triggered, created order 77
+            {:ok, %{"algoId" => 2, "algoStatus" => "CANCELED", "actualOrderId" => 0}},
+            {:ok, %{"algoId" => 3, "algoStatus" => "FINISHED", "actualOrderId" => 77}}
+          ],
           get_order: [
-            # stop (id 2): not filled; target (id 3): filled
-            {:ok, %{"orderId" => 2, "status" => "CANCELED", "avgPrice" => "0", "executedQty" => "0"}},
-            {:ok, %{"orderId" => 3, "status" => "FILLED", "avgPrice" => "104000.1", "executedQty" => "0.008"}}
+            {:ok, %{"orderId" => 77, "status" => "FILLED", "avgPrice" => "104000.1", "executedQty" => "0.008"}}
           ]
         }
       )
@@ -172,7 +177,7 @@ defmodule FluxTrader.Trading.ExchangeOrdersTest do
     assert {:ok, fill} = ExchangeOrders.close(Fake, close)
     assert fill.exit_reason == "target"
     assert fill.avg_price == 104_000.1
-    assert fill.order_id == 3
+    assert fill.order_id == 77
   end
 
   test "close: -2022 with neither brake filled is position_missing, never a guessed price" do

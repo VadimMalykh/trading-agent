@@ -35,6 +35,17 @@ defmodule FluxTrader.Binance.Trade.Rest do
   def place_order(params), do: Client.signed_post("/fapi/v1/order", params)
 
   @impl true
+  def place_algo_order(params), do: Client.signed_post("/fapi/v1/algoOrder", params)
+
+  @impl true
+  def get_algo_order(symbol, algo_id),
+    do: Client.signed_get("/fapi/v1/algoOrder", symbol: symbol, algoId: algo_id)
+
+  @impl true
+  def cancel_all_algo_orders(symbol),
+    do: Client.signed_delete("/fapi/v1/algoOpenOrders", symbol: symbol)
+
+  @impl true
   def get_order(symbol, order_id),
     do: Client.signed_get("/fapi/v1/order", symbol: symbol, orderId: order_id)
 

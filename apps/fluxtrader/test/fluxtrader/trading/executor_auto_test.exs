@@ -102,12 +102,10 @@ defmodule FluxTrader.Trading.ExecutorAutoTest do
     assert is_integer(trade.entry_order_id)
     assert is_integer(trade.stop_order_id) and is_integer(trade.target_order_id)
 
-    # The brake was placed at the risk manager's prices, rounded to the tick.
-    [{:place_order, [_market]}, {:place_order, [stop]}, {:place_order, [target]}] =
-      Fake.calls(:place_order)
-
-    assert stop[:stopPrice] == Float.round(order.stop_loss, 1)
-    assert target[:stopPrice] == Float.round(order.take_profit, 1)
+    # The brake was placed at the risk manager's prices, rounded to the tick, as algo orders.
+    [{:place_algo_order, [stop]}, {:place_algo_order, [target]}] = Fake.calls(:place_algo_order)
+    assert stop[:triggerPrice] == Float.round(order.stop_loss, 1)
+    assert target[:triggerPrice] == Float.round(order.take_profit, 1)
   end
 
   test "the control arm never reaches the exchange, whatever the mode" do
@@ -139,7 +137,8 @@ defmodule FluxTrader.Trading.ExecutorAutoTest do
     assert_in_delta closed.net_bps, -ExecCost.fee_only_round_trip_bps(), 1.0e-9
 
     assert [{:cancel_all_open_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_open_orders)
-    [_, _, _, {:place_order, [close_order]}] = Fake.calls(:place_order)
+    assert [{:cancel_all_algo_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_algo_orders)
+    [_, {:place_order, [close_order]}] = Fake.calls(:place_order)
     assert close_order[:reduceOnly] == "true" and close_order[:side] == "SELL"
     assert close_order[:quantity] == 0.005
   end
@@ -154,11 +153,24 @@ defmodule FluxTrader.Trading.ExecutorAutoTest do
     {:ok, trade} = Executor.open("policy", d, approved_order(d))
     assert %{open_positions: 1} = RiskManager.get_stats()
 
-    assert {:ok, closed} = Executor.brake_filled(trade.stop_order_id, 98_000.0)
+    # The stop algo triggered and created order 501, which filled. The stream reports the
+    # ORDER; the executor asks the exchange which algo it belongs to.
+    Fake.start(
+      responses: %{
+        get_algo_order: [
+          fn _sym, algo_id ->
+            {:ok, %{"algoId" => algo_id, "algoStatus" => "FINISHED", "actualOrderId" => 501}}
+          end
+        ]
+      }
+    )
+
+    assert {:ok, closed} = Executor.brake_filled("BTCUSDT", 501, 98_000.0)
     assert closed.exit_reason == "stop"
     assert closed.exit_price == 98_000.0
-    assert closed.exit_order_id == trade.stop_order_id
+    assert closed.exit_order_id == 501
     assert [{:cancel_all_open_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_open_orders)
+    assert [{:cancel_all_algo_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_algo_orders)
     assert Ledger.open_trades("policy") == []
     # The slot went back and the loss was booked against the daily limit.
     assert %{open_positions: 0, daily_pnl: pnl} = RiskManager.get_stats()
@@ -166,6 +178,7 @@ defmodule FluxTrader.Trading.ExecutorAutoTest do
 
     # The timed close that follows must not book the row a second time.
     assert {:error, :already_closed} = Executor.close(trade, 97_000.0)
-    assert {:error, :unknown_order} = Executor.brake_filled(999_999, 1.0)
+    # Our own timed close, or a manual one, matches no open row and is ignored.
+    assert {:error, :unknown_order} = Executor.brake_filled("BTCUSDT", 999_999, 1.0)
   end
 end

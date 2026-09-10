@@ -90,12 +90,14 @@ defmodule FluxTrader.Trading.Executor do
   def status, do: GenServer.call(__MODULE__, :status)
 
   @doc """
-  A brake order filled on the exchange — reported by `Binance.UserStream`. Books the close
-  on the row that holds `order_id` as its stop or target, cancels the sibling brake, and
-  settles the risk manager. A fill on an order no open row knows is logged and ignored.
+  A reduce/close order filled on the exchange — reported by `Binance.UserStream`. If
+  `order_id` is the triggered order of an open row's stop or target algo, books the close
+  on that row, cancels the sibling brake, and settles the risk manager. A fill no open row
+  owns (our own timed close, whose row is already booked; a manual close) is ignored.
   """
-  def brake_filled(order_id, avg_price) when is_integer(order_id) and is_number(avg_price),
-    do: GenServer.call(__MODULE__, {:brake_filled, order_id, avg_price}, 30_000)
+  def brake_filled(symbol, order_id, avg_price)
+      when is_binary(symbol) and is_integer(order_id) and is_number(avg_price),
+      do: GenServer.call(__MODULE__, {:brake_filled, symbol, order_id, avg_price}, 30_000)
 
   @impl true
   def init(_opts) do
@@ -168,8 +170,8 @@ defmodule FluxTrader.Trading.Executor do
     {:reply, do_close(state.mode, trade, exit_price, state), state}
   end
 
-  def handle_call({:brake_filled, order_id, avg_price}, _from, state) do
-    {:reply, do_brake_filled(order_id, avg_price, state), state}
+  def handle_call({:brake_filled, symbol, order_id, avg_price}, _from, state) do
+    {:reply, do_brake_filled(symbol, order_id, avg_price, state), state}
   end
 
   def handle_call(:get_positions, _from, state) do
@@ -385,22 +387,30 @@ defmodule FluxTrader.Trading.Executor do
 
   # ------------------------------------------------------------------ brake fills
 
-  defp do_brake_filled(order_id, avg_price, state) do
-    case Ledger.open_trade_by_brake(order_id) do
+  defp do_brake_filled(symbol, order_id, avg_price, state) do
+    match =
+      Enum.find_value(Ledger.open_exchange_trades(symbol), fn trade ->
+        case ExchangeOrders.which_brake(state.client, symbol, order_id,
+               [trade.stop_order_id, trade.target_order_id]) do
+          {:ok, 0} -> {trade, "stop"}
+          {:ok, 1} -> {trade, "target"}
+          :none -> nil
+        end
+      end)
+
+    case match do
       nil ->
-        Logger.warning("[AUTO] brake fill on order #{order_id} matches no open row — ignored")
+        Logger.info("[AUTO] fill on #{symbol} order #{order_id} is not an open row's brake — ignored")
         {:error, :unknown_order}
 
-      %PaperTrade{} = trade ->
-        reason = if trade.stop_order_id == order_id, do: "stop", else: "target"
-
+      {%PaperTrade{} = trade, reason} ->
         Logger.warning(
           "[AUTO] BRAKE FIRED: #{reason} on #{trade.pair} @ #{fmt(avg_price)} (order #{order_id})"
         )
 
         # The sibling brake is still resting and would act on the NEXT position on this
         # symbol if it were left there.
-        _ = state.client.cancel_all_open_orders(trade.pair)
+        ExchangeOrders.cancel_brakes(state.client, trade.pair)
 
         case book_close("AUTO", trade, avg_price, %{exit_reason: reason, exit_order_id: order_id}) do
           {:ok, closed} ->

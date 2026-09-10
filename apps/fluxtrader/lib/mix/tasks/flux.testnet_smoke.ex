@@ -102,6 +102,12 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
     IO.puts("  filled qty=#{fill.executed_qty} avg=#{fill.avg_price} order=#{fill.order_id}")
     IO.puts("  stop=#{inspect(fill.stop_order_id)} target=#{inspect(fill.target_order_id)}")
 
+    if is_nil(fill.stop_order_id) or is_nil(fill.target_order_id) do
+      # Q2 is "keep the brake": a position without one is not the path we intend to trade
+      # with, so it is not OK — but the position is real and must still be closed below.
+      IO.puts("  ⚠️ BRAKE MISSING — the run will close the position and then FAIL")
+    end
+
     IO.puts("\nHOLD #{hold_s}s")
     Process.sleep(hold_s * 1_000)
     show_position(client, symbol, "during")
@@ -128,6 +134,16 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
 
     _ = client.cancel_all_open_orders(symbol)
     assert_flat!(client, symbol, "after")
+
+    if is_nil(fill.stop_order_id) or is_nil(fill.target_order_id) do
+      Mix.shell().error(
+        "TESTNET_UNBRAKED — open, close and reconcile succeeded on #{symbol}, but the brake " <>
+          "did not attach (see the [AUTO] errors above). Not OK until it does."
+      )
+
+      exit({:shutdown, 4})
+    end
+
     IO.puts("\nTESTNET_OK — open, brake, close and reconcile all succeeded on #{symbol}")
   end
 

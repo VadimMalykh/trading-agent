@@ -41,6 +41,15 @@ defmodule FluxTrader.Binance.Trade.Fake do
   def place_order(params), do: answer(:place_order, [params])
 
   @impl true
+  def place_algo_order(params), do: answer(:place_algo_order, [params])
+
+  @impl true
+  def get_algo_order(symbol, algo_id), do: answer(:get_algo_order, [symbol, algo_id])
+
+  @impl true
+  def cancel_all_algo_orders(symbol), do: answer(:cancel_all_algo_orders, [symbol])
+
+  @impl true
   def get_order(symbol, order_id), do: answer(:get_order, [symbol, order_id])
 
   @impl true
@@ -125,6 +134,15 @@ defmodule FluxTrader.Binance.Trade.Fake do
         {:ok, %{"orderId" => id, "status" => "NEW", "type" => type}}
     end
   end
+
+  defp default(:place_algo_order, [params], id),
+    do: {:ok, %{"algoId" => id, "algoStatus" => "NEW", "symbol" => Keyword.get(params, :symbol),
+                "triggerPrice" => to_string(Keyword.get(params, :triggerPrice)), "actualOrderId" => 0}}
+
+  defp default(:get_algo_order, [symbol, algo_id], _),
+    do: {:ok, %{"algoId" => algo_id, "symbol" => symbol, "algoStatus" => "NEW", "actualOrderId" => 0}}
+
+  defp default(:cancel_all_algo_orders, _, _), do: {:ok, %{"code" => 200, "msg" => "ok"}}
 
   defp default(:get_order, [symbol, order_id], _),
     do: {:ok, %{"orderId" => order_id, "symbol" => symbol, "status" => "NEW", "avgPrice" => "0", "executedQty" => "0"}}

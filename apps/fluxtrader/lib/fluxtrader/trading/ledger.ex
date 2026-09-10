@@ -257,14 +257,11 @@ defmodule FluxTrader.Trading.Ledger do
     |> Repo.insert()
   end
 
-  @doc "The open trade holding `order_id` as its stop or target, if any — for brake fills."
-  def open_trade_by_brake(order_id) when is_integer(order_id) do
-    Repo.one(
+  @doc "Open exchange-filled policy rows on `pair` — the rows a brake fill could belong to."
+  def open_exchange_trades(pair) do
+    Repo.all(
       from(t in PaperTrade,
-        where:
-          t.status == "open" and
-            (t.stop_order_id == ^order_id or t.target_order_id == ^order_id),
-        limit: 1
+        where: t.status == "open" and t.pair == ^pair and t.fill_source == "exchange"
       )
     )
   end

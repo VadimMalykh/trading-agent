@@ -46,6 +46,8 @@ defmodule FluxTrader.Trading.PaperTrade do
     field(:fill_source, :string, default: "paper")
     field(:entry_order_id, :integer)
     field(:exit_order_id, :integer)
+    # ALGO ids (POST /fapi/v1/algoOrder), not order ids: a triggered brake creates a normal
+    # order whose id is the algo's `actualOrderId`. Column names kept from the first cut.
     field(:stop_order_id, :integer)
     field(:target_order_id, :integer)
     field(:exit_reason, :string)

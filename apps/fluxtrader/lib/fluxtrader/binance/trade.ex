@@ -27,6 +27,20 @@ defmodule FluxTrader.Binance.Trade do
   """
   @callback place_order(params :: keyword()) :: result
 
+  @doc """
+  POST /fapi/v1/algoOrder — a conditional order (`algoType=CONDITIONAL`; `STOP_MARKET` /
+  `TAKE_PROFIT_MARKET` with `triggerPrice`, `closePosition`, `workingType`). Since 2026 the
+  plain order endpoint rejects these types with `-4120`. Answers with an `algoId`; when the
+  trigger fires the exchange creates a normal order whose id is the algo's `actualOrderId`.
+  """
+  @callback place_algo_order(params :: keyword()) :: result
+
+  @doc "GET /fapi/v1/algoOrder — an algo order's status and, once triggered, its `actualOrderId`."
+  @callback get_algo_order(symbol :: String.t(), algo_id :: integer()) :: result
+
+  @doc "DELETE /fapi/v1/algoOpenOrders — every resting algo order on the symbol."
+  @callback cancel_all_algo_orders(symbol :: String.t()) :: result
+
   @doc "GET /fapi/v1/order — the order's current status, fill price and filled quantity."
   @callback get_order(symbol :: String.t(), order_id :: integer()) :: result
 

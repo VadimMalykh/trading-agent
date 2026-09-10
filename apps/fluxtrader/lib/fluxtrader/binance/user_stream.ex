@@ -10,9 +10,11 @@ defmodule FluxTrader.Binance.UserStream do
     * opens a `listenKey` (`POST /fapi/v1/listenKey`), connects to
       `wss://<host>/ws/<listenKey>`, and keeps the key alive every 30 minutes (Binance
       expires it after 60);
-    * on `ORDER_TRADE_UPDATE` with a `FILLED` `STOP_MARKET` / `TAKE_PROFIT_MARKET`, tells
-      `Trading.Executor.brake_filled/2`, which books the close on the row that owns the
-      order and cancels the sibling brake;
+    * on `ORDER_TRADE_UPDATE` with a `FILLED` reduce-only / close-all order, tells
+      `Trading.Executor.brake_filled/3`, which checks whether that order is the triggered
+      order of an open row's stop or target algo and, if so, books the close and cancels
+      the sibling brake. Our own timed close also arrives here; its row is already booked,
+      so it matches nothing and is ignored;
     * on `ACCOUNT_UPDATE`, keeps the exchange's position list, and `status/0` compares it
       with the ledger's open exchange-filled rows so a mismatch is visible on
       `/api/health` rather than discovered at the next close.
@@ -178,13 +180,17 @@ defmodule FluxTrader.Binance.UserStream do
     end
   end
 
-  # {"e":"ORDER_TRADE_UPDATE","o":{"s":sym,"i":orderId,"o":type,"S":side,"X":status,
-  #   "x":execType,"ap":avgPrice,"z":cumFilledQty,"n":commission,"N":asset,"rp":realizedPnl}}
+  # {"e":"ORDER_TRADE_UPDATE","o":{"s":sym,"i":orderId,"o":type,"ot":origType,"S":side,
+  #   "X":status,"x":execType,"ap":avgPrice,"z":cumFilledQty,"n":commission,"N":asset,
+  #   "rp":realizedPnl,"R":reduceOnly,"cp":closeAll}}
   def handle_event(%{"e" => "ORDER_TRADE_UPDATE", "o" => o}, state) do
     fill = %{
       symbol: o["s"],
       order_id: o["i"],
       type: o["o"],
+      orig_type: o["ot"],
+      reduce_only: o["R"] == true,
+      close_all: o["cp"] == true,
       side: o["S"],
       status: o["X"],
       avg_price: to_f(o["ap"]),
@@ -200,9 +206,13 @@ defmodule FluxTrader.Binance.UserStream do
         "#{fill.status} qty=#{fill.filled_qty} @ #{fill.avg_price} fee=#{fill.commission}"
     )
 
-    if fill.status == "FILLED" and fill.type in ["STOP_MARKET", "TAKE_PROFIT_MARKET"] and
-         is_integer(fill.order_id) do
-      _ = safe(fn -> Executor.brake_filled(fill.order_id, fill.avg_price) end)
+    closing? =
+      fill.reduce_only or fill.close_all or
+        fill.orig_type in ["STOP_MARKET", "TAKE_PROFIT_MARKET"] or
+        fill.type in ["STOP_MARKET", "TAKE_PROFIT_MARKET"]
+
+    if fill.status == "FILLED" and closing? and is_integer(fill.order_id) and is_binary(fill.symbol) do
+      _ = safe(fn -> Executor.brake_filled(fill.symbol, fill.order_id, fill.avg_price) end)
     end
 
     %{state | recent_fills: Enum.take([fill | state.recent_fills], @recent_fills)}

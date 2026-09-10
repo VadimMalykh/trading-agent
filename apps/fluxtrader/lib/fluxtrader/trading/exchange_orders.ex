@@ -17,7 +17,11 @@ defmodule FluxTrader.Trading.ExchangeOrders do
      status is not terminal, poll `GET /order` up to #{10} times. A row is written from
      `avgPrice` / `executedQty`, never from the price the signal carried;
   4. attach the brake — a `STOP_MARKET` and a `TAKE_PROFIT_MARKET`, both `closePosition`,
-     both triggered on **mark price** so a wick in the last trade cannot fire them. Q2 of
+     both triggered on **mark price** so a wick in the last trade cannot fire them. They go
+     through the **Algo Order API** (`POST /fapi/v1/algoOrder`, `algoType=CONDITIONAL`): on
+     2026-09-10 the demo exchange rejected them on the plain order endpoint with `-4120`.
+     The ids stored on the row are therefore **algo ids**; a triggered brake creates a
+     normal order whose id is the algo's `actualOrderId`, and that is what fills. Q2 of
      REAL_MONEY_TRACK (2026-09-10) kept the 2% / 4% brake as insurance; the paper arms still
      ignore it and the offline price-path measurement prices it at ~10.5 gross bps a trade.
      A brake that fails to place is logged and the position is kept: the timed close still
@@ -25,10 +29,11 @@ defmodule FluxTrader.Trading.ExchangeOrders do
 
   ## Closing
 
-  Cancel every resting order on the symbol first (the brake), then `MARKET reduceOnly` for
-  the quantity that was actually filled at entry. If the exchange answers `-2022 ReduceOnly
-  Order is rejected` there is no position to close — a brake fired first — so the stop and
-  the target are read back and whichever is `FILLED` supplies the exit price and the reason.
+  Cancel every resting order and algo order on the symbol first (the brake), then `MARKET
+  reduceOnly` for the quantity that was actually filled at entry. If the exchange answers
+  `-2022 ReduceOnly Order is rejected` there is no position to close — a brake fired first —
+  so the stop and the target algos are read back, and whichever has an `actualOrderId`
+  whose order is `FILLED` supplies the exit price and the reason.
   If neither did, the position is gone for a reason we did not cause (a liquidation, a
   manual close), and that is returned as `{:error, :position_missing}` for the caller to
   book loudly rather than guess at.
@@ -82,11 +87,7 @@ defmodule FluxTrader.Trading.ExchangeOrders do
   `{:error, :position_missing}` / `{:error, reason}`.
   """
   def close(client, req) do
-    case client.cancel_all_open_orders(req.symbol) do
-      {:ok, _} -> :ok
-      # -2011 is "Unknown order sent" — nothing resting, which is fine.
-      {:error, reason} -> Logger.warning("[AUTO] cancel_all on #{req.symbol}: #{inspect(reason)}")
-    end
+    cancel_brakes(client, req.symbol)
 
     case market(client, req.symbol, req.side, req.quantity, true) do
       {:ok, fill} ->
@@ -100,24 +101,62 @@ defmodule FluxTrader.Trading.ExchangeOrders do
     end
   end
 
+  @doc "Cancel every resting order and algo order on the symbol. Errors are logged, not raised."
+  def cancel_brakes(client, symbol) do
+    for {what, fun} <- [{"cancel_all", &client.cancel_all_open_orders/1},
+                        {"cancel_all_algo", &client.cancel_all_algo_orders/1}] do
+      case fun.(symbol) do
+        {:ok, _} -> :ok
+        # -2011 "Unknown order sent" — nothing resting, which is fine.
+        {:error, reason} -> Logger.warning("[AUTO] #{what} on #{symbol}: #{inspect(reason)}")
+      end
+    end
+
+    :ok
+  end
+
   @doc "Which brake, if any, closed the position — read back from the exchange."
   def brake_exit(client, req) do
     Enum.find_value([{"stop", req[:stop_order_id]}, {"target", req[:target_order_id]}], fn
       {_reason, nil} ->
         nil
 
-      {reason, id} ->
-        case client.get_order(req.symbol, id) do
-          {:ok, %{"status" => "FILLED"} = order} ->
-            case fill_from(order) do
-              {:ok, fill} -> {:ok, Map.put(fill, :exit_reason, reason)}
-              _ -> nil
-            end
-
-          _ ->
-            nil
+      {reason, algo_id} ->
+        case triggered_order(client, req.symbol, algo_id) do
+          {:ok, fill} -> {:ok, Map.put(fill, :exit_reason, reason)}
+          _ -> nil
         end
     end) || {:error, :position_missing}
+  end
+
+  @doc """
+  The fill behind a brake algo, if it has triggered: `{:ok, fill}` with the normal order's
+  id and fill, `:not_triggered`, or `{:error, reason}`.
+  """
+  def triggered_order(client, symbol, algo_id) do
+    with {:ok, algo} <- client.get_algo_order(symbol, algo_id),
+         actual when is_integer(actual) and actual > 0 <- to_i(algo["actualOrderId"]),
+         {:ok, %{"status" => "FILLED"} = order} <- client.get_order(symbol, actual) do
+      fill_from(order)
+    else
+      {:ok, _not_filled_order} -> :not_triggered
+      {:error, reason} -> {:error, reason}
+      _ -> :not_triggered
+    end
+  end
+
+  @doc "Whether `order_id` is the triggered order of one of `algo_ids` — `{:ok, index}` or `:none`."
+  def which_brake(client, symbol, order_id, algo_ids) do
+    Enum.find_value(Enum.with_index(algo_ids), :none, fn
+      {nil, _i} ->
+        nil
+
+      {algo_id, i} ->
+        case client.get_algo_order(symbol, algo_id) do
+          {:ok, algo} -> if to_i(algo["actualOrderId"]) == order_id, do: {:ok, i}, else: nil
+          _ -> nil
+        end
+    end)
   end
 
   # ------------------------------------------------------------------ pieces
@@ -207,16 +246,17 @@ defmodule FluxTrader.Trading.ExchangeOrders do
 
   defp brake(client, f, symbol, side, type, price, fill) do
     params = [
+      algoType: "CONDITIONAL",
       symbol: symbol,
       side: side,
       type: type,
-      stopPrice: Filters.round_price(f, price),
+      triggerPrice: Filters.round_price(f, price),
       closePosition: "true",
       workingType: "MARK_PRICE"
     ]
 
-    case client.place_order(params) do
-      {:ok, %{"orderId" => id}} ->
+    case client.place_algo_order(params) do
+      {:ok, %{"algoId" => id}} ->
         id
 
       {:error, reason} ->
@@ -226,6 +266,17 @@ defmodule FluxTrader.Trading.ExchangeOrders do
         )
 
         nil
+    end
+  end
+
+  defp to_i(nil), do: 0
+  defp to_i(v) when is_integer(v), do: v
+  defp to_i(v) when is_float(v), do: trunc(v)
+
+  defp to_i(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {i, _} -> i
+      :error -> 0
     end
   end
 
