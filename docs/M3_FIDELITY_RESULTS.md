@@ -610,9 +610,10 @@ backfill. ⚠️ `.env` on the VM still carries `ML_GATE_THRESHOLD=0.6311` and
 coverage; the primary comes from the checkpoint) and `gcp_promote.sh` persists the former on
 purpose, so they were left alone and are recorded here so nobody reads `gated: false` as news.
 
-**The forward clock starts at this deploy.** Everything in `policy_bars` before it is the
-record of a model reading inputs at the wrong scale; see the open decision in BACKLOG on
-whether those rows are deleted or kept labelled.
+**The forward clock started at this deploy: 2026-09-10 04:50 UTC.** Both `/health` lines read
+`5m` and `checkpoint_bound: true` on the VM. The pre-deploy `policy_bars` rows — the record of a
+model reading inputs at the wrong scale — were **deleted**, not kept labelled, so the retrain
+trigger's `watching_since` and the diagnostic rank window both start at the deploy.
 
 #### What this does NOT change
 

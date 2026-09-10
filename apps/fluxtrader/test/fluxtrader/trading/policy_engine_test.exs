@@ -119,8 +119,10 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     assert trade.side == 1
     # Regime 0.05 is above the top edge, so the top bucket: 5/3.
     assert_in_delta trade.size, 5 / 3, 1.0e-9
-    # The cost stamped on the row is BTC's MEASURED round trip, not the old 14 bps.
-    assert trade.cost_bps == 8.017
+    # The cost stamped on the row is BTC's MEASURED round trip (8.017) plus the 2.0 bps
+    # fee-tier correction of 2026-09-10 — not the old 14 bps.
+    assert trade.cost_bps == 10.017
+    assert trade.fill_source == "paper"
     # The hold is four hours from the bar, set at entry so a restart can still close it.
     assert DateTime.diff(trade.exit_after_ts, trade.entry_ts) == Policy.hold_minutes() * 60
     # It went through the risk manager: that is M3_PLAN §6's last exit criterion.
@@ -533,7 +535,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     assert closed.status == "closed"
     # gross - cost x size, exactly as metrics.summarise books it.
     assert_in_delta closed.gross_bps, 30.0 * 5 / 3, 1.0e-3
-    assert_in_delta closed.net_bps, 30.0 * 5 / 3 - 8.017 * 5 / 3, 1.0e-3
+    assert_in_delta closed.net_bps, 30.0 * 5 / 3 - 10.017 * 5 / 3, 1.0e-3
     # The slot went back to the risk manager and the P&L was booked against the daily limit.
     assert %{open_positions: 0} = RiskManager.get_stats()
     assert RiskManager.get_stats().daily_pnl > 0.0

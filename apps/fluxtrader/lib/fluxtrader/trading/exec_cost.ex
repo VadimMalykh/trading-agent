@@ -43,10 +43,15 @@ defmodule FluxTrader.Trading.ExecCost do
        anywhere is 2026-07-16. Cost rises with volatility (9.77 bps in the calmest BTC-vol
        quintile against 10.09 in the most violent) and this policy only fires in volatile
        bars, so treat the per-pair figures as the optimistic end.
-    2. **Fee tier.** The measurement decomposes into a taker fee of 4.0 bps per side plus
-       slippage. That fee is the published Binance USDⓈ-M VIP-0 rate, **not** a figure read
-       off this account. `mix flux.fee_tier` checks it; a different tier shifts every number
-       here by a constant. M3_4_PROTOCOL §2.5 makes that check a precondition of M3-5.
+    2. **Fee tier — VERIFIED 2026-09-10, and the assumption was wrong.** M3-4 decomposed
+       its measurement into a taker fee of **4.0** bps per side plus slippage. `mix
+       flux.fee_tier` read the account's real rate on 2026-09-10: **taker 5.0 / maker 2.0
+       bps per side** (the actual USDⓈ-M VIP-0 schedule; 4.0 is the BNB-discounted rate
+       nobody had enabled). So every measured number below is **2.0 bps per round trip too
+       low**, and `round_trip_bps/1` adds that correction on the way out. The table itself
+       is left as measured, so it still matches `docs/M3_4_RESULTS.md` §1 line for line;
+       the correction is one constant in one place. Re-run the task after any fee-tier
+       change; it compares against the *corrected* fee now.
     3. **Window depth.** XRP, LINK, AVAX and ADA rest on 14 days and ~3,960 observations
        against the others' 23 days and ~6,400. `round_trip_bps/1` tags them
        `:measured_short_window` so the difference is visible at the call site rather than
@@ -87,9 +92,19 @@ defmodule FluxTrader.Trading.ExecCost do
   # never been measured at all.
   @pooled 9.842
 
-  # The taker fee per side the measurement decomposes to. Published VIP-0; unverified
-  # against the account until `mix flux.fee_tier` says otherwise.
-  @assumed_taker_fee_bps_per_side 4.0
+  # The taker fee per side M3-4's measurement decomposes to (M3_4_PROTOCOL §2.6). It is
+  # what `@measured` and `@pooled` were computed with, and it is NOT what the account pays.
+  @measured_fee_bps_per_side 4.0
+
+  # What the account actually pays, read off `/fapi/v1/commissionRate` on 2026-09-10 by
+  # `mix flux.fee_tier` (BTCUSDT: taker 0.000500, maker 0.000200). The fee is account-level
+  # on USDⓈ-M, not per symbol.
+  @verified_taker_fee_bps_per_side 5.0
+  @verified_maker_fee_bps_per_side 2.0
+  @fee_verified_on ~D[2026-09-10]
+
+  # Round-trip correction applied to every measured cost: two sides of (verified - measured).
+  @fee_correction_bps 2.0 * (@verified_taker_fee_bps_per_side - @measured_fee_bps_per_side)
 
   @doc "Every pair M3-4 measured a crossing cost for — all twelve served pairs."
   def measured_pairs, do: Map.keys(@measured) |> Enum.sort()
@@ -116,6 +131,16 @@ defmodule FluxTrader.Trading.ExecCost do
   pooled number it would otherwise have been charged.
   """
   def round_trip_bps(pair) when is_binary(pair) do
+    {tag, bps} = measured_round_trip_bps(pair)
+    {tag, Float.round(bps + @fee_correction_bps, 3)}
+  end
+
+  @doc """
+  The round trip exactly as M3-4 measured it, at the 4.0 bps fee the study assumed — i.e.
+  `round_trip_bps/1` **without** the fee-tier correction. For comparing against
+  `docs/M3_4_RESULTS.md` §1; never for charging a trade.
+  """
+  def measured_round_trip_bps(pair) when is_binary(pair) do
     up = String.upcase(pair)
 
     case Map.fetch(@measured, up) do
@@ -139,11 +164,33 @@ defmodule FluxTrader.Trading.ExecCost do
   """
   def side_bps(pair), do: cost_bps(pair) / 2.0
 
-  @doc "Pooled round-trip crossing cost over the eight long-window pairs, bps."
-  def pooled_bps, do: @pooled
+  @doc "Pooled round-trip crossing cost over the eight long-window pairs, bps, fee-corrected."
+  def pooled_bps, do: Float.round(@pooled + @fee_correction_bps, 3)
 
-  @doc "The taker fee per side the measurement assumes, bps. Unverified against the account."
-  def assumed_taker_fee_bps_per_side, do: @assumed_taker_fee_bps_per_side
+  @doc "The pooled cost as M3-4 published it, before the fee-tier correction."
+  def measured_pooled_bps, do: @pooled
+
+  @doc "The taker fee per side M3-4's measurement assumed, bps."
+  def measured_fee_bps_per_side, do: @measured_fee_bps_per_side
+
+  @doc "The taker fee per side the account pays, bps — verified by `mix flux.fee_tier`."
+  def taker_fee_bps_per_side, do: @verified_taker_fee_bps_per_side
+
+  @doc "The maker fee per side the account pays, bps. Informational: nothing here rests."
+  def maker_fee_bps_per_side, do: @verified_maker_fee_bps_per_side
+
+  @doc "When the fee tier was last read off the account."
+  def fee_verified_on, do: @fee_verified_on
+
+  @doc "What the correction adds to every measured round trip, bps."
+  def fee_correction_bps, do: @fee_correction_bps
+
+  @doc """
+  The cost charged to a row whose entry and exit are REAL fills: the two taker fees and
+  nothing else. Slippage is already inside an exchange fill price, so charging the measured
+  round trip on top of it would count the slippage twice.
+  """
+  def fee_only_round_trip_bps, do: 2.0 * @verified_taker_fee_bps_per_side
 
   @doc """
   Net return of a closed trade, in bps.

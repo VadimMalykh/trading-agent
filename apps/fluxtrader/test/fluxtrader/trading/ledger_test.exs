@@ -139,8 +139,8 @@ defmodule FluxTrader.Trading.LedgerTest do
       {:ok, closed} = Ledger.close_trade(t, 100_000.0 * 1.003)
 
       assert_in_delta closed.gross_bps, 30.0 * 5 / 3, 1.0e-6
-      assert closed.cost_bps == 8.017
-      assert_in_delta closed.net_bps, 30.0 * 5 / 3 - 8.017 * 5 / 3, 1.0e-6
+      assert closed.cost_bps == 10.017
+      assert_in_delta closed.net_bps, 30.0 * 5 / 3 - 10.017 * 5 / 3, 1.0e-6
       assert closed.status == "closed"
     end
 
@@ -148,7 +148,7 @@ defmodule FluxTrader.Trading.LedgerTest do
       {:ok, t} = Ledger.open_trade("policy", decision("ETHUSDT", side: -1))
       {:ok, closed} = Ledger.close_trade(t, 100_000.0 * 0.997)
       assert_in_delta closed.gross_bps, 30.0, 1.0e-6
-      assert closed.cost_bps == 8.057
+      assert closed.cost_bps == 10.057
     end
 
     test "due_trades/1 returns only positions whose 4h hold has expired" do
@@ -171,7 +171,7 @@ defmodule FluxTrader.Trading.LedgerTest do
       assert s.trades == 2
       assert_in_delta s.mean_size, 1.0, 1.0e-9
       # Sum of net over sum of size, not the mean of the per-trade means.
-      expected_per_notional = (30.0 * 5 / 3 - 8.017 * 5 / 3 + (30.0 * 1 / 3 - 8.057 / 3)) / 2.0
+      expected_per_notional = (30.0 * 5 / 3 - 10.017 * 5 / 3 + (30.0 * 1 / 3 - 10.057 / 3)) / 2.0
       assert_in_delta s.net_bps_per_notional, expected_per_notional, 1.0e-6
     end
 

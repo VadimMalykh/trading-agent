@@ -62,6 +62,22 @@ defmodule FluxTrader.Trading.RiskManager do
   @doc "Book realised P&L, in quote currency, against the daily loss limit."
   def record_close(pnl) when is_number(pnl), do: GenServer.cast(__MODULE__, {:record_close, pnl})
 
+  @doc """
+  Settle a closed policy-arm trade: give the slot back and book its realised P&L against
+  the daily loss limit. One function because two callers need it — the policy engine's
+  timed close and the user-data stream's brake fill — and the two must not drift.
+
+  The daily-loss limit is a money limit, so bps are converted back through the notional
+  approved at entry. Control-arm rows never held a slot and are ignored.
+  """
+  def record_closed_trade(%{arm: "policy"} = closed) do
+    release()
+    if closed.notional, do: record_close(closed.net_bps / 1.0e4 * closed.notional)
+    :ok
+  end
+
+  def record_closed_trade(_closed), do: :ok
+
   @doc "Reconcile the open-position count with the ledger, e.g. after a restart."
   def sync_open_positions(n) when is_integer(n) and n >= 0,
     do: GenServer.cast(__MODULE__, {:sync_open, n})

@@ -23,6 +23,9 @@ services:
       BINANCE_API_KEY: ${BINANCE_API_KEY:-}
       BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
       TRADING_MODE: ${TRADING_MODE:-simulation}
+      # true = every SIGNED call (orders, brakes, listenKey) goes to the USDⓈ-M testnet.
+      # Market data always reads production. See config/runtime.exs.
+      BINANCE_TESTNET: ${BINANCE_TESTNET:-false}
       ML_INFERENCE_URL: http://ml_inference:8001
       # Serve/product gate. Eval (run 20260723) showed gate<=0.50 trades ~100% of
       # bars at ~coin-flip; edge only appears at gate>=0.55. 0.58 harvests it.

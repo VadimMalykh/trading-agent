@@ -23,8 +23,22 @@ defmodule FluxTrader.Trading.Executor do
       A/B runs on and it is the default.
     * `signal` — log the intent, book nothing.
     * `manual` — hold for approval.
-    * `auto` — a real `MARKET` order on Binance USDⓈ-M. Crossing, because that is what the
-      strategy was scored assuming.
+    * `auto` — a real `MARKET` order on Binance USDⓈ-M, signed, reconciled against the
+      exchange's fill, and braked. Crossing, because that is what the strategy was scored
+      assuming. The row it writes carries the exchange's `avgPrice` and `executedQty`,
+      `fill_source: "exchange"`, and is charged the two taker fees only (slippage is already
+      inside a real fill price — see `ExecCost.fee_only_round_trip_bps/0`). The order logic
+      itself is `Trading.ExchangeOrders`; this module owns the mode, the ledger row and the
+      risk bookkeeping.
+
+  ## What `auto` requires, and what happens without it
+
+  Credentials (`BINANCE_API_KEY` / `BINANCE_API_SECRET`) and a trading host
+  (`Binance.Client.trade_url/0`; `BINANCE_TESTNET=true` for the testnet). If the mode is
+  `auto` and the credentials are missing, this process **refuses the mode and runs as
+  `simulation`**, logs it as an error at boot, and reports `auto_refused` on `status/0` and
+  `/api/health`. Crashing the supervisor instead would take the collector down with it, and
+  the collector must not depend on a trading credential.
 
   ## One deviation from the scored policy, stated out loud
 
@@ -32,14 +46,16 @@ defmodule FluxTrader.Trading.Executor do
   **neither** — it was scored on a fixed four-hour hold and nothing else, and a barrier exit
   backtested against a fixed-horizon return is exactly the policy mismatch C4b was filed
   for. The paper arms therefore ignore both and close on the timer. On the `auto` path they
-  are attached as a catastrophe brake, and that brake is an **unmeasured** deviation from
-  the backtest: it must be priced (M3-0b's price path is what would let us price it) before
-  real money goes near this.
+  are placed on the exchange as a catastrophe brake (REAL_MONEY_TRACK Q2, decided
+  2026-09-10: **keep**). M3-0b priced the brake at ~10.5 gross bps a trade on the fixed-hold
+  backtest — the premium, not the insurance — and a brake fill is booked with
+  `exit_reason: "stop"` / `"target"` so the forward ledger can separate the two exits.
   """
   use GenServer
   require Logger
 
-  alias FluxTrader.Trading.{ExecCost, Ledger, PaperTrade}
+  alias FluxTrader.Binance.{Client, Trade}
+  alias FluxTrader.Trading.{ExchangeOrders, ExecCost, Ledger, PaperTrade, RiskManager}
 
   # The A/B's control arm is a measurement ledger and must never reach the exchange: it
   # exists to say what M2's raw gate would have earned, not to trade it.
@@ -67,38 +83,93 @@ defmodule FluxTrader.Trading.Executor do
     GenServer.call(__MODULE__, :get_positions, 10_000)
   end
 
+  @doc "The mode in force — `simulation` if `auto` was requested but refused."
   def mode, do: GenServer.call(__MODULE__, :mode)
+
+  @doc "Mode, what was requested, why `auto` was refused if it was, and where orders go."
+  def status, do: GenServer.call(__MODULE__, :status)
+
+  @doc """
+  A brake order filled on the exchange — reported by `Binance.UserStream`. Books the close
+  on the row that holds `order_id` as its stop or target, cancels the sibling brake, and
+  settles the risk manager. A fill on an order no open row knows is logged and ignored.
+  """
+  def brake_filled(order_id, avg_price) when is_integer(order_id) and is_number(avg_price),
+    do: GenServer.call(__MODULE__, {:brake_filled, order_id, avg_price}, 30_000)
 
   @impl true
   def init(_opts) do
     config = Application.get_env(:fluxtrader, :trading, [])
-    mode = Keyword.get(config, :mode, "simulation")
+    requested = Keyword.get(config, :mode, "simulation")
+    {mode, refused} = resolve_mode(requested)
+
     Logger.info("Executor starting in #{mode} mode (crossing only; no limit orders — M3-4)")
 
     if mode == "auto" do
-      # `Binance.Client.post/2` sends neither an `X-MBX-APIKEY` header nor an HMAC-SHA256
-      # signature, which Binance requires on every TRADE endpoint. A real order therefore
-      # comes back 401 and the loop looks like it is trading while placing nothing. Say so
-      # at boot rather than discovering it from an empty fill log.
-      Logger.error(
-        "TRADING_MODE=auto, but the order path is UNSIGNED — Binance.Client.post/2 sends no " <>
-          "API key header and no HMAC signature, so /fapi/v1/order will reject every request. " <>
-          "M3-5 delivers the PAPER A/B; request signing is not part of it. Use simulation."
+      Logger.warning(
+        "[AUTO] REAL ORDERS ARE LIVE against #{Client.trade_url()}" <>
+          if(Client.testnet?(), do: " (TESTNET)", else: " (PRODUCTION)")
       )
     end
 
-    {:ok, %{mode: mode, marks: %{}}}
+    {:ok,
+     %{
+       mode: mode,
+       requested_mode: requested,
+       auto_refused: refused,
+       marks: %{},
+       client: Trade.impl(),
+       # Symbol filters from the trading host, fetched on the first real order and kept.
+       filters: nil
+     }}
   end
+
+  # `auto` needs a credential. Without one the mode is refused rather than the process
+  # crashed: this supervisor also runs the collector, and a missing trading key must not
+  # be able to stop data collection.
+  defp resolve_mode("auto") do
+    if Client.credentials?() do
+      {"auto", nil}
+    else
+      Logger.error(
+        "TRADING_MODE=auto but BINANCE_API_KEY / BINANCE_API_SECRET are not set — " <>
+          "REFUSING auto and running as simulation. Nothing will reach the exchange."
+      )
+
+      {"simulation", :missing_credentials}
+    end
+  end
+
+  defp resolve_mode(mode), do: {mode, nil}
 
   @impl true
   def handle_call(:mode, _from, state), do: {:reply, state.mode, state}
 
+  def handle_call(:status, _from, state) do
+    {:reply,
+     %{
+       mode: state.mode,
+       requested_mode: state.requested_mode,
+       auto_refused: state.auto_refused,
+       live_orders: state.mode == "auto",
+       trade_url: Client.trade_url(),
+       testnet: Client.testnet?(),
+       credentials_present: Client.credentials?(),
+       filters_loaded: state.filters != nil
+     }, state}
+  end
+
   def handle_call({:open, arm, decision, order}, _from, state) do
-    {:reply, do_open(state.mode, arm, decision, order), state}
+    {reply, state} = do_open(state.mode, arm, decision, order, state)
+    {:reply, reply, state}
   end
 
   def handle_call({:close, trade, exit_price}, _from, state) do
-    {:reply, do_close(state.mode, trade, exit_price), state}
+    {:reply, do_close(state.mode, trade, exit_price, state), state}
+  end
+
+  def handle_call({:brake_filled, order_id, avg_price}, _from, state) do
+    {:reply, do_brake_filled(order_id, avg_price, state), state}
   end
 
   def handle_call(:get_positions, _from, state) do
@@ -123,11 +194,79 @@ defmodule FluxTrader.Trading.Executor do
 
   # ------------------------------------------------------------------ open
 
-  defp do_open(mode, arm, decision, _order) when mode in ["simulation", "signal", "manual"] do
+  defp do_open(mode, arm, decision, _order, state) when mode in ["simulation", "signal", "manual"] do
     # Every non-auto mode books the same paper row. `signal` and `manual` differ from
     # `simulation` in what they do about a REAL order, and none of them places one — the
     # measurement must keep running regardless, because the point of the forward test is to
     # accumulate independent days (§0.5.4) and a mode switch should not silence it.
+    {paper_open(mode, arm, decision), state}
+  end
+
+  defp do_open("auto", arm, decision, _order, state) when arm in @paper_only_arms do
+    # Never route the control arm to the exchange, whatever the mode says.
+    {paper_open("simulation", arm, decision), state}
+  end
+
+  defp do_open("auto", arm, decision, order, state) do
+    with {:ok, filters, state} <- ensure_filters(state),
+         req = %{
+           symbol: decision.pair,
+           side: side_word(decision.side),
+           quantity: order[:quantity],
+           price: decision.entry_price,
+           leverage: order[:leverage],
+           stop_loss: order[:stop_loss],
+           take_profit: order[:take_profit]
+         },
+         {:ok, fill} <- ExchangeOrders.open(state.client, filters, req) do
+      Logger.info(
+        "[AUTO] OPEN #{arm} #{req.side} #{decision.pair} filled qty=#{fill.executed_qty} " <>
+          "@ #{fmt(fill.avg_price)} (signal price #{fmt(decision.entry_price)}) " <>
+          "order=#{fill.order_id} stop=#{inspect(fill.stop_order_id)} " <>
+          "target=#{inspect(fill.target_order_id)}"
+      )
+
+      # The row is written from what the exchange did, not from what was asked: the fill
+      # price, the filled quantity, and the fee-only cost, because slippage is already in
+      # the price. It is still the ledger the A/B and every M3_PROTOCOL §4 metric read.
+      overrides = %{
+        entry_price: fill.avg_price,
+        quantity: fill.executed_qty,
+        notional: fill.avg_price * fill.executed_qty,
+        cost_bps: ExecCost.fee_only_round_trip_bps(),
+        fill_source: "exchange",
+        entry_order_id: fill.order_id,
+        stop_order_id: fill.stop_order_id,
+        target_order_id: fill.target_order_id
+      }
+
+      case Ledger.open_trade(arm, decision, overrides) do
+        {:ok, trade} ->
+          {{:ok, trade}, state}
+
+        {:error, changeset} ->
+          # A real position with no row is the one state this module must never leave
+          # behind: the ledger would be fiction and the timer could never close it. Unwind.
+          Logger.error(
+            "[AUTO] filled #{decision.pair} but the ledger refused the row " <>
+              "(#{inspect(changeset.errors)}) — CLOSING the position immediately"
+          )
+
+          unwind(state.client, decision.pair, side_word(-decision.side), fill)
+          {{:error, changeset}, state}
+      end
+    else
+      {:error, reason} ->
+        Logger.error("[AUTO] order failed for #{decision.pair}: #{inspect(reason)}")
+        {{:error, reason}, state}
+
+      {:error, reason, state} ->
+        Logger.error("[AUTO] order failed for #{decision.pair}: #{inspect(reason)}")
+        {{:error, reason}, state}
+    end
+  end
+
+  defp paper_open(mode, arm, decision) do
     case Ledger.open_trade(arm, decision) do
       {:ok, trade} ->
         {tag, cost} = ExecCost.round_trip_bps(decision.pair)
@@ -149,74 +288,128 @@ defmodule FluxTrader.Trading.Executor do
     end
   end
 
-  defp do_open("auto", arm, decision, _order) when arm in @paper_only_arms do
-    # Never route the control arm to the exchange, whatever the mode says.
-    do_open("simulation", arm, decision, %{})
+  defp ensure_filters(%{filters: nil} = state) do
+    case ExchangeOrders.load_filters(state.client) do
+      {:ok, filters} -> {:ok, filters, %{state | filters: filters}}
+      {:error, reason} -> {:error, reason, state}
+    end
   end
 
-  defp do_open("auto", arm, decision, order) do
-    params = %{
-      symbol: decision.pair,
-      side: side_word(decision.side),
-      quantity: Map.get(order, :quantity)
+  defp ensure_filters(%{filters: filters} = state), do: {:ok, filters, state}
+
+  defp unwind(client, symbol, closing_side, fill) do
+    req = %{
+      symbol: symbol,
+      side: closing_side,
+      quantity: fill.executed_qty,
+      stop_order_id: fill.stop_order_id,
+      target_order_id: fill.target_order_id
     }
 
-    decision = Map.put(decision, :quantity, params.quantity)
-
-    case FluxTrader.Binance.Client.place_order(params) do
-      {:ok, resp} ->
-        Logger.info("[AUTO] OPEN #{decision.pair} #{params.side} qty=#{params.quantity}")
-        # The paper row is still written on the auto path: it is the ledger the A/B and
-        # every M3_PROTOCOL §4 metric are computed from, and a real fill does not make the
-        # measurement less necessary.
-        result = Ledger.open_trade(arm, decision)
-        _ = resp
-        result
-
-      {:error, reason} ->
-        Logger.error("[AUTO] order failed for #{decision.pair}: #{inspect(reason)}")
-        {:error, reason}
+    case ExchangeOrders.close(client, req) do
+      {:ok, _} -> Logger.warning("[AUTO] unwound #{symbol}")
+      {:error, reason} -> Logger.error("[AUTO] UNWIND FAILED on #{symbol}: #{inspect(reason)} — MANUAL ACTION")
     end
   end
 
   # ------------------------------------------------------------------ close
 
-  defp do_close("auto", %PaperTrade{arm: arm} = trade, exit_price) when arm in @paper_only_arms,
-    do: do_close("simulation", trade, exit_price)
+  defp do_close("auto", %PaperTrade{arm: arm} = trade, exit_price, state)
+       when arm in @paper_only_arms,
+       do: do_close("simulation", trade, exit_price, state)
 
-  defp do_close("auto", %PaperTrade{} = trade, exit_price) do
-    # `reduce_only` so a close can never accidentally open the opposite position — the
-    # quantity is the one RiskManager approved at entry and stored on the row.
-    params = %{
-      symbol: trade.pair,
-      side: side_word(-trade.side),
-      quantity: trade.quantity,
-      reduce_only: true
-    }
+  defp do_close("auto", %PaperTrade{fill_source: "exchange"} = trade, mark_price, state) do
+    # Re-read first: a brake may have filled and been booked by the user-data stream
+    # between the due-list read and now, and a closed row must not be booked twice.
+    case Ledger.reload(trade) do
+      %PaperTrade{status: "open"} = trade ->
+        req = %{
+          symbol: trade.pair,
+          side: side_word(-trade.side),
+          quantity: trade.quantity,
+          stop_order_id: trade.stop_order_id,
+          target_order_id: trade.target_order_id
+        }
 
-    case FluxTrader.Binance.Client.place_order(params) do
-      {:ok, _resp} ->
-        Ledger.close_trade(trade, exit_price)
+        case ExchangeOrders.close(state.client, req) do
+          {:ok, fill} ->
+            book_close("AUTO", trade, fill.avg_price, %{
+              exit_reason: fill.exit_reason,
+              exit_order_id: fill.order_id
+            })
 
-      {:error, reason} ->
-        Logger.error("[AUTO] close failed for #{trade.pair}: #{inspect(reason)}")
-        {:error, reason}
+          {:error, :position_missing} ->
+            # The exchange has no position and no brake reports a fill: a liquidation or a
+            # manual close. The row cannot stay open — it would hold a risk slot forever —
+            # so it is booked at the mark with a reason that says the number is not a fill.
+            Logger.error(
+              "[AUTO] #{trade.pair}: no position on the exchange and no brake filled — " <>
+                "booking the row at the mark #{fmt(mark_price)} as position_missing"
+            )
+
+            book_close("AUTO", trade, mark_price, %{exit_reason: "position_missing"})
+
+          {:error, reason} ->
+            Logger.error("[AUTO] close failed for #{trade.pair}: #{inspect(reason)}")
+            {:error, reason}
+        end
+
+      _ ->
+        {:error, :already_closed}
     end
   end
 
-  defp do_close(mode, %PaperTrade{} = trade, exit_price) do
-    case Ledger.close_trade(trade, exit_price) do
+  # A paper row on the auto path (opened before the mode was switched) closes as paper.
+  defp do_close("auto", %PaperTrade{} = trade, exit_price, state),
+    do: do_close("simulation", trade, exit_price, state)
+
+  defp do_close(mode, %PaperTrade{} = trade, exit_price, _state) do
+    book_close(String.upcase(mode), trade, exit_price, %{})
+  end
+
+  defp book_close(label, trade, exit_price, overrides) do
+    case Ledger.close_trade(trade, exit_price, DateTime.utc_now(), overrides) do
       {:ok, closed} ->
         Logger.info(
-          "[#{String.upcase(mode)}] CLOSE #{closed.arm} #{closed.pair} " <>
-            "@ #{fmt(exit_price)} gross=#{fmt(closed.gross_bps)}bps " <>
-            "cost=#{fmt(closed.cost_bps)}bps net=#{fmt(closed.net_bps)}bps"
+          "[#{label}] CLOSE #{closed.arm} #{closed.pair} @ #{fmt(exit_price)} " <>
+            "gross=#{fmt(closed.gross_bps)}bps cost=#{fmt(closed.cost_bps)}bps " <>
+            "net=#{fmt(closed.net_bps)}bps reason=#{closed.exit_reason}"
         )
 
         {:ok, closed}
 
       other ->
         other
+    end
+  end
+
+  # ------------------------------------------------------------------ brake fills
+
+  defp do_brake_filled(order_id, avg_price, state) do
+    case Ledger.open_trade_by_brake(order_id) do
+      nil ->
+        Logger.warning("[AUTO] brake fill on order #{order_id} matches no open row — ignored")
+        {:error, :unknown_order}
+
+      %PaperTrade{} = trade ->
+        reason = if trade.stop_order_id == order_id, do: "stop", else: "target"
+
+        Logger.warning(
+          "[AUTO] BRAKE FIRED: #{reason} on #{trade.pair} @ #{fmt(avg_price)} (order #{order_id})"
+        )
+
+        # The sibling brake is still resting and would act on the NEXT position on this
+        # symbol if it were left there.
+        _ = state.client.cancel_all_open_orders(trade.pair)
+
+        case book_close("AUTO", trade, avg_price, %{exit_reason: reason, exit_order_id: order_id}) do
+          {:ok, closed} ->
+            RiskManager.record_closed_trade(closed)
+            {:ok, closed}
+
+          other ->
+            other
+        end
     end
   end
 

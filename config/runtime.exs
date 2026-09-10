@@ -27,12 +27,7 @@ if config_env() == :prod do
     http: [ip: {0, 0, 0, 0}, port: port],
     secret_key_base: secret_key_base
 
-  config :fluxtrader, :binance,
-    api_key: System.get_env("BINANCE_API_KEY"),
-    api_secret: System.get_env("BINANCE_API_SECRET")
-
   config :fluxtrader, :trading,
-    mode: System.get_env("TRADING_MODE", "simulation"),
     # Defaults mirror config.exs; see there for why the position cap tracks the served
     # universe and why min_confidence is 0.0.
     max_positions: String.to_integer(System.get_env("MAX_POSITIONS") || "12"),
@@ -53,6 +48,35 @@ if config_env() == :prod do
           "XRPUSDT,LINKUSDT,AVAXUSDT,ADAUSDT"
       )
       |> String.split(",", trim: true)
+end
+
+# Exchange credentials and the trading mode — every environment except test.
+#
+# 🔴 Until 2026-09-10 these lived inside the `:prod` block above, while `Dockerfile.app` runs
+# the container under MIX_ENV=dev. So `TRADING_MODE`, `BINANCE_API_KEY` and
+# `BINANCE_API_SECRET` in the VM's `.env` were never read by the app at all: the mode was
+# always config.exs's "simulation" and the credentials were always nil. (`mix flux.fee_tier`
+# reads the environment directly, which is why it worked.) Test stays out so that no test
+# run can pick up a real key from a developer's shell.
+#
+# BINANCE_TESTNET=true points every SIGNED call at the USDⓈ-M testnet and the user-data
+# stream at its host; market data keeps reading production. BINANCE_TRADE_URL /
+# BINANCE_USER_STREAM_HOST override either host explicitly.
+if config_env() != :test do
+  testnet? = System.get_env("BINANCE_TESTNET", "false") in ~w(true 1 yes)
+
+  config :fluxtrader, :binance,
+    api_key: System.get_env("BINANCE_API_KEY"),
+    api_secret: System.get_env("BINANCE_API_SECRET"),
+    testnet: testnet?,
+    trade_url:
+      System.get_env("BINANCE_TRADE_URL") ||
+        if(testnet?, do: "https://demo-fapi.binance.com", else: "https://fapi.binance.com"),
+    user_stream_host:
+      System.get_env("BINANCE_USER_STREAM_HOST") ||
+        if(testnet?, do: "demo-fstream.binance.com", else: "fstream.binance.com")
+
+  config :fluxtrader, :trading, mode: System.get_env("TRADING_MODE", "simulation")
 end
 
 # Ecto query logging — every environment, resolved at boot rather than at compile time so

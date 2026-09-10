@@ -1,8 +1,22 @@
 # The real-money track — the three blockers, in the order they must be done
 
-**Status: 🔵 ACTIVE, and it is the recommended next session's work.**
-Opened 2026-09-01. Owner of the detail for the three rows filed under
+**Status: 🔵 ACTIVE — steps 1 and 2 DONE, step 3 BUILT on 2026-09-10; the testnet run is
+what remains.** Opened 2026-09-01. Owner of the detail for the three rows filed under
 "🔴 Open — blockers on trading anything but paper" in [BACKLOG.md](./BACKLOG.md).
+
+## §-1 — Where this stands on 2026-09-10, and what to run next
+
+| step | state |
+|---|---|
+| 1 fee tier | ✅ **VERIFIED — and the assumption was wrong.** `mix flux.fee_tier` on `fluxtrader-1` with a read-only key: **taker 5.000 / maker 2.000 bps per side** (BTCUSDT). M3-4 assumed 4.0. The correction is +2.0 bps per round trip on every measured cost; `Trading.ExecCost` now charges it (§5 below). Only BTCUSDT was read; the fee is account-level on USDⓈ-M, so the ETHUSDT control is a formality — run it when convenient |
+| 2 stop/target | ✅ **DECIDED: (a) keep.** The brake is now actually placed on the exchange on the auto path — until this build it was computed and dropped |
+| 3 signing | 🟢 **BUILT, 122/122 tests pass, not yet demonstrated on the testnet.** Signed order path, filters, reconciliation, brake, user-data stream, health block, and a one-shot testnet task (§6 below) |
+
+**Q1 (a)** — the read-only key lives in `fluxtrader-1`'s `.env`. **Q2 (a)** — keep.
+**Q3 (a)** — build it all now. All three answered by Vadim on 2026-09-10.
+
+🔴 **Nothing here authorises production trading.** The exit criterion is a testnet run, with
+`TRADING_MODE` on the VM left at `simulation`. §4 stands unchanged: zero forward trades.
 
 ---
 
@@ -157,7 +171,7 @@ appended as a `signature=` parameter to that same body.
 3. **`listenKey` / user-data stream** for fills and liquidations, so position state is not
    inferred from our own optimism.
 
-🔴 **Test against the Binance USDⓈ-M testnet first** (`https://testnet.binancefuture.com`),
+🔴 **Test against the Binance USDⓈ-M testnet first** (`https://demo-fapi.binance.com`),
 never against production with a small size. `@base_url` is a module attribute in two places
 (`client.ex` and the fee-tier task) and must become configurable for this.
 
@@ -205,3 +219,86 @@ question** — all three are defensible.
 fee tier verified or explicitly recorded as unverifiable; the stop/target decision written down
 with its reasoning; and — if Q3 is (a) or (b) — a signed order path demonstrated **against
 testnet**, with the `auto` path still switched off in production.
+
+---
+
+## §5 — Step 1's result, 2026-09-10: taker 5.0, not 4.0
+
+Verbatim from the VM:
+
+```
+Account rate for BTCUSDT:
+  taker 5.000 bps/side   maker 2.000 bps/side
+MISMATCH — the taker fee is 1.000 bps/side away from the assumption, i.e.
+2.000 bps per round trip on EVERY published M3 number, in the
+pessimistic-was-too-optimistic direction.
+```
+
+4.0 bps is the USDⓈ-M taker rate **with the BNB fee discount**, which this account has never
+enabled; the undiscounted VIP-0 rate is 5.0. What changes and what does not:
+
+* **What the paper ledger charges** — corrected in code. `ExecCost.round_trip_bps/1` returns
+  M3-4's measured per-pair round trip **plus 2.0 bps** (BTC 8.017 → 10.017, WLD 14.060 →
+  16.060, pooled 9.842 → 11.842). The measured table is untouched so it still matches
+  M3_4_RESULTS §1 line for line; `measured_round_trip_bps/1` returns it uncorrected. Made
+  before any forward trade existed (`paper_trades` was empty), so no row was re-scored.
+* **The published offline numbers at "taker 14 bps"** — unchanged and still conservative.
+  14 = 4 + 4 + 3 + 3 assumed; the true line is now 5 + 5 + measured slippage ≈ **11.84**
+  pooled, so every net-at-14 number (M3-2, the walk-forward W1 +33.23) is still ~2 bps
+  *below* the truth rather than ~4. Nothing flips.
+* **M3_4_RESULTS §7's re-score at measured cost** — every net number there is ~2.0 bps × mean
+  size too high. The winner's worst window was +2.43 against the +0.25 bar; ~+0.4 after
+  the correction, still above it, but close enough that it should be re-read off a re-run,
+  not inferred. Filed in BACKLOG as a one-command follow-up, not done here.
+* **An exchange-filled row** is charged **10.0 bps** (two taker fees) and nothing else,
+  because slippage is already inside a real fill price — `ExecCost.fee_only_round_trip_bps/0`.
+
+`mix flux.fee_tier` now compares the account against the *verified* constant, so re-running
+it is a standing check: MATCH means the correction still holds.
+
+---
+
+## §6 — Step 3 as built, 2026-09-10, and the testnet runbook
+
+**What exists now** (`apps/fluxtrader/lib/fluxtrader/`):
+
+| piece | where | what |
+|---|---|---|
+| signing | `binance/auth.ex` | HMAC-SHA256 over the payload, `recvWindow` + `timestamp` appended; verified against `openssl dgst` |
+| signed client | `binance/client.ex` `signed_get/post/put/delete` | `X-MBX-APIKEY` header; **signed calls go to `trade_url/0`, market data stays on production** |
+| the exchange surface | `binance/trade.ex` (behaviour), `binance/trade/rest.ex` | order, order status, cancel-all, leverage, positionRisk, commissionRate, listenKey |
+| filters | `binance/filters.ex` | lot step (rounds **down**), tick, min notional — refused before sending |
+| the order logic | `trading/exchange_orders.ex` | open → reconcile → brake; close → cancel brakes → `reduceOnly` → on `-2022` read which brake filled |
+| the executor's auto path | `trading/executor.ex` | writes the row from `avgPrice`/`executedQty`, `fill_source: "exchange"`, order ids; refuses `auto` without credentials and says so on `/api/health` |
+| the user-data stream | `binance/user_stream.ex` | `listenKey` lifecycle; `ORDER_TRADE_UPDATE` brake fills → `Executor.brake_filled/2`; `ACCOUNT_UPDATE` positions → ledger mismatch on `/api/health` |
+| ledger | migration `20260910000001` | `fill_source`, four order ids, `exit_reason` (`timer` / `stop` / `target` / `position_missing`) |
+| config | `config/runtime.exs` | 🔴 **found on the way:** `TRADING_MODE` and the credentials were read only under `MIX_ENV=prod`, and the container runs `dev` — so the VM's `.env` values never reached the app. Now read in every env but test. `BINANCE_TESTNET=true` selects the testnet for signed calls |
+
+**The testnet runbook.** Testnet keys are created on the testnet web UI
+(https://testnet.binancefuture.com — a separate login; not the production keys); the API host
+they work against is `https://demo-fapi.binance.com`, which `BINANCE_TESTNET=true` selects. Then, on the VM or locally:
+
+```sh
+# 1. one tiny round trip, entirely on the testnet, without the trading app running
+BINANCE_TESTNET=true BINANCE_API_KEY=<testnet key> BINANCE_API_SECRET=<testnet secret> \
+  docker compose exec app mix flux.testnet_smoke
+#    expect: filters, OPEN with a reconciled fill and two brake ids, HOLD, CLOSE with
+#    reason=timer, position flat before and after, and the last line TESTNET_OK
+
+# 2. the same through the running executor (local stack only — NOT on fluxtrader-1):
+#    put BINANCE_TESTNET=true, TRADING_MODE=auto and the testnet keys in .env, then
+docker compose up -d --build app
+curl -s localhost:4001/api/health | jq '{mode, executor, user_stream}'
+#    expect mode "auto", executor.testnet true, executor.auto_refused null,
+#    user_stream.status "connected"
+```
+
+**Bring back:** the full stdout of `flux.testnet_smoke`, verbatim, and the `/api/health`
+excerpt. If the smoke fails at `open`, the message names the step and the exchange's error
+code; `-2019` is testnet margin (top up the testnet wallet), `-4164` is min notional (raise
+`--notional`), `-1022` is a signature problem and is a bug here, not there.
+
+**Not built, on purpose:** limit orders (M3-4 §3), hedge-mode position sides (the account is
+one-way), and any automatic switch to production. `TRADING_MODE=auto` on `fluxtrader-1`
+without `BINANCE_TESTNET=true` would trade real money on the next signal — it is a deliberate
+act, and §4 says the evidence for it does not exist yet.

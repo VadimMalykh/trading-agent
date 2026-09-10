@@ -95,6 +95,19 @@ config :fluxtrader, :trading,
     "ADAUSDT"
   ]
 
+# Exchange credentials and hosts. Values here are the safe defaults; `config/runtime.exs`
+# overrides them from the environment at boot (BINANCE_API_KEY / BINANCE_API_SECRET /
+# BINANCE_TESTNET). Market data ignores all of this — see `Binance.Client`.
+config :fluxtrader, :binance,
+  api_key: nil,
+  api_secret: nil,
+  testnet: false,
+  trade_url: "https://fapi.binance.com",
+  user_stream_host: "fstream.binance.com"
+
+# The `Binance.Trade` implementation the order path calls. Tests swap in `Trade.Fake`.
+config :fluxtrader, :trade_client, FluxTrader.Binance.Trade.Rest
+
 config :fluxtrader, :ml,
   inference_url: "http://ml_inference:8001",
   gate_threshold: 0.40

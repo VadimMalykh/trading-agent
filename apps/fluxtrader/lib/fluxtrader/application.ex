@@ -34,6 +34,8 @@ defmodule FluxTrader.Application do
         FluxTrader.MarketData.Collector,
         FluxTrader.Trading.Executor,
         FluxTrader.Trading.RiskManager,
+        # After the executor, which it reports brake fills to. Idle unless the mode is auto.
+        FluxTrader.Binance.UserStream,
         FluxTrader.Trading.Regime,
         FluxTrader.Notifications.Telegram.RateLimiter,
         FluxTrader.ML.SignalEngine,

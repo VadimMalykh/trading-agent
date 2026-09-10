@@ -1,11 +1,48 @@
 defmodule FluxTrader.Binance.Client do
   @moduledoc """
-  HTTP client for Binance Futures public REST API (no API key required for market data).
+  HTTP client for the Binance USDⓈ-M Futures REST API.
+
+  Two kinds of call live here and they go to **different hosts**:
+
+    * **Market data** (`klines/3`, `order_book/2`, ...) — unsigned, always against
+      `fapi.binance.com`. The collector's history must never come from the testnet.
+    * **Signed / keyed calls** (`signed_get/3`, `signed_post/3`, ...) — against
+      `trade_url/0`, which `BINANCE_TESTNET=true` points at `demo-fapi.binance.com`.
+      The signing arithmetic is `Binance.Auth`; the endpoints are `Binance.Trade.Rest`.
+
+  Until 2026-09-10 `post/2` sent neither the `X-MBX-APIKEY` header nor a signature, so
+  `place_order/1` returned 401 on every call. It now signs, and it is the only order path.
   """
 
-  @base_url "https://fapi.binance.com"
+  alias FluxTrader.Binance.Auth
+
+  @market_url "https://fapi.binance.com"
 
   defp finch_name, do: FluxTrader.Finch
+
+  @doc "Where signed calls go. Production unless `BINANCE_TESTNET=true`."
+  def trade_url, do: binance_config(:trade_url) || @market_url
+
+  @doc "The user-data stream host, matching `trade_url/0`'s environment."
+  def user_stream_host, do: binance_config(:user_stream_host) || "fstream.binance.com"
+
+  @doc "Whether signed calls are pointed at the testnet."
+  def testnet?, do: binance_config(:testnet) == true
+
+  @doc "`{key, secret}` or `nil` when either is missing — credentials are never half-present."
+  def credentials do
+    key = binance_config(:api_key)
+    secret = binance_config(:api_secret)
+    if blank?(key) or blank?(secret), do: nil, else: {key, secret}
+  end
+
+  def credentials?, do: credentials() != nil
+
+  defp binance_config(k), do: Application.get_env(:fluxtrader, :binance, []) |> Keyword.get(k)
+
+  defp blank?(nil), do: true
+  defp blank?(""), do: true
+  defp blank?(_), do: false
 
   def exchange_info do
     get("/fapi/v1/exchangeInfo")
@@ -108,27 +145,88 @@ defmodule FluxTrader.Binance.Client do
   selection reverses in 16 of 16 cells (`docs/M3_4_RESULTS.md` §3), so the executor crosses.
 
   `reduce_only: true` marks a closing order, which Binance then refuses to let flip into an
-  opposite position.
+  opposite position. `newOrderRespType=RESULT` asks for the fill in the response.
+
+  Kept for callers that want the raw call; `Trading.ExchangeOrders` is the path that also
+  rounds, brakes and reconciles, and it is what the executor uses.
   """
   def place_order(order_params) do
-    body =
+    signed_post(
+      "/fapi/v1/order",
       [
         symbol: order_params.symbol,
         side: order_params.side,
         type: "MARKET",
-        quantity: order_params.quantity
+        quantity: order_params.quantity,
+        newOrderRespType: "RESULT"
       ]
       |> maybe_put(:reduceOnly, if(Map.get(order_params, :reduce_only), do: "true"))
-      |> URI.encode_query()
-
-    post("/fapi/v1/order", body)
+    )
   end
+
+  # --- Signed / keyed calls -----------------------------------------------------------
+  #
+  # `auth:` selects how much of the credential travels: `:signed` (default) adds the key
+  # header AND the HMAC payload; `:key_only` adds the header alone (the listenKey endpoints);
+  # `:none` sends a plain request to the trading host (exchangeInfo, which testnet serves
+  # separately). Missing credentials are an error, not a silent unsigned request — that is
+  # exactly the failure the old `post/2` had.
+
+  def signed_get(path, params, opts \\ []), do: signed_request(:get, path, params, opts)
+  def signed_post(path, params, opts \\ []), do: signed_request(:post, path, params, opts)
+  def signed_put(path, params, opts \\ []), do: signed_request(:put, path, params, opts)
+  def signed_delete(path, params, opts \\ []), do: signed_request(:delete, path, params, opts)
+
+  defp signed_request(method, path, params, opts) do
+    auth = Keyword.get(opts, :auth, :signed)
+
+    with {:ok, key, payload} <- build_payload(auth, params) do
+      headers = if key, do: [{"X-MBX-APIKEY", key}], else: []
+
+      {url, body, headers} =
+        case method do
+          m when m in [:post, :put] ->
+            {trade_url() <> path, payload,
+             [{"content-type", "application/x-www-form-urlencoded"} | headers]}
+
+          _ ->
+            {trade_url() <> path <> if(payload == "", do: "", else: "?" <> payload), nil,
+             headers}
+        end
+
+      Finch.build(method, url, headers, body)
+      |> Finch.request(finch_name(), receive_timeout: 15_000)
+      |> handle_response()
+    end
+  end
+
+  defp build_payload(:none, params), do: {:ok, nil, URI.encode_query(params)}
+
+  defp build_payload(auth, params) do
+    case credentials() do
+      nil ->
+        {:error, :missing_credentials}
+
+      {key, secret} ->
+        payload =
+          case auth do
+            :key_only -> URI.encode_query(params)
+            :signed -> Auth.signed_payload(params, secret)
+          end
+
+        {:ok, key, payload}
+    end
+  end
+
+  defp handle_response({:ok, %{status: 200, body: body}}), do: {:ok, decode(body)}
+  defp handle_response({:ok, %{status: status, body: body}}), do: {:error, {status, decode(body)}}
+  defp handle_response({:error, reason}), do: {:error, reason}
 
   defp maybe_put(params, _key, nil), do: params
   defp maybe_put(params, key, value), do: Keyword.put(params, key, value)
 
   defp get(path) do
-    url = if String.starts_with?(path, "http"), do: path, else: "#{@base_url}#{path}"
+    url = if String.starts_with?(path, "http"), do: path, else: "#{@market_url}#{path}"
 
     case Finch.build(:get, url) |> Finch.request(finch_name(), receive_timeout: 30_000) do
       {:ok, %{status: 200, body: body}} ->
@@ -136,22 +234,6 @@ defmodule FluxTrader.Binance.Client do
 
       {:ok, %{status: status, body: body}} ->
         {:error, {status, decode(body)}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp post(path, body) do
-    url = "#{@base_url}#{path}"
-
-    case Finch.build(:post, url, [{"content-type", "application/x-www-form-urlencoded"}], body)
-         |> Finch.request(finch_name(), receive_timeout: 30_000) do
-      {:ok, %{status: 200, body: resp_body}} ->
-        {:ok, decode(resp_body)}
-
-      {:ok, %{status: status, body: resp_body}} ->
-        {:error, {status, decode(resp_body)}}
 
       {:error, reason} ->
         {:error, reason}

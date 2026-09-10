@@ -25,7 +25,7 @@ file is tables.*
 
 ## 🔴 Right now — what 2026-09-10 left open
 
-**The forward test's silence is root-caused and the fix is built; it is not yet deployed.**
+**The forward test's silence is root-caused, and the fix is deployed — the forward clock restarted at 2026-09-10 04:50 UTC.**
 Since the 2026-08-24 promotion `ml_inference` on `fluxtrader-1` has been building the 5m
 checkpoint's features from **1-minute candles** (`docker-compose.yml` sets no
 `CANDLE_INTERVAL` for that service; `config.py` defaults to `1m`). Every input at a fifth of
@@ -38,7 +38,7 @@ time, so the §9.5 guard could not see it. Replaying serve at 1m reproduces the 
 
 | # | item | owner | state |
 |---|---|---|---|
-| 1 | 🔴 **Deploy the candle-interval fix and restart the forward clock** | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.5 | **THE TOP OPEN ITEM — a deploy, not an investigation.** `serve.py` now takes the bar size from the checkpoint and reports it on `/health`; `PolicyEngine`'s guard refuses an interval mismatch (`interval_mismatch` / `interval_unverified`), two regression tests added, 30/30 pass. §7.5 has the exact `fluxtrader-1` checklist and the two `/health` lines that must read `5m`. **Open decision:** whether `policy_bars` rows from before the deploy (all scored on 1m inputs, 41k rows, no trades) are deleted or kept labelled — they anchor the retrain trigger's `watching_since` and the diagnostic rank window, so keeping them means those two read a 1m era until it ages out of the 80-day retention |
+| 1 | ✅ **Deploy the candle-interval fix and restart the forward clock** | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.5 | **DONE 2026-09-10 04:50 UTC.** Verified live: `ml_inference` `/health` reads `candle_interval: 5m, source: checkpoint`, sha `882cd415…`; `/api/health` reads `checkpoint_bound: true`, `served_candle_interval: 5m` = `expected_candle_interval: 5m`, no skips other than `below_coverage`. **The open decision was resolved as delete:** `policy_bars` was cleared, so the first row is 04:50:50 and the retrain trigger's `watching_since` is the deploy. `paper_trades` is empty. Nothing scored before this moment survives anywhere |
 | 2 | **§4.3's four confirmations** — the payoff of a CONFIRMED verdict | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §9 | 🟡 **registered 2026-09-09, none run.** Served coverage at twelve pairs, hour-of-day, market-neutral, and a learned/RL policy. §9.0 states the two rules that govern all four: explore on F0+F1 and confirm on F2+F3 *once* (there is no second copy of untouched history), and write every one as a within-fold contrast because the §7.2 training-size penalty makes absolute claims invalid |
 | 3 | **Restate the retrain trigger's N** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §8.5 | 🟡 **§8 ran and returned NOT DECIDABLE; N = 65 stands.** §8.5 records honestly that the registered statistic was the wrong one — p95 of inter-bar gaps measures signal density, not silence. Needs a fresh pre-registration choosing a tail statistic |
 
@@ -70,7 +70,7 @@ on ~220 independent days, which is what the folds exist to change.
 
 | item | owner doc | state |
 |---|---|---|
-| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **RUNNING ON THE WRONG BAR SIZE UNTIL THE §7.5 FIX IS DEPLOYED — see [M3_FIDELITY_RESULTS §7.5](./M3_FIDELITY_RESULTS.md).** Zero trades in 12 days because the served model has been fed 1m candles; offline, the same days cleared the cut on 53 bars. Root-caused and fixed 2026-09-10, deploy pending (row 1 above); the clock starts at that deploy. Previously: **the clock restarts at the §6.1 deploy**, because every row from there carries its checkpoint tag and the A/B is read on tagged rows. It needs no work, only calendar time — it is the only mechanism that manufactures new independent trading days. Check with `curl -s localhost:4000/api/health \| jq '{policy, regime}'` **on the VM** (port 4000 there; 4001 is the local-compose mapping). Long silences are the strategy working |
+| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔵 **RUNNING ON THE RIGHT BAR SIZE SINCE 2026-09-10 04:50 UTC** ([M3_FIDELITY_RESULTS §7.5](./M3_FIDELITY_RESULTS.md)); the clock starts there and `policy_bars` holds nothing older. Expect the first trade in **days, not weeks** if the market stays as it was in late August: on repaired 5m bars the offline scorer cleared the frozen cut on **11 of the 15 days 08-20 → 09-03** and on 34 of the 120 days before 09-04 — but a calm day (BTC 1-day \|return\| under ~1%, as on 09-10) fires nothing, and the longest dry spell ever measured is 21.5 days. Previously: **the clock restarts at the §6.1 deploy**, because every row from there carries its checkpoint tag and the A/B is read on tagged rows. It needs no work, only calendar time — it is the only mechanism that manufactures new independent trading days. Check with `curl -s localhost:4000/api/health \| jq '{policy, regime}'` **on the VM** (port 4000 there; 4001 is the local-compose mapping). Long silences are the strategy working |
 | **The walk-forward folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §7 | ✅ **DONE 2026-09-09 — verdict CONFIRMED.** Pre-registered 2026-09-04 before any fold was trained; 12 runs, all six §5.1 checks and C3 pass. W1 lower bound +9.28 bps. §7.3 records the one harness amendment (a `win`-column double-rounding in C3's comparison, fixed like-for-like, ratified before any fold number was read) |
 | **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** Deploy day found three defects invisible on the local stack — recorded in that document's §8 |
 | **The M3 dashboard panel** | [archive/M3_UI_PLAN.md](./archive/M3_UI_PLAN.md) | ✅ **BUILT 2026-08-29, live 2026-08-31.** It earned its keep immediately: the panel is what made the served-vs-scored threshold gap visible ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md)). Its empty-state doctrine now lives in [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §2 |
@@ -103,21 +103,18 @@ paper test from meaning anything. Owner: [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_
 ---
 ## 🔴 Open — blockers on trading anything but paper
 
-🔵 **These three rows now have an owning document with an ordered, executable checklist:
-[REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) (new 2026-09-01).** It is the recommended next
-session's work, because it is the only open work whose progress does not depend on the market
-producing a signal — see the arrival-rate finding below. ⚠️ Finishing it does **not** authorise
-trading real money and the document says so in §4: it clears the *mechanical* blockers, while
-the *evidence* blocker (zero forward trades) is untouched. Three decisions are stated there as
-explicit questions (Q1 the API key, Q2 the stop/target, Q3 whether to build signing now).
+🔵 **Owner: [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md).** On 2026-09-10 Vadim answered
+its three questions (Q1 read-only key in the VM's `.env`; Q2 keep the brake; Q3 build it all
+now), and the track moved from "three open rows" to "one thing left to run". ⚠️ Finishing it
+does **not** authorise trading real money and the document says so in §4: it clears the
+*mechanical* blockers, while the *evidence* blocker (zero forward trades) is untouched.
 
-*New 2026-08-28, from M3-5. Neither blocks the forward paper test; both block real money.*
-
-| item | why it matters | what to do | source |
-|---|---|---|---|
-| **Verify the Binance USDⓈ-M VIP fee tier** | Every M3 cost uses taker 4.0 / maker 2.0 bps per side because that is what `metrics.py`'s 14 and 5 decompose to. It has **never been checked against the account.** A wrong tier shifts every published M3 number by a constant, in a direction nobody has established | `docker compose exec app mix flux.fee_tier` — the task is written and signs `/fapi/v1/commissionRate` itself. It needs `BINANCE_API_KEY` / `BINANCE_API_SECRET` in the app container, which is the only reason it is still open. It fails loudly rather than printing an unverified number | [M3_4_PROTOCOL.md](./M3_4_PROTOCOL.md) §2.5, [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §6 |
-| **Decide what to do about the `auto` path's stop/target** | The 2%/4% brake costs **10.5 gross bps/trade**, about a third of the edge — now measured ([M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §4). 🟢 **Not urgent and not a bug.** The paper arms ignore both barriers and close on the timer, so the running A/B is unaffected; the brake bites only on the `auto` path, which cannot trade anyway. But it bounds single-position catastrophe loss, and the offline measurement contains no catastrophe — **it prices the premium, not the insurance** | Keep it and accept the premium, widen it, or make it regime-conditional. The one thing not to do is drop it *because* the backtest says it costs money: a fixed-hold backtest has never had to survive a 60% overnight move. Decide it alongside the two rows below, as part of going live | [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §4, `executor.ex` moduledoc |
-| **The `auto` order path is unsigned** | `Binance.Client.post/2` sends neither the `X-MBX-APIKEY` header nor the HMAC-SHA256 signature Binance requires on every TRADE endpoint, so a real order returns 401. Before M3-5 this failed silently; the executor now logs it at boot | Implement request signing (the same HMAC the fee-tier task already does) plus `listenKey` / order-status reconciliation. **Not M3 work** — M3-5's deliverable is the paper A/B — but it is a hard prerequisite for anything beyond paper | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §6 |
+| item | state | source |
+|---|---|---|
+| ~~**Verify the Binance USDⓈ-M VIP fee tier**~~ | ✅ **DONE 2026-09-10 — MISMATCH: taker 5.0 bps/side, not 4.0.** +2.0 bps per round trip on every measured cost, charged by `ExecCost` from that day; the published net-at-14 numbers stay conservative (true line ≈ 11.84). `mix flux.fee_tier` is now a standing check against the verified constant | [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §5 |
+| ~~**Decide the `auto` path's stop/target**~~ | ✅ **DECIDED 2026-09-10: keep (Q2 a).** And now actually placed on the exchange — `STOP_MARKET` + `TAKE_PROFIT_MARKET`, `closePosition`, mark-price trigger — with the fill booked as `exit_reason: stop / target` so the forward ledger can price the premium forward | [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §6, [M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §4 |
+| **The `auto` order path** | 🟢 **BUILT 2026-09-10, 122/122 tests; testnet demonstration PENDING.** Signing, filters, fill reconciliation, the brake, the user-data stream, and `mix flux.testnet_smoke`. **Next:** create testnet keys and run §6's runbook; bring back the stdout. **Also found:** the VM's `TRADING_MODE` and credentials were never read (prod-only config under a dev container) — fixed | [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §6 |
+| **Re-run M3_4_RESULTS §7's re-score at the corrected fee** | 🟡 **PARKED — one command, not urgent.** The winner's worst window at measured cost was +2.43 against the +0.25 bar; the +2.0 correction (× mean size) leaves it near +0.4. Should be read off a run, not inferred. **Revival trigger:** before any document quotes §7's numbers again. `./scripts/m3.sh -m m3 execcost` with `execcost.TAKER_FEE_BPS` at 5.0 — as a re-SCORE only, per §5.4 | [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §5 |
 
 ---
 

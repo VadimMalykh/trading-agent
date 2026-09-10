@@ -246,7 +246,10 @@ this is the result of three separately-trained copies of the model pooled togeth
    worth it: the fills you get are the ones where price is running through you, and the
    adverse move is larger than the fee rebate in every pair and direction tested. The
    remaining caveat is that the cost was measured in the calmest month of the period, so treat
-   9.84 as the optimistic end (§0.8).
+   9.84 as the optimistic end (§0.8). ⚠️ **Corrected 2026-09-10:** the account's real taker fee
+   is 5.0 bps/side, not the 4.0 assumed, so the measured crossing cost is **11.84**, not 9.84,
+   and the edge after costs is nearer **+17** than +19. Still better than the 14 every offline
+   number assumed; see [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §5.
 3. 🟢 **It is connected and deployed** (M3-5, built 2026-08-28, live on `fluxtrader-1` since
    2026-08-28 — [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md)).
    This used to read "nothing is connected: the policy exists only inside the offline

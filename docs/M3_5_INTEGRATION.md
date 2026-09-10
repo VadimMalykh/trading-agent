@@ -379,18 +379,16 @@ from. None of them is a re-tune of the policy.
 
 Stated plainly so nobody assumes otherwise:
 
-- 🔴 **The fee tier is still unverified.** Every M3 cost decomposes to a taker fee of 4.0 bps
-  per side, which is the published Binance USDⓈ-M VIP-0 rate and **has never been read off the
-  account**. `mix flux.fee_tier` performs the check and is written to fail loudly rather than
-  print an unverified number; it needs `BINANCE_API_KEY` / `BINANCE_API_SECRET` in the app
-  container, which this environment does not have. A wrong tier shifts every published M3
-  number by a constant. This remains M3_4_PROTOCOL §2.5's open precondition.
-- 🔴 **`auto` mode cannot actually place an order.** `Binance.Client.post/2` sends neither the
-  `X-MBX-APIKEY` header nor the HMAC-SHA256 signature that every Binance TRADE endpoint
-  requires, so a real order returns 401. The executor now logs this loudly at boot rather than
-  looking like it is trading. **Request signing is out of M3-5's scope** — M3-5 is the paper
-  A/B — but it is a hard prerequisite for anything beyond paper, and it is filed in
-  [BACKLOG.md](./BACKLOG.md).
+- ~~🔴 **The fee tier is still unverified.**~~ ✅ **Verified 2026-09-10 — and it was wrong:
+  taker 5.0 bps/side, not 4.0.** Both paper arms are charged the measured per-pair cost **plus
+  2.0 bps** from that day (`ExecCost`); no trade existed yet, so nothing was re-scored. This
+  is an amendment to §4.1's cost clause, made before the first tagged row and recorded here.
+  See [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §5.
+- ~~🔴 **`auto` mode cannot actually place an order.**~~ ✅ **Signed, reconciled and braked
+  as of 2026-09-10** — built after M3-5, under REAL_MONEY_TRACK step 3, and demonstrated
+  against the testnet is the one thing still pending. `auto` on the VM stays **off**: the row
+  an exchange fill writes is scored from the real `avgPrice` and charged the two fees only,
+  which is a different ledger from the paper one, and §4.1's A/B is registered on paper.
 - **No barrier exits, no funding term.** Both need M3-0b's price/funding side-table. The 4h
   hold is exactly what was scored.
 - **No verdict.** See §0: this collects evidence, it does not conclude.

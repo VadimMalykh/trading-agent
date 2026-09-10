@@ -42,12 +42,20 @@ defmodule FluxTrader.Trading.PaperTrade do
     # the ledger survives a checkpoint swap instead of being truncated.
     field(:checkpoint, :string)
     field(:ladder_p80, :float)
+    # Where the prices came from, and the exchange orders behind them (auto path only).
+    field(:fill_source, :string, default: "paper")
+    field(:entry_order_id, :integer)
+    field(:exit_order_id, :integer)
+    field(:stop_order_id, :integer)
+    field(:target_order_id, :integer)
+    field(:exit_reason, :string)
 
     timestamps()
   end
 
   @fields ~w(arm pair side size entry_ts exit_after_ts exit_ts entry_price exit_price quantity notional
-             gross_bps cost_bps net_bps status confidence threshold regime checkpoint ladder_p80)a
+             gross_bps cost_bps net_bps status confidence threshold regime checkpoint ladder_p80
+             fill_source entry_order_id exit_order_id stop_order_id target_order_id exit_reason)a
   @required ~w(arm pair side size entry_ts exit_after_ts entry_price status)a
 
   def arms, do: @arms
@@ -59,6 +67,7 @@ defmodule FluxTrader.Trading.PaperTrade do
     |> validate_inclusion(:arm, @arms)
     |> validate_inclusion(:side, [-1, 1])
     |> validate_inclusion(:status, ~w(open closed))
+    |> validate_inclusion(:fill_source, ~w(paper exchange))
     |> unique_constraint([:arm, :pair], name: :paper_trades_one_open_per_pair)
   end
 end

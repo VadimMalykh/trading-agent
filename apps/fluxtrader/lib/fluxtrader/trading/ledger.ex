@@ -223,29 +223,54 @@ defmodule FluxTrader.Trading.Ledger do
   The unique partial index on (arm, pair) where status = 'open' enforces serial-per-pair in
   the database rather than only in the decision code, so a race between the 30-second poll
   and a restart cannot book two overlapping 4h holds on one pair.
+
+  `overrides` is how the `auto` path writes what the exchange actually did — the fill price,
+  the filled quantity, the fee-only cost and the order ids — in place of the paper values.
+  A paper row passes none.
   """
-  def open_trade(arm, decision) do
+  def open_trade(arm, decision, overrides \\ %{}) do
     %PaperTrade{}
-    |> PaperTrade.changeset(%{
-      arm: arm,
-      pair: decision.pair,
-      side: decision.side,
-      size: decision.size,
-      entry_ts: truncate(decision.entry_ts),
-      exit_after_ts: truncate(decision.exit_after_ts),
-      entry_price: decision.entry_price,
-      quantity: decision[:quantity],
-      notional: decision[:notional],
-      confidence: decision.confidence,
-      threshold: decision[:threshold],
-      regime: decision[:regime],
-      checkpoint: decision[:checkpoint],
-      ladder_p80: decision[:ladder_p80],
-      cost_bps: ExecCost.cost_bps(decision.pair),
-      status: "open"
-    })
+    |> PaperTrade.changeset(
+      Map.merge(
+        %{
+          arm: arm,
+          pair: decision.pair,
+          side: decision.side,
+          size: decision.size,
+          entry_ts: truncate(decision.entry_ts),
+          exit_after_ts: truncate(decision.exit_after_ts),
+          entry_price: decision.entry_price,
+          quantity: decision[:quantity],
+          notional: decision[:notional],
+          confidence: decision.confidence,
+          threshold: decision[:threshold],
+          regime: decision[:regime],
+          checkpoint: decision[:checkpoint],
+          ladder_p80: decision[:ladder_p80],
+          cost_bps: ExecCost.cost_bps(decision.pair),
+          fill_source: "paper",
+          status: "open"
+        },
+        Map.new(overrides)
+      )
+    )
     |> Repo.insert()
   end
+
+  @doc "The open trade holding `order_id` as its stop or target, if any — for brake fills."
+  def open_trade_by_brake(order_id) when is_integer(order_id) do
+    Repo.one(
+      from(t in PaperTrade,
+        where:
+          t.status == "open" and
+            (t.stop_order_id == ^order_id or t.target_order_id == ^order_id),
+        limit: 1
+      )
+    )
+  end
+
+  @doc "Re-read a trade's current row, so a close can refuse to book a row twice."
+  def reload(%PaperTrade{id: id}), do: Repo.get(PaperTrade, id)
 
   @doc """
   Close a paper position at `exit_price` and book its P&L.
@@ -253,21 +278,30 @@ defmodule FluxTrader.Trading.Ledger do
   Booked exactly as `backtest.py` does: `gross = side * (exit/entry - 1) * size`, and
   `net = gross - cost_bps * size` with `cost_bps` the pair's **measured** round trip from
   M3-4. The cost scales with size because a 5/3-size trade crosses 5/3 as much notional.
+
+  `overrides` carries `exit_reason` and `exit_order_id` from the auto path; a paper close
+  books `exit_reason: "timer"`, which is the only exit the policy was scored with.
   """
-  def close_trade(%PaperTrade{} = trade, exit_price, now \\ DateTime.utc_now()) do
+  def close_trade(%PaperTrade{} = trade, exit_price, now \\ DateTime.utc_now(), overrides \\ %{}) do
     ret = exit_price / trade.entry_price - 1.0
     gross_bps = trade.side * ret * trade.size * 1.0e4
     cost_bps = trade.cost_bps || ExecCost.cost_bps(trade.pair)
 
     trade
-    |> PaperTrade.changeset(%{
-      exit_ts: truncate(now),
-      exit_price: exit_price,
-      gross_bps: gross_bps,
-      cost_bps: cost_bps,
-      net_bps: gross_bps - cost_bps * trade.size,
-      status: "closed"
-    })
+    |> PaperTrade.changeset(
+      Map.merge(
+        %{
+          exit_ts: truncate(now),
+          exit_price: exit_price,
+          gross_bps: gross_bps,
+          cost_bps: cost_bps,
+          net_bps: gross_bps - cost_bps * trade.size,
+          exit_reason: "timer",
+          status: "closed"
+        },
+        Map.new(overrides)
+      )
+    )
     |> Repo.update()
   end
 

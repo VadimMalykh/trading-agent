@@ -15,6 +15,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+# The two published cost lines. 14 = 4 + 4 fee + 3 + 3 assumed slippage. Since 2026-09-10 the
+# account's taker fee is KNOWN to be 5.0/side (not 4.0) and M3-4's measured slippage makes
+# the true crossing line ~11.84 pooled — so "net at taker 14" is still the conservative
+# reading and is deliberately left as the published constant. See REAL_MONEY_TRACK.md §5.
 MAKER_COST_BPS, TAKER_COST_BPS = 5.0, 14.0
 BPS = 1e4
 

@@ -3,19 +3,32 @@ defmodule FluxTrader.Trading.ExecCostTest do
 
   alias FluxTrader.Trading.ExecCost
 
-  test "per-pair costs are the measured ones from M3_4_RESULTS.md §1" do
-    assert {:measured, 8.017} = ExecCost.round_trip_bps("BTCUSDT")
-    assert {:measured, 14.060} = ExecCost.round_trip_bps("WLDUSDT")
-    assert {:measured, 8.017} = ExecCost.round_trip_bps("btcusdt")
+  test "per-pair costs are the measured ones from M3_4_RESULTS.md §1, plus the fee correction" do
+    # As measured, at the 4.0 bps fee M3-4 assumed ...
+    assert {:measured, 8.017} = ExecCost.measured_round_trip_bps("BTCUSDT")
+    assert {:measured, 14.060} = ExecCost.measured_round_trip_bps("WLDUSDT")
+    # ... and as charged, at the 5.0 bps the account actually pays (verified 2026-09-10).
+    assert ExecCost.fee_correction_bps() == 2.0
+    assert {:measured, 10.017} = ExecCost.round_trip_bps("BTCUSDT")
+    assert {:measured, 16.060} = ExecCost.round_trip_bps("WLDUSDT")
+    assert {:measured, 10.017} = ExecCost.round_trip_bps("btcusdt")
+  end
+
+  test "the fee tier read off the account on 2026-09-10 is what the correction rests on" do
+    assert ExecCost.taker_fee_bps_per_side() == 5.0
+    assert ExecCost.maker_fee_bps_per_side() == 2.0
+    assert ExecCost.measured_fee_bps_per_side() == 4.0
+    # An exchange-filled row pays the two taker fees and nothing else.
+    assert ExecCost.fee_only_round_trip_bps() == 10.0
   end
 
   test "the four short-window pairs carry their own cost, tagged by evidence depth" do
     # From the same M3-4 run's "four short-window pairs" table: 14 days of ladder rather
     # than 23, so they are charged normally but tagged so the depth stays visible.
-    assert {:measured_short_window, 9.075} = ExecCost.round_trip_bps("XRPUSDT")
-    assert {:measured_short_window, 10.754} = ExecCost.round_trip_bps("LINKUSDT")
-    assert {:measured_short_window, 11.401} = ExecCost.round_trip_bps("AVAXUSDT")
-    assert {:measured_short_window, 13.733} = ExecCost.round_trip_bps("ADAUSDT")
+    assert {:measured_short_window, 11.075} = ExecCost.round_trip_bps("XRPUSDT")
+    assert {:measured_short_window, 12.754} = ExecCost.round_trip_bps("LINKUSDT")
+    assert {:measured_short_window, 13.401} = ExecCost.round_trip_bps("AVAXUSDT")
+    assert {:measured_short_window, 15.733} = ExecCost.round_trip_bps("ADAUSDT")
   end
 
   test "ADAUSDT is why the pooled fallback was not good enough to serve on" do
@@ -27,7 +40,8 @@ defmodule FluxTrader.Trading.ExecCostTest do
   test "an unmeasured pair falls back to the pooled cost and says so" do
     # Charging BTC's 8.0 bps on a pair whose spread was never measured would make a
     # backtest look better than the market.
-    assert {:pooled_fallback, 9.842} = ExecCost.round_trip_bps("BNBUSDT")
+    assert {:pooled_fallback, 11.842} = ExecCost.round_trip_bps("BNBUSDT")
+    assert {:pooled_fallback, 9.842} = ExecCost.measured_round_trip_bps("BNBUSDT")
   end
 
   test "all twelve served pairs are measured, split 8 long-window / 4 short" do
@@ -58,7 +72,8 @@ defmodule FluxTrader.Trading.ExecCostTest do
   test "the pooled number stays pooled over the eight long-window pairs only" do
     # M3_4_PROTOCOL §1.5: Q1 is a pre-registered decision quantity measured on 23 days, and
     # re-pooling it across two depths of evidence is exactly what the protocol forbids.
-    assert ExecCost.pooled_bps() == 9.842
+    assert ExecCost.pooled_bps() == 11.842
+    assert ExecCost.measured_pooled_bps() == 9.842
   end
 
   test "every long-window pair is cheaper than the 14 bps M3 used to assume" do
@@ -66,19 +81,20 @@ defmodule FluxTrader.Trading.ExecCostTest do
     # pessimistic. WLDUSDT is the one pair that reaches it. The short-window four are NOT
     # part of that claim — they never contributed to Q1's verdict.
     Enum.each(ExecCost.long_window_pairs(), fn p ->
-      assert ExecCost.cost_bps(p) <= 14.060
+      assert ExecCost.cost_bps(p) <= 16.060
     end)
 
     assert ExecCost.pooled_bps() < 14.0
   end
 
   test "net_bps books gross minus cost x size, exactly as metrics.summarise does" do
-    # 0.003 = 30 bps gross; BTC costs 8.017 round trip; size 5/3 crosses 5/3 the notional.
-    assert_in_delta ExecCost.net_bps("BTCUSDT", 0.003, 1.0), 30.0 - 8.017, 1.0e-9
-    assert_in_delta ExecCost.net_bps("BTCUSDT", 0.003, 5 / 3), 30.0 - 8.017 * 5 / 3, 1.0e-9
+    # 0.003 = 30 bps gross; BTC costs 10.017 round trip (8.017 measured + 2.0 fee correction);
+    # size 5/3 crosses 5/3 the notional.
+    assert_in_delta ExecCost.net_bps("BTCUSDT", 0.003, 1.0), 30.0 - 10.017, 1.0e-9
+    assert_in_delta ExecCost.net_bps("BTCUSDT", 0.003, 5 / 3), 30.0 - 10.017 * 5 / 3, 1.0e-9
   end
 
   test "side cost is half the round trip" do
-    assert_in_delta ExecCost.side_bps("BTCUSDT"), 8.017 / 2, 1.0e-9
+    assert_in_delta ExecCost.side_bps("BTCUSDT"), 10.017 / 2, 1.0e-9
   end
 end

@@ -607,15 +607,13 @@ defmodule FluxTrader.Trading.PolicyEngine do
         {:ok, price} ->
           case Executor.close(trade, price) do
             {:ok, closed} ->
-              if closed.arm == @policy_arm do
-                RiskManager.release()
-                # The daily-loss limit is a money limit, so bps have to be converted back
-                # through the notional RiskManager itself approved at entry.
-                if closed.notional,
-                  do: RiskManager.record_close(closed.net_bps / 1.0e4 * closed.notional)
-              end
-
+              RiskManager.record_closed_trade(closed)
               count_decision(acc, :closed)
+
+            {:error, :already_closed} ->
+              # A brake filled and the user-data stream booked it between this tick's
+              # due-list read and now. Nothing to do.
+              acc
 
             {:error, _} ->
               count_decision(acc, :close_failed)
