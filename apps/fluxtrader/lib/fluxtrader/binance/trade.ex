@@ -36,6 +36,9 @@ defmodule FluxTrader.Binance.Trade do
   @doc "GET /fapi/v2/positionRisk — the exchange's own view of the position on a symbol."
   @callback position_risk(symbol :: String.t()) :: result
 
+  @doc "GET /fapi/v1/premiumIndex — the symbol's current mark price on the trading host. Unsigned."
+  @callback mark_price(symbol :: String.t()) :: result
+
   @doc "GET /fapi/v1/commissionRate — the account's real maker/taker fee for a symbol."
   @callback commission_rate(symbol :: String.t()) :: result
 

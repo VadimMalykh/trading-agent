@@ -50,6 +50,9 @@ defmodule FluxTrader.Binance.Trade.Fake do
   def position_risk(symbol), do: answer(:position_risk, [symbol])
 
   @impl true
+  def mark_price(symbol), do: answer(:mark_price, [symbol])
+
+  @impl true
   def commission_rate(symbol), do: answer(:commission_rate, [symbol])
 
   @impl true
@@ -128,6 +131,7 @@ defmodule FluxTrader.Binance.Trade.Fake do
 
   defp default(:cancel_all_open_orders, _, _), do: {:ok, %{"code" => 200, "msg" => "ok"}}
   defp default(:position_risk, [symbol], _), do: {:ok, [%{"symbol" => symbol, "positionAmt" => "0", "markPrice" => "100000.0"}]}
+  defp default(:mark_price, [symbol], _), do: {:ok, %{"symbol" => symbol, "markPrice" => "100000.0"}}
   defp default(:commission_rate, [symbol], _), do: {:ok, %{"symbol" => symbol, "makerCommissionRate" => "0.000200", "takerCommissionRate" => "0.000500"}}
   defp default(:listen_key, _, _), do: {:ok, %{"listenKey" => "fake-listen-key"}}
   defp default(:keepalive_listen_key, _, _), do: {:ok, %{}}

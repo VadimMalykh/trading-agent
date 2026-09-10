@@ -46,6 +46,10 @@ defmodule FluxTrader.Binance.Trade.Rest do
   def position_risk(symbol), do: Client.signed_get("/fapi/v2/positionRisk", symbol: symbol)
 
   @impl true
+  def mark_price(symbol),
+    do: Client.signed_get("/fapi/v1/premiumIndex", [symbol: symbol], auth: :none)
+
+  @impl true
   def commission_rate(symbol),
     do: Client.signed_get("/fapi/v1/commissionRate", symbol: symbol)
 

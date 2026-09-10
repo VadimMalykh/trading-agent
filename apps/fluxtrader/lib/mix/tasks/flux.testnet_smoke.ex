@@ -121,10 +121,16 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
     IO.puts("\nTESTNET_OK — open, brake, close and reconcile all succeeded on #{symbol}")
   end
 
+  # From premiumIndex, not positionRisk: with no open position the demo reports a mark of
+  # 0.00000000 there, which sized the first run's order by dividing by zero.
   defp mark_price!(client, symbol) do
-    case client.position_risk(symbol) do
-      {:ok, [%{"markPrice" => mp} | _]} -> to_f(mp)
-      other -> die("positionRisk (mark price)", other)
+    case client.mark_price(symbol) do
+      {:ok, %{"markPrice" => mp}} ->
+        price = to_f(mp)
+        if price > 0.0, do: price, else: die("premiumIndex returned a zero mark", mp)
+
+      other ->
+        die("premiumIndex (mark price)", other)
     end
   end
 
