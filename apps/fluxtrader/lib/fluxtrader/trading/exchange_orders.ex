@@ -150,14 +150,25 @@ defmodule FluxTrader.Trading.ExchangeOrders do
   end
 
   # The response usually carries the fill already; when it does not, the order's status is
-  # read back until it is terminal. Ten polls at 200ms is two seconds — a MARKET order that
-  # has not resolved by then is not going to, and the caller gets the last thing seen.
-  defp reconcile(_client, _symbol, %{"status" => st} = resp, _n) when st in @terminal,
-    do: {:ok, resp}
+  # read back until it is terminal AND carries the fill. Ten polls at 200ms is two seconds —
+  # a MARKET order that has not resolved by then is not going to, and the caller gets the
+  # last thing seen.
+  #
+  # "Terminal" alone is not enough: the demo exchange (2026-09-10, order 28578998606)
+  # answered a MARKET order `status: FILLED` with `avgPrice: 0` and `executedQty: 0` in the
+  # same response, and only the read-back carried the numbers. A FILLED order with no fill
+  # in it is therefore polled like a NEW one.
+  defp reconcile(client, symbol, %{"status" => st} = resp, n) when st in @terminal do
+    if st == "FILLED" and not filled_fields?(resp) and n > 0,
+      do: poll(client, symbol, resp, n),
+      else: {:ok, resp}
+  end
 
   defp reconcile(_client, _symbol, resp, 0), do: {:error, {:unreconciled, resp}}
+  defp reconcile(client, symbol, %{"orderId" => _} = resp, n), do: poll(client, symbol, resp, n)
+  defp reconcile(_client, _symbol, resp, _n), do: {:error, {:unexpected_response, resp}}
 
-  defp reconcile(client, symbol, %{"orderId" => id}, n) do
+  defp poll(client, symbol, %{"orderId" => id}, n) do
     Process.sleep(@poll_ms)
 
     case client.get_order(symbol, id) do
@@ -166,7 +177,7 @@ defmodule FluxTrader.Trading.ExchangeOrders do
     end
   end
 
-  defp reconcile(_client, _symbol, resp, _n), do: {:error, {:unexpected_response, resp}}
+  defp filled_fields?(order), do: to_f(order["executedQty"]) > 0.0 and to_f(order["avgPrice"]) > 0.0
 
   defp fill_from(%{"orderId" => id} = order) do
     qty = to_f(order["executedQty"])

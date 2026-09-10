@@ -78,6 +78,29 @@ defmodule FluxTrader.Trading.ExchangeOrdersTest do
     assert length(Fake.calls(:get_order)) == 2
   end
 
+  # Seen on the demo exchange 2026-09-10: FILLED in the response, fill fields zero, numbers
+  # only on the read-back. Treating "FILLED" as done here left an unbraked position behind.
+  test "open: FILLED with zero fill fields is read back until the numbers arrive" do
+    {:ok, _} =
+      Fake.start(
+        responses: %{
+          place_order: [
+            {:ok, %{"orderId" => 11, "status" => "FILLED", "avgPrice" => "0.00", "executedQty" => "0"}}
+          ],
+          get_order: [
+            {:ok, %{"orderId" => 11, "status" => "FILLED", "avgPrice" => "78084.3", "executedQty" => "0.0007"}}
+          ]
+        }
+      )
+
+    assert {:ok, fill} = ExchangeOrders.open(Fake, filters(), req())
+    assert fill.order_id == 11
+    assert fill.avg_price == 78_084.3
+    assert fill.executed_qty == 0.0007
+    # ... and the brakes were still attached.
+    assert is_integer(fill.stop_order_id) and is_integer(fill.target_order_id)
+  end
+
   test "open: an order that expired unfilled is an error and no brake is placed" do
     {:ok, _} =
       Fake.start(

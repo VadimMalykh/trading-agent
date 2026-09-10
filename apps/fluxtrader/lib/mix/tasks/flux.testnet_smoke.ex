@@ -11,6 +11,7 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
         -e BINANCE_API_KEY=<testnet key> -e BINANCE_API_SECRET=<testnet secret> \\
         app mix flux.testnet_smoke
       ... app mix flux.testnet_smoke --symbol ETHUSDT --hold-seconds 30 --notional 120
+      ... app mix flux.testnet_smoke --flatten      # close a position a failed run left behind
 
   (`docker compose exec` does not forward the host's environment; each variable needs `-e`.)
 
@@ -42,7 +43,13 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
   def run(argv) do
     {opts, _, _} =
       OptionParser.parse(argv,
-        strict: [symbol: :string, hold_seconds: :integer, notional: :float, leverage: :integer]
+        strict: [
+          symbol: :string,
+          hold_seconds: :integer,
+          notional: :float,
+          leverage: :integer,
+          flatten: :boolean
+        ]
       )
 
     symbol = Keyword.get(opts, :symbol, "BTCUSDT")
@@ -71,9 +78,12 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
     f = Map.fetch!(filters, symbol)
     IO.puts("filters: step #{f.step} tick #{f.tick} min_notional #{f.min_notional}")
 
+    if opts[:flatten], do: flatten!(client, symbol)
+
     assert_flat!(client, symbol, "before")
 
     price = mark_price!(client, symbol)
+    IO.puts("mark price (premiumIndex): #{price}")
     notional = Keyword.get(opts, :notional, f.min_notional * 1.2)
     qty = notional / price
 
@@ -146,6 +156,22 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
 
       other ->
         die("positionRisk", other)
+    end
+  end
+
+  # `--flatten`: close whatever position the symbol holds (a failed earlier run leaves one
+  # behind, unbraked) through the same close path, then continue with the smoke.
+  defp flatten!(client, symbol) do
+    amt = show_position(client, symbol, "flatten")
+
+    if amt != 0.0 do
+      side = if amt > 0, do: "SELL", else: "BUY"
+      IO.puts("FLATTEN #{side} reduceOnly #{abs(amt)}")
+      req = %{symbol: symbol, side: side, quantity: abs(amt), stop_order_id: nil, target_order_id: nil}
+      {:ok, fill} = ExchangeOrders.close(client, req) |> or_die("flatten")
+      IO.puts("  flattened qty=#{fill.executed_qty} avg=#{fill.avg_price} order=#{fill.order_id}")
+    else
+      IO.puts("FLATTEN: already flat")
     end
   end
 
