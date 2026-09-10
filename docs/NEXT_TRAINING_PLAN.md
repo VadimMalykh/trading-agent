@@ -209,6 +209,13 @@ there (§6 C15).
    `gcp_train.sh` adopts a single fixed instance name and will delete/recreate it on a
    machine-type mismatch, so launching a second run can kill the one already in flight
    (§7). Plan queues in summed wall clock.
+10. **`gcp_gbt.sh` restores `dumps/latest.sql.gz` (cache ≤ 30 min), so a "seed-fixed"
+    re-run is not a reproduction unless the dump is the same.** B3b's 5m re-emit got a dump
+    made 105 min after B3's: the val window moved 21 bars, the fit saw 0.4% different rows,
+    and the 2.7-day fold LBs moved by up to 0.06 (BOOK_ERA_PLAN §R.3). Each run's dump *is*
+    snapshotted as `dumps/<RUN_ID>.sql.gz`; a digit-for-digit reproduction needs a knob to
+    restore a named one, which does not exist yet. Also the general form of trap 7 — `VAL_FRACTION`
+    was another config.py knob the GBT launcher did not forward until 2026-09-11.
 
 ### 0.6 🔴 When two arms have different bar counts, rank on `dir_acc`, not Wilson-LB
 
@@ -435,56 +442,20 @@ it is not what R1 tests, because R1 has one variable already.
 * **The walk-forward folds** — twelve serial `gcp_train.sh` runs, pre-registered in
   [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md). They retrain the §1.3 recipe with the
   split boundary moved back; they are not a change to M2 and they do not reopen §5.
-* **B3b**, below — the completion of B3's registration, two serial CPU runs.
+* **B3c**, the book-era 15m re-test — one CPU run on `gcp_gbt.sh`, parked until 2026-11-02 (below and in BACKLOG.md).
 
-### 🟢 B3b — finish the book-era GBT registration. Two CPU runs, launch pending a push
+### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 
-**B3 ran 2026-09-10 and its 5m arm fails the gate** (`logs/b3_gbt_20260910.log`; reading in
-[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §R.2): gross +2.4 bps/trade at cov 5% on n_dir 750,
-net at maker −2.6 against a +5 gate, LB 0.540. But the run **did not produce two things the
-registration asked for**, because `gbt_baseline.py` never had them: it scores only the primary
-horizon, so §4.3's **15m arm was never measured**, and it had **no feature-importance output**
-(O5). Both were added on 2026-09-11, together with per-trade gross / net-at-maker /
-net-at-taker columns so the gate reads straight off the log. B3b is that same registration
-completed — **same three hyperparameters, same era, same pairs; not a sweep, not a new
-setting** — and the wave closes on its verdict.
+`logs/b3b_gbt_5m_20260911.log`, `logs/b3b_gbt_15m_20260911.log`; reading in
+[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §R.3. 15m at cov 5%: gross +5.29, **net at maker +0.29
+vs a +5 gate, day-clustered band ±8.4 → FAIL as written, gate inside the band**; 5m re-emit
+confirmed FAIL (not digit-identical: the dump refreshed, trap 10 below). O5 filed there. The one
+follow-up is **B3c** — the identical 15m registration on a ~53-day val window, **on or after
+2026-11-02**, parked in [BACKLOG.md](./BACKLOG.md) with the exact command in §R.3; it uses the
+new `GBT_VAL_FRACTION` launcher passthrough. No third setting, no sweep.
 
-**To launch (Vadim):** commit and push `ml/train/gbt_baseline.py` (`gcp_gbt.sh` clones `main`),
-then the two runs **serially** — the launcher uses one fixed VM name:
-
-```sh
-# run 1 — the identical 5m fit, re-run only to emit O5 + calibration (seed 42 is fixed;
-#         the P&L table must reproduce logs/b3_gbt_20260910.log to the digit)
-GBT_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-GBT_HORIZONS=5,15,60 GBT_PRIMARY=5 CANDLE_INTERVAL=5m \
-  ./scripts/gcp_gbt.sh --tail-days 55 --num-leaves 15 --n-estimators 200 --learning-rate 0.03
-./scripts/gcp_gbt.sh --status          # until the marker says DONE (~40 min)
-./scripts/gcp_gbt.sh --fetch
-./scripts/gcp_gbt.sh --log > logs/b3b_gbt_5m_$(date +%Y%m%d).log
-
-# run 2 — the 15m arm of §4.3, only after run 1's marker says DONE
-GBT_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
-GBT_HORIZONS=5,15,60 GBT_PRIMARY=15 CANDLE_INTERVAL=5m \
-  ./scripts/gcp_gbt.sh --tail-days 55 --num-leaves 15 --n-estimators 200 --learning-rate 0.03
-./scripts/gcp_gbt.sh --status
-./scripts/gcp_gbt.sh --fetch
-./scripts/gcp_gbt.sh --log > logs/b3b_gbt_15m_$(date +%Y%m%d).log
-```
-
-**Bring back (both logs):** the `Val window` line (expect 2026-08-30 19:45 → the dump time);
-the `Serial P&L` table with its new `per-trade bps: gross / net@taker / net@maker` columns; the
-`=== Feature importance` block (gain share per feature and the `by block:` line); the
-`=== Calibration` block; the walk-forward folds; and the `[norm]` lines. **Expect the
-`ETHUSDT … BROKEN SCALE` flag again** — it is one 8.2-bps spread bar on 2026-09-01 in the val
-window against a one-tick spread everywhere else (§R.2), known and not a void. Run 1 is a
-reproduction: its `dir_acc`/`n_dir`/`net` values must match the 09-10 log; if they do not, say
-so first. **Verdict for run 2, against §4.3 as written:** +5 bps **net at maker** at 15m,
-cov ≤ 0.05, `n_dir` ≥ 500. Expectation recorded in advance (§R.2): ~+3 gross, a fail. 🔴 If
-it lands near the gate, the answer is more calendar, not a third setting. A pass promotes
-nothing (§4.3). Either way the importance tables are O5 and get filed in BOOK_ERA_PLAN.
-
-**Nothing else in the B-wave needs a GPU or a training run.** B0, B1 and B2 are all done and all
-ran on the laptop's `ml_analysis` container.
+**Nothing else in the B-wave needs a GPU or a training run.** B0, B1 and B2 all ran on the
+laptop's `ml_analysis` container.
 
 ---
 

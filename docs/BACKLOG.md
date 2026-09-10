@@ -47,10 +47,11 @@ decision (row 3). The one offline lever still open anywhere is the **book-era wa
 ([BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md)), which §9.5's closure now points at as the only route
 to a learned policy: new observations, not more days. **2026-09-10: its measurement half was
 re-run on the full era with repaired candles; both gates passed by the letter, neither result
-is distinguishable from zero. 2026-09-11: B3 ran — its 5m arm fails the gate (gross +2.4,
-net at maker −2.6 bps/trade), but the script never scored the 15m arm or emitted the
-importances the registration asked for; the completing pair of CPU runs (B3b) is written and
-waiting on a push — see the B-wave section and row 7.**
+is distinguishable from zero. 2026-09-11: B3 finished on both arms and the wave is CLOSED on
+its verdict — 5m fails decisively; 15m fails as written (+0.29 net at maker vs +5) but inside
+the window's ±8.4-bps resolution, so it is parked for an identical re-run on 2026-11-02, not
+re-tuned; O5 says the model leans on a candle feature, not the book. Rows in the B-wave section.**
+
 
 | # | item | owner | state / what to do |
 |---|---|---|---|
@@ -59,7 +60,7 @@ waiting on a push — see the B-wave section and row 7.**
 | 3 | **Going live, when the evidence exists** | [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §4, §6 | 🟢 **MECHANICALLY READY, NOT AUTHORISED.** What it would take, and nothing here is to be done now: a production key **with** futures-trading rights (the one in `.env` is read-only), `TRADING_MODE=auto` on the VM, `BINANCE_TESTNET` unset, and an explicit decision recorded here with the forward evidence it rests on. 🔴 Switching the VM to `auto` puts exchange-filled rows into the same ledger the A/B is registered on paper; that is a new registration, not a config change |
 | 4 | **Restate the retrain trigger's N** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §8.5 | 🟡 N = 65 stands; needs a fresh pre-registration choosing a tail statistic |
 | 5 | **The `flux.fee_tier` ETHUSDT control** | [REAL_MONEY_TRACK.md](./REAL_MONEY_TRACK.md) §5 | ✅ **DONE 2026-09-10 — MATCH** (run by Vadim on the VM). The 5.0/2.0 tier is confirmed account-level; nothing changes |
-| 6 | **A learned challenger on the folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §9.5 | 🟢 **CLOSED 2026-09-10 at the exploration gate** (`m3 learnfolds --stage explore`). Registered, fitted out-of-fold and out-of-checkpoint on F0+F1: all 8 of M3-3's configurations lose to the rule by 28–34 bps/trade; on F0 every upper bound is under +4.6, so a ladder-sized improvement is excluded there. F2/F3 not read. Third independent negative for the linear class on this observation vector. **Revival trigger: new observations (side-table or book features over the fold era), not more days.** ⚠️ 2026-09-10: the B-wave's B2 now supplies exactly one candidate — `spread_bps_mkt_lo`, a hypothesis at ±69 bps — and one warning about the observation vector already in use, next row |
+| 6 | **A learned challenger on the folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §9.5 | 🟢 **CLOSED 2026-09-10 at the exploration gate** (`m3 learnfolds --stage explore`). Registered, fitted out-of-fold and out-of-checkpoint on F0+F1: all 8 of M3-3's configurations lose to the rule by 28–34 bps/trade; on F0 every upper bound is under +4.6, so a ladder-sized improvement is excluded there. F2/F3 not read. Third independent negative for the linear class on this observation vector. **Revival trigger: new observations (side-table or book features over the fold era), not more days.** ⚠️ 2026-09-10: the B-wave's B2 now supplies exactly one candidate — `spread_bps_mkt_lo`, a hypothesis at ±69 bps — and one warning about the observation vector already in use, next row. ⚠️ 2026-09-11: B3's O5 importances weaken the "book features" half of this trigger — a tree model given all eleven book scalars over the whole era puts only 15–22% of its gain on them and leans on a candle feature (`xs_disp_1h`); B2's one regime hypothesis is the book item still standing (BOOK_ERA_PLAN §R.3) |
 | 7 | **The regime observable is inverted on the book era** | [BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §R.1 | 🟡 **OBSERVATION, 2026-09-10, for the forward test to check — not a finding.** On the repaired dumps over 2026-07-17..09-03 (8 pairs), the incumbent `btc_absret_1d` top-quintile gate scores **−20.23 gross (n=162) at cov 2% and −38.85 (n=330, seeds agreeing) at cov 5%**, against no-gate −7.85 / −17.61, while the calm-BTC subset earns +21.71 / +10.74. Q1's 4× effect points the other way on this era. The live size ladder is keyed on this observable. CIs are ±67–115 bps on 54 days, so **change nothing**; but when the forward ledger has trades, split them by the frozen p80 first |
 
 **Operational rules learned today, so nobody re-learns them:** after a `git pull`, run
@@ -179,7 +180,9 @@ effect already lives. Owner: **[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md)**.
 | ~~**B1**~~ | ✅ **RE-RUN 2026-09-10 — §4.1 `PASS`** | — | `imbalance` @ 60m: **+10.37 bps raw** on n=3,158 (floor 2,000 cleared), sign agreeing. **+5.62 of it is drift; the excess +4.75 has a day-clustered CI of [−2.45, +11.94]** on 28 clusters. Rank ρ 0.005–0.015. Best of 30 cells. At **5m nothing clears the maker line** (best +3.43 raw). So: passes the rule as written, licenses B3, and is not an edge. VOL-PROXY confirmed on true candles: `spread_bps` −0.19, `trade_count` +0.29, `trade_vol` +0.26, `funding_rate` +0.20. Full reading BOOK_ERA_PLAN §R.1 |
 | ~~**B2**~~ | ✅ **RE-RUN 2026-09-10 — §4.2 `PASS` on `spread_bps_mkt_lo`** (repaired dumps, 8 pairs, 07-17..09-09; `oi_chg` now among the candidates) | — | Narrow-spread (volatile) tail of the market-wide spread: **+35.43 gross on n=153** vs baseline **−7.85 (n=311)** at cov 2%, lift +43.29, conditional +27.89, seeds agree; consistent at cov 5% (lift +31.96). **The arm's own 95% half-width is ±68.8 bps**, the orientation was chosen from B1's sign (ten primary tests), so per §4.2 this is a **hypothesis to re-test**, never a policy term. All other candidates fail. 🔴 Side-finding filed under the live policy above: the incumbent `btc_absret_1d` gate is **negative** on this era |
 | ~~**B3**~~ | ✅ **RAN 2026-09-10 — 5m arm `FAIL §4.3`** (`logs/b3_gbt_20260910.log`) | — | Val 08-30 → 09-10 (10.9 d). Cov 5%: dir_acc 0.576, LB 0.540, n_dir 750; **gross +2.39, net at maker −2.61, net at 14-bps taker −11.61 bps/trade** against a +5-at-maker gate — a clear miss on a ±2-bps band. Best cov 1%: +3.16 gross. Edge sits in the first 2.7-day fold only (LB 0.574 / 0.448 / 0.481 / 0.520); not drift (val mean +0.18 bps, P(up) 0.493). Third method to land at +2–3 bps at 5m after §1.2 and B1: signal-limited. ETHUSDT `spread_bps` BROKEN SCALE flag = one 8.2-bps bar on 09-01, traced, not a void. Reading BOOK_ERA_PLAN §R.2 |
-| **B3b** | Complete B3's registration: same 5m fit re-emitted with O5 importances + calibration, then the **15m arm** of §4.3 | ✅ B3 ran; script patched 2026-09-11 | 🟢 **WRITTEN — launch pending Vadim (commit + push `ml/train/gbt_baseline.py`, then two serial CPU runs).** Exact commands, bring-back list and the pre-recorded expectation (15m ≈ +3 gross, a fail): [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2. Not a sweep: identical hyperparameters, era and pairs. The wave closes on run 2's verdict |
+| ~~**B3b**~~ | ✅ **DONE 2026-09-11 — both runs; the wave closes here** (`logs/b3b_gbt_5m_20260911.log`, `logs/b3b_gbt_15m_20260911.log`) | — | **15m arm at cov 5%: dir_acc 0.627 (LB 0.595), n_dir 911, gross +5.29, net at maker +0.29, net at taker −8.71 bps/trade; day-clustered band ±8.4 → FAIL §4.3 as written, gate inside the band.** 5m re-emit: not digit-identical (the dump refreshed, val window +21 bars) — net at maker −2.90 vs −2.61, verdict unchanged; 2.7-day fold LBs moved by up to 0.06 on that 0.4% data change, so fold-level "where the edge lives" readings are not structure. **O5:** `xs_disp_1h` 33–38% of gain; the 11 book scalars together 22% (5m) / 15% (15m) vs a 37% uniform share, none above 2.7%. Brier 0.251/0.253 — ranking has skill, probabilities do not. Reading BOOK_ERA_PLAN §R.3 |
+| **B3c** | The identical 15m registration, re-run with a ~53-day val window | 🟡 **calendar: on or after 2026-11-02** | 🟡 **PARKED, per §B3's pre-registration ("near the gate → more calendar, not a third setting").** Train window held at the first ~54 days of the era, val = everything after (`--tail-days 108 GBT_VAL_FRACTION=0.5`, launcher passthrough added 2026-09-11); brings the band from ±8.4 to ≈±4 bps. Gate unchanged: +5 net at maker at cov ≤ 5%, n_dir ≥ 500. Expectation recorded: FAIL with the gate excluded. A pass promotes nothing and would only license a maker-path registration — which the executor lacks (M3-5 §3.1). Exact command: BOOK_ERA_PLAN §R.3 |
+
 
 ### 🟡 New 2026-09-01, PARKED — the tradeable horizon has never been tested with book features
 
@@ -232,7 +235,8 @@ It was. Re-exporting from 2026-07-17 (the scalars' first day; the 08-05 left edg
 *ladder's*, which B0 does not read) gave 54 days and 3,158 rows at cov 5% against a floor of
 2,000, and the export also picked up the September candle repair, which the 08-31 numbers
 predate. The "≈2026-10-15" trigger is retired; what remains calendar-bound is B2's resolution
-(±69 bps on the gated arm — roughly four times the days to reach ±30).
+(±69 bps on the gated arm — roughly four times the days to reach ±30) and, since 2026-09-11, B3's
+15m arm (B3c, ±8.4 → ≈±4 bps needs ~53 val days, reached 2026-11-02).
 
 ---
 
@@ -257,10 +261,12 @@ the same window on a continuously-trading pair, so the probe's control did not d
 does not affect the depth verdict, but do not assume the trade stream is reachable on its basis.
 
 **The wave's exit condition (§4.4) did not fire** — both gates passed on 2026-09-10 — so the
-wave stays open through B3 and closes on its verdict. B3's 5m arm failed on 2026-09-10; the 15m
-arm is measured by B3b's second run, and the wave closes when that log is read. **Do not open a
-B5**; the next book step after B3b is the re-test of B2's hypothesis when the window resolves
-±30 bps.
+wave ran B3 and **closed on its verdict on 2026-09-11**: 5m failed decisively, 15m failed as
+written with the gate inside the window's resolution (BOOK_ERA_PLAN §R.3). **Do not open a
+B5.** What stays live in the book question is exactly two calendar-gated re-tests: **B3c** (the
+identical 15m registration on a ~53-day val window, on or after 2026-11-02 — row above) and the
+re-test of B2's `spread_bps_mkt_lo` hypothesis when its window resolves ±30 bps.
+
 
 ⚠️ **A pass under a hard gate is not the same as the answer being yes.** Both passes sit inside
 one day-clustered CI of zero; the plan pre-committed to treating a B2 pass as a hypothesis and

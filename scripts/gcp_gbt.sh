@@ -130,6 +130,10 @@ fi
 # launcher silently trained on 1m bars and produced a run that could not be
 # compared to the 15m LSTM baseline it exists to be compared against.
 : "${GBT_CANDLE_INTERVAL:=${CANDLE_INTERVAL:-1m}}"
+# Train/val split fraction. Same trap again: gbt_baseline.py reads VAL_FRACTION from
+# config.py env and it was NOT forwarded (BOOK_ERA_PLAN §R.3, 2026-09-11 — needed so the
+# B3-15m re-test can hold the train window fixed and let val grow with the calendar).
+: "${GBT_VAL_FRACTION:=${VAL_FRACTION:-0.2}}"
 
 # Flags accumulate as a plain string (not an array) — bash 3.2 on macOS trips over
 # empty-array expansion under `set -u`, and these flags never contain whitespace.
@@ -151,7 +155,7 @@ RUN_ID="gbt-$(date -u +%Y%m%dT%H%M%SZ)"
 
 echo ""
 echo "==> run_id=$RUN_ID  pairs=$GBT_PAIRS"
-echo "    horizons=$GBT_HORIZONS primary=${GBT_PRIMARY}m seq_len=$GBT_SEQ_LEN interval=$GBT_CANDLE_INTERVAL device=cpu"
+echo "    horizons=$GBT_HORIZONS primary=${GBT_PRIMARY}m seq_len=$GBT_SEQ_LEN interval=$GBT_CANDLE_INTERVAL val_frac=$GBT_VAL_FRACTION device=cpu"
 echo "    gbt_baseline.py $GBT_ARGS"
 if [[ ",$GBT_HORIZONS," != *",$GBT_PRIMARY,"* ]]; then
   echo "ERROR: GBT_PRIMARY=$GBT_PRIMARY is not in GBT_HORIZONS=$GBT_HORIZONS."
@@ -253,6 +257,7 @@ export GBT_HORIZONS='$GBT_HORIZONS'
 export GBT_PRIMARY='$GBT_PRIMARY'
 export GBT_SEQ_LEN='$GBT_SEQ_LEN'
 export GBT_CANDLE_INTERVAL='$GBT_CANDLE_INTERVAL'
+export GBT_VAL_FRACTION='$GBT_VAL_FRACTION'
 export KEEP_VM='$KEEP_VM'
 export MODEL_VOLUME_NAME='$MODEL_VOLUME_NAME'
 PRELUDE
@@ -357,12 +362,13 @@ if ! docker compose --profile ml build ml_trainer; then
   echo \"    torch pin used: \$(grep -E '^torch' ml/train/requirements.txt)\"
 fi
 
-echo \"=== resolved knobs: HORIZONS_MINUTES=\$GBT_HORIZONS PRIMARY_HORIZON=\$GBT_PRIMARY SEQ_LEN=\$GBT_SEQ_LEN CANDLE_INTERVAL=\$GBT_CANDLE_INTERVAL ===\"
+echo \"=== resolved knobs: HORIZONS_MINUTES=\$GBT_HORIZONS PRIMARY_HORIZON=\$GBT_PRIMARY SEQ_LEN=\$GBT_SEQ_LEN CANDLE_INTERVAL=\$GBT_CANDLE_INTERVAL VAL_FRACTION=\$GBT_VAL_FRACTION ===\"
 echo \"=== gbt_baseline.py \$GBT_ARGS ===\"
 REPORT=/workspace/train/output/gbt_\$RUN_ID.json
 docker compose --profile ml run --rm \
   -e HORIZONS_MINUTES=\$GBT_HORIZONS -e PRIMARY_HORIZON=\$GBT_PRIMARY -e SEQ_LEN=\$GBT_SEQ_LEN \
   -e CANDLE_INTERVAL=\$GBT_CANDLE_INTERVAL \
+  -e VAL_FRACTION=\$GBT_VAL_FRACTION \
   -e FLUX_GIT_SHA=\$GIT_SHA \
   ml_trainer python gbt_baseline.py \$GBT_ARGS --out \$REPORT
 
@@ -379,7 +385,7 @@ SUMMARY=\$HOME/gbt_summary.txt
 {
   echo \"E4-GBT diagnostic — run=\$RUN_ID git=\${GIT_SHA:0:8}\"
   echo \"pairs/flags: \$GBT_ARGS\"
-  echo \"horizons=\$GBT_HORIZONS primary=\${GBT_PRIMARY}m seq_len=\$GBT_SEQ_LEN interval=\$GBT_CANDLE_INTERVAL\"
+  echo \"horizons=\$GBT_HORIZONS primary=\${GBT_PRIMARY}m seq_len=\$GBT_SEQ_LEN interval=\$GBT_CANDLE_INTERVAL val_frac=\$GBT_VAL_FRACTION\"
   echo \"================================================================\"
   grep -E 'GBT baseline \\||WARNING|Train samples|Val window|Subsampled|Fitting LightGBM|\\[mem\\]' \"\$LOG\" || true
   echo \"\"

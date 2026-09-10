@@ -1,14 +1,19 @@
 # Book-era plan — the B-wave
 
-**Status (2026-09-10):** ✅ B4 · ✅ B0, ✅ B1, ✅ B2 **re-run on the full era with repaired
-candles** (§R) · 🟢 **B3 AUTHORISED — §4.1 passed as written; launch pending (needs a commit +
-push, see §B3)**. Both gates passed by the letter of their pre-registration and **neither
-result is distinguishable from zero at the window's own day-clustered resolution** — read §R's
-results block before quoting either. The 2026-08-31 readings (`NOT EVALUABLE` / `NOT YET
-DECIDABLE`) are superseded, and not only by more days: they were measured on the collector's
-partial-bar candles (`CANDLE_POLL_DEFECT.md`), so their forward returns were not the market's.
-They are archived in `archive/TRAINING_HISTORY.md`. Runs **in parallel with M3**, blocks
-nothing, and is blocked by nothing. Indexed in [BACKLOG.md](./BACKLOG.md).
+**Status (2026-09-11): the wave is CLOSED on B3's verdict.** ✅ B4 · ✅ B0, ✅ B1, ✅ B2 re-run
+on the full era with repaired candles (§R) · ✅ **B3 both arms measured (§R.2, §R.3): 5m fails
+§4.3 decisively; 15m fails as written (+0.29 net at maker vs +5) but the gate sits inside the
+window's ±8.4-bps resolution, so per §B3's pre-registration the answer is more calendar, not a
+third setting.** O5 is filed in §R.3: a candle feature (`xs_disp_1h`) carries a third of the
+model's gain and the eleven book scalars together 15–22%, under their uniform share. **No B5.**
+Two items stay parked on calendar, indexed in [BACKLOG.md](./BACKLOG.md): the identical 15m
+registration re-run with a ~53-day val window on or after **2026-11-02** (exact command in
+§R.3), and B2's `spread_bps_mkt_lo` hypothesis when its arm resolves ±30 bps. Both gates B1/B2
+passed by the letter and **neither result is distinguishable from zero at the window's own
+day-clustered resolution** — read §R before quoting either. The 2026-08-31 readings are
+superseded (measured on partial-bar candles, `CANDLE_POLL_DEFECT.md`) and archived in
+`archive/TRAINING_HISTORY.md`.
+
 
 🟢 **B4 is done, and B4.3 answered `DEPTH_OK` — the headline result of this wave so far.**
 The collector fixes were verified live on `fluxtrader-1` on 2026-08-28 (§2 B4 records the
@@ -229,6 +234,137 @@ true candles is 38.4 bps, so §1.2's capture rate predicts ~+3 gross — a fail 
 15m arm also fails, the wave closes on B3's verdict per §4.4, with the importance tables filed
 as O5 and B2's `spread_bps_mkt_lo` hypothesis left as the only live book item, to re-test when
 its window resolves ±30 bps. **No third setting, no coverage change, no policy edit.**
+
+---
+
+### §R.3 — B3b, read 2026-09-11: the 15m arm and O5. The wave closes here
+
+Runs `gbt-20260910T200706Z` (5m, re-emitted with importances; `logs/b3b_gbt_5m_20260911.log`)
+and `gbt-20260910T210236Z` (15m arm; `logs/b3b_gbt_15m_20260911.log`). Both DONE, 42 and 10 min
+wall. Reports: `~/fluxtrader-train-export/gbt_baseline_<run>.json`. Same three hyperparameters,
+same era (`--tail-days 55`, val 2026-08-30 21:30 → 2026-09-10 19:05 UTC, 10.9 days), same pairs.
+
+**Bottom line, one sentence.** The 15-minute arm **fails the gate as written** — +0.3 bps per
+trade net at maker against a +5 gate — but unlike 5m it is a **near miss inside the window's own
+resolution** (±8.4 bps), so per the pre-registration the answer is more calendar, not a third
+setting; the wave closes with two calendar-gated re-tests parked (below), and the importance
+tables say the model's skill comes from **candle** features, not from the book.
+
+**In plain language.** The tree model was asked to call the direction of the next 15 minutes
+instead of the next 5. It is noticeably better at that: on its most confident 5% of bars it is
+right **62.7%** of the time (911 calls; conservative lower bound 59.5% — the strongest directional
+read any model has shown on the book era). But a 15-minute move is still small, so that accuracy
+is worth about **+5.3 bps per trade before costs** — a basis point is 0.01%, so about 53 cents on
+a $1,000 position, roughly 56 trades a day across the 8 pairs. A resting (maker) round trip costs
+about 5 bps, so net at maker it earns **+0.3 bps** (3 cents); a market-order (taker) round trip
+costs 14–16 bps, so at taker it loses **−8.7 to −10.7** per trade. The gate needed +5 at maker.
+The miss is 4.7 bps, and on 12 trading days the number is only known to about ±8.4 bps, so the
+gate value sits inside the band: **not cleared, not excluded**. The pre-registered expectation
+(§R.2) was ~+3 gross — it came out better than expected, and still under the line. Nothing is
+tradeable and nothing is promoted; that was pre-committed in §4.3.
+
+**The 15m numbers** (hold 3 bars = 15m; per-trade columns from the log; the ± column is the
+95% band with the **day** as the independent unit, derived from the report's daily Sharpe and
+`n_days`: `sd_day = mean_day·√365 / Sharpe`, `SE = sd_day·√n_days / trades`; approximate because
+the daily spread is measured at the 14-bps cost line).
+
+| cov | dir_acc | Wilson LB | n_dir | trades | gross | net @ maker 5 | net @ taker 14 | ±95 (12 d) |
+|---|---|---|---|---|---|---|---|---|
+| 1% | 0.686 | 0.617 | 194 | 141 | +15.63 | +10.63 | +1.63 | ±15.9 |
+| 2% | 0.668 | 0.619 | 376 | 272 | +9.15 | +4.15 | −4.85 | ±14.7 |
+| **5%** | 0.627 | 0.595 | **911** | 673 | **+5.29** | **+0.29** | −8.71 | **±8.4** |
+| 10% | 0.611 | 0.588 | 1,763 | 1,280 | +4.77 | −0.23 | −9.23 | ±6.0 |
+| 20% | 0.578 | 0.561 | 3,498 | 2,368 | +2.25 | −2.75 | −11.75 | — |
+
+Only cov ≥ 5% clears the `n_dir ≥ 500` floor, so the gate reads at 5%: **+0.29 vs +5 → FAIL
+§4.3**. Gross falls monotonically with coverage, no sign flip (§0.4's ordering check passes).
+Side split at cov 5%: **up n=680, acc 0.653 (LB 0.616); down n=231, acc 0.550 (LB 0.485)** —
+three-quarters of the calls are longs and the short side is at chance, the same one-mode shape as
+5m. It is not window drift: P(up) over the 17,039 moved val bars is 0.503 (from the calibration
+bins). Walk-forward inside the window: LB **0.490 / 0.505 / 0.613 / 0.591** — the edge sits in
+the second half here, whereas at 5m it sat in the first; read the reproduction note below before
+treating that as structure.
+
+**Run 1 did not reproduce the 09-10 table to the digit, and the cause is identified.** The
+launcher restores `dumps/latest.sql.gz`, whose cache is ≤30 min, so run 1 got a dump made ~105
+minutes after the 09-10 run's: the val window moved by 21 bars per pair (start 19:45 → 21:30,
+end 17:20 → 19:05) and the fit saw 51,059 moved train bars instead of 51,007 — a 0.4% change in
+data, identical code, identical seed. Effect at cov 5%: dir_acc 0.576 → 0.566, n_dir 750 → 771,
+gross +2.39 → +2.10, net at maker −2.61 → −2.90 (band ±3.6, day-clustered) — **verdict
+unchanged, FAIL.** But the 2.7-day fold LBs moved by up to 0.06: **0.574/0.448/0.481/0.520 →
+0.542/0.386/0.518/0.577**. 🔴 So the fold-level "where the edge lives" readings in §R.2 and
+above are not stable to a trivial perturbation and must not be quoted as structure; only the
+whole-window numbers are. (Each run's dump *is* snapshotted as `dumps/<RUN_ID>.sql.gz`, but the
+launcher has no knob to restore a named one; a digit-for-digit reproduction would need that
+one-line addition. Not needed now — recorded as NEXT_TRAINING_PLAN §0.5 trap 10.)
+
+**O5 — the importance tables, finally obtained.** LightGBM gain share, 180 columns folded back
+onto the 30 features (each feature enters as six window statistics: last, mean, std, min, max,
+delta over the 128-bar window).
+
+| rank | 5m primary | gain | 15m primary | gain |
+|---|---|---|---|---|
+| 1 | `xs_disp_1h` | **33.2%** | `xs_disp_1h` | **38.2%** |
+| 2 | `ret_1h` | 5.3% | `ret_1h` | 8.2% |
+| 3 | `ret_1` | 4.8% | `ret_4h` | 5.7% |
+| 4 | `oc_range` | 4.3% | `vol_1d` | 3.6% |
+| 5 | `ret_4h` | 3.9% | `ret_1d` | 3.6% |
+| best book scalar | `oi_chg` | 2.7% | `spread_bps` | 2.1% |
+| `imbalance` (B1's best) | | 2.0% | | 1.0% |
+| **book block, all 11 scalars** | | **22.0%** | | **15.3%** |
+| uniform share for 11 of 30 | | 36.7% | | 36.7% |
+
+The 11 book-era scalars are `spread_bps, imbalance, depth_near_imb, micro_mid,
+bid_ask_vol_ratio, buy_sell_imb, trade_count, trade_vol, funding, oi, oi_chg`. **Reading:**
+one candle-derived market feature — the cross-sectional dispersion of 1h returns across the
+pairs — carries a third of the model's gain at both horizons, with the pair's own 1h/4h returns
+next; the book block as a whole gets *less* than its uniform share, no single book scalar reaches
+3%, and the block shrinks (22% → 15%) at the horizon where the model is better. Within-model,
+the book is not where this model's skill is; that agrees with B1 (book features carry +3–10 bps
+raw, most of it drift) and with §R.2's "signal-limited" reading. Window-statistic blocks: at 5m
+`last`+`delta` take 56%; at 15m the six blocks are nearly even (17–20% each). **Calibration:**
+Brier 0.2514 (5m) / 0.2525 (15m) — both *worse* than a constant 0.5, because the tails are
+over-confident (15m: predicted 0.64 → empirical 0.536; predicted 0.36 → 0.44). The ranking has
+skill, the probabilities do not; a fixed-coverage gate is rank-based and unaffected, but anything
+that would size on `p(up)` would need recalibration first.
+
+**Validity flags (§0.4).** Constant columns as expected (`has_market` everywhere;
+`btc_rel_ret_1h`, `beta_btc_1d` on BTC). `[norm] ETHUSDT max|z|=1239 on 'spread_bps' <== BROKEN
+SCALE` fired in both runs — the one 8.2-bps bar of 2026-09-01 traced in §R.2, not a void.
+Heavy-tail winsorization notes on BTC `spread_bps`, WLD `hl_range`, HYPE and 1000PEPE
+`bid_ask_vol_ratio` (one row each beyond ±50) are the normal populated-tail case.
+
+**Verdict and disposition.** 5m: **FAIL §4.3**, decisively (band excludes the gate). 15m:
+**FAIL §4.3 as written**, band includes the gate. §B3's pre-registration covers exactly this case
+— *"if B3 lands near its gate rather than clearly over or under, the answer is 'wait for more
+calendar', not 'try a third setting'"* — so: **no third setting, no coverage change, no policy
+edit, no B5.** The wave closes on this verdict with two items **parked on calendar**, both in
+BACKLOG.md:
+
+1. **B3-15m re-test, identical registration, longer val window.** To bring the cov-5% band from
+   ±8.4 to about ±4 bps needs ≈ 12 × (8.4/4)² ≈ **53 val days**. Keep the train window the same
+   ~54 days the model was fitted on and let val be everything after it, which the era reaches on
+   **2026-11-02** (108 days from 2026-07-17):
+   ```sh
+   # on or after 2026-11-02 — same three hyperparameters, same pairs, 15m primary;
+   # GBT_VAL_FRACTION forwards VAL_FRACTION to the VM (launcher patched 2026-09-11)
+   GBT_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+   GBT_HORIZONS=5,15,60 GBT_PRIMARY=15 CANDLE_INTERVAL=5m GBT_VAL_FRACTION=0.5 \
+     ./scripts/gcp_gbt.sh --tail-days 108 --num-leaves 15 --n-estimators 200 --learning-rate 0.03
+   ./scripts/gcp_gbt.sh --status ; ./scripts/gcp_gbt.sh --fetch ; ./scripts/gcp_gbt.sh --log > logs/b3c_gbt_15m_$(date +%Y%m%d).log
+   ```
+   Gate unchanged: +5 net at maker at cov ≤ 5%, `n_dir` ≥ 500. Verify `Val window` opens
+   ≈2026-09-09 and `Train samples` ≈ val samples. Expectation, written now: the point estimate
+   stays near +0 to +3 net at maker and the run reads FAIL with the gate excluded — that would be
+   the clean close. A pass promotes nothing (§4.3) and would license only a registration for the
+   maker path, which the executor does not have (M3-5 §3.1).
+2. **B2's `spread_bps_mkt_lo` re-test** when its arm resolves ±30 bps (§R.1) — unchanged.
+
+What O5 changes elsewhere: BACKLOG row 6's revival trigger for a learned M3 challenger reads
+"new observations (side-table or book features)"; this table says a tree model given all eleven
+book scalars over the whole era puts 15–22% of its gain on them and leans on a candle feature
+instead, so the book scalars as they stand are a weak candidate for that trigger. B2's single
+regime hypothesis is the one book item still standing.
 
 ---
 
@@ -601,10 +737,12 @@ per-seed as well as pooled, with `n_trades` on every row.
 
 ### B3 — one book-era model, gated on B1
 
-✅ **RAN 2026-09-10 — 5m arm FAILS §4.3 (gross +2.4, net at maker −2.6 bps/trade at cov 5%,
-n_dir 750); 15m arm and O5 importances not produced by the script as it stood.** Full reading
-§R.2; the completing run (B3b: same fit re-emitted with importances, then the 15m primary) is
-specified in NEXT_TRAINING_PLAN §2. The text below is the registration as it was run.
+✅ **DONE 2026-09-11 — both arms measured. 5m FAILS §4.3 decisively (net at maker −2.6 to
+−2.9 bps/trade, band ±3.6); 15m FAILS §4.3 as written but inside resolution (+0.29 net at maker
+vs +5, band ±8.4, n_dir 911); O5 importances obtained — the book block carries 15–22% of the
+model's gain, a candle feature a third.** Full reading §R.3, which also parks the identical 15m
+registration for re-test on 2026-11-02. The text below is the registration as it was run.
+
 
 🟢 **AUTHORISED 2026-09-10: B1 passed §4.1 as written.** One run, as specified below, with two
 mechanical updates: `--tail-days 55` covers the era from 2026-07-17, and `gbt_baseline.py`'s
