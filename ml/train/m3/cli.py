@@ -18,6 +18,7 @@
     M3_ERA=walkforward ./scripts/m3.sh -m m3 folds      # WALKFORWARD_PROTOCOL §3's verdict
     M3_ERA=walkforward ./scripts/m3.sh -m m3 coverage12 --stage explore   # §9.1
     M3_ERA=walkforward ./scripts/m3.sh -m m3 hourofday --stage explore    # §9.2
+    M3_ERA=walkforward ./scripts/m3.sh -m m3 marketneutral --stage explore  # §9.3
     ./scripts/m3.sh -m m3 policy --help       # score one policy spec
 """
 from __future__ import annotations
@@ -1093,6 +1094,12 @@ def cmd_hourofday(args) -> int:
                                         hours=hours)
 
 
+def cmd_marketneutral(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.3 — the market-neutral probe, on the folds."""
+    return walkforward.marketneutral_report(WINNER_SPEC, stage=args.stage,
+                                            exploration_recorded=args.exploration_recorded)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1592,6 +1599,17 @@ def main() -> int:
                      help="--stage confirm only: the hour set, comma-separated UTC hours, "
                           "transcribed from §9.2 (never recomputed)")
     hod.set_defaults(fn=cmd_hourofday)
+
+    mn = sub.add_parser("marketneutral", help="WALKFORWARD_PROTOCOL §9.3: does holding the book "
+                        "market-neutral with a netted BTC hedge improve net bps per unit of "
+                        "notional? (needs M3_ERA=walkforward)")
+    mn.add_argument("--stage", choices=["explore", "confirm"], required=True,
+                    help="explore = F0+F1 (spends nothing); confirm = F2+F3, run ONCE after "
+                         "the explore table is recorded in §9.3")
+    mn.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: asserts the F0+F1 table has been "
+                         "written into WALKFORWARD_PROTOCOL §9.3")
+    mn.set_defaults(fn=cmd_marketneutral)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

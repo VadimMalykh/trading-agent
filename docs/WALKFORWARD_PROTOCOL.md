@@ -571,8 +571,8 @@ first; it is the live half of this observation and it is the more urgent one.
 
 **Written 2026-09-09, before any of the numbers below were computed.** §4.3 requires each
 parked finding to carry its own registration naming which folds it may read. These are those
-registrations. §9.1 (closed at the F0+F1 gate) and §9.2 (confirmed once on F2+F3: NOT
-CONFIRMED) were run on 2026-09-10; §9.3–§9.4 have not been run.
+registrations. §9.1 (closed at the F0+F1 gate), §9.2 (confirmed once on F2+F3: NOT
+CONFIRMED) and §9.3 were run on 2026-09-10; §9.4 has not been run.
 
 ### 9.0 🔴 Read before running any of these
 
@@ -790,6 +790,126 @@ per unit of notional?
   simply trades smaller. (This is the same trap M3_5_INTEGRATION §4 recorded for the
   `flat_size` control.)
 * **Confirmed iff** the F2+F3 clustered 95% lower bound of the difference > 0.
+* **Fixed 2026-09-10, before the first run** — harness `walkforward.marketneutral_report`,
+  run as `M3_ERA=walkforward ./scripts/m3.sh -m m3 marketneutral --stage explore|confirm`.
+  The 09-09 text names the arms and the statistic but not the construction; these resolve
+  it, and none was chosen with a number in view:
+  * **What "netted across the universe" is, operationally.** Two different pairs cannot be
+    netted into one position; what nets is their *market* exposure. So the market-neutral
+    arm holds the incumbent's positions and a hedge in the market proxy sized to hold the
+    book's net directional exposure at zero. The proxy is **BTCUSDT** — the deepest book
+    and the cheapest crossing in M3-4 — and the hedge ratio is **1.0 (dollar-neutral)**:
+    the only parameter-free choice, and the one a "market-neutral book" ordinarily means.
+    Beta-neutral needs a fitted beta and a lookback, which is a second variable.
+  * **Netting is at the instrument level, per event.** The hedge target at any moment is
+    minus the sum of `side × size` over open non-BTC positions. It changes only at entries
+    and exits; changes falling on the same bar net before anything is traded (a long entry
+    and a short entry on one bar need no hedge); the notional traded is the sum of the
+    absolute changes, and one round trip is two changes. An incumbent entry **on BTC
+    itself** nets against its own hedge to zero: the market-neutral arm never opens it, and
+    its count is reported.
+  * **P&L.** Each non-BTC trade earns `size × side × (r_pair − r_BTC)` over its own 240m
+    window, `r_BTC` being BTC's `fwd_ret` at the entry bar in the same fold-seed dump. That
+    is exactly the P&L of a per-entry hedge leg; netting changes what is *traded*, not what
+    is *held*, so the held P&L is the same, up to the second-order term from re-sizing a
+    simple-return position (O(r²), well under a basis point on a 4h window; ignored).
+  * **Notional** = the sum of `size` over the arm's entered trades plus, for the
+    market-neutral arm, half the hedge turnover. **Net bps per unit of notional** =
+    (Σ gross P&L − c × Σ notional) ÷ Σ notional, `c` the round-trip cost line. Because the
+    fee is `c` per unit of notional in **both** arms, **the difference between the arms
+    does not depend on the fee line at all** — the hedge's cost enters through the extra
+    notional in the denominator, not through `c`. The two lines are printed anyway; they
+    show the same difference.
+  * **Sign.** diff = market-neutral − incumbent, per unit of notional. Positive means the
+    hedged book earns more per unit deployed.
+  * **Interval.** The cluster-robust standard error of a difference of two ratios, by the
+    usual linearisation, with the same G/(G−1) correction and the same cluster key as
+    `paired_diff_bps`: a trade clusters on its exit day, a hedge change on the day it is
+    traded. The explore stage prints the F0+F1 SE and 1.96 × SE as the forecast minimum
+    detectable effect; the confirm stage prints its own.
+  * **Explore gate** as §9.1: the pooled F0+F1 point estimate > 0 authorises one
+    confirmation run; nothing is chosen at exploration, so no lower-bound gate there.
+  * **Reported with it:** the hedge notional as a share of the trade notional, netted and
+    un-netted (what the netting buys), and the un-netted variant's per-notional line for
+    information; the incumbent's BTC entries that the neutral arm never opens; the realised
+    beta of the incumbent's non-BTC legs to BTC over their own hold windows (the
+    exposure-weighted slope of `side × r_pair` on `side × r_BTC`), so the residual exposure
+    the 1.0 hedge leaves is visible; and the incumbent's per-trade pooled net, which must
+    reproduce §7's numbers (−0.66 on F0, +33.23 on F2+F3) or the harness is wrong.
+  * **An entry whose bar has no BTC row** cannot be hedged at that bar and is dropped from
+    **both** arms, with the count printed; if that exceeds 1% of entries the run refuses
+    and this registration is revisited before anything is read.
+  * **Order** as §9.1: `--stage explore` reads F0+F1 only; `--stage confirm` reads F2+F3,
+    refuses without `--exploration-recorded`, and is run **once**, after the explore table
+    has been written into this section.
+
+**EXPLORATION (F0+F1), run 2026-09-10 — NOT POSITIVE; F2/F3 not read; §9.3 closes here.**
+Log: `logs/marketneutral_explore_20260910.log`. No entry lacked a BTC row on any fold-seed.
+The incumbent's per-trade net reproduces §7 exactly (−0.66 on F0, +61.20 on F1, +24.81
+pooled), so the two harnesses agree.
+
+The books (section A of the log). "Share netted" is the hedge's round-trip notional as a
+fraction of the trade notional it hedges; per-leg hedging would be 1.000.
+
+| seed | entries | on BTC (not opened) | hedged trades | trade notional | hedge notional, netted | share netted | realised beta to BTC |
+|---|---|---|---|---|---|---|---|
+| F0s1 | 562 | 123 | 439 | 533.7 | 410.7 | 0.770 | 1.35 |
+| F0s2 | 825 | 141 | 684 | 763.3 | 678.3 | 0.889 | 1.32 |
+| F0s3 | 622 | 130 | 492 | 564.7 | 448.7 | 0.795 | 1.18 |
+| F1s1 | 455 | 93 | 362 | 516.3 | 302.3 | 0.586 | 1.27 |
+| F1s2 | 477 | 104 | 373 | 508.7 | 316.7 | 0.623 | 1.78 |
+| F1s3 | 474 | 91 | 383 | 548.7 | 335.7 | 0.612 | 2.25 |
+
+The contrast (section B), net bps **per unit of notional** at taker 14, day-clustered,
+diff = market-neutral − incumbent:
+
+| unit | n inc | notional inc | net inc | n mn | notional mn | net mn | diff | clusters | 95% CI of diff |
+|---|---|---|---|---|---|---|---|---|---|
+| F0s1 | 562 | 686.3 | −1.48 | 439 | 944.3 | −10.24 | −8.76 | 112 | [−23.99, +6.48] |
+| F0s2 | 825 | 923.3 | +3.00 | 684 | 1,441.7 | −11.02 | −14.02 | 163 | [−24.37, −3.68] |
+| F0s3 | 622 | 711.7 | −4.33 | 492 | 1,013.3 | −15.40 | −11.06 | 147 | [−21.70, −0.42] |
+| F1s1 | 455 | 645.0 | +24.83 | 362 | 818.7 | +0.46 | −24.37 | 64 | [−66.64, +17.90] |
+| F1s2 | 477 | 650.7 | +59.29 | 373 | 825.3 | +19.99 | −39.30 | 78 | [−85.47, +6.87] |
+| F1s3 | 474 | 679.7 | +46.28 | 383 | 884.3 | +27.08 | −19.20 | 83 | [−74.05, +35.65] |
+| F0 pooled | 2,009 | 2,321.3 | −0.57 | 1,615 | 3,399.3 | −12.11 | −11.53 | 167 | [−19.81, −3.26] |
+| F1 pooled | 1,406 | 1,975.3 | +43.56 | 1,118 | 2,528.3 | +16.15 | −27.42 | 98 | [−73.40, +18.57] |
+| **F0+F1 pooled** | 3,415 | 4,296.7 | +19.72 | 2,733 | 5,927.7 | −0.06 | **−19.77** | 265 | [−42.22, +2.67] |
+
+At the verified 11.84 line both arms move up by 2.16 and the difference is −19.77
+[−42.22, +2.67] to the digit, as the fee bullet derived. Hedged leg by leg instead of
+netted the book is −1.97 per unit (diff −21.69), so the netting is worth under 2 bps per
+unit here. Clustered SE of the difference 11.45 bps; the F2+F3 minimum detectable effect
+would have been ≈ 22 bps per unit of notional.
+
+**After-the-fact diagnostic, F0+F1 only** (`logs/marketneutral_explore_diag_20260910.log`;
+computed after the gate was read, decides nothing — recorded because the reading below
+needs it): the hedge halves the day-clustered SE per unit of notional (18.06 → 9.41, ratio
+0.52; 0.64 on F0, 0.54 on F1). The incumbent's non-BTC legs earn +40.14 bps gross per unit
+of trade notional, **of which +16.08 is the BTC component `side · r_BTC`** — the part a
+dollar hedge removes — leaving +24.06 residual (F0: +13.83 gross, +10.38 market, +3.45
+residual; F1: +71.26, +22.82, +48.44). The incumbent's own BTC trades, which the neutral
+arm never opens, earn +8.11 gross per unit over 682 trades.
+
+**Reading, with the same scrutiny a positive result would get.** The pooled point estimate
+is negative, so the explore gate is not met and the confirmation is not run — that is the
+whole of what §9.3 decides. The interval includes zero, so the folds do not *prove* the
+neutral book is worse; but the sign is the same on all six fold-seeds and F0's own interval
+sits below zero. The mechanism is visible in the diagnostic and is not noise: **on these
+folds the incumbent's edge is substantially a market-direction call expressed through the
+alts** — two-fifths of its gross per unit is the BTC move its sides agree with — so
+neutralising the market throws that part away, and the hedge then costs almost a full
+second trade because offsetting long/short positions are rare at 2% coverage (netted share
+0.59–0.89). What the hedge does buy is variance: the daily SE per unit halves. Under the
+registered statistic — mean per unit of notional — that is worth nothing, and even as a
+mean-over-SE reading the neutral book is not ahead at taker 14 (+19.72/18.06 against
+−0.06/9.41). The realised beta of the alt legs to BTC is 1.2–2.3, so a beta-neutral hedge
+would remove *more* of the market component and more notional, not less; it is not the
+un-tried variant that would rescue this. Closed on these folds; 🔴 the construction may not
+be re-chosen or re-tested on F2/F3 for this question. **Revival trigger:** a checkpoint
+whose non-BTC legs carry most of their gross in the residual after `side · r_BTC` is removed
+(measured on new untouched folds or forward paper days, never on F2/F3), or a registered
+*risk* objective — a drawdown or daily-loss constraint the forward test shows to be binding —
+under which a partial hedge is a risk tool rather than an edge claim.
 
 ### 9.4 A learned or sequential (RL) policy
 

@@ -856,3 +856,318 @@ def hourofday_report(spec_fields: dict, stage: str, exploration_recorded: bool =
         print(f"  - Read against the MDE above: an hour effect smaller than {1.96 * se:.1f} bps")
         print("    per trade could not have been confirmed by this test. Not a negative result.")
     return 0
+
+
+# --------------------------------------------------------------------------------------
+# §9.3 — the market-neutral probe (WALKFORWARD_PROTOCOL §4.3 item 3, registered in §9.3 on
+# 2026-09-09; the construction was fixed there on 2026-09-10 before this code was run).
+# Every constant below is the registration's.
+#
+# THE SHAPE. The incumbent's trades, unchanged, plus a BTC hedge that holds the book's net
+# directional exposure at zero. Two pairs cannot be netted into one position; their MARKET
+# exposure can, and the hedge target is what nets: it moves only at entries and exits, and
+# same-bar changes cancel before anything is traded. The held P&L is then each non-BTC
+# trade's `size × side × (r_pair − r_BTC)` over its own window; the netting changes only
+# the notional traded, which is what the per-notional statistic charges for.
+#
+# THE STATISTIC is net bps per unit of NOTIONAL, never per trade (§9.3; M3_5_INTEGRATION
+# §4's trap). The fee is `c` per unit of notional in both arms, so the DIFFERENCE between
+# the arms is independent of the cost line — derived in §9.3 before the first run, and the
+# code prints both lines so the reader can see it.
+# --------------------------------------------------------------------------------------
+
+MN_HEDGE_PAIR = "BTCUSDT"       # §9.3: the market proxy
+MN_HEDGE_RATIO = 1.0            # §9.3: dollar-neutral; the parameter-free choice
+MN_MAX_UNHEDGEABLE = 0.01       # §9.3: refuse if > 1% of entries have no BTC row at their bar
+MN_EXPLORE_FOLDS = COV91_EXPLORE_FOLDS
+MN_CONFIRM_FOLDS = DECISION_FOLDS
+
+
+def _utc_day(ts: pd.Series | np.ndarray) -> np.ndarray:
+    return pd.to_datetime(pd.Series(ts), unit="ns", utc=True).dt.floor("D").to_numpy()
+
+
+def mn_hedge_events(alt: pd.DataFrame) -> pd.DataFrame:
+    """§9.3's event walk for ONE seed's non-BTC trades.
+
+    The hedge target is −Σ side × size over open positions, so an entry moves it by
+    −side × size and the exit moves it back. Changes on the same bar are netted before
+    they are traded. Returns one row per bar on which the target actually moves, with the
+    signed change; the notional traded is |delta| and a round trip is two changes.
+    """
+    if alt.empty:
+        return pd.DataFrame({"ts": np.empty(0, dtype="int64"), "delta": np.empty(0)})
+    exposure = (alt["side"] * alt["size"]).to_numpy(np.float64) * MN_HEDGE_RATIO
+    ev = pd.DataFrame({
+        "ts": np.concatenate([alt["entry_ts"].to_numpy(), alt["exit_ts"].to_numpy()]),
+        "d": np.concatenate([-exposure, exposure]),
+    })
+    delta = ev.groupby("ts")["d"].sum()
+    delta = delta[delta.abs() > 1e-12]
+    return pd.DataFrame({"ts": delta.index.to_numpy(), "delta": delta.to_numpy()})
+
+
+def _ledger(day: np.ndarray, gross: np.ndarray, notional: np.ndarray, kind: str) -> pd.DataFrame:
+    """A book ledger row-set: what was earned (return units × size) and what notional it
+    took, on which UTC day. Both arms are scored from ledgers, so the estimator never
+    needs to know which rows are trades and which are hedge changes."""
+    return pd.DataFrame({"day": day, "gross": np.asarray(gross, np.float64),
+                         "notional": np.asarray(notional, np.float64), "kind": kind})
+
+
+def notional_ratio_bps(ledger: pd.DataFrame, cost_bps: float, z: float = 1.96) -> dict:
+    """Net bps per unit of notional with a cluster-robust SE, clusters = UTC days.
+
+    The estimator is the ratio Σ gross / Σ notional; its standard error is the usual
+    linearisation — per-cluster residuals (g_c − R·s_c) / Σ s, squared and summed with the
+    G/(G−1) correction — the same CRVE `metrics.clustered_mean_bps` applies to a mean. The
+    fee shifts the ratio by exactly `cost_bps` and leaves the SE untouched.
+    """
+    if ledger.empty or ledger["notional"].sum() <= 0:
+        return {"n": 0, "clusters": 0, "notional": 0.0, "mean_bps": float("nan"),
+                "se_bps": float("nan"), "lo95_bps": float("nan"), "hi95_bps": float("nan")}
+    g = ledger.groupby("day").agg(g=("gross", "sum"), s=("notional", "sum"))
+    total = float(g["s"].sum())
+    r = float(g["g"].sum()) / total
+    contrib = (g["g"] - r * g["s"]).to_numpy() / total
+    n_c = contrib.size
+    mean = r * metrics.BPS - cost_bps
+    if n_c < 2:
+        return {"n": int((ledger["kind"] == "trade").sum()), "clusters": n_c, "notional": total,
+                "mean_bps": mean, "se_bps": float("nan"), "lo95_bps": float("nan"),
+                "hi95_bps": float("nan")}
+    se = float(np.sqrt((contrib ** 2).sum() * n_c / (n_c - 1.0))) * metrics.BPS
+    return {"n": int((ledger["kind"] == "trade").sum()), "clusters": int(n_c), "notional": total,
+            "mean_bps": mean, "se_bps": se, "lo95_bps": mean - z * se, "hi95_bps": mean + z * se}
+
+
+def paired_notional_diff_bps(a: pd.DataFrame, b: pd.DataFrame, z: float = 1.96) -> dict:
+    """Per-notional rate of ledger `a` minus that of `b`, cluster-robust on the union of days.
+
+    No cost argument: the fee is the same per unit of notional in both arms and cancels
+    exactly (§9.3). A day present in only one arm still contributes, as in
+    `universe.paired_diff_bps`, and for the same reason.
+    """
+    if a.empty or b.empty:
+        return {"diff_bps": float("nan"), "se_bps": float("nan"), "lo95_bps": float("nan"),
+                "hi95_bps": float("nan"), "clusters": 0}
+    ga = a.groupby("day").agg(g=("gross", "sum"), s=("notional", "sum"))
+    gb = b.groupby("day").agg(g=("gross", "sum"), s=("notional", "sum"))
+    ta, tb = float(ga["s"].sum()), float(gb["s"].sum())
+    ra, rb = float(ga["g"].sum()) / ta, float(gb["g"].sum()) / tb
+    ca = ((ga["g"] - ra * ga["s"]) / ta).rename("a")
+    cb = ((gb["g"] - rb * gb["s"]) / tb).rename("b")
+    joined = pd.concat([ca, cb], axis=1).fillna(0.0)
+    contrib = (joined["a"] - joined["b"]).to_numpy()
+    n_c = contrib.size
+    diff = (ra - rb) * metrics.BPS
+    if n_c < 2:
+        return {"diff_bps": diff, "se_bps": float("nan"), "lo95_bps": float("nan"),
+                "hi95_bps": float("nan"), "clusters": n_c}
+    se = float(np.sqrt((contrib ** 2).sum() * n_c / (n_c - 1.0))) * metrics.BPS
+    return {"diff_bps": diff, "se_bps": se, "lo95_bps": diff - z * se,
+            "hi95_bps": diff + z * se, "clusters": int(n_c)}
+
+
+def marketneutral_arms(d: dumps.Dump, spec: backtest.PolicySpec) -> dict:
+    """Both §9.3 arms for ONE fold-seed, as ledgers, with the provenance the section asks for."""
+    h = d.at(240)
+    btc = h.loc[h["pair"] == MN_HEDGE_PAIR, ["ts", "fwd_ret"]].rename(columns={"fwd_ret": "r_btc"})
+    if btc.empty:
+        raise SystemExit(f"{d.seed}: no {MN_HEDGE_PAIR} rows at 240m — nothing to hedge with")
+    regimes = {d.seed: regime.build(d.df)}
+    inc = backtest.run([d], spec, regimes).trades
+    inc = inc.merge(btc, left_on="entry_ts", right_on="ts", how="left").drop(columns="ts")
+
+    is_btc = (inc["pair"] == MN_HEDGE_PAIR).to_numpy()
+    unhedgeable = inc["r_btc"].isna().to_numpy() & ~is_btc
+    n_unhedgeable = int(unhedgeable.sum())
+    if len(inc) and n_unhedgeable / len(inc) > MN_MAX_UNHEDGEABLE:
+        raise SystemExit(f"{d.seed}: {n_unhedgeable} of {len(inc)} entries have no "
+                         f"{MN_HEDGE_PAIR} row at their bar (> {MN_MAX_UNHEDGEABLE:.0%}); "
+                         f"§9.3 says revisit the registration, not proceed")
+    keep = inc[~unhedgeable]
+    is_btc = (keep["pair"] == MN_HEDGE_PAIR).to_numpy()
+    alt = keep[~is_btc]
+
+    # Arm A: the incumbent as served — every kept trade, its own size as notional.
+    inc_ledger = _ledger(_utc_day(keep["exit_ts"]), keep["signed_ret"], keep["size"], "trade")
+
+    # Arm B: the same non-BTC trades, each earning (r_pair − r_BTC) on its own window, plus
+    # the NETTED hedge's traded notional, booked on the day each change is traded.
+    hedged_gross = (alt["signed_ret"]
+                    - MN_HEDGE_RATIO * alt["side"] * alt["size"] * alt["r_btc"]).to_numpy()
+    trade_rows = _ledger(_utc_day(alt["exit_ts"]), hedged_gross, alt["size"], "trade")
+    ev = mn_hedge_events(alt)
+    hedge_rows = _ledger(_utc_day(ev["ts"]), np.zeros(len(ev)), ev["delta"].abs() / 2.0, "hedge")
+    mn_ledger = pd.concat([trade_rows, hedge_rows], ignore_index=True)
+
+    # For information only: the same book hedged leg by leg (one BTC round trip per trade,
+    # half booked at entry, half at exit) — what the netting buys is the gap to arm B.
+    leg_rows = pd.concat([
+        _ledger(_utc_day(alt["entry_ts"]), np.zeros(len(alt)), alt["size"] / 2.0 * MN_HEDGE_RATIO, "hedge"),
+        _ledger(_utc_day(alt["exit_ts"]), np.zeros(len(alt)), alt["size"] / 2.0 * MN_HEDGE_RATIO, "hedge"),
+    ], ignore_index=True)
+    unnetted_ledger = pd.concat([trade_rows, leg_rows], ignore_index=True)
+
+    # Realised beta of the non-BTC legs to BTC over their own windows, exposure-weighted
+    # (weights = size; side² = 1 so the sides drop out of the slope).
+    x = (alt["side"] * alt["r_btc"]).to_numpy(np.float64)
+    y = (alt["side"] * alt["fwd_ret"]).to_numpy(np.float64)
+    w = alt["size"].to_numpy(np.float64)
+    beta = float((w * x * y).sum() / (w * x * x).sum()) if len(alt) and (w * x * x).sum() > 0 else np.nan
+
+    alt_notional = float(alt["size"].sum())
+    return {
+        "seed": d.seed, "fold": dumps.fold_of(d.seed),
+        "n_inc": len(keep), "n_btc": int(is_btc.sum()), "n_alt": len(alt),
+        "n_unhedgeable": n_unhedgeable,
+        "alt_notional": alt_notional,
+        "hedge_netted": float(ev["delta"].abs().sum() / 2.0),
+        "hedge_unnetted": alt_notional * MN_HEDGE_RATIO,
+        "hedge_bars": int(len(ev)),
+        "beta": beta,
+        "inc_trades": keep, "inc": inc_ledger, "mn": mn_ledger, "unnetted": unnetted_ledger,
+    }
+
+
+def _mn_row(label: str, a: pd.DataFrame, b: pd.DataFrame, cost: float) -> dict:
+    ca, cb = notional_ratio_bps(a, cost), notional_ratio_bps(b, cost)
+    dd = paired_notional_diff_bps(a, b)
+    return {"unit": label, "n_inc": cb["n"], "notional_inc": cb["notional"], "net_inc": cb["mean_bps"],
+            "n_mn": ca["n"], "notional_mn": ca["notional"], "net_mn": ca["mean_bps"],
+            "diff": dd["diff_bps"], "lo95": dd["lo95_bps"], "hi95": dd["hi95_bps"],
+            "clusters": dd["clusters"]}
+
+
+def _mn_fmt(rows: list[dict]) -> str:
+    t = pd.DataFrame(rows)
+    t["95% CI of diff"] = [f"[{lo:+.2f}, {hi:+.2f}]" if np.isfinite(lo) else "n/a"
+                           for lo, hi in zip(t["lo95"], t["hi95"])]
+    t = t.drop(columns=["lo95", "hi95"])
+    return t.to_string(index=False, float_format=lambda v: f"{v:+.2f}")
+
+
+def marketneutral_report(spec_fields: dict, stage: str, exploration_recorded: bool = False) -> int:
+    """§9.3's table for one stage. `explore` = F0+F1, `confirm` = F2+F3 (once)."""
+    if stage == "explore":
+        folds = MN_EXPLORE_FOLDS
+    elif stage == "confirm":
+        folds = MN_CONFIRM_FOLDS
+    else:
+        raise SystemExit(f"stage must be 'explore' or 'confirm', got {stage!r}")
+    print("=" * 96)
+    print(f"§9.3 — THE MARKET-NEUTRAL PROBE — stage {stage.upper()} ({' + '.join(folds)})")
+    print("=" * 96)
+    print(registry_state())
+    if stage == "confirm" and not exploration_recorded:
+        print("\n🔴 refusing: --stage confirm reads F2+F3, the only untouched history. Pass")
+        print("   --exploration-recorded only after the F0+F1 table is written into §9.3.")
+        return 2
+    if stage == "explore":
+        print("\nF0 and F1 overlap history the policy search has read (§3, last bullet). This")
+        print("stage spends nothing and decides nothing; a positive pooled point estimate")
+        print("authorises ONE confirmation run on F2+F3 (§9.3).")
+    else:
+        print("\n🔴 F2 + F3 are being read for §9.3. This happens once.")
+
+    spec = backtest.PolicySpec(label="incumbent SIZED", **spec_fields)
+    print(f"\narms: incumbent      = the incumbent as `m3 folds` scores it, size as notional")
+    print(f"      market-neutral = the same non-{MN_HEDGE_PAIR} trades, each earning "
+          f"(r_pair − {MN_HEDGE_RATIO:.1f}·r_{MN_HEDGE_PAIR[:3]}) on its own window,")
+    print(f"                       plus the NETTED {MN_HEDGE_PAIR} hedge's traded notional; "
+          f"incumbent entries on {MN_HEDGE_PAIR} net to zero and are not opened")
+    print(f"statistic: net bps per unit of NOTIONAL, day-clustered; diff = market-neutral − incumbent")
+    print(f"the fee is the same per unit of notional in both arms, so the diff does not depend on")
+    print(f"the cost line: taker {COST:.0f} and the verified {VERIFIED_TAKER_LINE_BPS:.2f} are both printed")
+
+    ds = _cov91_load(folds)
+    cards = []
+    for d in ds:
+        h = d.at(240)
+        t = pd.to_datetime(h["ts"], unit="ns", utc=True)
+        print(f"  {d.seed}  {d.run_id}  {len(h):>8,} bars  {h['pair'].nunique():>2} pairs  "
+              f"{t.min():%Y-%m-%d} .. {t.max():%Y-%m-%d}")
+        cards.append(marketneutral_arms(d, spec))
+
+    print("\n" + "=" * 96)
+    print("A. THE BOOKS, PER FOLD-SEED (§9.3, 'reported with it')")
+    print("=" * 96)
+    prov = pd.DataFrame([{
+        "seed": c["seed"], "entries": c["n_inc"], f"on {MN_HEDGE_PAIR[:3]} (not opened)": c["n_btc"],
+        "no BTC row (dropped)": c["n_unhedgeable"], "hedged trades": c["n_alt"],
+        "trade notional": c["alt_notional"], "hedge notional netted": c["hedge_netted"],
+        "share netted": c["hedge_netted"] / c["alt_notional"] if c["alt_notional"] else np.nan,
+        "share per-leg": c["hedge_unnetted"] / c["alt_notional"] if c["alt_notional"] else np.nan,
+        "hedge bars": c["hedge_bars"], "realised beta": c["beta"],
+    } for c in cards])
+    print(prov.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
+    print("'share' = hedge round-trip notional ÷ trade notional. Per-leg hedging is 1.000 by")
+    print("construction; the netted share is what actually has to be traded to stay flat.")
+    print(f"'realised beta' = exposure-weighted slope of side·r_pair on side·r_{MN_HEDGE_PAIR[:3]} over")
+    print(f"the hedged trades' own windows; the {MN_HEDGE_RATIO:.1f} hedge leaves beta − {MN_HEDGE_RATIO:.1f} unhedged.")
+
+    # The reproduction check §9.3 asks for: the incumbent's per-trade pooled net.
+    inc_trades = pd.concat([c["inc_trades"] for c in cards])
+    for f in folds:
+        sub = inc_trades[inc_trades["seed"].map(dumps.fold_of) == f]
+        cm = metrics.clustered_mean_bps(sub, COST)
+        print(f"   reproduction: incumbent per-trade net on {f} = {cm['mean_bps']:+.2f} bps "
+              f"({cm['n']:,} trades) — must match §7")
+    cm = metrics.clustered_mean_bps(inc_trades, COST)
+    print(f"   reproduction: incumbent per-trade net on {'+'.join(folds)} = {cm['mean_bps']:+.2f} bps "
+          f"({cm['n']:,} trades)")
+
+    print("\n" + "=" * 96)
+    print(f"B. THE CONTRAST — net bps per unit of NOTIONAL at taker {COST:.0f}, day-clustered, "
+          f"diff = market-neutral − incumbent")
+    print("=" * 96)
+    rows = [_mn_row(c["seed"], c["mn"], c["inc"], COST) for c in cards]
+    for f in folds:
+        cs = [c for c in cards if c["fold"] == f]
+        rows.append(_mn_row(f"{f} pooled", pd.concat([c["mn"] for c in cs]),
+                            pd.concat([c["inc"] for c in cs]), COST))
+    all_mn = pd.concat([c["mn"] for c in cards])
+    all_inc = pd.concat([c["inc"] for c in cards])
+    all_un = pd.concat([c["unnetted"] for c in cards])
+    pooled = _mn_row(f"{'+'.join(folds)} pooled", all_mn, all_inc, COST)
+    rows.append(pooled)
+    print(_mn_fmt(rows))
+
+    alt = _mn_row("alt", all_mn, all_inc, VERIFIED_TAKER_LINE_BPS)
+    print(f"\n   at the verified {VERIFIED_TAKER_LINE_BPS:.2f} line: incumbent {alt['net_inc']:+.2f}, "
+          f"market-neutral {alt['net_mn']:+.2f} per unit of notional; diff {alt['diff']:+.2f} "
+          f"[{alt['lo95']:+.2f}, {alt['hi95']:+.2f}] — the same, as §9.3 derived")
+    un = _mn_row("un", all_un, all_inc, COST)
+    print(f"   for information: hedged LEG BY LEG (no netting) the book is {un['net_mn']:+.2f} per unit "
+          f"of notional at taker {COST:.0f}; diff vs incumbent {un['diff']:+.2f} "
+          f"[{un['lo95']:+.2f}, {un['hi95']:+.2f}]")
+    se = (pooled["hi95"] - pooled["lo95"]) / (2 * 1.96)
+    print(f"   clustered SE of the difference {se:.2f} bps -> minimum detectable effect "
+          f"(1.96 × SE) {1.96 * se:.2f} bps per unit of notional"
+          + (" — a FORECAST for F2+F3, from F0+F1" if stage == "explore" else ""))
+
+    print("\n" + "=" * 96)
+    if stage == "explore":
+        pos = pooled["diff"] > 0
+        print(f"§9.3 EXPLORE READING: pooled F0+F1 point estimate {pooled['diff']:+.2f} bps per unit "
+              f"of notional -> {'POSITIVE' if pos else 'NOT POSITIVE'}")
+        print("=" * 96)
+        if pos:
+            print("  - §9.3 authorises ONE confirmation run on F2+F3. Write this table into §9.3")
+            print("    first, then: m3 marketneutral --stage confirm --exploration-recorded")
+        else:
+            print("  - §9.3 closes here: F2/F3 are NOT read. Record the table and the closure.")
+        return 0
+    ok = bool(pooled["clusters"] >= 2 and pooled["lo95"] > 0)
+    print(f"§9.3 VERDICT: {'CONFIRMED' if ok else 'NOT CONFIRMED'} — F2+F3 clustered 95% "
+          f"lower bound of the difference {pooled['lo95']:+.2f} ({'>' if ok else '<='} 0)")
+    print("=" * 96)
+    if ok:
+        print("  - The netted market-neutral book earns more per unit of notional than the")
+        print("    incumbent on untouched history. That licenses a registration for a served")
+        print("    hedge arm; it is not itself a change to the served rule.")
+    else:
+        print(f"  - Read against the MDE above: a per-notional effect smaller than {1.96 * se:.1f}")
+        print("    bps could not have been confirmed by this test. Not a negative result.")
+    return 0
