@@ -53,13 +53,15 @@ import numpy as np
 import pandas as pd
 
 from . import backtest, dumps, metrics, regime
-from .bookaudit import BOOK_DIR
+from .bookaudit import BOOK_DIR, _clustered_se
 
-# The pre-registered candidate list, §B2. `oi_chg` is named there too but B0 could not build
-# it — `open_interest` is not one of the tables scripts/gcp_m3_export.sh pulls, filed in
-# BACKLOG.md as a one-line export change. Four tests, not a scan; adding a fifth after
-# seeing these is exactly the shopping M3_PROTOCOL §0 forbids.
-CANDIDATES = ["spread_bps", "trade_count", "trade_vol"]
+# The pre-registered candidate list, §B2 (written 2026-08-24): spread, trade count, trade
+# volume, OI change, and a composite. The 2026-08-31 run had to leave `oi_chg` out because
+# the export had no `open_interest` slice; the 2026-09-10 export carries it, so the list is
+# now the one that was registered — not a fifth candidate added after seeing results. On a
+# side-table without the column it is skipped. Adding anything BEYOND this list after seeing
+# results is the shopping M3_PROTOCOL §0 forbids.
+CANDIDATES = ["spread_bps", "trade_count", "trade_vol", "oi_chg"]
 COMPOSITE = "book_composite"
 INCUMBENT = "btc_absret_1d"
 REGIME_QUANTILE = 0.80          # Q1's framing: the top quintile of BARS
@@ -73,15 +75,22 @@ def load_book(pairs: list[str]) -> pd.DataFrame:
     if not os.path.exists(path):
         raise SystemExit(f"{path} missing — run `./scripts/m3.sh -m m3 bookera` (B0) first")
     b = pd.read_parquet(path)
-    b = b[b["pair"].isin(pairs) & (b["has_book"] == 1) & (b["has_trades"] == 1)]
-    return b.sort_values(["pair", "ts"], kind="mergesort").reset_index(drop=True)
+    keep = b["pair"].isin(pairs) & (b["has_book"] == 1) & (b["has_trades"] == 1)
+    if "has_oi" in b.columns:
+        keep &= b["has_oi"] == 1
+    return b[keep].sort_values(["pair", "ts"], kind="mergesort").reset_index(drop=True)
+
+
+def candidates(book: pd.DataFrame) -> list[str]:
+    """The registered list, minus any column the side-table does not carry."""
+    return [f for f in CANDIDATES if f in book.columns]
 
 
 def observables(book: pd.DataFrame) -> pd.DataFrame:
     """(pair, ts) frame of the candidate observables, both constructions."""
     out = book[["pair", "ts"]].copy()
     mkt_cols = []
-    for f in CANDIDATES:
+    for f in candidates(book):
         u = book.groupby("pair", observed=True)[f].rank(pct=True)
         out[f + "_pair"] = u.to_numpy()                       # diagnostic
         mkt_cols.append(f)
@@ -109,13 +118,14 @@ def observables(book: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def primary_observables() -> list[str]:
-    hi = [f + "_mkt" for f in CANDIDATES] + [COMPOSITE]
+def primary_observables(obs: pd.DataFrame | None = None) -> list[str]:
+    cands = [f for f in CANDIDATES if obs is None or f + "_mkt" in obs.columns]
+    hi = [f + "_mkt" for f in cands] + [COMPOSITE]
     return hi + [c + "_lo" for c in hi]
 
 
-def diagnostic_observables() -> list[str]:
-    return [f + "_pair" for f in CANDIDATES]
+def diagnostic_observables(obs: pd.DataFrame | None = None) -> list[str]:
+    return [f + "_pair" for f in CANDIDATES if obs is None or f + "_pair" in obs.columns]
 
 
 def restrict(d: dumps.Dump, keys: pd.DataFrame) -> dumps.Dump:
@@ -143,9 +153,17 @@ def _score(ds: list, regimes: dict, coverage: float, col: str | None) -> dict:
     for seed in {d.seed for d in ds}:
         sub = t[t["seed"] == seed]
         per_seed[seed] = float(sub["signed_ret"].mean() * metrics.BPS) if len(sub) else float("nan")
+    # A day-clustered SE on the arm's own mean — the same estimator B1 uses, for the same
+    # reason: three seeds on one bar and eight pairs in one BTC move are one observation,
+    # not twenty-four. Printed so the reader sees what the window actually resolves, in
+    # place of §1.6's fixed ±36 bps estimate for 38 days. Not part of the §4.2 gate.
+    x = t["signed_ret"].to_numpy(np.float64) * metrics.BPS
+    day = t["entry_ts"].to_numpy() // (86_400 * 1_000_000_000)
+    cse, ncl = _clustered_se(x, day)
     return {
         "n": len(t),
-        "gross_bps": float(t["signed_ret"].mean() * metrics.BPS) if len(t) else float("nan"),
+        "gross_bps": float(x.mean()) if len(t) else float("nan"),
+        "clustered_se": cse, "clusters": ncl,
         "per_seed": per_seed,
     }
 
@@ -179,13 +197,15 @@ def run(ds: list, book: pd.DataFrame, obs: pd.DataFrame) -> dict:
         base = _score(ds_era, regimes, c, None)
         base_calm = _score(ds_calm, regimes_calm, c, None)
         rows = []
-        for col in [INCUMBENT] + primary_observables() + diagnostic_observables():
+        prim = primary_observables(obs)
+        for col in [INCUMBENT] + prim + diagnostic_observables(obs):
             marg = _score(ds_era, regimes, c, col)
             cond = _score(ds_calm, regimes_calm, c, col)
             rows.append({
                 "observable": col,
-                "primary": col in primary_observables() or col == INCUMBENT,
+                "primary": col in prim or col == INCUMBENT,
                 "n_marg": marg["n"], "marg_bps": marg["gross_bps"],
+                "marg_se": marg["clustered_se"], "marg_clusters": marg["clusters"],
                 "marg_lift": marg["gross_bps"] - base["gross_bps"],
                 "n_cond": cond["n"], "cond_bps": cond["gross_bps"],
                 "cond_lift": cond["gross_bps"] - base_calm["gross_bps"],

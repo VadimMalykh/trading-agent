@@ -44,6 +44,12 @@
 #   FROM=2026-08-14 TO=2026-08-28 ./scripts/gcp_m3_export.sh
 #   COLLECT=1 ./scripts/gcp_m3_export.sh             # fetch slices already staged on the VM
 #
+#   # BOOK_ERA_PLAN B0 over the FULL book era (2026-07-17, when the scalar snapshots begin,
+#   # not 08-05 when the raw ladder does). No ladder, so ~15 min rather than ~2h. 🔴 A
+#   # separate OUT: m3_4/ must stay byte-identical for M3-4's reproduction.
+#   OUT=ml/train/output/book_era FROM=2026-07-17 TO=2026-09-10 \
+#     ONLY=snapshots,trades,candles_5m,candles_1m,funding,oi ./scripts/gcp_m3_export.sh
+#
 # ⚠️ Killing this script does NOT stop the export. `\copy ... TO PROGRAM` writes to a file
 # inside the postgres container, so psql outlives the ssh channel. After an interruption,
 # check the VM (`ls -l /tmp/m3_export` inside the container), wait for the file to stop
@@ -79,8 +85,14 @@ LEVELS="${LEVELS:-20}"
 OUT="${OUT:-$ROOT/ml/train/output/m3_4}"
 mkdir -p "$OUT"
 
-# Staging directory, used with the same path inside the postgres container and on the VM.
+# Staging directory inside the postgres container (its overlay is on the VM's disk).
 REMOTE_TMP="/tmp/m3_export"
+# 🔴 The VM-HOST staging directory is NOT /tmp. On fluxtrader-1 /tmp is a 980 MB tmpfs, and
+# on 2026-09-10 a 244 MB snapshots slice died there with "disk quota exceeded" because a
+# stale log already held 800 MB of it. The home directory is on the 96 GB root disk. The
+# `~` is expanded by the REMOTE shell in ssh commands; for scp the path is passed
+# home-relative (see fetch), because sftp-mode scp expands neither `~` nor `$HOME`.
+HOST_TMP='~/m3_export'
 
 # --- the ladder projection: bids[0..LEVELS-1] -> b0p,b0q,b1p,b1q,...
 book_cols() {
@@ -126,10 +138,16 @@ FROM candles WHERE interval = '1m' AND open_time >= '$FROM' AND open_time < '$TO
 Q_funding="SELECT symbol, ts, mark_price, index_price, last_funding_rate \
 FROM funding_rates WHERE ts >= '$FROM' AND ts < '$TO' ORDER BY symbol, ts"
 
+# 6. Open interest — the last two of BOOK_ERA_PLAN B0's eleven scalars (`oi`, `oi_chg`).
+#    Added 2026-09-10; the first B0 shipped nine of eleven because this slice was missing
+#    (BACKLOG "Export open_interest"). Same 8h staleness cap as funding downstream.
+Q_oi="SELECT symbol, ts, open_interest \
+FROM open_interest WHERE ts >= '$FROM' AND ts < '$TO' ORDER BY symbol, ts"
+
 echo "==> exporting $FROM .. $TO (top-$LEVELS levels a side) from $GCP_ALWAYS_ON" >&2
 
 gcloud compute ssh --zone "$GCP_ZONE" --project "$GCP_PROJECT" "$GCP_ALWAYS_ON" --quiet \
-  -- "mkdir -p $REMOTE_TMP" >&2
+  -- "mkdir -p $HOST_TMP" >&2
 
 # 🔴 The export writes a gz file on the VM and then scp's it — it does NOT stream the COPY
 # through ssh. The streaming version is the obvious design and it is roughly 30x slower:
@@ -141,7 +159,8 @@ gcloud compute ssh --zone "$GCP_ZONE" --project "$GCP_PROJECT" "$GCP_ALWAYS_ON" 
 # then moves the finished file at link speed.
 dump() {
   local name=$1 query=$2 dest="$OUT/$1.csv.gz"
-  local remote="$REMOTE_TMP/$name.csv.gz"
+  local remote="$REMOTE_TMP/$name.csv.gz"        # inside the postgres container
+  local host="$HOST_TMP/$name.csv.gz"            # on the VM host, for scp
 
   # COLLECT=1 skips the COPY and fetches whatever is already staged. This exists because
   # killing this script LOCALLY does not stop the export: `\copy ... TO PROGRAM` writes to a
@@ -159,14 +178,14 @@ dump() {
     echo "  -> $name (collect only)" >&2
     gcloud compute ssh --zone "$GCP_ZONE" --project "$GCP_PROJECT" "$GCP_ALWAYS_ON" --quiet -- "
       set -e
-      if [ ! -f $remote ]; then
+      if [ ! -f $host ]; then
         cd ~/trading_agent
         echo '     staging out of the postgres container…'
-        docker compose cp postgres:$remote $remote
+        docker compose cp postgres:$remote $host
       fi
-      ls -lh $remote
+      ls -lh $host
     " >&2
-    fetch "$name" "$remote" "$dest"
+    fetch "$name" "$host" "$dest"
     return
   fi
   # `\copy ... TO PROGRAM` runs the program on psql's side — inside the postgres container —
@@ -181,12 +200,12 @@ dump() {
     cd ~/trading_agent
     docker compose exec -T postgres mkdir -p $REMOTE_TMP
     docker compose exec -T postgres psql -U fluxtrader -d fluxtrader -v ON_ERROR_STOP=1 -q < /tmp/m3_q.sql
-    docker compose cp postgres:$remote $remote
+    docker compose cp postgres:$remote $host
     docker compose exec -T postgres rm -f $remote
-    ls -lh $remote
+    ls -lh $host
   " >&2
 
-  fetch "$name" "$remote" "$dest"
+  fetch "$name" "$host" "$dest"
 }
 
 # Pull one finished slice off the VM and check it is neither empty nor truncated.
@@ -194,7 +213,7 @@ fetch() {
   local name=$1 remote=$2 dest=$3
   echo "     downloading…" >&2
   gcloud compute scp --zone "$GCP_ZONE" --project "$GCP_PROJECT" --quiet \
-    "$GCP_ALWAYS_ON:$remote" "$dest"
+    "$GCP_ALWAYS_ON:${remote#\~/}" "$dest"
 
   # `gzip -t` is not optional. A COPY interrupted part-way leaves a VALID-LOOKING .gz whose
   # last member is truncated; without this check the next `bookprep` would cache a parquet
@@ -232,7 +251,7 @@ wanted() {
   [[ ",$ONLY," == *",$1,"* ]]
 }
 
-for slice in "book_top${LEVELS}" snapshots trades candles_5m candles_1m funding; do
+for slice in "book_top${LEVELS}" snapshots trades candles_5m candles_1m funding oi; do
   wanted "$slice" || continue
   case "$slice" in
     book_top*)  dump "$slice" "$Q_book" ;;
@@ -241,6 +260,7 @@ for slice in "book_top${LEVELS}" snapshots trades candles_5m candles_1m funding;
     candles_5m) dump "$slice" "$Q_candles_5m" ;;
     candles_1m) dump "$slice" "$Q_candles_1m" ;;
     funding)    dump "$slice" "$Q_funding" ;;
+    oi)         dump "$slice" "$Q_oi" ;;
   esac
 done
 

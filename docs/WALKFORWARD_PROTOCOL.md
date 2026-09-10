@@ -573,7 +573,8 @@ first; it is the live half of this observation and it is the more urgent one.
 parked finding to carry its own registration naming which folds it may read. These are those
 registrations. §9.1 (closed at the F0+F1 gate), §9.2 (confirmed once on F2+F3: NOT
 CONFIRMED) and §9.3 were run on 2026-09-10; §9.4's eligibility gate was pinned and run the
-same day (its outcome is at the end of §9.4).
+same day (FUNDABLE — end of §9.4), and the fitting registration it licensed, §9.5, was
+written, explored and **closed at its exploration gate** the same day (end of §9.5).
 
 ### 9.0 🔴 Read before running any of these
 
@@ -1021,3 +1022,156 @@ all is a decision, not a consequence**: the expected payoff is low (M3-3's histo
 a protocol plus CPU only, and it competes with nothing that needs the market. It is filed in
 BACKLOG.md as parked with that framing. **Revival trigger for a larger effect window:** forward
 paper days, or further folds under a new registration, both of which lower the MDE.
+
+### 9.5 The learned challenger on the folds — the fitting registration
+
+**Written 2026-09-10, after §9.4's gate read FUNDABLE and before any fit ran.** Vadim decided
+the same day to fund it. Harness `learnfolds.py`, run as
+`M3_ERA=walkforward ./scripts/m3.sh -m m3 learnfolds --stage explore` and then, only if the
+exploration gate passes and its table is recorded here,
+`--stage confirm --exploration-recorded --config <label>` with the label transcribed from
+this section. **CPU only, closed-form, inside the analysis container; no training instance is
+involved** — the "training" is a ridge solve on a few hundred thousand rows.
+
+**What is fitted: M3_3_PROTOCOL §4, unchanged.** Two ridge classes — **A** (the nine rank
+features of `features.FEATURES`, linear) and **B** (the nine plus squares plus the eight
+`conf_rank × context` products, 26 terms) — under entry rules **R1** (score ≥ 14 bps) and **R2**
+(top 2% of each fold-seed's bars) and sizings **S1** (flat) and **S2** (`clip(s/s_ref, 1/3,
+5/3)`): the same **8 configurations**, on the same top-10%-by-confidence candidate pool, with
+every rank computed within its own fold-seed's bar population. Nothing is added, for the
+reason M3_3_PROTOCOL §4.1 gave: the confirmation fit sees ~400 exit-day clusters (F0 166 +
+F1 93 + one of F2/F3), which is twice M3-3's 188 and still nowhere near what a tree ensemble
+or a network needs. **The "sequential (RL)" half of §9.4's question is closed on
+representation, not on power:** the dumps carry no price path inside a trade
+(`features.py`, rule 4), so under a fixed 240-minute hold there is no exit decision for a
+sequential policy to learn. Its revival trigger is a price/funding side-table over the fold
+era, which does not exist.
+
+**The unit is the fold.** A fold's three seeds are pooled into one fit and one held-out
+scoring, as M3-3 pooled its three seeds; `dumps.add_window` already tags every bar with its
+fold in this era. **Every held-out score is therefore out-of-fold *and* out-of-checkpoint** —
+the bars being scored come from checkpoints the fit never saw — which is a stricter test than
+M3-3 could run and is exactly what the rank-only observation vector (rule 1) was built for.
+
+**The shape, under §9.0 rule 2:**
+
+* **`explore` — F0 + F1, two-unit leave-one-out.** Fit on F1, score F0; fit on F0, score F1.
+  Both F0 and F1 scores are out-of-fold. Every one of the 8 configurations is scored, plus the
+  four **C2 confidence-only ablations** (a ridge on `conf_rank` alone under each rule pairing)
+  for information: whether the eight other observations add anything is the question M3-3
+  asked, and it is re-asked here at no cost to F2/F3.
+* **`confirm` — F2 + F3, once.** Fit on F0 + F1 + F3, score F2; fit on F0 + F1 + F2, score F3.
+  F2's and F3's *outcomes* are each read once. Using F3 as training data to score F2 (and vice
+  versa) happens at confirmation only, which rule 2 — "none may read F2/F3 for exploration
+  first" — permits; it is stated here so nobody later reads it as a leak. Only the one
+  configuration chosen at exploration is run.
+
+**The ridge penalty**, M3_3_PROTOCOL §4.2's grid {0.003 … 3.0} and rule (highest inner metric,
+ties to the larger λ), selected **inside the training folds only**. The inner units cannot be
+seeds (three seeds of one fold overlap the same calendar days) and a single training fold has
+no inner folds otherwise, so the inner units are the **calendar halves of each training fold**
+(split at the midpoint of the fold-seed's bar timestamps), leave-one-half-out; the inner metric
+is `learn._inner_metric` unchanged (raw per-bar mean net at taker under R2, budget 2% of each
+seed-half's bars). The outer held-out fold is never consulted.
+
+**The R2 budget at the outer stage is 2% of each fold-seed's bars** — the same budget the
+incumbent's cut spends on the same dump, so R2 arms are matched in trade count to the
+incumbent by construction. **`s_ref` for S2** comes from the training folds' fitted values
+under the configuration's own entry rule (`learn.apply_rules`, unchanged).
+
+**The contrast** is learned − incumbent, where the incumbent is `m3 folds`' SIZED spec scored
+on the *same* dump (§7.2: within-fold only), by `universe.paired_diff_bps` — day-clustered on
+the union of exit days, taker 14 bps, **per trade** (the registered statistic in §9.4). Net per
+unit of notional is printed for information because both arms vary size; it decides nothing.
+The verified 11.84 line is printed for information.
+
+**The choice rule at exploration, mechanical:** of the 8 configurations, the one with the
+**highest pooled F0+F1 out-of-fold diff** against the incumbent. Its label, its two chosen λ
+and the full table are recorded here before `confirm` is run. **Exploration gate, as §9.3:**
+if that best diff is ≤ 0, the registration closes here and F2/F3 are not read. The chosen
+configuration's matched C2 ablation is recorded beside it for information — if the ablation
+is within the noise of the winner, the eight extra observations have again added nothing.
+
+**The confirmation criterion, fixed now.** **CONFIRMED iff** the pooled F2+F3 clustered 95%
+lower bound of the diff is **> 0** **and** the diff is positive on the **median seed-number**
+(s1, s2, s3 each pooled across F2+F3 — M3_PROTOCOL §8.3: a single-seed win is not a win).
+Read against §9.4's forecast MDE for this shape, **24.4 bps/trade**: NOT CONFIRMED means "not
+detectable at this power" unless the interval excludes the ladder-sized effect too.
+
+**What each outcome licenses.** CONFIRMED licenses a registration to *serve* the challenger
+under M3_PROTOCOL §8.3 C1–C5 on the served checkpoint's own split — it is not itself a change to
+anything served, and the training-size handicap (§7.2) means its absolute level on the folds is
+not the level it would run at. NOT CONFIRMED closes the learned challenger on these folds:
+🔴 no configuration may be re-chosen or re-run on F2/F3; the revival trigger is more
+independent days (forward paper days, or further folds under a new registration).
+
+**EXPLORATION (F0+F1), run 2026-09-10 — GATE NOT PASSED; §9.5 CLOSES HERE, F2/F3 NOT READ.**
+Log: `logs/learnfolds_explore_20260910.log`. Pools: F0 171,138 rows, F1 173,591 (top 10% per
+fold-seed, complete observations). Every score below is out-of-fold *and* out-of-checkpoint.
+
+**The harness check first (M3_3_PROTOCOL §6 C2's falsifiable prediction).** The
+confidence-only ablation under R2 + S1 must reproduce the flat grid winner up to the
+completeness filter. It does, on both folds: F0 2,011 trades at −4.68 against the flat
+anchor's 2,025 at −4.07 (§9.4 stand-in (i)); F1 1,403 at +34.87 against 1,406 at +34.57. The
+fold machinery scores what it says it scores.
+
+**The fits.** λ chosen by leave-one-half-out inside the single training fold:
+
+| held | fit on | model | λ | largest standardised terms |
+|---|---|---|---|---|
+| F0 | F1 (93 clusters) | A | 3.0 | conf_rank_1440 +4.53, conf_rank +4.12, rv_rank +3.75, btc_absret_rank +3.44, agree_1440 +2.50 |
+| F0 | F1 | B | 3.0 | rv_rank² +3.15, btc_absret_rank² +2.88, conf_rank_1440² +2.77, conf_rank×conf_rank_1440 +2.72 |
+| F1 | F0 (166 clusters) | A | 0.01 | btc_absret_rank +9.06, vol_expansion −7.07, agree_1440 +4.14, conf_rank_1440 −3.04, rv_rank −2.98 |
+| F1 | F0 | B | 0.3 | btc_absret_rank² +5.15, xs_disp_rank² −4.09, rv_rank² −3.28, conf_rank×vol_expansion −2.90 |
+
+Read by M3-3's own criterion — *a term that changes sign between folds has not been learned,
+it has been fitted*: `conf_rank_1440` (+4.53 / −3.04) and `rv_rank` (+3.75 / −2.98) flip;
+only `btc_absret_rank` (the ladder's observable) and `agree_1440` keep their sign. The inner
+metric itself says which era each fit lives in: +49 to +59 bps inside F1, −20 to −25 inside F0.
+
+**The contrast, pooled F0+F1, diff = learned − incumbent (+24.81 on 3,415 trades), taker 14,
+day-clustered on the union of exit days:**
+
+| configuration | n learned | net learned | diff | 95% CI | F0 diff (CI) | F1 diff (CI) |
+|---|---:|---:|---:|---|---|---|
+| learnA_R1_S1 | 4,242 | −6.95 | −31.76 | [−74.66, +11.14] | −9.08 [−20.77, +2.61] | −58.30 [−157.18, +40.58] |
+| learnA_R1_S2 | 4,242 | −5.17 | −29.98 | [−72.82, +12.85] | −7.07 [−18.50, +4.37] | −57.36 [−156.25, +41.52] |
+| learnA_R2_S1 | 4,134 | −8.37 | −33.18 | [−73.50, +7.14] | −8.59 [−18.18, +1.00] | −68.86 [−162.56, +24.85] |
+| learnA_R2_S2 | 4,134 | −4.00 | −28.81 | [−69.89, +12.27] | −6.30 [−16.02, +3.42] | −62.81 [−158.20, +32.58] |
+| learnB_R1_S1 | 3,534 | −4.68 | −29.49 | [−71.79, +12.81] | −9.14 [−20.28, +2.01] | −48.19 [−144.57, +48.18] |
+| **learnB_R1_S2** (chosen by the rule) | 3,534 | −3.30 | **−28.11** | [−70.32, +14.10] | −6.62 [−17.81, +4.56] | −50.72 [−147.06, +45.62] |
+| learnB_R2_S1 | 4,075 | −8.99 | −33.79 | [−74.13, +6.54] | −10.65 [−21.23, −0.08] | −68.34 [−161.62, +24.94] |
+| learnB_R2_S2 | 4,075 | −4.37 | −29.18 | [−70.08, +11.73] | −6.36 [−17.10, +4.38] | −63.47 [−157.95, +31.02] |
+| C2 ablation learnconf_R2_S1 (information) | 3,414 | +11.57 | −13.24 | [−30.19, +3.72] | −4.02 [−9.14, +1.10] | −26.33 [−65.74, +13.08] |
+| C2 ablation learnconf_R1_S1 (information) | 5,089 | −12.60 | −37.41 | [−81.25, +6.43] | −11.94 [−26.91, +3.03] | 0 trades on F1 |
+
+At the verified 11.84 line the chosen configuration's diff is −29.25 [−71.52, +13.01]; per unit
+of notional −49.35 [−103.99, +5.29]. R1 under the confidence-only fit entered **no bar on F1**
+(coefficient +0.36 — the score never reaches 14 bps), the same collapse of an absolute
+threshold M3_3_RESULTS §F item 2 recorded.
+
+**The choice rule** picks `learnB_R1_S2` at −28.11; **the gate requires > 0, so it is not
+passed.** Its matched ablation is −36.35, so the eight extra observations are worth +8.2
+bps/trade over confidence alone *here* — and both are far below the rule.
+
+**Reading, in plain terms.** Every one of the eight learned policies loses to the hand-written
+rule on both exploration folds, by 28 to 34 bps per trade pooled. The uncertainty is large
+(pooled SE ≈ 21 bps, dominated by F1's +61 era, where the learned arms keep +3 to +13 of it),
+so the pooled intervals do not exclude a small positive effect — **but F0 does**: on the fold
+with 166 clusters the tighter intervals put the upper bound at +1.0 to +4.6 bps for every
+configuration, which excludes an improvement of the §9.4 MDE's size (17.7) and of the ladder's
+size (13) outright. This is the third independent look at a linear learned policy on this
+observation vector — M3-3 on the published split, M3-3 repaired, and now the folds
+out-of-checkpoint — and all three land on the same side. Under the negative-results discipline
+that is not "not detectable": on F0 it is a detected loss.
+
+**What closes and what would revive it.** 🔴 Closed on these folds: no configuration may be
+re-chosen, and F2/F3 stay unread for this question. The one caveat worth carrying is that a
+two-unit exploration fits on *one* fold (93 or 166 clusters) where the confirmation shape would
+have fitted on three (~400), so the closure rests on the weaker fit — the registration accepted
+that trade before the run, and reopening on it now would be the move §9.0 exists to prevent.
+**Revival trigger: not more days, new observations.** The linear class on ranks of what the
+dumps carry has now been tried three ways; what has not been tried is an observation vector
+the dumps cannot supply — the price/funding side-table or book features over the fold era
+(BOOK_ERA_PLAN, the parked book-era wave) — under a fresh registration. §9.4's fundability
+reading stands as a statement about power; §9.5 is the statement about this class.

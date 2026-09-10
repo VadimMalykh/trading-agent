@@ -356,10 +356,13 @@ def build_book_era(interval: str = "5m") -> pd.DataFrame:
     training uses (`BOOK_MAX_AGE`, `TRADES_MAX_AGE`), because a side-table aligned
     differently from training is not evidence about training.
 
-    ⚠️ `oi` / `oi_chg` are two of B0's eleven scalars and are NOT here: `open_interest` was
-    never added to the export (scripts/gcp_m3_export.sh pulls five tables and that is not
-    one of them). Nine of eleven are built; the two missing are named in the report rather
-    than silently absent.
+    `oi` / `oi_chg` — the last two of B0's eleven scalars — are built from the `oi` slice
+    when the export has one (added to scripts/gcp_m3_export.sh on 2026-09-10; the first B0
+    shipped nine of eleven because it was missing). Derived exactly as `data/features.py`
+    does: `log1p` of the as-of level, and the bar-to-bar percentage change of that ALIGNED
+    level (so two bars that see the same poll read a change of zero), both zeroed past the
+    same 8h cap funding uses. An export without the slice still builds the other nine and
+    says so.
     """
     candles = load_candles(interval, export_dir=BOOK_DIR)
     grid = add_forward_returns(candles, interval=interval)
@@ -391,7 +394,48 @@ def build_book_era(interval: str = "5m") -> pd.DataFrame:
                           ).replace(0.0, np.nan)).astype("float64"),
         "trade_vol": tp["volume"].astype("float64"),
     }).sort_values(["pair", "ts"], kind="mergesort").reset_index(drop=True)
-    return _asof_block(grid, tape, TRADES_MAX_AGE, "has_trades")
+    grid = _asof_block(grid, tape, TRADES_MAX_AGE, "has_trades")
+    return add_open_interest(grid)
+
+
+def load_oi(export_dir: str | None = None) -> pd.DataFrame | None:
+    """The exported `open_interest` slice as `(pair, ts, open_interest)`, or None if the
+    export predates the slice (B0 then reports nine scalars, not eleven)."""
+    d = export_dir or BOOK_DIR
+    if not (os.path.exists(os.path.join(d, "oi.parquet"))
+            or os.path.exists(os.path.join(d, "oi.csv.gz"))):
+        return None
+    df = _csv("oi", ["ts"], export_dir=d)
+    out = pd.DataFrame({
+        "pair": df["symbol"].astype(str),
+        "ts": pd.DatetimeIndex(df["ts"]).asi8,
+        "open_interest": df["open_interest"].astype("float64"),
+    })
+    return out.sort_values(["pair", "ts"], kind="mergesort").reset_index(drop=True)
+
+
+def add_open_interest(grid: pd.DataFrame) -> pd.DataFrame:
+    """`oi`, `oi_chg`, `has_oi` — `data/features.py`'s derivation on the shared grid.
+
+    The change is taken on the ALIGNED series, not on the raw polls: features.py computes
+    `pct_change()` after `_align_with_age`, so a bar that sees the same poll as the bar
+    before reads 0.0, and the first bar after a gap reads the jump. Reproducing that is
+    what makes this column evidence about the training feature rather than a cousin of it.
+    """
+    out = grid.sort_values(["pair", "ts"], kind="mergesort").reset_index(drop=True)
+    src = load_oi()
+    if src is None:
+        return out
+    j = _asof(out, src.rename(columns={"ts": "src_ts"}), "src_ts")
+    age_min = (j["ts"] - j["src_ts"]) / 6e10
+    stale = (~np.isfinite(age_min) | (age_min > FUNDING_OI_MAX_AGE)).to_numpy()
+    level = j["open_interest"]                      # NaN before a pair's first poll
+    prev = level.groupby(out["pair"].to_numpy()).shift(1)
+    chg = (level / prev - 1.0).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    out["oi"] = np.where(stale, 0.0, np.log1p(level.fillna(0.0).to_numpy()))
+    out["oi_chg"] = np.where(stale, 0.0, chg.to_numpy())
+    out["has_oi"] = (~stale).astype("int8")
+    return out
 
 
 def _asof_block(grid: pd.DataFrame, src: pd.DataFrame, max_age_min: float,

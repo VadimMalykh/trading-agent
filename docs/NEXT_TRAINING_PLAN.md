@@ -437,34 +437,36 @@ it is not what R1 tests, because R1 has one variable already.
   split boundary moved back; they are not a change to M2 and they do not reopen §5.
 * **B3**, below, which is blocked.
 
-### 🔴 B3 — the book-era GBT. BLOCKED, not refused (2026-08-31)
+### 🟢 B3 — the book-era GBT. AUTHORISED 2026-09-10, launch pending a push
 
-**This is the only training run any current plan calls for, and it is not runnable.** It is one
-LightGBM run on its own throwaway CPU VM (`scripts/gcp_gbt.sh`), pre-registered in
-[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §B3, and it happens **if and only if** B1 clears §4.1.
+**This is the only training run any current plan calls for.** One LightGBM run on its own
+throwaway CPU VM (`scripts/gcp_gbt.sh`), pre-registered in
+[BOOK_ERA_PLAN.md](./BOOK_ERA_PLAN.md) §B3, gated on B1 clearing §4.1.
 
-B1 ran on 2026-08-31 (`./scripts/m3.sh -m m3 bookaudit`) and returned **`NOT EVALUABLE`**: §4.1
-requires `n >= 2,000` in a top-5% slice, which needs ≥ 40,000 usable held-out rows, and the book
-era supplies 39,740. The gate is short by ~1% and could not be run as written.
+B1 was re-run on 2026-09-10 over the full book era (2026-07-17..09-09, 54 days, **repaired**
+candles — the 2026-08-31 run had used partial bars) and **§4.1 passed as written**: `imbalance`
+at 60m, +10.37 bps raw on n=3,158, sign agreeing across halves. Of that, +5.62 is the period's
+drift; the feature-attributable +4.75 has a day-clustered CI of [−2.45, +11.94]. The pass is
+by the letter of the rule, and the rule is not renegotiated after the fact in either direction.
+Plain reading and caveats: BOOK_ERA_PLAN §R.1.
 
-🔴 **`NOT EVALUABLE` is not `FAIL`, and B3 must not be launched as though the gate were merely
-close.** The measured evidence, offered as texture only: the best sign-agreeing slice is
-`trade_vol` at 60m, **+12.47 bps in excess of the period's drift, day-clustered 95% CI
-[−6.06, +30.99]** on 12 clusters. It is indistinguishable from zero. Naively it looked like six
-sigma; overlapping 60m windows on a 5m grid are why.
+**To launch (Vadim):** commit and push `ml/train/gbt_baseline.py` — its `--tail-days` arithmetic
+assumed 1m bars and would have loaded 275 days at 5m; `gcp_gbt.sh` clones `main` — then:
 
-**What un-blocks it — two routes, and only these two:**
+```sh
+GBT_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
+GBT_HORIZONS=5,15,60 GBT_PRIMARY=5 CANDLE_INTERVAL=5m \
+  ./scripts/gcp_gbt.sh --tail-days 55 --num-leaves 15 --n-estimators 200 --learning-rate 0.03
+./scripts/gcp_gbt.sh --status          # until the marker says done
+./scripts/gcp_gbt.sh --fetch           # summary + JSON
+./scripts/gcp_gbt.sh --log > logs/b3_gbt_20260910.log
+```
 
-1. **Calendar.** The book window grows past the n floor on its own. §4.4's own trigger is ≥90
-   days of continuous book history on the 8 main pairs, ≈**2026-10-15**, which clears the floor
-   with room to spare. Re-run `m3 bookaudit`, then read §4.1.
-2. **A fresh pre-registration of the floor, written BEFORE the numbers are looked at again.**
-   Legitimate — 2,000 was a round number, not a power calculation — but it must be a document
-   written in advance, not a decision taken while the current table is on screen.
-
-⚠️ **Do not "fix" this by widening the coverage to 10% to reach n.** §4.1 names top-5%. Changing
-the coverage to make the n floor reachable is re-picking a searched dimension after seeing
-results, which [M3_PROTOCOL.md](./M3_PROTOCOL.md) §0 forbids.
+**Bring back:** the fixed-coverage P&L at 5/15/60m, `dir_acc`/LB with `n_dir`, calibration
+bins, the "Tail window" and "Val window" lines (expect ~15,840 candles/pair and a val window
+opening ~2026-08-29), and the feature importances. Verdict against §4.3: +5 bps **net at
+maker** at 5m or 15m, cov ≤ 0.05, `n_dir` ≥ 500. 🔴 One run. If it lands near the gate, the
+answer is more calendar, not a second setting. A pass promotes nothing (§4.3).
 
 **Nothing else in the B-wave needs a GPU or a training run.** B0, B1 and B2 are all done and all
 ran on the laptop's `ml_analysis` container.

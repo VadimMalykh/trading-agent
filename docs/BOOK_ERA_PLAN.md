@@ -1,14 +1,14 @@
 # Book-era plan — the B-wave
 
-**Status:** ✅ **B4** (2026-08-28), ✅ **B0** (2026-08-29), ✅ **B1** and ✅ **B2** (2026-08-31)
-— **the measurement half of this wave is complete.** Both gates came back the same way and it is
-the outcome §4.2 pre-registered: **the book era is too short to decide anything**, not "the book
-is useless". B1 is `NOT EVALUABLE` (its n floor is unreachable by ~1%), B2 is `NOT YET DECIDABLE`
-(the incumbent observable fails its own gate on this window). 🔴 **B3 is therefore BLOCKED, not
-refused.** The wave's binding constraint is now **calendar**: §4.4's ≥90 days of book history,
-≈2026-10-15. Runs **in parallel with M3**,
-blocks nothing, and is blocked by nothing.
-Indexed in [BACKLOG.md](./BACKLOG.md), which carries the revival trigger for each step.
+**Status (2026-09-10):** ✅ B4 · ✅ B0, ✅ B1, ✅ B2 **re-run on the full era with repaired
+candles** (§R) · 🟢 **B3 AUTHORISED — §4.1 passed as written; launch pending (needs a commit +
+push, see §B3)**. Both gates passed by the letter of their pre-registration and **neither
+result is distinguishable from zero at the window's own day-clustered resolution** — read §R's
+results block before quoting either. The 2026-08-31 readings (`NOT EVALUABLE` / `NOT YET
+DECIDABLE`) are superseded, and not only by more days: they were measured on the collector's
+partial-bar candles (`CANDLE_POLL_DEFECT.md`), so their forward returns were not the market's.
+They are archived in `archive/TRAINING_HISTORY.md`. Runs **in parallel with M3**, blocks
+nothing, and is blocked by nothing. Indexed in [BACKLOG.md](./BACKLOG.md).
 
 🟢 **B4 is done, and B4.3 answered `DEPTH_OK` — the headline result of this wave so far.**
 The collector fixes were verified live on `fluxtrader-1` on 2026-08-28 (§2 B4 records the
@@ -37,11 +37,137 @@ conclusion forward — do not append a contradicting section.*
 
 ---
 
+## §R — THE 2026-09-10 RE-RUN, REGISTERED BEFORE ANY NUMBER WAS READ
+
+*Written 2026-09-10, before the export finished. BACKLOG's 2026-09-01 note said B1's n floor
+was short by hours of collection, not weeks, because the export it ran on (2026-08-05..27,
+23 days) was narrower than the data the VM already held. This section fixes the window and
+says exactly what will and will not change, so that the re-run is a re-run and not a re-pick.*
+
+**What changes — the inputs only:**
+
+1. **The window.** Export from **2026-07-17** (the first `orderbook_snapshots` row on
+   BTC/ETH/SOL) to **2026-09-10** exclusive, all twelve collected pairs. The four August pairs
+   (ADA/AVAX/LINK/XRP) start 2026-08-14 and are masked before that by `has_book`, exactly as
+   in the first run. Into a **separate directory** (`ml/train/output/book_era/`) so that
+   `m3_4/` stays byte-identical for M3-4's reproduction. No ladder: the scalars come from
+   `orderbook_snapshots`, which is why the era can open on 07-17 and not 08-05.
+2. **The eleventh and tenth scalars.** The export gains the parked `open_interest` slice, so
+   B0 builds `oi` and `oi_chg` with training's derivation and 8h cap. B1 scores all eleven
+   (the list §B0 registered on 2026-08-24). B2's candidate list becomes the one §B2
+   registered — `spread_bps`, `trade_count`, `trade_vol`, **`oi_chg`**, and the composite —
+   rather than a fifth candidate added after seeing results; the composite is the mean of the
+   candidates' market-wide percentiles, so it now averages four.
+3. **B2's dumps.** The 2026-08-31 run joined the book era to the *pre-repair* dumps, whose
+   validation window ends 2026-08-17, so B2 saw **12 days** of book era and its cells were
+   19–78 trades. This run uses the **repaired** era (`M3_ERA=repaired`) — the same three
+   banked checkpoints, re-scored, validation to 2026-09-03 — so B2 sees the era to 09-03.
+   Declared here as the primary, before running. B0's acceptance test runs against the
+   same dumps plus O8.
+
+**What does not change — the criteria:**
+
+* §4.1 exactly as written: top-**5%**, horizon **≤ 60m**, **> +5 bps**, **n ≥ 2,000**, sign
+  agreeing across the halves. The half split stays the median timestamp.
+* §4.2 exactly as written: marginal lift **> +30 gross bps** at cov 2%, a positive
+  conditional lift, three seeds agreeing in sign. The day-clustered CI the harness now prints
+  is a diagnostic so the reader can see what the window resolves; it is not a gate term.
+* No coverage widening, no new horizon, no second B3 setting. If §4.1 passes, B3 runs once as
+  §B3 specifies with `--tail-days` covering the era on the 8 main pairs; if it fails, B3 is
+  refused on evidence and the wave closes at B2 per §4.4.
+
+**What this can and cannot conclude:** a longer window makes §4.1 *evaluable*; it does not
+make it pass. B2's cells grow roughly fourfold, so its resolution improves but a +15 bps
+effect may still not clear +30 — record that as "not yet decidable" as §4.2 says.
+
+**Commands, in order:**
+
+```sh
+OUT=ml/train/output/book_era FROM=2026-07-17 TO=2026-09-10 \
+  ONLY=snapshots,trades,candles_5m,candles_1m,funding,oi ./scripts/gcp_m3_export.sh
+export M3_EXPORT_DIR=/workspace/train/output/book_era M3_ERA=repaired
+./scripts/m3.sh -m m3 bookera     > logs/b0_bookera_20260910.log
+./scripts/m3.sh -m m3 bookaudit   > logs/b1_bookaudit_20260910.log
+./scripts/m3.sh -m m3 bookregime  > logs/b2_bookregime_20260910.log
+```
+
+### §R.1 — Results, read after the registration above was written
+
+*Logs: `logs/b0_export_20260910.log`, `logs/b0_bookera_20260910.log`,
+`logs/b1_bookaudit_20260910.log`, `logs/b2_bookregime_20260910.log`. Tables:
+`ml/train/output/book_era/b1_bps_table.csv`, `b1_classification.csv` (gitignored).*
+
+**In plain language.** The book era is now 54 days long instead of 23, on correct candles, and
+both measurement gates could finally be evaluated. Both passed by the exact rule written down in
+August. But the amounts involved are small relative to how noisy 54 days are: the best single
+book feature earns about **+10 bps per trade** at a 1-hour horizon before costs, of which about
+**+5.6** is simply the market drifting up over those weeks, and the remaining **+4.75** has a
+95% confidence interval of roughly **−2.5 to +12**. That is "cannot rule out zero", not "an edge".
+So what the passes *license* is exactly what the plan said a pass licenses: one CPU training
+run (B3) to see whether a model combining all eleven features does better than any one of them,
+and a hypothesis (B2's) to re-test later. **Nothing here is tradeable and nothing gets wired
+into the live policy.** At the 5-minute horizon, where book data is supposed to shine, no
+feature clears even the 5 bps maker cost line — the fee wall §1.2 predicted is measured, twice.
+
+**B0.** 190,080 5m rows and 950,400 1m rows, 12 pairs, 2026-07-17..09-09, all eleven scalars.
+Acceptance against the repaired dumps: **111,208 / 111,112 / 111,328 exact, no exceptions.**
+O8 (dumped 2026-08-22, pre-repair candles) matches on only 42,859 of 121,188 — the mismatches
+begin on 2026-07-17 and are the defect's signature, not an alignment fault; the harness now
+labels pre-repair dumps as a control rather than a gate.
+
+**B1 — §4.1 `PASS`.** Half split at 2026-08-13 11:57 UTC; n at cov 5% = **3,158** (floor 2,000,
+so the gate could run). Best eligible slice: **`imbalance` @ 60m, +10.37 bps raw** on n=3,158,
+sign agreeing across halves. Drift over all half-2 bars at 60m is **+5.62**, so the excess is
+**+4.75, day-clustered 95% CI [−2.45, +11.94]** on 28 clusters. Three things to hold next to it:
+
+* the rank correlations behind it are **0.005–0.015** — an order of magnitude below the
+  magnitude correlations of the VOL-PROXY features (0.19–0.29);
+* §4.1 takes the best of 30 distinct (feature, horizon ≤ 60m) cells, as registered; the reader
+  should know the max was taken;
+* at **5m nothing clears the maker line** (best raw +3.43, `oi_chg` at cov 1%), and at 15m the
+  best excess is +1.5. §4.3's gate for B3 is stated at 5m/15m **net at maker**, so B3's likeliest
+  verdict is a fail on the fee wall — its durable output is the feature importances (O5).
+
+`oi_chg` @ 60m looks larger (+13.75 raw, +8.15 excess, CI [−2.41, +18.71]) but its sign
+**flips** between halves (ρ −0.024 → +0.001), so it is ineligible by the registered rule.
+The per-horizon sd on true candles: 1m 10.5 · 5m 22.4 · 15m 38.4 · 60m 75.4 · 240m 146.6 bps,
+ratio to √t 0.94–1.05 — still slightly *slower* than √t at the long end. The 240m negative
+control did not fire: every feature's excess there spans zero on ±30–50 bps CIs. VOL-PROXY
+confirmed for `spread_bps` (vol_ρ **−0.19**), `trade_count` (+0.29), `trade_vol` (+0.26),
+`funding_rate` (+0.20); `oi_chg` is a weak one (+0.01–0.02).
+
+**B2 — §4.2 `PASS`, on `spread_bps_mkt_lo`.** 115,365 bars × 8 pairs, 07-17..09-09, repaired
+dumps. The **low** tail of market-wide spread — the volatile tail, per B1's negative vol_ρ —
+scores **+35.43 gross bps on n=153** at cov 2% against a no-gate baseline of **−7.85 (n=311)**:
+lift **+43.29**, conditional lift inside calm-BTC bars **+27.89**, all three seeds agreeing;
+at cov 5% the same cell reads +14.35, lift +31.96, conditional +21.87, seeds agreeing. Read the
+resolution first: the gated arm's own day-clustered half-width is **±68.8 bps** (baseline
+±67.0 on 41 clusters), so the lift is inside one half-width of zero. The orientation (`_lo`)
+was chosen from B1's sign, which doubles the primary test count to ten. §4.2 said in advance
+that a pass is **a hypothesis to re-test when the window is longer, not a policy term**, and
+that is the only thing it is. Every other candidate, including the composite and `oi_chg`,
+fails: lifts of −23 to +15.
+
+🔴 **The side-finding that matters more than the pass.** The **incumbent** observable,
+`btc_absret_1d`, is **negative** on this era: marginal −20.23 (n=162, lift −12.38, seeds split)
+at cov 2% and **−38.85 (n=330, lift −21.24, seeds agreeing)** at cov 5%, while the *calm*-BTC
+subset earns +21.71 / +10.74. Q1's 4× effect is not merely absent on Jul–Sep 2026, it points
+the other way — and the live policy's size ladder is keyed on that observable. On 54 days with
+±67–115 bps CIs this is an observation for the forward test to check, not a finding; but it is
+the strongest argument in this wave for a *contemporaneous* regime observable, and it is filed
+in BACKLOG under the live policy, not here.
+
+**What happens next, and only this:** B3 once, as §B3 specifies (the command there is updated
+for the 55-day era and needs the `--tail-days` fix pushed to `main` first). No coverage change,
+no second setting, no policy edit.
+
+---
+
 ## §0 — READ THIS FIRST (plain language, no statistics required)
 
 ### 0.1 The question this wave exists to answer
 
-We have been collecting order-book data since 2026-07-17. It is now ~38 days deep on the majors.
+We have been collecting order-book data since 2026-07-17. It is now ~55 days deep on the majors.
 That is entirely inside the *validation* period of every model we have trained, so across the
 training window those 12 columns are constant and get zeroed — the served model genuinely runs on
 seven columns of price and volume.
@@ -183,20 +309,20 @@ again, note three defects in how it is measured:
 
 So B1 is a **re-run with those three fixes**, not a re-run.
 
-### 1.5 The data inventory, as of 2026-08-24
+### 1.5 The data inventory, as measured on the VM 2026-09-10
 
 | source | coverage |
 |---|---|
-| `orderbook_snapshots` (11 scalars, what training reads) | BTC/ETH/SOL **~38d** (from 2026-07-17) · DOGE/HYPE/WLD ~34d · ZEC ~30d · 1000PEPE ~28d · ADA/AVAX/LINK/XRP ~10d |
-| `orderbook_levels` (raw L2, 100+100) | 8 pairs **~19d** (from 2026-08-05). **Nothing on the Python side reads this yet.** |
-| `market_trades`, `open_interest` | mirror the snapshots |
+| `orderbook_snapshots` (11 scalars, what training reads) | BTC/ETH/SOL **55d** (from 2026-07-17) · DOGE/HYPE/WLD 51d (07-21) · ZEC 47d (07-25) · 1000PEPE 45d (07-27) · ADA/AVAX/LINK/XRP 27d (08-14) |
+| `orderbook_levels` (raw L2, 100+100) | 8 pairs from 2026-08-05. **Nothing on the Python side reads this yet.** |
+| `market_trades`, `open_interest` | mirror the snapshots exactly (same first day per pair). `open_interest` is in the export since 2026-09-10 |
+| 5m candles | 🔴 partial bars from 2026-07-18 to 09-03, **repaired 2026-09-04** (`CANDLE_POLL_DEFECT.md`). Any book-era number measured before the repair used the wrong forward returns |
 | `funding_rates` | 2y9mo–3y11mo — real history, and already a live feature |
 | `long_short_ratios` (B4.2) | **starts 2026-08-24**, plus the ~30d the exchange still held. Not in any model yet; collector-only from here. |
 | `liquidations` | 0 rows, WS egress blocked from datacenters. Not in any plan. |
 
-🔴 **Re-verify before B0** — this table is copied forward from 2026-08-18 plus elapsed days, not
-freshly measured. `./scripts/gcp_data_collection_stats.sh` is the slow full report; the fast version
-is the ad-hoc query pattern in NEXT_TRAINING_PLAN §0.1.
+`./scripts/gcp_data_collection_stats.sh` is the slow full report; the fast version is the ad-hoc
+query pattern in NEXT_TRAINING_PLAN §0.1.
 
 Rough sample budget at ~314 pair-days: **~90k samples at 5m**, ~450k at 1m — about **3%** of the
 current baseline's 2.90M either way. A chronological 80/20 split leaves a **~7-day** validation
@@ -234,39 +360,38 @@ what to bring back.
 
 | item | what | cost | GPU? | gated on |
 |---|---|---|---|---|
-| **B0** | Book-era side-table → parquet | ~1h laptop + one VM dump | no | nothing |
-| **B1** | Economic information check (the fixed audit) | ~1 afternoon laptop | no | B0 |
-| **B2** | Book features as **M3 regime observables** | ~1 afternoon laptop | no | B0, M3-0a |
-| **B3** | One book-era GBT, pre-registered | ~1h on its own CPU VM | no | **B1 passing §4.1** |
+| **B0** | Book-era side-table → parquet | ~1h laptop + one VM dump | no | ✅ **re-built 2026-09-10** on the full era, all eleven scalars |
+| **B1** | Economic information check (the fixed audit) | ~1 afternoon laptop | no | ✅ **2026-09-10 — §4.1 PASS** (see §R.1 for what that does and does not mean) |
+| **B2** | Book features as **M3 regime observables** | ~1 afternoon laptop | no | ✅ **2026-09-10 — §4.2 PASS on `spread_bps_mkt_lo`**, a hypothesis only |
+| **B3** | One book-era GBT, pre-registered | ~1h on its own CPU VM | no | 🟢 **AUTHORISED** by B1; launch needs a push (§B3) |
 | **B4** | Collection fixes (unrecoverable if deferred) | small Elixir change | no | ✅ **DONE — deployed and verified 2026-08-28** |
 
 **B4 was independent of the rest and is complete** (see below): deployed, all three acceptance
 checks passed, and B4.3 returned `DEPTH_OK`. Everything else can queue behind M3's attention.
 
-### B0 — ✅ DONE (2026-08-29). The book-era side-table exists and passed its acceptance test.
+### B0 — ✅ DONE, re-built 2026-09-10 on the full era
 
-**Built as an extension of M3-0b, in one alignment, exactly as this section asked** — the code
-is `ml/train/m3/sidetable.py` and the command is `./scripts/m3.sh -m m3 bookera`. Full record:
-[M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §6.
+Code `ml/train/m3/sidetable.py`, command `./scripts/m3.sh -m m3 bookera` with
+`M3_EXPORT_DIR=/workspace/train/output/book_era M3_ERA=repaired`. Export by
+`scripts/gcp_m3_export.sh` (no ladder, `ONLY=snapshots,trades,candles_5m,candles_1m,funding,oi`,
+~25 min) into its **own directory** so `m3_4/` stays byte-identical for M3-4.
 
-* `book_era_5m.parquet` — 79,488 rows x 12 pairs, 2026-08-05..27
-* `book_era_1m.parquet` — 423,130 rows x 12 pairs, 2026-08-05..29
+* `book_era_5m.parquet` — 190,080 rows × 12 pairs, 2026-07-17..09-09
+* `book_era_1m.parquet` — 950,400 rows × 12 pairs
+* **All eleven scalars.** `oi`/`oi_chg` come from the new `oi` export slice with training's
+  derivation (`log1p` of the as-of level; change of the *aligned* level) and 8h cap.
+* Freshness at 5m: BTC/ETH/SOL 0.953, DOGE/HYPE/WLD 0.923, ZEC 0.849, 1000PEPE 0.813, the four
+  August pairs 0.487 — each exactly the fraction of the window the pair has been collected.
 
-🔴 **The mandatory acceptance test passed** on all four eval dumps: `fwd_ret_240` matches each
-dump's own `fwd_ret` on a `(pair, ts)` join for every overlapping row (29,440 / 31,352 / 32,544
-/ 55,524), exactly rather than to a tolerance — the dumps store `fwd_ret` as float32, so exact
-equality after a float32 round-trip is the sharper test. It is run *separately* from M3-0b's
-own acceptance test because the two tables are built from different exports.
+🔴 **Acceptance passed against the three repaired dumps: 111,208 / 111,112 / 111,328 exact.**
+O8, dumped before the candle repair, matches 42,859 of 121,188 with the mismatches starting
+2026-07-17 — the partial-bar defect's signature. The harness labels pre-repair dumps as a
+control on a post-repair export rather than failing on them.
 
-**Bring-back, as this section required:** row counts per pair per interval and the non-stale
-fraction per feature are printed by the command. Book freshness is **0.9994 on the eight main
-pairs and 0.6028 on ADA/AVAX/LINK/XRP** at 5m — the expected reading, and a useful check: those
-four joined the collector on 2026-08-14, which is 14 of the window's 23 days (14/23 = 0.609).
-
-⚠️ **Nine of the eleven scalars are built. `oi` and `oi_chg` are missing** because
-`open_interest` is not one of the tables `scripts/gcp_m3_export.sh` pulls. That is a one-line
-export change, **not** an alignment change, and it is filed in [BACKLOG.md](./BACKLOG.md). B1
-and B2 can proceed on nine.
+⚠️ **Operational, found on the way:** the VM's `/tmp` is a 980 MB tmpfs and a stale 821 MB
+`/tmp/app.log` (dated 2026-09-05) filled it, so the first export died at the copy-out step.
+The script now stages under the home directory on disk. The stale log is still there, holding
+~800 MB of a 2 GB collector's RAM-backed tmpfs — worth deleting, not done here.
 
 <details><summary>The original B0 specification, kept for reference</summary>
 
@@ -304,62 +429,14 @@ of rows where each feature is non-stale, and the acceptance-test diff.
 
 ### B1 — the economic information check (replaces "re-run the audit")
 
-✅ **RUN 2026-08-31.** Command: `./scripts/m3.sh -m m3 bookaudit` (code `ml/train/m3/bookaudit.py`,
-log `logs/b1_bookaudit.log`, tables `ml/train/output/m3_4/b1_bps_table.csv` and
-`b1_classification.csv`). All four §B1 fixes are implemented: chronological half-split with the
-sign and the percentile map fitted on half 1, pairs pooled as a nuisance dimension via a
-within-pair percentile map, everything in bps against the 5/14 bps cost lines, and the real
-per-horizon sd.
+✅ **RUN 2026-09-10 on the full era, repaired candles.** Command
+`./scripts/m3.sh -m m3 bookaudit` (same env as B0), log `logs/b1_bookaudit_20260910.log`.
+Design unchanged from the registration: chronological half-split, sign and percentile map on
+half 1, pairs pooled, everything in bps against the 5/14 bps lines, day-clustered CIs.
 
-**Verdict on §4.1: `NOT EVALUABLE` — and that is a distinct outcome from FAIL.** §4.1 requires
-`n >= 2,000` in a top-5% slice, which needs **>= 40,000 usable half-2 rows**; the book era
-supplies **39,740**. The gate is short by about 1% and *cannot be run as written*. Recording that
-as a FAIL would close B3 on a sample-size technicality rather than on evidence — the exact move
-`negative-results-need-the-same-scrutiny` forbids. Either wait for the window to grow past the
-floor, or re-pre-register the floor **before** looking at the numbers again, never after.
-
-**What the evidence looks like anyway** (best sign-agreeing slice, offered as texture, not as a
-verdict): `trade_vol` at 60m, **+24.07 bps raw**, but the book era's own drift is **+11.60 bps**,
-so the part attributable to the feature is **+12.47 bps** — and its **day-clustered 95% CI is
-[−6.06, +30.99]**, on only **12 day-clusters**. Every feature's excess at 60m spans zero.
-
-🔴 **The clustering is the whole point, and it is what the 2026-08-04 audit lacked.** A 60-minute
-forward return sampled on a 5-minute grid overlaps its twelve neighbours, and the same market
-move is counted once per pair across correlated perpetuals. The naive `sd/sqrt(n)` put
-`trade_vol` at roughly six sigma. The clustered interval puts it at less than 1.4. **Nothing here
-is distinguishable from zero.** ⚠️ Even that is generous: 12 clusters is far below the G >= 30-40
-where a cluster-robust SE is itself reliable.
-
-**Three results worth carrying forward:**
-
-1. **At 5m, nothing clears even the maker line.** The best cell across all features and coverages
-   is `trade_vol` at **+4.41 bps** (cov 1%), against a 5 bps maker round trip and 14 bps taker.
-   §1.1's horizon curve is confirmed on the book era's own data rather than extrapolated.
-2. **The real per-horizon sd, replacing §1.2's sqrt(t) estimates** — the measurement §B1 point 4
-   asked for:
-
-   | horizon | sd (bps) | mean abs (bps) | sqrt(t) estimate | ratio |
-   |---:|---:|---:|---:|---:|
-   | 1m *(derived from 1m closes)* | 12.71 | 6.35 | 11.53 | 1.10 |
-   | 5m | 25.77 | 14.59 | 25.77 | 1.00 |
-   | 15m | 43.95 | 25.25 | 44.64 | 0.98 |
-   | 60m | 86.67 | 50.88 | 89.28 | 0.97 |
-   | 240m | 167.90 | 103.38 | 178.56 | 0.94 |
-
-   Real sd grows **slightly slower** than sqrt(t). §1.2's fee wall at short horizons is therefore
-   marginally *harder* than it assumed, not easier.
-3. **The DIRECTIONAL / VOL-PROXY split, which is what §0.4 depends on.** `spread_bps`
-   (`vol_rho` **−0.28**), `trade_count` (+0.30), `trade_vol` (+0.27) and `funding_rate` (+0.26) are
-   strong magnitude signals with directional rho an order of magnitude smaller — **VOL-PROXY, as
-   §0.4 predicted.** Note the **sign**: `spread_bps` correlates *negatively* with move size here,
-   so its volatile tail is the **low** one; B2 tests both tails because of this.
-
-⚠️ **Two housekeeping facts.** `imbalance` and `bid_ask_vol_ratio` are monotone transforms of each
-other ((b−a)/(b+a) versus b/a), so every rank-based number is identical for the two — there are
-**eight** distinct features here, not nine. And the **240m negative control fired**: every feature
-shows large positive raw bps there (up to +99), which is the period's own **+62 bps drift**, not
-information. That is exactly why the harness now reports raw *and* excess-over-drift; without the
-drift row the 240m table reads as a discovery.
+**Verdict on §4.1: `PASS` — B3 is authorised.** The full reading, including why the pass is
+not an edge, is in **§R.1** above; do not quote the +10.37 without the +5.62 drift and the
+[−2.45, +11.94] interval next to it.
 
 <details><summary>The original B1 specification, kept for reference</summary>
 
@@ -406,33 +483,20 @@ the DIRECTIONAL/VOL-PROXY classification, and a one-line verdict against §4.1.
 
 ### B2 — book features as M3 regime observables *(highest expected value)*
 
-✅ **RUN 2026-08-31.** Command: `./scripts/m3.sh -m m3 bookregime` (code
-`ml/train/m3/bookregime.py`, log `logs/b2_bookregime.log`).
+✅ **RUN 2026-09-10 on the full era, repaired dumps (`M3_ERA=repaired`).** Command
+`./scripts/m3.sh -m m3 bookregime`, log `logs/b2_bookregime_20260910.log`. Candidates are the
+five registered on 2026-08-24, `oi_chg` now included; the harness prints each arm's
+day-clustered half-width.
 
-**Verdict on §4.2: `NOT YET DECIDABLE`.** No candidate clears the +30 gross bps bar at cov 2%.
-🔴 **This is not a negative result, and §4.2 says so in advance** — the gate is deliberately set
-where 38 days can resolve, and a real +15 bps effect would fail it too.
+**Verdict on §4.2: `PASS` on `spread_bps_mkt_lo`** — the narrow-spread (volatile) tail of the
+market-wide spread percentile: lift +43.29 at cov 2%, conditional +27.89, seeds agreeing, on
+an arm whose own 95% half-width is ±68.8 bps. Per §4.2 this is **a hypothesis to re-test when
+the window is longer**, never a policy term. Full reading in **§R.1**, including the
+side-finding that the incumbent `btc_absret_1d` gate is *negative* on this era.
 
-🟢 **The internal control is what makes that reading certain rather than a excuse.** The
-**incumbent** observable, `btc_absret_1d` — the one Q1 measured at 4x across three seeds — scores
-a **+25.16 bps lift on n=33 trades, with its three seeds SPLIT in sign.** The observable we
-already know works fails its own gate on this window. That is proof the *window* cannot resolve
-the question, not that the candidates are bad.
-
-**Cell sizes are 19-78 trades.** §1.6's ±36 bps CI half-width was, if anything, optimistic.
-
-**Texture, explicitly not a finding** (n is far too small, and the tail orientation was chosen
-from the data, which doubles the test count): the *conditional* column — the book gate applied
-inside the bars where `btc_absret_1d` is **not** in its own top quintile — is positive for
-`trade_count_mkt` (+15.54), `trade_vol_mkt` (+16.98) and the composite (+21.51) at cov 2%. If
-anything survives here it is the *orthogonality* hypothesis of §B2 — a contemporaneous observable
-firing on the days the trailing one sleeps through — and that is the thing to re-test when the
-window is long enough. Do not build a policy term on it.
-
-**What would make this decidable:** calendar. §4.4's ≥90-day trigger (≈2026-10-15) is the
-condition, and it is unchanged by this run.
-
----
+**What would make it a finding:** the same cell, same orientation, on a window long enough
+that ±69 becomes ±30 or better — roughly four times the days, ≈ 2027-01 — **or** the forward
+paper test's own ledger showing the same split. Re-run with the command above; change nothing.
 
 <details><summary>The original B2 specification, kept for reference</summary>
 
@@ -468,10 +532,17 @@ per-seed as well as pooled, with `n_trades` on every row.
 
 ### B3 — one book-era model, gated on B1
 
-🔴 **BLOCKED 2026-08-31: B1 returned `NOT EVALUABLE`, so §4.1 has neither authorised nor refused
-B3.** B3 does not happen on an ungated basis. See the B1 section for the two ways forward (wait
-for the window, or re-pre-register the floor first). Recorded in
-[NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2, since B3 is the wave's only training run.
+🟢 **AUTHORISED 2026-09-10: B1 passed §4.1 as written.** One run, as specified below, with two
+mechanical updates: `--tail-days 55` covers the era from 2026-07-17, and `gbt_baseline.py`'s
+tail arithmetic was fixed the same day (it multiplied days by 1440 bars regardless of interval,
+so `--tail-days 55` at 5m would have loaded 275 days). 🔴 `gcp_gbt.sh` clones `main` from
+GitHub, so **that fix must be committed and pushed before launching** — otherwise the VM runs
+the old code and the window is wrong. Recorded in [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md)
+§2, since B3 is the wave's only training run.
+
+Expectation, written before the run: B1 measured no feature clearing even the maker line at 5m,
+so §4.3 (net at maker at 5m/15m) is more likely to fail than pass; the run's most durable
+output is the feature-importance table (O5's within-model attribution).
 
 **Only if B1 clears §4.1.** If it does not, this step does not happen and the wave closes at B2.
 
@@ -489,10 +560,11 @@ in order:
 
 ```sh
 # book era only, 5m primary, 8 main pairs. --tail-days bounds the window without
-# needing --require-book; verify from the log that the loaded window matches §1.5.
+# needing --require-book; verify from the log that "Tail window" says ~15,840 5m
+# candles/pair and the val window opens ~2026-08-29 (the last 20% of 55 days).
 GBT_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT \
 GBT_HORIZONS=5,15,60 GBT_PRIMARY=5 CANDLE_INTERVAL=5m \
-  ./scripts/gcp_gbt.sh --tail-days 38 --num-leaves 15 --n-estimators 200 --learning-rate 0.03
+  ./scripts/gcp_gbt.sh --tail-days 55 --num-leaves 15 --n-estimators 200 --learning-rate 0.03
 
 ./scripts/gcp_gbt.sh --status
 ./scripts/gcp_gbt.sh --fetch     # summary + JSON

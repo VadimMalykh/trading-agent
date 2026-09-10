@@ -302,7 +302,12 @@ def main():
             f"Numbers below are {primary}m and are NOT comparable to a 30m LSTM run. "
             f"Set both env vars (e.g. HORIZONS_MINUTES=5,30,60 PRIMARY_HORIZON=30)."
         )
-    max_rows = args.tail_days * 1440 if args.tail_days else None
+    # Bars per day at the configured interval, not 1440: with CANDLE_INTERVAL=5m the old
+    # `tail_days * 1440` loaded 275 days for `--tail-days 55` (found 2026-09-10 preparing
+    # BOOK_ERA_PLAN B3, before any run). eval_m2.py has always done this correctly.
+    max_rows = args.tail_days * horizon_bars(CANDLE_INTERVAL, 1440) if args.tail_days else None
+    if max_rows is not None:
+        print(f"Tail window: last {args.tail_days}d (~{max_rows:,} {CANDLE_INTERVAL} candles/pair)")
 
     print(
         f"GBT baseline | pairs={pairs} | horizons={horizons} | primary={primary}m "

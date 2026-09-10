@@ -4780,3 +4780,131 @@ the volatility spike is gone. That log is the only record of what the model says
 volatility event. **Do not reset it again.**
 
 ---
+
+
+---
+
+## ⚫ The B-wave's first pass, 2026-08-29 → 08-31 — SUPERSEDED 2026-09-10
+
+**Why it is here.** Every number below was measured on the 2026-08-05..27 export, whose 5m
+candles were the collector's **partial bars** (`docs/CANDLE_POLL_DEFECT.md`: from 2026-07-18
+to 09-03 every stored candle was a snapshot of the bar's first minute). The forward returns
+B1 ranked and the drift B1 subtracted were therefore not the market's. The 2026-09-10 re-run
+on the repaired candles over the full era (2026-07-17..09-09) replaces them; see
+`docs/BOOK_ERA_PLAN.md` §R. The *design* of B0–B2 was right and is unchanged; only the inputs
+were defective. Kept for the reasoning and for the "NOT EVALUABLE ≠ FAIL" argument, which
+turned out to matter: the gate that could not run on 23 days passed on 54.
+
+### B0, as recorded 2026-08-29
+
+**Built as an extension of M3-0b, in one alignment, exactly as this section asked** — the code
+is `ml/train/m3/sidetable.py` and the command is `./scripts/m3.sh -m m3 bookera`. Full record:
+[M3_0B_RESULTS.md](./M3_0B_RESULTS.md) §6.
+
+* `book_era_5m.parquet` — 79,488 rows x 12 pairs, 2026-08-05..27
+* `book_era_1m.parquet` — 423,130 rows x 12 pairs, 2026-08-05..29
+
+🔴 **The mandatory acceptance test passed** on all four eval dumps: `fwd_ret_240` matches each
+dump's own `fwd_ret` on a `(pair, ts)` join for every overlapping row (29,440 / 31,352 / 32,544
+/ 55,524), exactly rather than to a tolerance — the dumps store `fwd_ret` as float32, so exact
+equality after a float32 round-trip is the sharper test. It is run *separately* from M3-0b's
+own acceptance test because the two tables are built from different exports.
+
+**Bring-back, as this section required:** row counts per pair per interval and the non-stale
+fraction per feature are printed by the command. Book freshness is **0.9994 on the eight main
+pairs and 0.6028 on ADA/AVAX/LINK/XRP** at 5m — the expected reading, and a useful check: those
+four joined the collector on 2026-08-14, which is 14 of the window's 23 days (14/23 = 0.609).
+
+⚠️ **Nine of the eleven scalars are built. `oi` and `oi_chg` are missing** because
+`open_interest` is not one of the tables `scripts/gcp_m3_export.sh` pulls. That is a one-line
+export change, **not** an alignment change, and it is filed in [BACKLOG.md](./BACKLOG.md). B1
+and B2 can proceed on nine.
+
+### B1, as recorded 2026-08-31
+
+✅ **RUN 2026-08-31.** Command: `./scripts/m3.sh -m m3 bookaudit` (code `ml/train/m3/bookaudit.py`,
+log `logs/b1_bookaudit.log`, tables `ml/train/output/m3_4/b1_bps_table.csv` and
+`b1_classification.csv`). All four §B1 fixes are implemented: chronological half-split with the
+sign and the percentile map fitted on half 1, pairs pooled as a nuisance dimension via a
+within-pair percentile map, everything in bps against the 5/14 bps cost lines, and the real
+per-horizon sd.
+
+**Verdict on §4.1: `NOT EVALUABLE` — and that is a distinct outcome from FAIL.** §4.1 requires
+`n >= 2,000` in a top-5% slice, which needs **>= 40,000 usable half-2 rows**; the book era
+supplies **39,740**. The gate is short by about 1% and *cannot be run as written*. Recording that
+as a FAIL would close B3 on a sample-size technicality rather than on evidence — the exact move
+`negative-results-need-the-same-scrutiny` forbids. Either wait for the window to grow past the
+floor, or re-pre-register the floor **before** looking at the numbers again, never after.
+
+**What the evidence looks like anyway** (best sign-agreeing slice, offered as texture, not as a
+verdict): `trade_vol` at 60m, **+24.07 bps raw**, but the book era's own drift is **+11.60 bps**,
+so the part attributable to the feature is **+12.47 bps** — and its **day-clustered 95% CI is
+[−6.06, +30.99]**, on only **12 day-clusters**. Every feature's excess at 60m spans zero.
+
+🔴 **The clustering is the whole point, and it is what the 2026-08-04 audit lacked.** A 60-minute
+forward return sampled on a 5-minute grid overlaps its twelve neighbours, and the same market
+move is counted once per pair across correlated perpetuals. The naive `sd/sqrt(n)` put
+`trade_vol` at roughly six sigma. The clustered interval puts it at less than 1.4. **Nothing here
+is distinguishable from zero.** ⚠️ Even that is generous: 12 clusters is far below the G >= 30-40
+where a cluster-robust SE is itself reliable.
+
+**Three results worth carrying forward:**
+
+1. **At 5m, nothing clears even the maker line.** The best cell across all features and coverages
+   is `trade_vol` at **+4.41 bps** (cov 1%), against a 5 bps maker round trip and 14 bps taker.
+   §1.1's horizon curve is confirmed on the book era's own data rather than extrapolated.
+2. **The real per-horizon sd, replacing §1.2's sqrt(t) estimates** — the measurement §B1 point 4
+   asked for:
+
+   | horizon | sd (bps) | mean abs (bps) | sqrt(t) estimate | ratio |
+   |---:|---:|---:|---:|---:|
+   | 1m *(derived from 1m closes)* | 12.71 | 6.35 | 11.53 | 1.10 |
+   | 5m | 25.77 | 14.59 | 25.77 | 1.00 |
+   | 15m | 43.95 | 25.25 | 44.64 | 0.98 |
+   | 60m | 86.67 | 50.88 | 89.28 | 0.97 |
+   | 240m | 167.90 | 103.38 | 178.56 | 0.94 |
+
+   Real sd grows **slightly slower** than sqrt(t). §1.2's fee wall at short horizons is therefore
+   marginally *harder* than it assumed, not easier.
+3. **The DIRECTIONAL / VOL-PROXY split, which is what §0.4 depends on.** `spread_bps`
+   (`vol_rho` **−0.28**), `trade_count` (+0.30), `trade_vol` (+0.27) and `funding_rate` (+0.26) are
+   strong magnitude signals with directional rho an order of magnitude smaller — **VOL-PROXY, as
+   §0.4 predicted.** Note the **sign**: `spread_bps` correlates *negatively* with move size here,
+   so its volatile tail is the **low** one; B2 tests both tails because of this.
+
+⚠️ **Two housekeeping facts.** `imbalance` and `bid_ask_vol_ratio` are monotone transforms of each
+other ((b−a)/(b+a) versus b/a), so every rank-based number is identical for the two — there are
+**eight** distinct features here, not nine. And the **240m negative control fired**: every feature
+shows large positive raw bps there (up to +99), which is the period's own **+62 bps drift**, not
+information. That is exactly why the harness now reports raw *and* excess-over-drift; without the
+drift row the 240m table reads as a discovery.
+
+### B2, as recorded 2026-08-31
+
+✅ **RUN 2026-08-31.** Command: `./scripts/m3.sh -m m3 bookregime` (code
+`ml/train/m3/bookregime.py`, log `logs/b2_bookregime.log`).
+
+**Verdict on §4.2: `NOT YET DECIDABLE`.** No candidate clears the +30 gross bps bar at cov 2%.
+🔴 **This is not a negative result, and §4.2 says so in advance** — the gate is deliberately set
+where 38 days can resolve, and a real +15 bps effect would fail it too.
+
+🟢 **The internal control is what makes that reading certain rather than a excuse.** The
+**incumbent** observable, `btc_absret_1d` — the one Q1 measured at 4x across three seeds — scores
+a **+25.16 bps lift on n=33 trades, with its three seeds SPLIT in sign.** The observable we
+already know works fails its own gate on this window. That is proof the *window* cannot resolve
+the question, not that the candidates are bad.
+
+**Cell sizes are 19-78 trades.** §1.6's ±36 bps CI half-width was, if anything, optimistic.
+
+**Texture, explicitly not a finding** (n is far too small, and the tail orientation was chosen
+from the data, which doubles the test count): the *conditional* column — the book gate applied
+inside the bars where `btc_absret_1d` is **not** in its own top quintile — is positive for
+`trade_count_mkt` (+15.54), `trade_vol_mkt` (+16.98) and the composite (+21.51) at cov 2%. If
+anything survives here it is the *orthogonality* hypothesis of §B2 — a contemporaneous observable
+firing on the days the trailing one sleeps through — and that is the thing to re-test when the
+window is long enough. Do not build a policy term on it.
+
+**What would make this decidable:** calendar. §4.4's ≥90-day trigger (≈2026-10-15) is the
+condition, and it is unchanged by this run.
+
+---

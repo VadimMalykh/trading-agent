@@ -56,10 +56,14 @@ BOOK_DIR = os.environ.get("M3_EXPORT_DIR", "output/m3_4")
 BOOK_FEATURES = ["spread_bps", "imbalance", "micro_mid", "bid_ask_vol_ratio", "depth_near_imb"]
 TRADE_FEATURES = ["trade_count", "buy_sell_imb", "trade_vol"]
 FUNDING_FEATURES = ["funding_rate"]
+# The last two of the eleven, present once the export carries the `oi` slice (2026-09-10).
+# `score()` skips a feature whose column is absent, so an older side-table still scores.
+OI_FEATURES = ["oi", "oi_chg"]
 MASK_OF = ({f: "has_book" for f in BOOK_FEATURES}
            | {f: "has_trades" for f in TRADE_FEATURES}
-           | {f: "has_funding" for f in FUNDING_FEATURES})
-FEATURES = BOOK_FEATURES + TRADE_FEATURES + FUNDING_FEATURES
+           | {f: "has_funding" for f in FUNDING_FEATURES}
+           | {f: "has_oi" for f in OI_FEATURES})
+FEATURES = BOOK_FEATURES + TRADE_FEATURES + FUNDING_FEATURES + OI_FEATURES
 
 HORIZONS = [5, 15, 60, 240]        # 240 is the NEGATIVE CONTROL — see §B1
 COVERAGES = [0.01, 0.02, 0.05, 0.10]
@@ -135,6 +139,8 @@ def score(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     for feat in FEATURES:
         mask = MASK_OF[feat]
+        if feat not in df.columns or mask not in df.columns:
+            continue                     # side-table built from an export without the slice
         a = h1[h1[mask] == 1]
         b = h2[h2[mask] == 1]
         if len(a) < 1000 or len(b) < 1000:
@@ -251,10 +257,12 @@ def gate(tbl: pd.DataFrame, diag: pd.DataFrame) -> dict:
 
     🔴 The distinction this returns matters more than the verdict. §4.1 requires n >= 2,000
     in a top-5% slice, which needs >= 40,000 usable half-2 rows per (feature, horizon). The
-    book era supplies ~39,700. So the gate as pre-registered is **unreachable by about 2%**,
-    and reporting that as a FAIL would close B3 on a sample-size technicality rather than on
-    evidence — the exact move `negative-results-need-the-same-scrutiny` forbids. A criterion
-    has to be shown to have the power to decide before it is allowed to decide.
+    23-day export B1 first ran on (2026-08-31) supplied ~39,700, so the gate as
+    pre-registered was **unreachable by about 1%**, and reporting that as a FAIL would have
+    closed B3 on a sample-size technicality rather than on evidence — the exact move
+    `negative-results-need-the-same-scrutiny` forbids. A criterion has to be shown to have
+    the power to decide before it is allowed to decide. The 2026-09-10 re-run on the full
+    span (from 2026-07-17) is what made it reachable; the criterion itself is unchanged.
     """
     d = diag.set_index(["feature", "h"])
     elig = tbl[(tbl["cov"] == GATE_COVERAGE) & (tbl["h"] <= GATE_MAX_HORIZON)].copy()

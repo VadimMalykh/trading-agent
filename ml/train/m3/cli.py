@@ -1109,6 +1109,14 @@ def cmd_rlgate(args) -> int:
     return walkforward.rlgate_report(WINNER_SPEC, GRID_WINNER_SPEC)
 
 
+def cmd_learnfolds(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.5 — the learned challenger on the folds."""
+    from . import learnfolds
+    return learnfolds.report(WINNER_SPEC, stage=args.stage,
+                             exploration_recorded=args.exploration_recorded,
+                             config=args.config)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1234,9 +1242,10 @@ def cmd_bookaudit(args) -> int:
             flag = "  *" if r["excess_lo95"] > 0 else ""
             print(f"      {f:<20}{r['excess_bps']:+8.2f}  "
                   f"[{r['excess_lo95']:+7.2f}, {r['excess_hi95']:+7.2f}]{flag}")
+    n_feat = tbl["feature"].nunique()
     print("\n  ⚠️ `imbalance` and `bid_ask_vol_ratio` are monotone transforms of each other")
-    print("  ((b-a)/(b+a) versus b/a), so every rank-based number below is identical for the")
-    print("  two. There are eight distinct features here, not nine.")
+    print("  ((b-a)/(b+a) versus b/a), so every rank-based number above is identical for the")
+    print(f"  two. There are {n_feat - 1} distinct features here, not {n_feat}.")
 
     print("\nDIRECTIONAL vs VOL-PROXY — the split §0.4 depends on -----------------------")
     cls = bookaudit.classify(diag)
@@ -1296,30 +1305,36 @@ def cmd_bookregime(args) -> int:
         print(f"  baseline inside calm BTC:     {r['baseline_calm']['gross_bps']:+8.2f} gross bps "
               f"(n={r['baseline_calm']['n']:,})")
         t = r["rows"]
-        print(f"\n  {'observable':<22}{'n':>7}{'marginal':>11}{'lift':>9}"
+        print(f"    baseline day-clustered 95% CI: +/-{1.96 * r['baseline']['clustered_se']:.2f} bps "
+              f"on {r['baseline']['clusters']} day clusters")
+        print(f"\n  {'observable':<22}{'n':>7}{'marginal':>11}{'+/-95':>7}{'lift':>9}"
               f"{'n':>8}{'conditional':>13}{'lift':>9}   seeds")
         for row in t.itertuples():
             tag = "" if row.primary else "  (diagnostic, not a test)"
             signs = [np.sign(v) for v in row.seed_lifts.values() if np.isfinite(v)]
             agree = "agree" if len(set(signs)) == 1 else "SPLIT"
             print(f"  {row.observable:<22}{row.n_marg:>7,}{row.marg_bps:>+11.2f}"
-                  f"{row.marg_lift:>+9.2f}{row.n_cond:>8,}{row.cond_bps:>+13.2f}"
-                  f"{row.cond_lift:>+9.2f}   {agree}{tag}")
+                  f"{1.96 * row.marg_se:>7.2f}{row.marg_lift:>+9.2f}{row.n_cond:>8,}"
+                  f"{row.cond_bps:>+13.2f}{row.cond_lift:>+9.2f}   {agree}{tag}")
+        print("    `+/-95` is the gated arm's own day-clustered half-width; the lift's CI is")
+        print("    wider still (two arms). Read it before reading the lift.")
 
     print("\n§4.2 GATE ------------------------------------------------------------------")
     g = bookregime.gate(res)
     print(f"  needs: marginal lift > +{bookregime.GATE_LIFT_BPS:.0f} gross bps at cov 2%, "
           f"a positive CONDITIONAL lift, and the sign agreeing across all three seeds")
     print(g["rows"].to_string(index=False, float_format=lambda v: f"{v:+.2f}"))
+    days = (book["ts"].max() - book["ts"].min()) / (86_400 * 1e9)
     if g["pass"]:
         print("  VERDICT: PASS — carry the observable into M3 as a HYPOTHESIS, per §4.2.")
-        print("  It is still 38 days. Re-test when the window is longer before it becomes")
+        print(f"  It is still {days:.0f} days. Re-test when the window is longer before it becomes")
         print("  load-bearing in a policy.")
     else:
         print(f"  VERDICT: NOT YET DECIDABLE — no candidate clears +{bookregime.GATE_LIFT_BPS:.0f} bps.")
-        print(f"  🔴 This is NOT a negative result. §1.6 puts the book-era cov02 CI half-width")
-        print(f"  at +/-{bookregime.CI_HALF_WIDTH_BPS:.0f} bps, so a REAL +15 bps effect would fail this")
-        print("  gate too. Record it as 'not yet decidable', per §4.2, never as 'the book is useless'.")
+        print(f"  🔴 This is NOT a negative result. §1.6 put the 38-day cov02 CI half-width at")
+        print(f"  +/-{bookregime.CI_HALF_WIDTH_BPS:.0f} bps; the measured `+/-95` column above is what")
+        print(f"  {days:.0f} days resolve. A REAL effect smaller than that would fail this gate too.")
+        print("  Record it as 'not yet decidable', per §4.2, never as 'the book is useless'.")
     return 0
 
 def cmd_sidetable(args) -> int:
@@ -1489,7 +1504,15 @@ def _bookera_acceptance(df: pd.DataFrame) -> None:
     the dumps do.
     """
     print("  acceptance (B0 §B0, mandatory): fwd_ret_240 vs the dumps over the overlap")
-    for seed, run_id in list(dumps.BASELINE_RUNS.items()) + [("o8", dumps.O8_RUN)]:
+    # 🔴 Which dumps can be a gate depends on WHEN the candles were exported. Every dump made
+    # before the 2026-09-04 candle repair (the `prerepair` era and O8) was scored on partial
+    # bars from 2026-07-18 to 09-03 (docs/CANDLE_POLL_DEFECT.md), so against an export pulled
+    # after the repair they disagree on exactly those days — an expected mismatch, not an
+    # alignment defect. Seen 2026-09-10: repaired s1/s2/s3 111k/111k exact, O8 42,859/121,188.
+    # The gate is therefore the dumps of the era selected by M3_ERA; O8 is printed as a
+    # labelled control so the signature stays visible.
+    runs = list(dumps.BASELINE_RUNS.items()) + [("o8", dumps.O8_RUN)]
+    for seed, run_id in runs:
         d = dumps.load(run_id, seed=seed)
         h = d.at(240)[["ts", "pair", "fwd_ret"]]
         m = h.merge(df[["pair", "ts", "fwd_ret_240"]], on=["pair", "ts"], how="inner")
@@ -1499,8 +1522,13 @@ def _bookera_acceptance(df: pd.DataFrame) -> None:
             continue
         exact = int((m["fwd_ret"].to_numpy() ==
                      m["fwd_ret_240"].to_numpy().astype(np.float32)).sum())
-        print(f"    {seed}: overlap={len(m):>7,}  exact={exact:,}/{len(m):,}  "
-              f"{'PASS' if exact == len(m) else '🔴 FAIL'}")
+        gate = seed != "o8" and dumps.ERA == "repaired"
+        if gate:
+            tag = "PASS" if exact == len(m) else "🔴 FAIL"
+        else:
+            tag = ("pre-repair candles — not a gate on a post-repair export"
+                   if exact != len(m) else "PASS (pre-repair dump; export must predate the repair)")
+        print(f"    {seed}: overlap={len(m):>7,}  exact={exact:,}/{len(m):,}  {tag}")
 
 
 def cmd_bookera(args) -> int:
@@ -1520,6 +1548,7 @@ def cmd_bookera(args) -> int:
             "book_fresh": g["has_book"].mean(),
             "tape_fresh": g["has_trades"].mean(),
             "funding_fresh": g["has_funding"].mean(),
+            "oi_fresh": g["has_oi"].mean() if "has_oi" in df.columns else np.nan,
             "fwd240_ok": g["fwd_ret_240"].apply(lambda c: 1.0 - c.isna().mean()),
         })
         print(cov.to_string(float_format=lambda v: f"{v:.4f}"))
@@ -1528,9 +1557,11 @@ def cmd_bookera(args) -> int:
         out = os.path.join(sidetable.BOOK_DIR, f"book_era_{interval}.parquet")
         df.to_parquet(out, index=False)
         print(f"  wrote {out}")
-    print("\n  ⚠️ nine of B0's eleven scalars are built. `oi` and `oi_chg` are absent because")
-    print("     `open_interest` is not one of the tables scripts/gcp_m3_export.sh pulls;")
-    print("     adding it is a one-line export change, not an alignment change.")
+    if "has_oi" in df.columns:
+        print("\n  all eleven of B0's scalars are built (the `oi` slice is in this export).")
+    else:
+        print("\n  ⚠️ nine of B0's eleven scalars are built. `oi` and `oi_chg` are absent because")
+        print("     this export has no `oi` slice — re-export with ONLY=...,oi (2026-09-10+).")
     return 0
 
 
@@ -1624,6 +1655,19 @@ def main() -> int:
                          "fundable on the folds? Reads the incumbent's public numbers and two "
                          "fitting-free contrasts on F0+F1; fits nothing (needs M3_ERA=walkforward)")
     rlg.set_defaults(fn=cmd_rlgate)
+
+    lf = sub.add_parser("learnfolds", help="WALKFORWARD_PROTOCOL §9.5: M3-3's eight learned "
+                        "configurations refitted with the FOLD as the unit; explore on F0+F1, "
+                        "confirm once on F2+F3 (needs M3_ERA=walkforward)")
+    lf.add_argument("--stage", choices=["explore", "confirm"], required=True,
+                    help="explore = fit F1->score F0 and F0->score F1, choose one config by "
+                         "§9.5's rule; confirm = F2+F3 once, the chosen config only")
+    lf.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: the exploration table and label are "
+                         "written in §9.5")
+    lf.add_argument("--config", default=None,
+                    help="--stage confirm only: the configuration label transcribed from §9.5")
+    lf.set_defaults(fn=cmd_learnfolds)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")
