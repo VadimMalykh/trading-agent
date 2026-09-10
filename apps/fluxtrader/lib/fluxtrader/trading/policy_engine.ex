@@ -75,6 +75,14 @@ defmodule FluxTrader.Trading.PolicyEngine do
   makes "swap `m2_multi.pt` and forget the constants" fail loudly instead of silently — the
   2026-08-31 served-vs-scored defect, closed at the root.
 
+  **The same guard binds the candle interval (2026-09-10).** The hash says which weights
+  loaded, not what they were fed: from 2026-08-24 to 09-10 `ml_inference` built the 5m
+  checkpoint's features from 1-minute candles (no `CANDLE_INTERVAL` in its environment,
+  config default `1m`), the hash matched, and every live confidence sat ~0.05 below what the
+  same bars score offline — the forward test took no trades. `/health` now reports
+  `candle_interval`; it must equal `Policy.candle_interval/0` or entries are skipped as
+  `interval_mismatch` (`interval_unverified` when the field is absent, i.e. an old serve).
+
   Every opened row is stamped with the checkpoint and the ladder p80 in force
   (`paper_trades.checkpoint`, `.ladder_p80`), so the forward ledger is kept across swaps and
   scored per rule or pooled, instead of being truncated (§9.6).
@@ -164,7 +172,10 @@ defmodule FluxTrader.Trading.PolicyEngine do
        regime_fun: Keyword.get(opts, :regime_fun, &__MODULE__.default_regime/0),
        # Returns the sha256 `ml_inference` reports for the weights it loaded, or nil.
        checkpoint_fun: Keyword.get(opts, :checkpoint_fun, &__MODULE__.default_checkpoint/0),
+       # Returns the candle interval `ml_inference` reports it builds features on, or nil.
+       interval_fun: Keyword.get(opts, :interval_fun, &__MODULE__.default_interval/0),
        checkpoint: nil,
+       served_interval: nil,
        checkpoint_bound: false,
        last_cut_exceeded_at: nil,
        # The oldest bar still retained — the anchor the retrain trigger falls back to when
@@ -248,6 +259,9 @@ defmodule FluxTrader.Trading.PolicyEngine do
        # and whether the policy is therefore allowed to trade.
        checkpoint: state.checkpoint,
        frozen_checkpoint: Policy.frozen_checkpoint_sha256(),
+       # ... and the bar size inference builds on, against the grid the policy floors to.
+       served_candle_interval: state.served_interval,
+       expected_candle_interval: Policy.candle_interval(),
        checkpoint_bound: state.checkpoint_bound,
        # The retrain trigger (§8.6 Q3 (b)): days since a served bar last met the cut,
        # against the calibrated ceiling. `fired: true` means a retrain is due.
@@ -295,9 +309,12 @@ defmodule FluxTrader.Trading.PolicyEngine do
   # inference service; a one-time check at boot would miss exactly the event it exists for.
   defp bind_checkpoint(state) do
     sha = safe_checkpoint(state.checkpoint_fun)
-    bound = sha != nil and sha == Policy.frozen_checkpoint_sha256()
+    interval = safe_checkpoint(state.interval_fun)
+    sha_ok = sha != nil and sha == Policy.frozen_checkpoint_sha256()
+    interval_ok = interval != nil and interval == Policy.candle_interval()
+    bound = sha_ok and interval_ok
 
-    if sha != nil and not bound and state.checkpoint != sha do
+    if sha != nil and not sha_ok and state.checkpoint != sha do
       Logger.error(
         "checkpoint mismatch: ml_inference serves #{sha} but the frozen cut and ladder " <>
           "belong to #{Policy.frozen_checkpoint_sha256()} — the policy will not trade " <>
@@ -305,7 +322,15 @@ defmodule FluxTrader.Trading.PolicyEngine do
       )
     end
 
-    %{state | checkpoint: sha, checkpoint_bound: bound}
+    if interval != nil and not interval_ok and state.served_interval != interval do
+      Logger.error(
+        "candle interval mismatch: ml_inference builds features on #{interval} candles " <>
+          "but the policy and its constants are on #{Policy.candle_interval()} — the " <>
+          "policy will not trade on inputs at the wrong scale (M3_FIDELITY_RESULTS §7.5)"
+      )
+    end
+
+    %{state | checkpoint: sha, served_interval: interval, checkpoint_bound: bound}
   end
 
   defp safe_checkpoint(fun) do
@@ -323,6 +348,14 @@ defmodule FluxTrader.Trading.PolicyEngine do
   def default_checkpoint do
     case FluxTrader.ML.Predict.health() do
       {:ok, %{"checkpoint_sha256" => sha}} -> sha
+      _ -> nil
+    end
+  end
+
+  @doc false
+  def default_interval do
+    case FluxTrader.ML.Predict.health() do
+      {:ok, %{"candle_interval" => interval}} -> interval
       _ -> nil
     end
   end
@@ -452,7 +485,14 @@ defmodule FluxTrader.Trading.PolicyEngine do
   defp open_new(%{checkpoint_bound: false} = state, bars) do
     # The guard: nothing is entered on either arm against constants that belong to a
     # different checkpoint. Due positions were already closed above; only entries stop.
-    reason = if state.checkpoint == nil, do: :checkpoint_unverified, else: :checkpoint_mismatch
+    reason =
+      cond do
+        state.checkpoint == nil -> :checkpoint_unverified
+        state.checkpoint != Policy.frozen_checkpoint_sha256() -> :checkpoint_mismatch
+        state.served_interval == nil -> :interval_unverified
+        true -> :interval_mismatch
+      end
+
     count_skips(state, reason, length(bars))
   end
 

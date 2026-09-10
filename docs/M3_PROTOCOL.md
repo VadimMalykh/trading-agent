@@ -469,7 +469,11 @@ point estimate is. WALKFORWARD_PROTOCOL §3 is the first protocol under this rul
 `Policy.frozen_checkpoint_sha256/0` names the checkpoint the served cut and ladder belong to;
 `PolicyEngine` compares the two every tick and **enters no bar on either arm** on a mismatch
 (`skips.checkpoint_mismatch`; `checkpoint_unverified` when the hash cannot be read), while still
-recording bars and closing due positions. `/api/health` → `policy.checkpoint_bound`. Promotion
+recording bars and closing due positions. `/api/health` → `policy.checkpoint_bound`. *Extended
+2026-09-10:* the guard also requires `/health`'s `candle_interval` to equal the policy's 5m grid
+(`interval_mismatch` / `interval_unverified`), because the hash names the weights, not what they
+were fed — the VM served the bound checkpoint from 1m candles for 17 days with the hash matching
+([M3_FIDELITY_RESULTS §7.5](./M3_FIDELITY_RESULTS.md)). Promotion
 is therefore: derive the new cut and ladder from the challenger's own split, update the three
 constants, deploy — and nothing trades in between against the wrong constants.
 

@@ -185,6 +185,17 @@ defmodule FluxTrader.Trading.Policy do
   def bar_seconds, do: @bar_seconds
 
   @doc """
+  The candle interval the served checkpoint must be built on, in Binance's notation.
+
+  The policy floors every bar onto this grid and the frozen constants were derived on it.
+  `ml_inference` reports the interval it actually builds features from on `/health`
+  (`candle_interval`); `PolicyEngine` refuses to enter a bar when the two differ. Added
+  2026-09-10 after fluxtrader-1 served the 5m checkpoint from 1m candles for 17 days with
+  the checkpoint hash matching throughout (M3_FIDELITY_RESULTS §7.5).
+  """
+  def candle_interval, do: "#{div(@bar_seconds, 60)}m"
+
+  @doc """
   The confidence cut in force: **the constant `backtest.py` derived on the served run**.
 
   🔴 **This belongs to a CHECKPOINT.** It is the top-2% cut of the served checkpoint's own

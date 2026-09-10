@@ -500,10 +500,12 @@ but **the live tail is truncated.** Two distinct effects are stacked here and bo
    "2% coverage" is a whole-split average that recent history no longer resembles.
 2. **A residual live-versus-offline tail gap that regime does not explain**, on identical
    pairs, days and bar counts: p99 0.5577 live against 0.5944 offline, max 0.5628 against
-   0.6925. **Root cause not established.** `has_book` is uniformly 1 across the overlap, so
-   book availability is ruled out; the 12-vs-8 pair universe is ruled out by restricting live
-   to the same eight. What remains to check is the feature pipeline in `serve.py` against
-   `eval_m2.py` — sequence warmup, normalization statistics, and feature staleness.
+   0.6925. ~~Root cause not established.~~ **Root-caused 2026-09-10 — see §7.5: `ml_inference`
+   was building the 5m checkpoint's features from 1-minute candles.** `has_book` is uniformly
+   1 across the overlap, so book availability is ruled out; the 12-vs-8 pair universe is
+   ruled out by restricting live to the same eight. (The remaining suspects named here —
+   sequence warmup, normalization statistics, feature staleness — were all tested and
+   contributed nothing: the corrected serve path equals `eval_m2.py` to 6e-8.)
 
 🔴 **Do not "fix" this by lowering the cut.** M3_FIDELITY_RESULTS §6.1 and NEXT_TRAINING_PLAN
 §1.5 both record that a threshold belongs to a checkpoint and that re-picking it against live
@@ -538,3 +540,84 @@ The walk-forward result ([WALKFORWARD_PROTOCOL §7](./WALKFORWARD_PROTOCOL.md)) 
 **offline fold dumps**, not on the live path, and each fold derives its own cut on its own
 window. Nothing in §7 touches it. What §7 blocks is the **forward paper test** — the separate
 mechanism for accumulating new independent days — and the A/B that reads off it.
+
+### 7.5 Root cause (found 2026-09-10): the 5m checkpoint was served from 1-minute candles
+
+**In one line: since the checkpoint was promoted on 2026-08-24, `ml_inference` on
+`fluxtrader-1` has been building its features from 1-minute candles, because
+`docker-compose.yml` sets no `CANDLE_INTERVAL` for that service and `config.py`'s default is
+`1m`; every input the model saw was at a fifth of its trained scale, which compresses the
+confidence distribution — the body stays centred, the tail is cut off — and that is the whole
+of §7.2's "residual gap".** The checkpoint hash matched the frozen constants throughout, so
+the §9.5 guard could not see it: the hash names the weights, not what they are fed.
+
+#### How it was found
+
+Three arms on the served checkpoint (sha `882cd415…`), all run locally in Docker against the
+2026-09-08 dump of the VM's database restored into a scratch database (`fluxtrader_vm`):
+
+| arm | what | result |
+|---|---|---|
+| **E** eval-style | `build_m2_index_bundle` + `apply_norm_to_bundle`, the window slid over every bar 08-29 → 09-08 (8 pairs, 23,912 bars) | equals the banked dump `20260904T051921Z` on all 11,560 overlapping bars, max \|Δ\| **1.4e-7** — so E is the offline scorer |
+| **L** live | `policy_bars` exported from the VM (41,316 rows, 240m head) | on the **post-repair** days 09-04 12:00 → 09-08 14:00 (n = 9,368, true candles on both sides) only **0.7%** of live rows equal E at any lag of 0–2 bars; median \|live − E\| = **0.0104**. Same bars: p95 0.5403 vs 0.5637, p98 0.5438 vs 0.5892, p99 **0.5460 vs 0.5992**, max **0.5670 vs 0.6159** |
+| **S** serve-style at 1m | `serve.build_tensor()` replayed at the minute each live row was inserted, `CANDLE_INTERVAL=1m` | **reproduces the live rows**: 37.5% exact to the stored 4 dp at a 1- or 2-minute lag, median \|Δ\| **0.0003**, p90 0.0021, max 0.0050 (72 BTC/ETH rows, 09-05 → 09-07). The residue is poll jitter — which minute's bar had landed when the prediction ran |
+| **S** serve-style at 5m, after the fix | the same replay through the corrected `serve.py`, `CANDLE_INTERVAL` unset | equals E to **6e-8** on all 224 windows, every one of the 19 normalized feature columns identical — so `max_rows`, warmup, normalization and staleness contributed **nothing** |
+
+So the candle-poll defect and this are two separate defects stacked on the same window:
+§7.2's overlap (08-29 → 09-03) had live reading **partial 1m bars** against offline reading
+**repaired 5m bars**; after the 09-04 repair, live was reading **true 1m bars** — still wrong.
+Neither §7.2's daily table nor the 2026-09-01 "live matches the split" check could see it,
+because both compared quantiles rather than the same bar through both pipelines.
+
+#### What it cost
+
+Over 08-29 → 09-08 the offline scorer clears the served cut on **53 bars** across three days
+(08-30: 6, 08-31: 34, 09-03: 13; the 09-06 → 09-08 tail reaches 0.616 but not the cut). Live
+cleared it on **none**. Every live prediction from the 08-24 promotion to the deploy of this
+fix — the whole of `policy_bars`, the 12 pre-08-31 trades already discarded under §6.4, and
+the zero-trade stretch since — was scored on the wrong bar size and **measures nothing about
+the policy**. `paper_trades` is empty, so there is nothing to void there.
+
+#### The fix
+
+* `ml/train/serve.py` takes the bar size from the checkpoint's own `meta["candle_interval"]`,
+  as `eval_m2.py` already did; the environment is only a fallback for a checkpoint that
+  records none, and both cases are logged at load. `/health` and every `/predict` report
+  `candle_interval` and `candle_interval_source` (`"checkpoint"` is the healthy value).
+* `PolicyEngine`'s binding guard (M3_PROTOCOL §9.5) now requires that interval to equal
+  `Policy.candle_interval/0` (`"5m"`, derived from the 300-second bar grid) as well as the
+  hash; a mismatch skips entries as `interval_mismatch`, a `serve.py` that does not report
+  the field as `interval_unverified`. `/api/health` shows `policy.served_candle_interval`
+  beside `expected_candle_interval`. Two regression tests fail against the previous guard.
+* Probe scripts (gitignored, `EXPLORATORY`): `ml/train/output/probe/serve_vs_eval.py`,
+  `serve_1m_check.py`; outputs under `ml/train/output/probe/serve_vs_eval/`.
+
+#### Deploy (on `fluxtrader-1`), in order
+
+```sh
+cd ~/trading_agent && git pull --ff-only
+docker compose up -d --force-recreate ml_inference      # serve.py is bind-mounted; recreate reloads it
+curl -s localhost:8001/health | jq '{candle_interval, candle_interval_source, checkpoint_sha256}'
+#   expect "5m", "checkpoint", "882cd415…"
+docker compose up -d --build app                         # the guard now reads candle_interval
+curl -s localhost:4000/api/health | jq '.policy | {checkpoint_bound, served_candle_interval, expected_candle_interval, skips}'
+#   expect checkpoint_bound: true, "5m", "5m"
+```
+
+⚠️ M3_5_INTEGRATION §2's caveat applies: recreating `app` triggers the historical kline
+backfill. ⚠️ `.env` on the VM still carries `ML_GATE_THRESHOLD=0.6311` and
+`PRIMARY_HORIZON=15` from the M2 era; neither affects a decision (§3.2 — the policy owns
+coverage; the primary comes from the checkpoint) and `gcp_promote.sh` persists the former on
+purpose, so they were left alone and are recorded here so nobody reads `gated: false` as news.
+
+**The forward clock starts at this deploy.** Everything in `policy_bars` before it is the
+record of a model reading inputs at the wrong scale; see the open decision in BACKLOG on
+whether those rows are deleted or kept labelled.
+
+#### What this does NOT change
+
+The walk-forward verdict (WALKFORWARD_PROTOCOL §7), the repaired M3-2/M3-3 verdicts and the
+frozen constants are all measured offline on 5m bars and are untouched. §7.2's effect (1) —
+the regime shift visible offline, 2.000% of the split clearing the cut against 0.346% of its
+last five days — also stands; it was never the whole story, and it was never the part that
+was zero.

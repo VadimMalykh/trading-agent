@@ -166,6 +166,32 @@ def load_model():
     num_layers = int(meta.get("num_layers", 2))  # pre-capacity ckpts had 2
     seq_len = meta.get("seq_len", SEQ_LEN)
     primary = str(meta.get("primary_horizon", PRIMARY))
+    # --- the bar size comes from the CHECKPOINT, not the environment (2026-09-10) ----
+    # This used to be `CANDLE_INTERVAL` alone, whose config default is "1m", and
+    # docker-compose never set it for ml_inference. So from the 2026-08-24 promotion the
+    # 5m checkpoint was fed 1-MINUTE candles on fluxtrader-1: every input a fifth of its
+    # trained scale, the confidence tail ~0.05 below the offline one, and the forward test
+    # took no trades for 17 days. Replicating serve at 1m reproduces the live rows to 4 dp;
+    # at 5m it does not (M3_FIDELITY_RESULTS §7.5). eval_m2.py already trusts the
+    # checkpoint's own interval; serving now does the same, and /health reports it so the
+    # app's binding guard can refuse a mismatch.
+    ckpt_interval = meta.get("candle_interval")
+    if ckpt_interval:
+        candle_interval = str(ckpt_interval)
+        interval_source = "checkpoint"
+        if candle_interval != CANDLE_INTERVAL:
+            print(
+                f"  NOTE: checkpoint was trained on {candle_interval} candles; "
+                f"CANDLE_INTERVAL={CANDLE_INTERVAL} in the environment is IGNORED."
+            )
+    else:
+        candle_interval = CANDLE_INTERVAL
+        interval_source = "env-fallback"
+        print(
+            f"  WARNING: checkpoint records no candle_interval — serving from "
+            f"CANDLE_INTERVAL={candle_interval}. If it was trained on another bar size, "
+            f"every prediction is on inputs at the wrong scale."
+        )
     has_dir_head = bool(meta.get("directional_head", False))
     has_quantile_head = bool(meta.get("quantile_head", False))
     quantile_levels = meta.get("quantile_levels") or [0.1, 0.5, 0.9]
@@ -237,6 +263,8 @@ def load_model():
             "horizons": horizons,
             "seq_len": seq_len,
             "primary": primary,
+            "candle_interval": candle_interval,
+            "candle_interval_source": interval_source,
             "norm_stats": norm_stats,
             "norm_degenerate_cols": n_degen,
             "error": None,
@@ -247,7 +275,8 @@ def load_model():
     )
     print(
         f"Loaded {path} horizons={horizons} seq_len={seq_len} "
-        f"primary={primary} norm={'ckpt' if _state['norm_stats'] else 'rolling-fallback'}"
+        f"primary={primary} candles={candle_interval} ({interval_source}) "
+        f"norm={'ckpt' if _state['norm_stats'] else 'rolling-fallback'}"
     )
     if n_degen:
         print(
@@ -336,9 +365,15 @@ def _market_universe() -> list:
     return [p.upper() for p in load_whitelist_pairs(fallback=PAIRS)]
 
 
+def _served_interval() -> str:
+    """The bar size features are built on: the checkpoint's own, else the env default."""
+    return str(_state.get("candle_interval") or CANDLE_INTERVAL)
+
+
 def _market_inputs(max_rows: int) -> dict:
     universe = _market_universe()
-    key = (tuple(universe), int(max_rows), CANDLE_INTERVAL)
+    interval = _served_interval()
+    key = (tuple(universe), int(max_rows), interval)
     now = time.time()
     cached = _MARKET_CACHE
     if (
@@ -351,7 +386,7 @@ def _market_inputs(max_rows: int) -> dict:
     inputs = {}
     for pair in universe:
         try:
-            f = build_market_inputs(pair, CANDLE_INTERVAL, max_rows=max_rows)
+            f = build_market_inputs(pair, interval, max_rows=max_rows)
             if not f.empty:
                 inputs[pair] = f
         except Exception as exc:  # noqa: BLE001 - one bad pair must not kill serving
@@ -372,7 +407,7 @@ def _fill_market_context(symbol: str, frame, max_rows: int):
         if symbol.upper() not in inputs:
             inputs = dict(inputs)
             inputs[symbol.upper()] = market_context_inputs(frame)
-        ctx = apply_market_context(inputs, candle_interval=CANDLE_INTERVAL)
+        ctx = apply_market_context(inputs, candle_interval=_served_interval())
         block = ctx.get(symbol.upper())
         if block is None:
             return frame
@@ -392,7 +427,7 @@ def build_tensor(symbol: str):
     # plus a buffer for rolling/std computations.
     max_rows = seq_len * 5
     frame = build_feature_frame(
-        symbol, CANDLE_INTERVAL, max_rows=max_rows, feature_cols=feature_cols
+        symbol, _served_interval(), max_rows=max_rows, feature_cols=feature_cols
     )
     if frame.empty or len(frame) < seq_len:
         return None, f"not enough feature rows for {symbol} (have {len(frame)}, need {seq_len})"
@@ -499,6 +534,7 @@ def predict_symbol(symbol: str) -> dict:
         "symbol": symbol,
         "price": price,
         "primary_horizon_m": int(primary),
+        "candle_interval": _served_interval(),
         "gate_threshold": GATE_THRESHOLD,
         "gate_source": _state.get("gate_source"),
         "gate_target_coverage": _state.get("gate_target_coverage"),
@@ -547,6 +583,11 @@ class Handler(BaseHTTPRequestHandler):
                         "gate_target_coverage": _state.get("gate_target_coverage"),
                         "horizons": _state.get("horizons"),
                         "primary": _state.get("primary"),
+                        # The bar size features are built on. "checkpoint" is the healthy
+                        # source; the app's binding guard refuses to trade unless this
+                        # equals the 5m grid the policy floors bars to (M3_PROTOCOL §9.5).
+                        "candle_interval": _state.get("candle_interval"),
+                        "candle_interval_source": _state.get("candle_interval_source"),
                         "norm": "ckpt" if _state.get("norm_stats") else "rolling-fallback",
                         # >0 means this checkpoint was trained with those feature
                         # columns constant (pre-2026-08-17 norm bug): they are now

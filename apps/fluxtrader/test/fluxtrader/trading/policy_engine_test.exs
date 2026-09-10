@@ -77,16 +77,22 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     }
   end
 
-  # The checkpoint-binding guard is satisfied by default: tests inject the frozen hash as
-  # what inference "loaded", exactly as a correctly promoted VM would report it.
-  defp start_engine(signals, regime, checkpoint \\ Policy.frozen_checkpoint_sha256()) do
+  # The checkpoint-binding guard is satisfied by default: tests inject the frozen hash and
+  # the 5m interval as what inference "loaded", exactly as a correctly promoted VM reports.
+  defp start_engine(
+         signals,
+         regime,
+         checkpoint \\ Policy.frozen_checkpoint_sha256(),
+         interval \\ Policy.candle_interval()
+       ) do
     start_supervised!(
       {PolicyEngine,
        [
          autotick: false,
          signals_fun: fn -> signals end,
          regime_fun: fn -> regime end,
-         checkpoint_fun: fn -> checkpoint end
+         checkpoint_fun: fn -> checkpoint end,
+         interval_fun: fn -> interval end
        ]}
     )
   end
@@ -153,6 +159,48 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     status = PolicyEngine.status()
     refute status.checkpoint_bound
     assert status.skips[:checkpoint_unverified] == 1
+    assert Ledger.open_trades("policy") == []
+  end
+
+  # 2026-09-10: the right weights on the wrong bar size. fluxtrader-1 served the 5m
+  # checkpoint from 1m candles for 17 days with the hash matching throughout, so the
+  # hash alone is not the binding (M3_FIDELITY_RESULTS §7.5).
+  test "the checkpoint-binding guard: the right checkpoint on 1m candles trades nothing" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    start_engine(
+      [signal(symbol: "BTCUSDT", confidence: 0.95)],
+      regime(0.05),
+      Policy.frozen_checkpoint_sha256(),
+      "1m"
+    )
+
+    :ok = PolicyEngine.refresh()
+
+    status = PolicyEngine.status()
+    refute status.checkpoint_bound
+    assert status.checkpoint == Policy.frozen_checkpoint_sha256()
+    assert status.served_candle_interval == "1m"
+    assert status.expected_candle_interval == "5m"
+    assert status.skips[:interval_mismatch] == 1
+    assert Ledger.open_trades("policy") == []
+    assert Ledger.open_trades("flat_size") == []
+  end
+
+  test "the checkpoint-binding guard: a serve that does not report its interval is unverified" do
+    start_engine(
+      [signal(symbol: "BTCUSDT", confidence: 0.95)],
+      regime(0.05),
+      Policy.frozen_checkpoint_sha256(),
+      nil
+    )
+
+    :ok = PolicyEngine.refresh()
+
+    status = PolicyEngine.status()
+    refute status.checkpoint_bound
+    assert status.skips[:interval_unverified] == 1
     assert Ledger.open_trades("policy") == []
   end
 
@@ -460,7 +508,8 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
            autotick: false,
            signals_fun: fn -> Agent.get_and_update(box, fn s -> {s, []} end) end,
            regime_fun: fn -> regime(0.05) end,
-           checkpoint_fun: fn -> Policy.frozen_checkpoint_sha256() end
+           checkpoint_fun: fn -> Policy.frozen_checkpoint_sha256() end,
+           interval_fun: fn -> Policy.candle_interval() end
          ]}
       )
 

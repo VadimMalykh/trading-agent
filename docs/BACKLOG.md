@@ -23,20 +23,22 @@ file is tables.*
 
 ---
 
-## 🔴 Right now — what 2026-09-09 left open
+## 🔴 Right now — what 2026-09-10 left open
 
-**All three items the 2026-09-04 rules review left open are now closed.** The deploy is
-verified live, the twelve walk-forward folds are banked and scored, and the document
-restructuring finished when [archive/RULES_REVIEW.md](./archive/RULES_REVIEW.md) was archived
-— which its own §6.3 item 6 made conditional on the first two.
+**The forward test's silence is root-caused and the fix is built; it is not yet deployed.**
+Since the 2026-08-24 promotion `ml_inference` on `fluxtrader-1` has been building the 5m
+checkpoint's features from **1-minute candles** (`docker-compose.yml` sets no
+`CANDLE_INTERVAL` for that service; `config.py` defaults to `1m`). Every input at a fifth of
+its trained scale compresses the confidence tail, and the checkpoint hash matched the whole
+time, so the §9.5 guard could not see it. Replaying serve at 1m reproduces the live rows to
+4 dp; the corrected serve equals `eval_m2.py` to 6e-8. Full record:
+[M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.5.
 
-**The headline: the rule is CONFIRMED out of sample, and the forward test is producing
-nothing.** Those are not in tension — the first is measured offline on fold dumps, the second
-is about the live serving path — but the second is what is urgent.
+**The walk-forward verdict (CONFIRMED) is untouched** — it is measured offline on 5m bars.
 
 | # | item | owner | state |
 |---|---|---|---|
-| 1 | 🔴 **The live confidence tail gap** — the forward test takes no trades | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7 | **THE TOP OPEN ITEM.** The served cut (0.6296) is *above* the highest confidence the live model has produced in 11 days (max 0.5856), so `paper_trades` is empty and stays empty. On five overlapping days, the same checkpoint and the same eight pairs, offline and live agree to ~p95 and then the live tail is truncated (p99 0.5577 vs 0.5944, max 0.5628 vs 0.6925). Part is a genuine regime shift visible offline too (2.000% of bars clear the cut over the full split, 0.346% over its last five days); the residual gap is **not explained** — book availability and the 12-vs-8 universe are ruled out. **Next: diff `serve.py`'s feature pipeline against `eval_m2.py` — sequence warmup, normalization statistics, feature staleness.** 🔴 **Do not respond by lowering the cut**; §6.1 and NEXT_TRAINING_PLAN §1.5 both record that as the defect rather than the remedy |
+| 1 | 🔴 **Deploy the candle-interval fix and restart the forward clock** | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.5 | **THE TOP OPEN ITEM — a deploy, not an investigation.** `serve.py` now takes the bar size from the checkpoint and reports it on `/health`; `PolicyEngine`'s guard refuses an interval mismatch (`interval_mismatch` / `interval_unverified`), two regression tests added, 30/30 pass. §7.5 has the exact `fluxtrader-1` checklist and the two `/health` lines that must read `5m`. **Open decision:** whether `policy_bars` rows from before the deploy (all scored on 1m inputs, 41k rows, no trades) are deleted or kept labelled — they anchor the retrain trigger's `watching_since` and the diagnostic rank window, so keeping them means those two read a 1m era until it ages out of the 80-day retention |
 | 2 | **§4.3's four confirmations** — the payoff of a CONFIRMED verdict | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §9 | 🟡 **registered 2026-09-09, none run.** Served coverage at twelve pairs, hour-of-day, market-neutral, and a learned/RL policy. §9.0 states the two rules that govern all four: explore on F0+F1 and confirm on F2+F3 *once* (there is no second copy of untouched history), and write every one as a within-fold contrast because the §7.2 training-size penalty makes absolute claims invalid |
 | 3 | **Restate the retrain trigger's N** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §8.5 | 🟡 **§8 ran and returned NOT DECIDABLE; N = 65 stands.** §8.5 records honestly that the registered statistic was the wrong one — p95 of inter-bar gaps measures signal density, not silence. Needs a fresh pre-registration choosing a tail statistic |
 
@@ -68,7 +70,7 @@ on ~220 independent days, which is what the folds exist to change.
 
 | item | owner doc | state |
 |---|---|---|
-| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **RUNNING BUT PRODUCING NOTHING — see [M3_FIDELITY_RESULTS §7](./M3_FIDELITY_RESULTS.md).** Zero trades in 11 days because the served cut is above the live maximum confidence. Calendar time no longer helps on its own; the tail gap must be root-caused first. Previously: **the clock restarts at the §6.1 deploy**, because every row from there carries its checkpoint tag and the A/B is read on tagged rows. It needs no work, only calendar time — it is the only mechanism that manufactures new independent trading days. Check with `curl -s localhost:4000/api/health \| jq '{policy, regime}'` **on the VM** (port 4000 there; 4001 is the local-compose mapping). Long silences are the strategy working |
+| **The forward paper test** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | 🔴 **RUNNING ON THE WRONG BAR SIZE UNTIL THE §7.5 FIX IS DEPLOYED — see [M3_FIDELITY_RESULTS §7.5](./M3_FIDELITY_RESULTS.md).** Zero trades in 12 days because the served model has been fed 1m candles; offline, the same days cleared the cut on 53 bars. Root-caused and fixed 2026-09-10, deploy pending (row 1 above); the clock starts at that deploy. Previously: **the clock restarts at the §6.1 deploy**, because every row from there carries its checkpoint tag and the A/B is read on tagged rows. It needs no work, only calendar time — it is the only mechanism that manufactures new independent trading days. Check with `curl -s localhost:4000/api/health \| jq '{policy, regime}'` **on the VM** (port 4000 there; 4001 is the local-compose mapping). Long silences are the strategy working |
 | **The walk-forward folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §7 | ✅ **DONE 2026-09-09 — verdict CONFIRMED.** Pre-registered 2026-09-04 before any fold was trained; 12 runs, all six §5.1 checks and C3 pass. W1 lower bound +9.28 bps. §7.3 records the one harness amendment (a `win`-column double-rounding in C3's comparison, fixed like-for-like, ratified before any fold number was read) |
 | **Deploy M3-5 to `fluxtrader-1`** | [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) | ✅ **DONE 2026-08-28.** Deploy day found three defects invisible on the local stack — recorded in that document's §8 |
 | **The M3 dashboard panel** | [archive/M3_UI_PLAN.md](./archive/M3_UI_PLAN.md) | ✅ **BUILT 2026-08-29, live 2026-08-31.** It earned its keep immediately: the panel is what made the served-vs-scored threshold gap visible ([M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md)). Its empty-state doctrine now lives in [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md) §2 |
@@ -82,7 +84,7 @@ on ~220 independent days, which is what the folds exist to change.
 
 | item | owner doc | state |
 |---|---|---|
-| **Root-cause the live-vs-offline confidence tail gap** | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.2 | 🔴 **the top open item.** Same checkpoint, same pairs, same days: live p99 0.5577 vs offline 0.5944, max 0.5628 vs 0.6925. Book availability and the 12-vs-8 universe are ruled out. **Next:** diff `serve.py`'s feature pipeline against `eval_m2.py` — sequence warmup, normalization statistics, feature staleness. **Revival trigger:** none needed; it blocks the forward test outright |
+| ~~**Root-cause the live-vs-offline confidence tail gap**~~ | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.5 | ✅ **CLOSED 2026-09-10.** `ml_inference` was serving the 5m checkpoint from 1m candles. Warmup, normalization and staleness were all tested and contributed nothing. Fix built; deploy is row 1 of "Right now" |
 | **Restate the retrain trigger's N** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §8.5 | 🟡 **§8's registered statistic was the wrong one** — p95 of inter-bar gaps measures signal density, not silence, and came out at 0.01 days. N = 65 stands, as §8.3 pre-committed. What the run *did* establish: the longest dry spell across all twelve runs and ~2 years is **21.49 days**, so 65 is ~3x the worst ever seen and is a very insensitive alarm. **Revival trigger:** a fresh pre-registration choosing a tail statistic, written by someone who has not just read §8.5's table |
 | **§4.3 — confirm the parked findings on the folds** | [WALKFORWARD_PROTOCOL.md](./WALKFORWARD_PROTOCOL.md) §4.3 | 🟡 **unlocked by the CONFIRMED verdict, not yet started.** Served coverage at 12 pairs, the hour-of-day and market-neutral probes, and a learned/RL policy under M3_3_PROTOCOL's leave-one-out shape with folds as units. Each needs its own registration naming which folds it may read; none may read F2/F3 for exploration first |
 
@@ -275,6 +277,7 @@ applied in advance.
 
 | question | verdict | where |
 |---|---|---|
+| **Why the live confidence tail was truncated (2026-08-24 → 09-10)** | **Closed as a serving defect, not a regime fact and not a pipeline subtlety:** no `CANDLE_INTERVAL` on `ml_inference`, so a 5m checkpoint was fed 1m candles. The hash-only guard could not see it; the guard now binds the interval too. ⚠️ Every `policy_bars` row before the fix's deploy is a record of the wrong inputs | [M3_FIDELITY_RESULTS.md](./M3_FIDELITY_RESULTS.md) §7.5 |
 | **The 12-pair traded universe (8-vs-12)** | **Closed as UNRESOLVABLE on this evaluation period** — not "12 is worse". The effect is within a couple of bps of zero in every fair framing and the data resolves ±37 bps at 80% power. More seeds cannot help; only a longer evaluation period can, and that is calendar, not compute. ⚠️ **This tombstone said "served universe stays 8" until 2026-08-29 and was being read as a decision against twelve. It is not one.** Eight was the default while the four extras had no measured crossing cost; they have one now, and **the served universe is twelve** — see "The twelve-pair widening" in Active. What stays closed is the *question*: this data cannot rank the two universes, and re-opening it offline is what is forbidden, not trading twelve | [T6_RESULTS.md](./T6_RESULTS.md), [M3_PLAN.md](./M3_PLAN.md) §0.6 |
 | **T4 — promote a 12-pair seed** | **Cancelled**, not deferred. There is no verdict for it to wait on | [NEXT_TRAINING_PLAN.md](./NEXT_TRAINING_PLAN.md) §2 |
 | **A learned M3 policy** | All 14 pre-registered runs lost to the hand-written rule; none passed Tier 1, and a one-feature ablation beat both fitted models. **Do not widen the grid, extend the feature list, or reach for a bigger model class** — pre-registered in advance as not-evidence-for-a-bigger-model | [M3_3_RESULTS.md](./M3_3_RESULTS.md), [M3_PLAN.md](./M3_PLAN.md) |
