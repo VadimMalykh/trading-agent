@@ -764,10 +764,66 @@ until then only `ml_inference` would have survived a reboot. First bars recorded
 rule opened at 04:20:18 (ZEC long, bar 04:15, conf 0.6658), and its confidence equals the
 `policy_bars` row for that bar — the invariant this change exists for.
 
-**Acceptance, ~1 day later:** on the next VM
-dump, `policy_bars.confidence` must equal the offline scorer at `last_closed_bar_open_time` for
-every row — the §7.5 replay (`ml/train/output/probe/serve_vs_eval.py`, arm L vs arm E) with
-the closed-bar tail is the check, and it should now match exactly rather than at 0.7%.
+#### Acceptance, run 2026-09-11 04:30–05:00 UTC (the first 42 live rows): 32 of 42 exact, the other 10 scored a bar that was not yet final
+
+**In one line: the once-per-bar invariant holds (the trade's confidence equals its ledger
+row, and every replayed row equals the offline scorer to the stored 4 dp when its last bar was
+final), but the collector polls candles once a minute and `close_time <= now` admits a bar
+7–93 s before its stored row has been refreshed after the close — so about one live row in four
+is scored on the last *partial* poll of an already-closed bar. A residual of §7.6, not a
+regression to it, and much smaller: |Δconf| 0.0002–0.003 on the affected rows, one bar's
+worth of missing volume, no re-decision.**
+
+How it was checked (`ml/train/output/probe/accept_76.py` and `accept_76_vmdump.py`,
+gitignored, Docker against `fluxtrader_vm` with the VM's 5m candles, `funding_rates` and
+`open_interest` upserted through 04:55 UTC). `policy_bars` carries no
+`last_closed_bar_open_time`, so the bar C the features ended on is identified through
+`price`, which serve returns as the close of C. Three arms as in §7.5: L = the 42 live rows,
+S = `serve.predict_symbol` replayed with the tail bounded at C, E = the offline scorer at
+C + 1 bar.
+
+* **Environment ruled out.** The 12 input tensors dumped from the VM's own `ml_inference`
+  container, fed through the local model, reproduce the VM's confidences (torch 2.5.1 there,
+  2.13 here; identical `serve.py`, `db.py`, `features.py`, `dataset.py` by md5; identical
+  candle history, 48,384 rows compared, 0 differ).
+* **A false alarm on the way, worth knowing:** the first replay disagreed on every pair by a
+  constant per-pair offset (ADA +0.022, ZEC +0.0024). The scratch database had `funding_rates`
+  only to the 09-08 dump, and `funding` is one of the six non-degenerate columns — the offline
+  scorer must be given the VM's funding/OI rows, not only its candles.
+* **Result.** 32 of 42 rows equal S and E exactly (|live − E| ≤ 5e-5, the 4-dp rounding). The
+  other 10 — ETH/HYPE/LINK/SOL/WLD at bar 04:20, BTC at 04:25, PEPE and ZEC at 04:30, DOGE
+  04:20 and ADA 04:30 — have a `price` matching no final candle close, or match on close but
+  not on volume; replayed against the final bar they differ by 0.0002–0.0026. The ZEC trade's
+  row (bar 04:15, 0.6658) is one of the exact 32.
+* **Cause, measured on the VM at the 04:55:00 close** (thirty read-only samples of the
+  12 stored `04:50` rows, one every 5 s): the rows changed for the last time between
+  **04:55:07 and 04:56:33** — 7 to 93 s after `close_time`. `Collector.collect_candles` polls
+  `/fapi/v1/klines limit=5` every 60 s per pair and replaces the row on conflict; until the
+  first poll *after* the close lands, the stored row is the last in-bar snapshot, and serve's
+  `close_time <= now` cannot tell the two apart. The signal engine's 12-pair cycle takes
+  ~4 min and is not aligned to the bar grid, so P(scored within the settle window) ≈
+  60–95 s / 300 s ≈ 20–30 %; observed 10/42.
+* Two further observations from the same rows: the 12-pair inference cycle straddles bar
+  boundaries (XRP is scored last, ~30 s per pair on the VM's CPU, so its row often carries
+  the next `bar_ts`), and a row can repeat the previous bar's score under a new `bar_ts` when
+  the collector has not stored the newer bar at all yet (HYPE 04:30 = HYPE 04:25, both on
+  C = 04:20, in the minutes after the reboot while the backfill ran). Neither is a defect of
+  the once-per-bar rule; both are why matching by `price` rather than by `bar_ts` is the
+  right check.
+
+**What would close it (BACKLOG row 9, not deployed — Vadim's call, because it is a VM change
+and a third clock decision):**
+
+* (a) serve-side only: `load_candles_tail` takes `close_time <= as_of − SETTLE_S` with
+  `SETTLE_S` = 120 s (poll period + margin; 180 s if a missed poll should be tolerated), and
+  `/health` reports `candle_settle_s`. One line, no app rebuild, no migration; costs up to
+  2 min of extra signal age.
+* (b) collector-side: do not store the forming bar for intervals ≥ 5m (or mark rows `final`
+  when the kline's `close_time` precedes the poll time, and let serve filter on it). Correct
+  by construction and no added lag, but an app change and, for the flag, a migration.
+
+Either way the check to re-run is `accept_76.py` on the next day's rows: 42/42 exact is the
+bar, and the `price`-to-close identification must succeed for every row.
 
 #### What this does NOT change
 

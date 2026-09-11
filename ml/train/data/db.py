@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -53,6 +54,15 @@ def load_candles(
     return df
 
 
+# How long after a bar's `close_time` its stored row is trusted to be final. The collector
+# polls `/fapi/v1/klines limit=5` once a minute per pair and replaces the row on conflict, so
+# for up to a poll period after the close the row is still the last IN-BAR snapshot: measured
+# at the 2026-09-11 04:55 close, the 12 rows settled 7–93 s after `close_time`, and 10 of the
+# forward test's first 42 ledger rows were scored on such a snapshot (M3_FIDELITY_RESULTS §7.6
+# "Acceptance", BACKLOG row 9). 120 s = one poll period plus margin.
+CANDLE_SETTLE_S = int(os.environ.get("CANDLE_SETTLE_S", "120"))
+
+
 def load_candles_tail(
     symbol: str,
     interval: str = "1m",
@@ -62,7 +72,12 @@ def load_candles_tail(
     """The last `n` CLOSED candles for `symbol`/`interval`, oldest first.
 
     `as_of` (UTC; tz-aware or naive) bounds the tail: only candles whose `close_time` is at
-    or before it are returned. It defaults to now, which excludes the still-forming bar.
+    or before it are returned. It defaults to **now minus `CANDLE_SETTLE_S`**, which excludes
+    the still-forming bar and the bar that closed less than a poll period ago, whose stored
+    row may still be the collector's last in-bar snapshot. An explicit `as_of` is taken as
+    given (no settle subtracted): a replay that wants what a live tick at time T saw passes
+    `T - CANDLE_SETTLE_S`; a replay at a bar boundary C passes `C + interval` and gets the bar
+    that opened at C as its last row.
 
     The collector stores the forming bar and replaces it on every poll until it closes
     (collector.ex `insert_candle`), so without this bound the newest row is a partial
@@ -73,7 +88,7 @@ def load_candles_tail(
     explicitly and gets exactly what a live tick at that moment would have seen.
     """
     if as_of is None:
-        as_of = datetime.now(timezone.utc)
+        as_of = datetime.now(timezone.utc) - timedelta(seconds=CANDLE_SETTLE_S)
     # `candles.close_time` is `timestamp(6)` WITHOUT time zone (Ecto :utc_datetime_usec), so
     # bind a naive UTC value and compare timestamp to timestamp — no session-TZ dependence.
     if as_of.tzinfo is not None:

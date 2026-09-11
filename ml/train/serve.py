@@ -36,6 +36,7 @@ from config import (
     PRIMARY_HORIZON,
     SEQ_LEN,
 )
+from data import db
 from data.db import load_whitelist_pairs
 from data.dataset import (
     apply_feature_norm,
@@ -548,6 +549,7 @@ def predict_symbol(symbol: str) -> dict:
         # Features end on a CLOSED bar (§7.6); which one, so the row can be checked
         # against the offline scorer at that bar.
         "closed_bars_only": True,
+        "candle_settle_s": db.CANDLE_SETTLE_S,
         "last_closed_bar_open_time": last_bar_open,
         "gate_threshold": GATE_THRESHOLD,
         "gate_source": _state.get("gate_source"),
@@ -606,6 +608,10 @@ class Handler(BaseHTTPRequestHandler):
                         # excluded (M3_FIDELITY_RESULTS §7.6). The app's binding guard
                         # refuses to trade unless this is true; an old serve.py omits it.
                         "closed_bars_only": True,
+                        # ...and only on bars that closed at least this many seconds ago,
+                        # so the collector's once-a-minute poll has refreshed the row
+                        # after the close (§7.6 "Acceptance", BACKLOG row 9).
+                        "candle_settle_s": db.CANDLE_SETTLE_S,
                         "norm": "ckpt" if _state.get("norm_stats") else "rolling-fallback",
                         # >0 means this checkpoint was trained with those feature
                         # columns constant (pre-2026-08-17 norm bug): they are now
