@@ -18,6 +18,10 @@ services:
       context: .
       dockerfile: Dockerfile.app
     logging: *default-logging
+    # Come back after a host reboot (found 2026-09-11: only ml_inference had a restart
+    # policy, so a kernel-update reboot would have left the paper test down until someone
+    # ran `docker compose up -d`). `unless-stopped` keeps an explicit `compose stop` honoured.
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://fluxtrader:secret@postgres:5432/fluxtrader
       BINANCE_API_KEY: ${BINANCE_API_KEY:-}
@@ -60,6 +64,7 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg16
     logging: *default-logging
+    restart: unless-stopped
     environment:
       POSTGRES_USER: fluxtrader
       POSTGRES_PASSWORD: secret
