@@ -811,8 +811,9 @@ C + 1 bar.
   the once-per-bar rule; both are why matching by `price` rather than by `bar_ts` is the
   right check.
 
-**What would close it (BACKLOG row 9, not deployed — Vadim's call, because it is a VM change
-and a third clock decision):**
+**Closed by option (a), chosen by Vadim the same hour and deployed 2026-09-11 06:06 UTC
+(`05a0878`); the forward clock restarted a third time at 06:07:51 UTC.** The two options
+were:
 
 * (a) serve-side only: `load_candles_tail` takes `close_time <= as_of − SETTLE_S` with
   `SETTLE_S` = 120 s (poll period + margin; 180 s if a missed poll should be tolerated), and
@@ -822,8 +823,18 @@ and a third clock decision):**
   when the kline's `close_time` precedes the poll time, and let serve filter on it). Correct
   by construction and no added lag, but an app change and, for the flag, a migration.
 
-Either way the check to re-run is `accept_76.py` on the next day's rows: 42/42 exact is the
-bar, and the `price`-to-close identification must succeed for every row.
+Deployed, in order, by Claude over `gcloud compute ssh`: `git pull` to `05a0878`;
+`docker compose up -d --force-recreate ml_inference` (06:06; `/health`: `closed_bars_only:
+true`, `candle_settle_s: 120`, `5m`, sha `882cd415…`; a `/predict` at 06:07:04 ended on the
+06:00 bar, i.e. the 06:05 bar that had closed 124 s earlier was still excluded, as designed);
+`docker compose stop app`; 2 `paper_trades` rows and 273 `policy_bars` rows copied to
+`~/paper_trades_settle_20260911.csv` and `~/policy_bars_settle_20260911.csv` on the VM, then
+cleared; `docker compose start app` (not recreate — no app code changed, and a recreate would
+re-run the kline backfill) at **06:07:51 UTC**; `/api/health` at 06:09: `checkpoint_bound:
+true`, `served_closed_bars_only: true`, `last_error: null`. The check to re-run is
+`accept_76.py` on the next day's rows: 42/42 exact is the bar, and the `price`-to-close
+identification must succeed for every row. The extra cost is signal age: features now end on
+a bar that closed between 2 and 7 minutes before the tick, instead of 0 to 5.
 
 #### What this does NOT change
 
