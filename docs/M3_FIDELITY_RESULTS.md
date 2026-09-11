@@ -764,7 +764,7 @@ until then only `ml_inference` would have survived a reboot. First bars recorded
 rule opened at 04:20:18 (ZEC long, bar 04:15, conf 0.6658), and its confidence equals the
 `policy_bars` row for that bar — the invariant this change exists for.
 
- **Acceptance, ~1 day later:** on the next VM
+**Acceptance, ~1 day later:** on the next VM
 dump, `policy_bars.confidence` must equal the offline scorer at `last_closed_bar_open_time` for
 every row — the §7.5 replay (`ml/train/output/probe/serve_vs_eval.py`, arm L vs arm E) with
 the closed-bar tail is the check, and it should now match exactly rather than at 0.7%.
