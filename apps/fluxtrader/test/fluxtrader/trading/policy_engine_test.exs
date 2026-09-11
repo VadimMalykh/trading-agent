@@ -77,13 +77,15 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     }
   end
 
-  # The checkpoint-binding guard is satisfied by default: tests inject the frozen hash and
-  # the 5m interval as what inference "loaded", exactly as a correctly promoted VM reports.
+  # The checkpoint-binding guard is satisfied by default: tests inject the frozen hash, the
+  # 5m interval and `closed_bars_only: true` as what inference "loaded", exactly as a
+  # correctly promoted VM reports.
   defp start_engine(
          signals,
          regime,
          checkpoint \\ Policy.frozen_checkpoint_sha256(),
-         interval \\ Policy.candle_interval()
+         interval \\ Policy.candle_interval(),
+         closed_bars \\ true
        ) do
     start_supervised!(
       {PolicyEngine,
@@ -92,10 +94,35 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
          signals_fun: fn -> signals end,
          regime_fun: fn -> regime end,
          checkpoint_fun: fn -> checkpoint end,
-         interval_fun: fn -> interval end
+         interval_fun: fn -> interval end,
+         closed_bars_fun: fn -> closed_bars end
        ]}
     )
   end
+
+  # Serve one list of signals per tick, in order, then nothing — for tests about what the
+  # SECOND tick does with a bar the first one already saw.
+  defp start_engine_seq(per_tick, regime) do
+    {:ok, box} = Agent.start_link(fn -> per_tick end)
+
+    start_supervised!(
+      {PolicyEngine,
+       [
+         autotick: false,
+         signals_fun: fn ->
+           Agent.get_and_update(box, fn
+             [h | t] -> {h, t}
+             [] -> {[], []}
+           end)
+         end,
+         regime_fun: fn -> regime end,
+         checkpoint_fun: fn -> Policy.frozen_checkpoint_sha256() end,
+         interval_fun: fn -> Policy.candle_interval() end,
+         closed_bars_fun: fn -> true end
+       ]}
+    )
+  end
+
 
   # The ladder in force, not an invented one: `Regime.state/0` returns exactly this, so a
   # test that injected round numbers would be sizing against a ladder nothing serves.
@@ -486,13 +513,107 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     now = DateTime.utc_now()
     fill_the_diagnostic_window(now)
 
-    start_engine([signal(symbol: "BTCUSDT", confidence: 0.95)], regime(0.05))
+    # The next bar on the grid, not a re-score of the same one (that is the test below).
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.95, ts: now)],
+        [signal(symbol: "BTCUSDT", confidence: 0.95, ts: DateTime.add(now, 300, :second))]
+      ],
+      regime(0.05)
+    )
+
     :ok = PolicyEngine.refresh()
     :ok = PolicyEngine.refresh()
 
     assert length(Ledger.open_trades("policy")) == 1
     assert PolicyEngine.status().skips[:position_open] >= 1
   end
+
+  test "a bar re-scored on a later tick is never re-decided: the recorded score is the one that counts" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    # Tick 1 sees the bar at 0.60 (below the frozen 0.6296 cut) and records it. Tick 2 sees
+    # the SAME bar_ts re-scored at 0.95 — the 2026-09-10 16:35 ZEC shape, where inference
+    # re-scored the forming candle at a lower price and the re-score cleared the cut.
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.60, ts: now)],
+        [signal(symbol: "BTCUSDT", confidence: 0.95, ts: now)]
+      ],
+      regime(0.05)
+    )
+
+    :ok = PolicyEngine.refresh()
+    :ok = PolicyEngine.refresh()
+
+    status = PolicyEngine.status()
+    assert Ledger.open_trades("policy") == []
+    assert status.decisions[:policy_opened] == nil
+    assert status.skips[:below_coverage] == 1
+    assert status.skips[:bar_already_recorded] == 1
+
+    # The ledger holds the first score, and only one row for the bar.
+    import Ecto.Query, only: [from: 2]
+    assert [row] = Repo.all(from(b in FluxTrader.Trading.PolicyBar, where: b.pair == "BTCUSDT"))
+    assert row.confidence == 0.60
+    refute row.gated
+  end
+
+  test "the next bar on the grid is a new decision, even on a pair whose previous bar was re-scored" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.60, ts: now)],
+        [signal(symbol: "BTCUSDT", confidence: 0.95, ts: now)],
+        [signal(symbol: "BTCUSDT", confidence: 0.95, ts: DateTime.add(now, 300, :second))]
+      ],
+      regime(0.05)
+    )
+
+    :ok = PolicyEngine.refresh()
+    :ok = PolicyEngine.refresh()
+    :ok = PolicyEngine.refresh()
+
+    assert [trade] = Ledger.open_trades("policy")
+    assert trade.confidence == 0.95
+    assert PolicyEngine.status().decisions[:policy_opened] == 1
+    import Ecto.Query, only: [from: 2]
+    assert Repo.aggregate(from(b in FluxTrader.Trading.PolicyBar, where: b.pair == "BTCUSDT"), :count) == 2
+  end
+
+  test "the checkpoint-binding guard: a serve that still scores the forming candle trades nothing" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    # A different pair per case: the same (pair, bar_ts) would be `bar_already_recorded` on
+    # the second engine, which is the other rule, not the guard.
+    for {reported, pair} <- [{nil, "BTCUSDT"}, {false, "ETHUSDT"}] do
+      start_engine(
+        [signal(symbol: pair, confidence: 0.95)],
+        regime(0.05),
+        Policy.frozen_checkpoint_sha256(),
+        Policy.candle_interval(),
+        reported
+      )
+
+      :ok = PolicyEngine.refresh()
+
+      status = PolicyEngine.status()
+      refute status.checkpoint_bound
+      assert status.served_closed_bars_only == reported
+      assert status.skips[:forming_bar_unverified] == 1
+      assert Ledger.open_trades("policy") == []
+      # The bar is still recorded: the guard stops entries, not evidence.
+      assert Repo.aggregate(FluxTrader.Trading.PolicyBar, :count) >= 1
+
+      stop_supervised!(PolicyEngine)
+    end
+  end
+
+
 
   test "the hold expires, the position closes at the marked price, and the slot comes back" do
     now = DateTime.utc_now()
@@ -511,7 +632,8 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
            signals_fun: fn -> Agent.get_and_update(box, fn s -> {s, []} end) end,
            regime_fun: fn -> regime(0.05) end,
            checkpoint_fun: fn -> Policy.frozen_checkpoint_sha256() end,
-           interval_fun: fn -> Policy.candle_interval() end
+           interval_fun: fn -> Policy.candle_interval() end,
+           closed_bars_fun: fn -> true end
          ]}
       )
 

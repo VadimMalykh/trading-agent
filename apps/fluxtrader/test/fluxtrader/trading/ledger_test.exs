@@ -18,7 +18,7 @@ defmodule FluxTrader.Trading.LedgerTest do
     confidences
     |> Enum.with_index()
     |> Enum.each(fn {conf, i} ->
-      {:ok, _} =
+      {:new, _} =
         Ledger.record_bar(%{
           pair: "PAIR#{rem(i, 8)}",
           bar_ts: DateTime.add(base, -i * 300, :second),
@@ -45,9 +45,11 @@ defmodule FluxTrader.Trading.LedgerTest do
         regime: 0.01
       }
 
-      assert {:ok, _} = Ledger.record_bar(attrs)
-      assert {:ok, _} = Ledger.record_bar(%{attrs | confidence: 0.9})
+      assert {:new, _} = Ledger.record_bar(attrs)
+      # The second call is the 30-second re-tick: it says so, and it keeps the first score.
+      assert {:seen, _} = Ledger.record_bar(%{attrs | confidence: 0.9})
       assert Repo.aggregate(FluxTrader.Trading.PolicyBar, :count) == 1
+      assert Repo.one!(FluxTrader.Trading.PolicyBar).confidence == 0.7
     end
   end
 
@@ -74,7 +76,7 @@ defmodule FluxTrader.Trading.LedgerTest do
       inside = List.duplicate(0.5, Ledger.min_rank_bars() + 10)
       seed_bars(inside)
       # A very old, very confident bar must not become the cut.
-      {:ok, _} =
+      {:new, _} =
         Ledger.record_bar(%{
           pair: "OLD",
           bar_ts: DateTime.add(now(), -60 * 86_400, :second),

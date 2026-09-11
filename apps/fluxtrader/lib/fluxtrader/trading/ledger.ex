@@ -61,11 +61,31 @@ defmodule FluxTrader.Trading.Ledger do
   and the same 5-minute bar arrives ten times, so a repeat is a no-op rather than a
   duplicate row that would distort the ranking population.
   """
+  @doc """
+  Records one served bar, once per `(pair, bar_ts, horizon_m)`.
+
+  Returns `{:new, bar}` when this call inserted the row and `{:seen, bar}` when the bar was
+  already on file. The distinction is what `PolicyEngine` decides on: it ticks every 30 s and
+  `ml_inference` re-scores the same bar on inputs that move inside the bar, so a bar is offered
+  to the policy **only on the tick that recorded it**, with the score the row holds. The
+  forward test's first trade (2026-09-10 16:35 ZEC) opened on a re-score the ledger never
+  recorded — see M3_FIDELITY_RESULTS §7.6.
+  """
   def record_bar(attrs) do
-    %PolicyBar{}
-    |> PolicyBar.changeset(attrs)
-    |> Repo.insert(on_conflict: :nothing, conflict_target: [:pair, :bar_ts, :horizon_m])
+    result =
+      %PolicyBar{}
+      |> PolicyBar.changeset(attrs)
+      |> Repo.insert(on_conflict: :nothing, conflict_target: [:pair, :bar_ts, :horizon_m])
+
+    case result do
+      # Postgres returns nothing for an ignored insert, so Ecto hands back the struct
+      # without its primary key: that is the "already recorded" signal.
+      {:ok, %PolicyBar{id: nil} = bar} -> {:seen, bar}
+      {:ok, %PolicyBar{} = bar} -> {:new, bar}
+      {:error, _} = err -> err
+    end
   end
+
 
   @doc """
   🔴 **A DIAGNOSTIC, not the rule.** The trailing-window top-c% cut, reported on

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
 import pandas as pd
@@ -56,19 +57,41 @@ def load_candles_tail(
     symbol: str,
     interval: str = "1m",
     n: int = 640,
+    as_of: Optional[datetime] = None,
 ) -> pd.DataFrame:
+    """The last `n` CLOSED candles for `symbol`/`interval`, oldest first.
+
+    `as_of` (UTC; tz-aware or naive) bounds the tail: only candles whose `close_time` is at
+    or before it are returned. It defaults to now, which excludes the still-forming bar.
+
+    The collector stores the forming bar and replaces it on every poll until it closes
+    (collector.ex `insert_candle`), so without this bound the newest row is a partial
+    bar whose close moves with every poll. Offline, every training and evaluation window
+    ends on a complete bar; live, serve.py was scoring the partial one and re-scoring it
+    every 30 s as it changed — the forward test's first trade fired on such a re-score
+    (M3_FIDELITY_RESULTS §7.6, 2026-09-11). A replay at a historical bar passes `as_of`
+    explicitly and gets exactly what a live tick at that moment would have seen.
+    """
+    if as_of is None:
+        as_of = datetime.now(timezone.utc)
+    # `candles.close_time` is `timestamp(6)` WITHOUT time zone (Ecto :utc_datetime_usec), so
+    # bind a naive UTC value and compare timestamp to timestamp — no session-TZ dependence.
+    if as_of.tzinfo is not None:
+        as_of = as_of.astimezone(timezone.utc).replace(tzinfo=None)
     sql = """
         SELECT open_time, open, high, low, close, volume, close_time
         FROM candles
-        WHERE symbol = :symbol AND interval = :interval
+        WHERE symbol = :symbol AND interval = :interval AND close_time <= :as_of
         ORDER BY open_time DESC
         LIMIT :n
     """
-    df = _read_sql(sql, {"symbol": symbol, "interval": interval, "n": int(n)})
+    df = _read_sql(sql, {"symbol": symbol, "interval": interval, "n": int(n), "as_of": as_of})
     if df.empty:
         return df
     df["open_time"] = pd.to_datetime(df["open_time"], utc=True)
+    df["close_time"] = pd.to_datetime(df["close_time"], utc=True)
     return df.sort_values("open_time").reset_index(drop=True)
+
 
 
 def load_orderbook(

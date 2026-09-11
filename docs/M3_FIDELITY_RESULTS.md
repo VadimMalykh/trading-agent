@@ -622,3 +622,141 @@ frozen constants are all measured offline on 5m bars and are untouched. §7.2's 
 the regime shift visible offline, 2.000% of the split clearing the cut against 0.346% of its
 last five days — also stands; it was never the whole story, and it was never the part that
 was zero.
+
+### 7.6 The served path scored each bar ~8 times on the forming candle and acted on any draw (found 2026-09-11, on the first trade)
+
+**In one line: `PolicyEngine` ticks every 30 s, `serve.py` built its features on the
+still-forming 5m candle, so one bar was scored about eight times at different prices and the
+policy could enter on whichever draw cleared the cut — while `policy_bars` kept only the first
+draw. The frozen cut and ladder were derived offline on one closed-bar score per bar, so the
+forward ledger since the 09-10 restart was evidence for a different rule. Fixed in code the same
+day; deploying it restarts the forward clock a second time.**
+
+#### How it was found
+
+Reading the first trade the forward test produced. `paper_trades` says: ZECUSDT long, bar
+`2026-09-10 16:35`, confidence **0.6366**, price **1113.70**, regime 0.0246, inserted 16:37:37.
+`policy_bars` says for the same `(ZECUSDT, 16:35)`: confidence **0.6270** (below the 0.6296
+cut), `gated: false`, price **1123.18**, inserted 16:36:06. The app log resolves it — three
+`[SIM_SIGNAL]` lines for ZEC inside that one bar, at 0.627 / 0.637 / 0.627 and 1123.18 /
+1113.70 / 1118.75, and the `[SIMULATION] OPEN` at 16:37:37 on the middle one. Two mechanisms,
+both by construction:
+
+* `serve.py` → `build_feature_frame` → `db.load_candles_tail` took the last N stored candles
+  with no bound on `close_time`. The collector stores the forming bar and replaces it on every
+  poll until it closes (that *is* the 09-03 candle-poll repair), so the newest timestep was a
+  partial bar whose close moved with the tape. This was the parked
+  [CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md) item "the forming candle is the newest
+  timestep at serve time — size unmeasured".
+* `PolicyEngine` re-read every pair's latest signal each 30-second tick and put every bar
+  through `Policy.decide/3` again. `Ledger.record_bar/1` inserted with `on_conflict: :nothing`
+  and its result was ignored, so the ledger kept the first draw and the decision used any.
+
+`/api/health` carried the count in plain sight: 20,356 `below_coverage` + 402 `position_open`
+skips over 2,472 recorded bars — **~8.4 evaluations per bar**. In the partial log trace
+(`SIM_SIGNAL` is emitted for 2–4 of the draws per bar), 2 of 43 above-cut bar-bins crossed the
+cut **only** on a later draw; one of the two is the trade.
+
+#### What it cost
+
+**Measured, 2026-09-11, on the 2026-09-08 VM dump with the served checkpoint (probe
+`ml/train/output/probe/forming_bar.py`, gitignored, run in Docker against `fluxtrader_vm`).**
+For 246 bars (ZEC and ETH, every 6th 5m bar over 09-06 → 09-08) the served confidence was
+computed as the fixed `serve.py` would score it — window ending on the last **closed** bar —
+and as the old one did at a tick 1, 2, 3 and 4 minutes into the next bar, i.e. with a partial
+bar built from that many 1-minute candles appended as the newest timestep:
+
+| draw at | mean Δ | \|Δ\| p50 | \|Δ\| p90 | \|Δ\| max |
+|---|---|---|---|---|
+| 1 min into the bar (the ledger's first draw) | +0.0006 | 0.0029 | 0.0057 | 0.0187 |
+| 2 min | +0.0005 | 0.0022 | 0.0059 | 0.0290 |
+| 3 min | +0.0001 | 0.0022 | 0.0065 | 0.0304 |
+| 4 min | −0.0002 | 0.0024 | 0.0072 | 0.0261 |
+
+So the partial bar is not a bias (mean Δ ≈ 0) but a **per-draw jitter of ~0.003 typical, ~0.007
+at the 90th percentile and up to ~0.03**, exactly the spread the live log showed inside single
+bars on 09-10 (0.627 → 0.637; 0.611 → 0.642). No bar in this calm window came within 0.013 of
+the 0.6296 cut (max closed confidence 0.616, §7.5), so the replay measures **zero flips** and
+cannot put a rate on them; the live trace of 09-10, where bars did sit at the cut, is the
+measurement of that: 2 of 43 above-cut bar-bins cleared it only on a later draw, in a log that
+captures 2–4 of the ~8 draws per bar. Roughly: any bar whose closed-bar score lands within
+~0.01 below the cut gets several extra chances to cross it.
+
+What this means for the ledger: with ~8 draws at a moving input, effective coverage is above
+the registered 2%, entries sit on intra-bar extremes (the trade entered 9.5 bps below the bar's
+recorded price), and the recorded population the drift diagnostic ranks over is a *different
+sample* from the one decisions were taken on. Every row in `policy_bars` and both `paper_trades`
+rows from the 09-10 04:50 restart to this deploy are void as policy evidence — the first trade
+was taken on a score the ledger never held; the second entered on the first draw of its bar, but
+that draw was still built on a partial candle. Same treatment as §7.5: delete, with a CSV backup.
+
+#### The fix (three parts, all in `f7e711a`'s successor)
+
+* **`ml/train/data/db.py` `load_candles_tail`** takes only candles with `close_time <= as_of`
+  (default now): the forming bar is excluded, and a replay at a historical bar passes `as_of`
+  explicitly. `serve.py` reports `closed_bars_only: true` on `/health` and on every
+  prediction, plus `last_closed_bar_open_time` so a live row can be matched to the offline
+  scorer bar for bar.
+* **`PolicyEngine` decides each `(pair, bar_ts)` once.** `Ledger.record_bar/1` now returns
+  `{:new, bar}` or `{:seen, bar}`; only `:new` bars reach `open_new/2`, every re-score is
+  counted as `skips.bar_already_recorded` (expect it to be the largest skip count by ~9:1 on a
+  healthy system) and an insert failure as `bar_not_recorded`. The ledger row is therefore the
+  score the policy acted on, by construction.
+* **The binding guard (§9.5) requires `closed_bars_only: true`** from `/health`, beside the
+  hash and the interval; a serve that omits or denies it is skipped as `forming_bar_unverified`
+  and `/api/health` shows `policy.served_closed_bars_only`. This is what makes the two halves
+  deploy together: the new app refuses to trade against the old `serve.py`.
+
+#### What is asserted, so this cannot regress quietly
+
+`ledger_test.exs`: the second insert of a bar returns `:seen` and keeps the first score.
+`policy_engine_test.exs`: a bar recorded at 0.60 and re-scored at 0.95 on the next tick is
+never decided, the row keeps 0.60, and `bar_already_recorded` counts it; the next bar on the
+grid is a fresh decision; a serve reporting `closed_bars_only` as `nil` or `false` trades nothing
+and records the bar. The "second bar on an open pair" test now uses the next grid bar rather
+than a re-score, which is the case it was written for. `mix test` (Docker): 126 + 7 tests, 0
+failures.
+
+#### Deploy (on `fluxtrader-1`), in order — and the clock restarts
+
+```sh
+cd ~/trading_agent && git pull --ff-only
+
+# 1. inference first: serve.py and data/db.py are bind-mounted, recreate reloads them
+docker compose up -d --force-recreate ml_inference
+curl -s localhost:8001/health | jq '{closed_bars_only, candle_interval, checkpoint_sha256}'
+#    expect true, "5m", "882cd415…"
+
+# 2. stop the app BEFORE touching the ledger: RiskManager keeps the open-position count and
+#    the daily P&L in memory (§6.4)
+docker compose stop app
+
+# 3. back up, then void the day-one ledger — both trades and every bar were scored on the
+#    forming candle, and ab_summary aggregates every closed row forever (§6.4)
+docker compose exec postgres psql -U fluxtrader -d fluxtrader -c \
+  "\copy (SELECT * FROM paper_trades) TO '/tmp/paper_trades_formingbar_20260911.csv' CSV HEADER"
+docker compose exec postgres psql -U fluxtrader -d fluxtrader -c \
+  "\copy (SELECT * FROM policy_bars) TO '/tmp/policy_bars_formingbar_20260911.csv' CSV HEADER"
+docker compose cp postgres:/tmp/paper_trades_formingbar_20260911.csv ~/
+docker compose cp postgres:/tmp/policy_bars_formingbar_20260911.csv ~/
+docker compose exec postgres psql -U fluxtrader -d fluxtrader -c "TRUNCATE paper_trades; DELETE FROM policy_bars;"
+
+# 4. the app on the new code (⚠️ recreating app triggers the historical kline backfill, M3_5 §2)
+docker compose up -d --build app
+curl -s localhost:4000/api/health | jq '.policy | {checkpoint_bound, served_closed_bars_only, served_candle_interval, skips, decisions, retrain_trigger}'
+#    expect checkpoint_bound: true, served_closed_bars_only: true, "5m";
+#    after ~10 minutes skips.bar_already_recorded ≈ 9 × (below_coverage + position_open)
+```
+
+**The forward clock restarts at this deploy.** Record the time in BACKLOG row 1 and
+`retrain_trigger.watching_since` will show it. **Acceptance, ~1 day later:** on the next VM
+dump, `policy_bars.confidence` must equal the offline scorer at `last_closed_bar_open_time` for
+every row — the §7.5 replay (`ml/train/output/probe/serve_vs_eval.py`, arm L vs arm E) with
+the closed-bar tail is the check, and it should now match exactly rather than at 0.7%.
+
+#### What this does NOT change
+
+The frozen constants, the walk-forward verdict and every offline number: all scored once per
+closed bar, which is what live now does. The B-wave verdicts (BOOK_ERA_PLAN §R) are offline.
+What changes is only the live evidence: the day-one ledger is void, and the next trade the
+forward test produces will be the first one taken by the registered rule.

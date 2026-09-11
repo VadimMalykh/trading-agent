@@ -1,4 +1,4 @@
-# The candle-poll defect — every stored candle since 2026-07-18 is a partial bar
+| ~~**The forming candle is the newest timestep at serve time**~~ ✅ **FIXED 2026-09-11** (`load_candles_tail` takes closed candles only; the app guard requires `closed_bars_only: true`; the engine decides each bar once — M3_FIDELITY_RESULTS §7.6) |# ⚠️ **2026-09-11: no longer unmeasured — the forward test's first trade fired on it.** The 16:35 ZEC bar was scored 0.627 / 0.637 / 0.627 at three prices inside the bar (engine ticks every 30 s) and the trade opened on the middle draw while `policy_bars` recorded the first, un-gated one. Indexed as BACKLOG row 8 with the two-part fix (drop the forming candle; decide once per `bar_ts`) The candle-poll defect — every stored candle since 2026-07-18 is a partial bar
 
 **Status: 🟢 REPAIRED AND VERIFIED 2026-09-04 — `36/36 checks passed`.** Twelve pairs x
 2026-07-21 / 08-20 / 09-02 at 5m, every one `288/288 bars, exact vol=1.000 close=1.000 high=1.000

@@ -421,6 +421,15 @@ def _fill_market_context(symbol: str, frame, max_rows: int):
 
 
 def build_tensor(symbol: str):
+    """The model input for `symbol` from the last seq_len CLOSED candles.
+
+    `db.load_candles_tail` excludes the still-forming bar (2026-09-11, M3_FIDELITY_RESULTS
+    §7.6): before that the newest timestep was a partial bar whose close moved with every
+    collector poll, so the same bar scored differently on every 30-second tick and the
+    forward test's first trade opened on one of those re-scores. Returns the tensor, the
+    last close, and the open_time of the last (closed) bar the window ends on, so a
+    prediction can be matched to the offline scorer bar for bar.
+    """
     seq_len = _state.get("seq_len", SEQ_LEN)
     feature_cols = _state.get("feature_cols") or list(FEATURE_COLS)
     # Only the last ~max_rows candles are needed: seq_len for the model input
@@ -456,8 +465,9 @@ def build_tensor(symbol: str):
         x = feats[-seq_len:]
 
     close = float(frame["close"].iloc[-1])
+    last_bar_open = frame.index[-1].isoformat()
     t = torch.from_numpy(x.astype(np.float32)).unsqueeze(0)  # [1,T,F]
-    return (t, close), None
+    return (t, close, last_bar_open), None
 
 
 @torch.no_grad()
@@ -469,7 +479,7 @@ def predict_symbol(symbol: str) -> dict:
     if err:
         return {"ok": False, "symbol": symbol, "error": err}
 
-    x, price = packed
+    x, price, last_bar_open = packed
     model = _state["model"]
     has_dir = _state.get("has_dir_head", False)
     pair_idx = None
@@ -535,6 +545,10 @@ def predict_symbol(symbol: str) -> dict:
         "price": price,
         "primary_horizon_m": int(primary),
         "candle_interval": _served_interval(),
+        # Features end on a CLOSED bar (§7.6); which one, so the row can be checked
+        # against the offline scorer at that bar.
+        "closed_bars_only": True,
+        "last_closed_bar_open_time": last_bar_open,
         "gate_threshold": GATE_THRESHOLD,
         "gate_source": _state.get("gate_source"),
         "gate_target_coverage": _state.get("gate_target_coverage"),
@@ -588,6 +602,10 @@ class Handler(BaseHTTPRequestHandler):
                         # equals the 5m grid the policy floors bars to (M3_PROTOCOL §9.5).
                         "candle_interval": _state.get("candle_interval"),
                         "candle_interval_source": _state.get("candle_interval_source"),
+                        # Features are built on closed candles only — the forming bar is
+                        # excluded (M3_FIDELITY_RESULTS §7.6). The app's binding guard
+                        # refuses to trade unless this is true; an old serve.py omits it.
+                        "closed_bars_only": True,
                         "norm": "ckpt" if _state.get("norm_stats") else "rolling-fallback",
                         # >0 means this checkpoint was trained with those feature
                         # columns constant (pre-2026-08-17 norm bug): they are now

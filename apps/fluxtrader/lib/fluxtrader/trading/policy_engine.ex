@@ -83,6 +83,18 @@ defmodule FluxTrader.Trading.PolicyEngine do
   `candle_interval`; it must equal `Policy.candle_interval/0` or entries are skipped as
   `interval_mismatch` (`interval_unverified` when the field is absent, i.e. an old serve).
 
+  **The guard also requires `closed_bars_only: true`, and the engine decides each bar once
+  (2026-09-11).** The forward test's first trade (ZEC, 2026-09-10 16:35) opened on a score
+  `policy_bars` never recorded: the engine ticks every 30 s, `serve.py` was scoring the
+  still-forming candle, so the same bar was scored 0.627 → 0.637 → 0.627 at three prices and
+  the middle draw cleared the cut while the recorded first one did not. Offline, every bar is
+  scored once, on closed candles. Now `serve.py` excludes the forming bar and reports it on
+  `/health`; a serve that does not is skipped as `forming_bar_unverified`. And a bar is
+  offered to the policy only on the tick that put it in `policy_bars` (`Ledger.record_bar/1`
+  returns `:new` or `:seen`); every later re-score of the same `(pair, bar_ts)` is counted as
+  `bar_already_recorded` and never decided, so the ledger row IS the score the policy acted
+  on. See M3_FIDELITY_RESULTS §7.6.
+
   Every opened row is stamped with the checkpoint and the ladder p80 in force
   (`paper_trades.checkpoint`, `.ladder_p80`), so the forward ledger is kept across swaps and
   scored per rule or pooled, instead of being truncated (§9.6).
@@ -174,8 +186,12 @@ defmodule FluxTrader.Trading.PolicyEngine do
        checkpoint_fun: Keyword.get(opts, :checkpoint_fun, &__MODULE__.default_checkpoint/0),
        # Returns the candle interval `ml_inference` reports it builds features on, or nil.
        interval_fun: Keyword.get(opts, :interval_fun, &__MODULE__.default_interval/0),
+       # Returns whether `ml_inference` reports it builds features on CLOSED candles only
+       # (`closed_bars_only` on /health), or nil for a serve.py that predates that field.
+       closed_bars_fun: Keyword.get(opts, :closed_bars_fun, &__MODULE__.default_closed_bars/0),
        checkpoint: nil,
        served_interval: nil,
+       served_closed_bars: nil,
        checkpoint_bound: false,
        last_cut_exceeded_at: nil,
        # The oldest bar still retained — the anchor the retrain trigger falls back to when
@@ -262,6 +278,9 @@ defmodule FluxTrader.Trading.PolicyEngine do
        # ... and the bar size inference builds on, against the grid the policy floors to.
        served_candle_interval: state.served_interval,
        expected_candle_interval: Policy.candle_interval(),
+       # ... and whether it scores closed candles only (§7.6). `nil` = a serve.py that does
+       # not report the field, which the guard treats as unverified.
+       served_closed_bars_only: state.served_closed_bars,
        checkpoint_bound: state.checkpoint_bound,
        # The retrain trigger (§8.6 Q3 (b)): days since a served bar last met the cut,
        # against the calibrated ceiling. `fired: true` means a retrain is due.
@@ -292,15 +311,22 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
     state = count_skips(state, :not_served, length(unserved))
 
-    record_bars(state, bars)
+    # One decision per bar. `record_bars/2` hands back only the bars THIS tick put on file;
+    # a bar already recorded by an earlier tick — the engine ticks every 30 s and inference
+    # re-scores the same bar as its inputs move — is counted and never re-decided, so the
+    # score in `policy_bars` is the score the policy acted on (M3_FIDELITY_RESULTS §7.6).
+    {fresh, seen, unrecorded} = record_bars(state, bars)
 
     state =
       state
+      |> count_skips(:bar_already_recorded, seen)
+      |> count_skips(:bar_not_recorded, unrecorded)
       |> refresh_rolling_threshold(now)
       |> refresh_last_cut_exceeded()
       |> close_due(now)
-      |> open_new(bars)
+      |> open_new(fresh)
       |> maybe_prune(now)
+
 
     %{state | last_tick_at: now, ticks: state.ticks + 1, last_error: nil}
   end
@@ -310,9 +336,11 @@ defmodule FluxTrader.Trading.PolicyEngine do
   defp bind_checkpoint(state) do
     sha = safe_checkpoint(state.checkpoint_fun)
     interval = safe_checkpoint(state.interval_fun)
+    closed = safe_flag(state.closed_bars_fun)
     sha_ok = sha != nil and sha == Policy.frozen_checkpoint_sha256()
     interval_ok = interval != nil and interval == Policy.candle_interval()
-    bound = sha_ok and interval_ok
+    closed_ok = closed == true
+    bound = sha_ok and interval_ok and closed_ok
 
     if sha != nil and not sha_ok and state.checkpoint != sha do
       Logger.error(
@@ -330,8 +358,34 @@ defmodule FluxTrader.Trading.PolicyEngine do
       )
     end
 
-    %{state | checkpoint: sha, served_interval: interval, checkpoint_bound: bound}
+    if not closed_ok and state.served_closed_bars != closed do
+      Logger.error(
+        "ml_inference does not report closed_bars_only: true (got #{inspect(closed)}) — " <>
+          "it is scoring the still-forming candle, or predates the fix; the policy will " <>
+          "not trade on a partial bar (M3_FIDELITY_RESULTS §7.6)"
+      )
+    end
+
+    %{
+      state
+      | checkpoint: sha,
+        served_interval: interval,
+        served_closed_bars: closed,
+        checkpoint_bound: bound
+    }
   end
+
+  defp safe_flag(fun) do
+    case fun.() do
+      v when is_boolean(v) -> v
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
 
   defp safe_checkpoint(fun) do
     case fun.() do
@@ -359,6 +413,15 @@ defmodule FluxTrader.Trading.PolicyEngine do
       _ -> nil
     end
   end
+
+  @doc false
+  def default_closed_bars do
+    case FluxTrader.ML.Predict.health() do
+      {:ok, %{"closed_bars_only" => v}} when is_boolean(v) -> v
+      _ -> nil
+    end
+  end
+
 
   defp refresh_last_cut_exceeded(state) do
     %{
@@ -450,19 +513,32 @@ defmodule FluxTrader.Trading.PolicyEngine do
   # over. That population must be *all* bars, otherwise the diagnostic is the top 2% of the
   # bars M2 already liked and is not comparable to the split the constant came from.
   defp record_bars(state, bars) do
-    Enum.each(bars, fn bar ->
-      Ledger.record_bar(%{
-        pair: bar.pair,
-        bar_ts: bar.ts,
-        horizon_m: state.spec.signal_horizon_m,
-        confidence: bar.confidence,
-        side: bar.side,
-        price: bar.price,
-        gated: bar.gated,
-        regime: bar.regime
-      })
-    end)
+    {fresh, seen, unrecorded} =
+      Enum.reduce(bars, {[], 0, 0}, fn bar, {fresh, seen, unrecorded} ->
+        recorded =
+          Ledger.record_bar(%{
+            pair: bar.pair,
+            bar_ts: bar.ts,
+            horizon_m: state.spec.signal_horizon_m,
+            confidence: bar.confidence,
+            side: bar.side,
+            price: bar.price,
+            gated: bar.gated,
+            regime: bar.regime
+          })
+
+        case recorded do
+          {:new, _} -> {[bar | fresh], seen, unrecorded}
+          {:seen, _} -> {fresh, seen + 1, unrecorded}
+          # A bar the ledger could not take is not decided either: the forward evidence
+          # must be able to name every bar the policy acted on.
+          {:error, _} -> {fresh, seen, unrecorded + 1}
+        end
+      end)
+
+    {Enum.reverse(fresh), seen, unrecorded}
   end
+
 
   # 🔴 This refreshes the DIAGNOSTIC only. `state.threshold` is the frozen constant and is
   # never written here — if a future change makes this function assign to it, the served rule
@@ -490,8 +566,10 @@ defmodule FluxTrader.Trading.PolicyEngine do
         state.checkpoint == nil -> :checkpoint_unverified
         state.checkpoint != Policy.frozen_checkpoint_sha256() -> :checkpoint_mismatch
         state.served_interval == nil -> :interval_unverified
-        true -> :interval_mismatch
+        state.served_interval != Policy.candle_interval() -> :interval_mismatch
+        true -> :forming_bar_unverified
       end
+
 
     count_skips(state, reason, length(bars))
   end
