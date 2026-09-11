@@ -749,7 +749,22 @@ curl -s localhost:4000/api/health | jq '.policy | {checkpoint_bound, served_clos
 ```
 
 **The forward clock restarts at this deploy.** Record the time in BACKLOG row 1 and
-`retrain_trigger.watching_since` will show it. **Acceptance, ~1 day later:** on the next VM
+`retrain_trigger.watching_since` will show it.
+
+**Done 2026-09-11, by Claude over `gcloud compute ssh`, in the order above.** Inference
+recreated 04:14 UTC (`/health`: `closed_bars_only: true`, `5m` from the checkpoint, sha
+`882cd415…`); app stopped; 6 `paper_trades` rows and 3,372 `policy_bars` rows copied to
+`~/paper_trades_formingbar_20260911.csv` and `~/policy_bars_formingbar_20260911.csv` on the VM,
+then cleared; app rebuilt on `a9eadee` and up at **04:17:22 UTC** with `checkpoint_bound: true`,
+`served_closed_bars_only: true`, no errors. The host was then rebooted for a pending kernel
+update (04:20:31 UTC, back at 04:22 on `7.0.0-1011-gcp`); the stack was brought up with
+`docker compose up -d` and `app`/`postgres` given `restart: unless-stopped` (`3dcdfa4`) —
+until then only `ml_inference` would have survived a reboot. First bars recorded from the
+04:15 bar; `bar_already_recorded` counting as designed. The first trade under the registered
+rule opened at 04:20:18 (ZEC long, bar 04:15, conf 0.6658), and its confidence equals the
+`policy_bars` row for that bar — the invariant this change exists for.
+
+ **Acceptance, ~1 day later:** on the next VM
 dump, `policy_bars.confidence` must equal the offline scorer at `last_closed_bar_open_time` for
 every row — the §7.5 replay (`ml/train/output/probe/serve_vs_eval.py`, arm L vs arm E) with
 the closed-bar tail is the check, and it should now match exactly rather than at 0.7%.
