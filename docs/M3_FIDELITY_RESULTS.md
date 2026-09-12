@@ -836,6 +836,32 @@ true`, `served_closed_bars_only: true`, `last_error: null`. The check to re-run 
 identification must succeed for every row. The extra cost is signal age: features now end on
 a bar that closed between 2 and 7 minutes before the tick, instead of 0 to 5.
 
+#### Acceptance of the 06:07:51 start, run 2026-09-12 03:30–04:05 UTC on the first 3,092 live rows: 3,092 of 3,092 exact — the start stands
+
+**In one line: every live `policy_bars` row from the third start (2026-09-11 06:05 → 09-12
+03:30, 21.4 h, 12 pairs) equals the live path replayed at its closed bar and the offline
+scorer, to the stored 4 dp; the 44 rows at or above the frozen cut — the 7 that opened trades
+among them — were exact on the first pass. Nothing served differed. The forward clock's
+06:07:51 start is accepted and the ledger from it counts.**
+
+Same harness as the 09-11 run (`accept_76.py`, Docker against `fluxtrader_vm` with the VM's
+5m candles, `funding_rates` and `open_interest` upserted through 09-12 03:38 UTC; checkpoint
+sha `882cd415…` verified locally). Two details worth keeping:
+
+* **First pass 2,964 / 3,092; the 128 "mismatches" (|Δconf| 0.0001–0.0162, none at or above
+  the cut) were the probe's own bar identification, not the server.** `find_C` searched
+  `[B−3, B]` for a close equal to the stored `price` and took the latest hit; on low-priced
+  pairs adjacent closes repeat (ADA 44 rows, WLD 23, AVAX 14, DOGE 13, XRP 11, SOL 11 …), and
+  57 rows were even matched to the signal's own wall-clock bar, which the settle rule makes
+  impossible. Replayed at the physically possible candidates — C = B−2 for a tick under two
+  minutes into the bar, C = B−1 otherwise — all 128 reproduce the live confidence exactly at
+  B−2 (`recheck.py`, 128/128, 0 unexplained). The probe now restricts candidates to B−2 and
+  B−1 and prefers B−2; next run the bar is 100 % on the first pass.
+* **Observed signal age, as designed:** 2,951 rows scored on B−2 and 84 on B−1 (the tail of
+  the 12-pair cycle landing late in a bar) — features end 2–7 minutes before the tick, never
+  on a bar the collector had not finalised. The `last_closed_bar_open_time == C` and
+  `price == serve price` invariants held on every row.
+
 #### What this does NOT change
 
 The frozen constants, the walk-forward verdict and every offline number: all scored once per
