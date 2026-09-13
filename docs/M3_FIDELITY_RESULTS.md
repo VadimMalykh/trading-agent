@@ -195,6 +195,18 @@ of the *recorded* sample, so the forward test's mean net bps is a biased estimat
 policy's unconditional per-trade edge. Today's P&L reached −26.78 against it. Either accept and
 document the bias, or record suppressed entries as counterfactual bars so it can be removed.
 
+✅ **CLOSED 2026-09-13 — the counterfactual already exists; nothing to build.** The
+`flat_size` arm takes the same bars from the same function and does **not** pass through
+`RiskManager` (M3_5_INTEGRATION §4.1), so every policy entry the limit refuses is present on
+the flat arm as a row with no policy twin at the same `(pair, entry_ts)`. The refused policy
+trade is reconstructed from that row at the frozen ladder size for its own `regime`, and the
+recorded arm plus the reconstructed rows is the unbiased estimate this section asked for. That
+reading is pre-registered as **R4 of M3_5_INTEGRATION §4.3** (`m3 forward`), together with
+the rule for when to quote it: whenever `risk_rejections` has been non-empty over the span.
+The limit itself stays at −50/day — it is a real-money brake and the paper test is meant to
+exercise it — and the VM was not touched. Over the accepted ledger to date the reconstructed
+set is empty, so the bias is zero so far.
+
 ---
 
 ## §5 — What to do, and what NOT to do

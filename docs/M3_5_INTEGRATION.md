@@ -358,6 +358,89 @@ firing again, reviving it as a third arm is small — `decide_signal_only/3` was
 than left as dead code, and git has it — but it should not be revived on the assumption the
 gate will reopen.
 
+### 4.3 Pre-registered readings of the forward ledger — 2026-09-13, at 7 signal bars
+
+**Why this section exists, and why now.** Four questions were parked offline as "needs
+untouched data": the coverage cut *level* (BACKLOG "Re-pre-register the served coverage"), the
+regime observable's sign (BACKLOG row 7), the §9.2 hour set (WALKFORWARD, NOT CONFIRMED on
+F2+F3), and §4.2 of M3_FIDELITY_RESULTS (the daily-loss limit's bias). Every one of them can be
+read off *this* ledger as a **subset or split of the trades already taken**, because a tighter
+cut selects a subset of the bars the 0.02 cut trades, and every row records its confidence,
+regime value and entry hour. No new arm is needed for any of them. What makes such a reading
+legitimate under M3_PROTOCOL §0 is that the subsets, the constants and the statistics are
+fixed **before** the ledger holds enough trades to suggest them — and on 2026-09-13 it holds
+seven, all from one afternoon. This section is that fixing. The executable form is
+`ml/train/m3/forward.py`; the constants below are transcribed there and checked against the
+ledger on every run.
+
+**What was known when this was written.** 7 policy-arm trades and their 7 flat-arm twins, all
+entered 2026-09-11 15:25–22:15 UTC, all timer exits, every one below the frozen regime p80.
+The tighter cuts were derived (logged, container run) *before* the ledger CSV was first
+exported; the coverages are protocol-named levels, not chosen values. The hour set is §9.2's
+recorded one, unchanged. Nothing in this section was tuned on the seven.
+
+**The unit, for everything below.** Net bps **per unit of notional** = Σ `net_bps` / Σ `size`
+over a set of trades (the ledger's `net_bps` is already size-weighted). On the flat arm that is
+the plain mean; on the policy arm the size-weighted mean. Costs are the ledger's own
+`cost_bps` — the measured per-pair crossing cost at the verified 5.0-bps fee. Intervals are
+day-clustered on the UTC **entry** day; contrasts between two subsets are day-bootstrapped
+(2,000 draws, seed 20260913, days drawn from the union of both subsets and both means
+recomputed on the same draw).
+
+**The readings.**
+
+| # | question | population | statistic |
+|---|---|---|---|
+| **R0** | §4.1's A/B — is the size ladder worth anything? | `policy` vs `flat_size`, all closed rows | per-notional net of each arm; contrast policy − flat with bootstrap CI. Note this is Σnet/Σsize against a plain mean of the *same* returns — the ladder "works" iff size correlates positively with the trade's return |
+| **R1** | the cut level — are the marginal trades worth anything? | policy arm split at each tighter cut: TIGHT = `confidence ≥ cut(c)`, MARGINAL = the rest | per-notional net of TIGHT and of MARGINAL; contrast TIGHT − MARGINAL. A subset is a sub-sample, not a re-simulation (a freed pair could have taken a later bar under serial-per-pair); stated, not corrected |
+| **R2** | the regime split — which sign does `btc_absret_1d` carry forward? | policy arm, entry `regime ≥ 0.025596268475055695` (the frozen p80) vs below | per-notional net of each; contrast top − below. M3-2 says top is better (the ladder's premise); the book era says the opposite (BACKLOG row 7) |
+| **R3** | §9.2's hour set, on untouched data | policy arm, UTC entry hour ∈ **{0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22}** vs excluded | per-notional net of each; contrast in − excluded. Sub-sample, same caveat as R1 |
+| **R4** | M3_FIDELITY §4.2 — how much does the −50/day limit bias the estimate? | flat-arm rows with no policy-arm row at the same (pair, entry_ts) — a refusal, or the divergence after one | reconstruct each as a policy trade at the frozen ladder size for its own `regime`; report the recorded arm, the counterfactual arm (recorded + reconstructed) and the reconstructed rows alone |
+
+**The constants.** Coverage cuts are `backtest.coverage_threshold(conf, c)` over the served
+checkpoint's own split — repaired era, seed s2, the eight training pairs, horizon 240 — the
+population M3_FIDELITY §6 derives the served cut on. The 0.02 entry reproduces
+`Policy.frozen_threshold/0` to the digit, which is the check that the population is right.
+
+| coverage | cut | why this level |
+|---|---|---|
+| 0.02 | 0.6296127438545227 | the served cut; the full policy arm |
+| 0.015 | 0.6431580185890198 | the round level between |
+| 0.01288 | 0.6498615741729736 | T6's count-matched coverage on twelve pairs — the parked question's own number |
+| 0.01 | 0.6610917448997498 | the round tighter level |
+
+Ladder edges `[0.003956599626690149, 0.00888611190021038, 0.015089680440723896,
+0.025596268475055695]`, size `(count of edges ≤ regime + 1) / 3` — `Policy.size_multiplier/2`.
+
+**The schedule.** The first reading is at **50 closed policy-arm trades**, then at every
+further 50. Before 50 the command prints every table under a TEXTURE banner and **nothing in
+it may be quoted as a result** — not in a document, not in chat. At 50 the per-trade interval
+is about ±72 bps (sd 259, §4.1), so the first two or three readings are texture in all but
+name; ~290 trades resolve a +30 bps mean against zero. No reading is a stopping rule.
+
+**What a reading licenses.** Nothing served changes on any of R0–R4. A reading whose interval
+excludes zero licenses *writing* a pre-registration of a served change on the population it
+would be served from — exactly what the parked coverage row already says — and a reading whose
+interval includes zero is reported as such and re-read at the next 50. R4's counterfactual
+arm is the number to quote for the policy's unconditional per-trade edge whenever
+`risk_rejections` on `/api/health` has been non-empty over the span; when the reconstructed
+set is empty, the recorded arm *is* the unbiased estimate and §4.2's bias is zero over that
+ledger.
+
+**Consistency, enforced before any table prints:** one checkpoint on every row, `threshold`
+equal to the served cut, `ladder_p80` equal to the frozen p80, no row entered below the cut.
+A failure prints the problems and no tables.
+
+**Exact command** (read-only against the VM; writes the CSV under `ml/train/output/forward/`,
+gitignored):
+
+```sh
+./scripts/gcp_forward_ledger.sh              # export today's ledger and run the readings
+./scripts/m3.sh -m m3 forward --ledger output/forward/paper_trades_<YYYYMMDD>.csv   # re-read
+```
+
+Run 2026-09-13 on the seven: consistency ok, TEXTURE banner, R4 empty (no refusals yet).
+
 ---
 
 ## §5 — Where the live rule differs from the backtested one

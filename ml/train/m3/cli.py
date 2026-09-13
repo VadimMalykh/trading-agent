@@ -1686,6 +1686,9 @@ def main() -> int:
                    "in bps on a held-out half, pooled across pairs (gate §4.1)"
                    ).set_defaults(fn=cmd_bookaudit)
 
+    from . import forward as _forward
+    _forward.add_parser(sub)
+
     sub.add_parser("bookregime", help="B2: book features as M3 regime observables, "
                    "marginal and conditional on btc_absret_1d (gate §4.2)"
                    ).set_defaults(fn=cmd_bookregime)
