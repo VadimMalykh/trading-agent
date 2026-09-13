@@ -407,7 +407,7 @@ def _fill_market_context(symbol: str, frame, max_rows: int):
         inputs = _market_inputs(max_rows)
         if symbol.upper() not in inputs:
             inputs = dict(inputs)
-            inputs[symbol.upper()] = market_context_inputs(frame)
+            inputs[symbol.upper()] = market_context_inputs(frame, _served_interval())
         ctx = apply_market_context(inputs, candle_interval=_served_interval())
         block = ctx.get(symbol.upper())
         if block is None:

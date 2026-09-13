@@ -381,14 +381,24 @@ def build_feature_frame(
     return out
 
 
-def market_context_inputs(frame: pd.DataFrame) -> pd.DataFrame:
+def market_context_inputs(frame: pd.DataFrame, candle_interval: str = "1m") -> pd.DataFrame:
     """The small per-pair slice `apply_market_context` needs, as a 2-column frame.
 
     Kept deliberately narrow: the cross-pair pass runs after every pair's matrix
     already exists, and holding 8-12 full feature frames at once to compute four
     columns would roughly double peak memory on a 2.9M-sample bundle for no reason.
+
+    `ret_1h` is a *multiscale* column, so a frame built for `FEATURE_GROUPS=legacy,market`
+    does not carry it (X1, 2026-09-13). It is then derived here from `close` with the same
+    formula `build_feature_frame` uses — bit-identical when both are present — so the
+    market block can be requested without the own-pair multiscale channels.
     """
-    return frame[["ret_1", "ret_1h"]]
+    if "ret_1h" in frame.columns:
+        return frame[["ret_1", "ret_1h"]]
+    close = frame["close"].astype(float)
+    n1h = bars_for_minutes(candle_interval, _SCALE_MINUTES["1h"])
+    ret_1h = (close / close.shift(n1h) - 1.0).replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    return pd.DataFrame({"ret_1": frame["ret_1"], "ret_1h": ret_1h}, index=frame.index)
 
 
 def build_market_inputs(

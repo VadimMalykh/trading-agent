@@ -433,9 +433,140 @@ it is not what R1 tests, because R1 has one variable already.
 
 ## §2 — THE RUN QUEUE
 
-**The queue is empty.** T5 and T6 are done, R0 was promoted 2026-08-26, and M2 is frozen at the
-§1.3 baseline: no new M2 run without a new *kind* of data (§5). Every open and parked item is in
-[BACKLOG.md](./BACKLOG.md), which is the list to read — not this section.
+**One registered experiment is queued: X0 + X1, six serial GPU runs (below).** Everything
+else open or parked is in [BACKLOG.md](./BACKLOG.md), which is the list to read — not this
+section. M2's §5 freeze is reopened for this one lever only, under the feature row's own
+reopening clause, and the freeze's wording is amended there with the date and the evidence.
+
+### 🟡 X0 / X1 — the cross-sectional block, separated. REGISTERED 2026-09-13, nothing run
+
+**The question.** Does the five-column market block — `btc_rel_ret_1h`, `beta_btc_1d`,
+`xs_rank_1h`, `xs_disp_1h`, `has_market` — move the 240m directional head when it is the
+**only** addition to the served recipe?
+
+**Why this is not a re-proposal of a closed lever.** §5's feature row closed the *own-pair*
+multiscale channels and says "reopen only for genuinely *external* information". The market
+block is external — it is built from the other pairs' returns — and it was never tested on its
+own: Q3 carried it inside a 30-column bundle whose six own-pair channels R1 later showed were
+the memorisation surface, so Q3's verdict is the bundle's, not the block's. The new evidence
+since the freeze is B3's O5 (BOOK_ERA_PLAN §R.3): a tree model given every candle and book
+scalar over the book era puts 33–38% of its gain on `xs_disp_1h`, more than any other
+feature, at both 5m and 15m. That is evidence the block carries information at short horizons;
+whether it carries *directional* information at 240m is exactly what X1 asks. Honest caveat,
+written before the run: dispersion is plausibly a magnitude proxy, which would make it M3's
+business (the regime row of §5) and not M2's — `xs_rank_1h` and `btc_rel_ret_1h` are the
+members with a directional reading (cross-sectional momentum or reversal).
+
+**Why a control family is needed (§0.2).** The banked §1.3 family was trained pre-repair on
+a snapshot ending 2026-08-19. A run today trains on repaired candles and a month more history,
+so comparing X1 to §1.3 would change data *and* features in one step. X0 retrains the served
+recipe, unchanged, on the same snapshot X1 uses; X1 − X0 is then one change. X0 is also the
+repaired-era baseline every later lever (X2, BACKLOG) will reuse, so its cost is shared.
+
+**The recipe.** The launcher's pinned incumbent (`FLUX_INCUMBENT_*`, `scripts/gcp_train.sh`):
+twelve pairs, `CANDLE_INTERVAL=5m`, seq 384, 60 epochs, horizons 60/240/1440, primary 240,
+`PAIR_EMBED_DIM=8`, `EARLY_STOP_PATIENCE=20`, `VAL_FRACTION` default 0.2, labels and loss
+unchanged. X0: `FEATURE_GROUPS=legacy` (19 columns). X1: `FEATURE_GROUPS=legacy,market`
+(24 columns) — **and nothing else differs**. Three seeds each: 1, 2, 3.
+
+⚠️ **Code prerequisite, done 2026-09-13, must be on `main` before the first X1 run:**
+`FEATURE_GROUPS=legacy,market` used to crash the dataset build, because
+`data.features.market_context_inputs` sliced a multiscale column (`ret_1h`) the frame no
+longer carried. It now derives `ret_1h` from `close` when absent, with the same formula
+`build_feature_frame` uses — verified bit-identical over 2,000 synthetic 5m bars, and
+`apply_market_context` verified end-to-end on legacy+market frames. The two callers
+(`dataset.py`, `serve.py`) pass the candle interval. A checkpoint with the market block
+serves through the existing `_fill_market_context` path; nothing on the served path changes
+for the 19-column checkpoint.
+
+**One snapshot for all six runs.** The split is a fraction of a growing history (§0.5 trap
+10), so six runs hours apart would have six different val windows. Clear the always-on VM's
+dump cache **once** before the first run, then pin `DUMP_MAX_AGE_MIN=100000` on every run so
+the cache hits and `dumps/latest.sql.gz` is reused; the launcher copies it to
+`dumps/<run_id>.sql.gz` each time. **Acceptance:** all six logs print an identical
+`Split global_time | … | train [… → …] | val [… → …]` line. If they do not, the run whose line
+differs is void — re-run it with the cache intact, do not "correct" for it.
+
+**Order.** Serial, one at a time, each launched after the previous reports DONE (§0.5 — a
+second `gcp_train.sh` destroys the live one): X0 s1, X0 s2, X0 s3, X1 s1, X1 s2, X1 s3. If a
+run fails, re-run the same seed before moving on.
+
+**The statistic, fixed now (§0.3).** Per run: the **plateau-restricted mean of the per-epoch
+cov 0.05 Wilson-LB series on the 240m head** (plateau = epochs whose `loss_va` is within 0.02
+of the run's minimum). Per family: the mean of its three seeds; error bar = the between-seed
+sd of that mean. The contrast is **X1 family mean − X0 family mean**. From the banked family's
+between-seed sd of 0.0032, the SE of a family-mean difference is ≈ 0.0026. Fallback, stated
+now: if any run's plateau is shorter than 15 epochs, that arm is read on the all-epoch mean
+for *both* families (the §0.3 table's other column), and the verdict says so.
+
+**The gate.**
+
+| contrast X1 − X0 | verdict |
+|---|---|
+| ≥ **+0.008** *and* every X1 seed above the X0 family mean | **MOVED** |
+| in (−0.008, +0.008), or ≥ +0.008 with a seed below | **FLAT** — the lever closes, with the number |
+| ≤ −0.008 | **WORSE** — closes, and the §5 feature row gains a second entry |
+
++0.008 is ≈ 3σ on the difference and half of the one effect that ever moved (15m → 5m,
++0.016). It is deliberately below R3's +0.011 because this is a *family* contrast, not a
+single run against a family.
+
+**The secondary reading, reported but not deciding:** the pooled `Fixed-coverage P&L` at cov
+0.02 on the 240m head, gross bps/trade, X1 vs X0. With per-trade sd ≈ 150 bps its SE is
+~5 bps, so it can only sanity-check: a MOVED verdict whose cov-0.02 gross is more than 5 bps
+*below* X0's is reported as MOVED-BUT-NOT-EARNING and licenses nothing.
+
+**Expectation, recorded before the run: FLAT.** Seven of eight levers were flat; the block's
+strongest member by O5 is plausibly a magnitude proxy. A FLAT result is a useful result: it
+closes the last untested feature family and leaves X0 as the repaired-era baseline.
+
+**What each verdict licenses.** MOVED → fetch both families' `eval_preds`, register `x0` and
+`x1` eras in `m3/dumps.py`, and run the *incumbent* rule (not a search) on the X1 family under
+M3_PROTOCOL §9 — Tier 1, C3, cut derived on X1's own split — as a promotion candidate. It does
+**not** touch the served checkpoint or the running forward test; a promotion is its own
+registered clock restart. FLAT / WORSE → close the lever in §5 and BACKLOG; X0 remains banked
+for X2. Nothing in the read licenses a fourth seed, a second feature subset, or a re-run with
+a different band.
+
+**Commands.** Run from the laptop, in this order. `<12>` is the launcher's incumbent list:
+`BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT`.
+
+```sh
+# 0. the features.py fix must be pushed to main first (the train VM clones GIT_REF=main)
+git log --oneline -1 -- ml/train/data/features.py      # should show the 2026-09-13 commit
+
+# 1. fresh snapshot, once
+gcloud compute ssh fluxtrader-1 --zone me-central1-b --project fluxtrader \
+  --command "rm -f /var/tmp/fluxtrader_dump_cache.sql.gz"
+
+# 2. the six runs — serial; wait for DONE (./scripts/gcp_status.sh) before the next
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 TRAIN_PAIRS=<12>
+export DUMP_MAX_AGE_MIN=100000
+
+FEATURE_GROUPS=legacy        SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # X0 s1
+FEATURE_GROUPS=legacy        SEED=2 ./scripts/gcp_train.sh --gpu 60 384   # X0 s2
+FEATURE_GROUPS=legacy        SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X0 s3
+FEATURE_GROUPS=legacy,market SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # X1 s1
+FEATURE_GROUPS=legacy,market SEED=2 ./scripts/gcp_train.sh --gpu 60 384   # X1 s2
+FEATURE_GROUPS=legacy,market SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X1 s3
+
+# 3. after each DONE: the log (never --save) and the dump
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh <run_id> > logs/X0-s1.log        # X0-s2, X0-s3, X1-s1, X1-s2, X1-s3
+gcloud storage cp gs://fluxtrader-train-artifacts/eval/<run_id>/eval_preds.parquet \
+  ml/train/output/eval_dumps/eval_preds_<run_id>.parquet
+```
+
+Each GPU run is ~2–3 h and ≈ $1.5 (n1-standard-4 + T4 in us-central1-a, §7); six runs are
+~15 h of serial wall clock. The first run also waits on the fresh dump.
+
+**Bring back, per run (§0.4's checklist):** the `Split …` line; the `=== resolved knobs` block
+and `Feature groups: … -> N columns` (19 for X0, 24 for X1); `Training pairs: [...]`; `Early
+stop at epoch N`; the `epoch LB series @cov0.05: n=… mean=… sd=… max=… selected=…` summary;
+the `Fixed-coverage directional edge` and `Fixed-coverage P&L` tables for the 240m head; the
+run id. The read happens in a fresh session (§0.3's `grep`/`awk` for the plateau mean, then
+the table above) — bring the six logs, not a summary of them.
 
 **Two things are queued elsewhere and are not M2 runs:**
 
@@ -469,7 +600,7 @@ laptop's `ml_analysis` container.
 | **Encoder capacity / layers / hidden** | 🔴 **CLOSED ON MEASUREMENT, 2026-08-23 — R3a and R3b both ran** | It was reopened once, on the one legitimate basis (the plateau-restricted mean resolves ~0.01, so a single run can now decide), and the bracket was run as designed. **Both arms are flat on the low side**: 128 units → plateau mean 0.5185, 32 units → 0.5199, against 0.5239 (between-seed sd 0.0032). Neither approaches the +0.011 the pre-registration required. The bracket also refutes the *shape* of the hypothesis, not just its size: going up produces pure memorization (`loss_tr` 1.72 → 0.888 with `loss_va` never reaching baseline, brier 0.419), and going *down* to a quarter of the parameters changes nothing. There is no monotone curve to climb, so **no third run is justified and this is closed for good.** §1.9 |
 | **Training data volume / pair count** | **Closed (new, 2026-08-22)** | O8 added ADA/AVAX/LINK/XRP for 4.59M samples, +58%, the largest data increase available without new *kinds* of data. Re-aggregated onto the original 8 pairs it is inside the 3-seed family's spread at every coverage (+23.9 / +21.3 / +6.8 vs +19.4 / +22.0 / +8.9), and the pair-mix-corrected plateau mean is ≈0.512 vs 0.5239. Crypto pairs are highly correlated, so 58% more *rows* is far less than 58% more independent observations — the effective-sample gain was small and the measured gain is zero. Do not start a pair-count ladder *as a data experiment*. 🟢 **Amended 2026-08-27; both halves are now closed.** Pair count as *traded universe* is a genuinely different lever from pair count as *training data*, and it was tested on its own: the T-wave ran two more 12-pair seeds and the single-seed "+7.5 net bps/trade" **did not replicate**, then T6 ran the fair comparisons — trade-count-matched, cut-matched, cap-re-tuned — and put the effect within a couple of bps of zero in every one, against a data-resolution limit of ±37 bps. **The traded-universe question is closed as *undecidable on this evaluation period*, not as decided against.** ⚠️ This row read "the incumbent 8-pair universe stands" until 2026-08-29; it no longer does — **the served universe is twelve**, once every added pair carried its own measured crossing cost. What stays closed is the *question*, not the universe. §1.9 and §1.10 in [archive/TRAINING_HISTORY.md](./archive/TRAINING_HISTORY.md), `docs/T6_RESULTS.md` |
 | **Magnitude / cost-shaped training losses (`DIR_MAG_WEIGHT`)** | **Closed (new, 2026-08-23)** | R2 was the second and better-designed attempt at teaching M2 about economics rather than accuracy (N3's selection-time cousin was the first, closed 2026-08-18). It ran correctly — `at_clip` under 1%, `scale` ≈ 0.98, `mean\|r\|` rising with horizon — and it lost gross bps/trade at every coverage while driving brier from 0.250 to 0.316 and flattening `emp_up` to ≈0.48 in all ten bins. The mechanism generalizes past this one knob: **up-weighting large moves teaches the head that "confident and large" is the same axis as "confident and correct", and it is not.** Position sizing by expected move magnitude is M3's job and belongs in the policy, where it can be applied without corrupting the probability M2 exists to emit. §1.9 |
-| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired** | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
+| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired.** ⚠️ *Amended 2026-09-13:* reopened for **one** lever, X0/X1 in §2, under the feature row's own "genuinely external information" clause and on new evidence (B3's O5). The freeze otherwise stands; X1's FLAT result would re-seal it | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
 | Full architecture swap (transformer / TCN) | **Closed, and reaffirmed 2026-08-22** | Was gated behind O3; O3 came back negative. The reopening condition written in 2026-08-19 was "if richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit" — Q3 and R1 have now *both* run and the failure looks like the opposite: the model already memorizes the training set the moment it is handed anything easy (`loss_tr` 1.70 → 1.13 in R1), while its validation loss never improves. That is an **input** limit and an SNR floor, not a modelling limit. A higher-capacity family would make it worse, not better. **Do not write a transformer.** 🔴 **Reaffirmed again 2026-08-23: R3a ran the two-run bracket's upward arm and produced exactly this prediction** — `loss_tr` 1.72 → 0.888 with `loss_va` never once reaching the baseline's level, and the worst calibration in the ledger. More capacity of any kind makes this problem worse. There is no remaining capacity question. |
 | Confidence calibration / temperature / focal loss | **Closed** | F4's head is *over*-confident (`[0.60,0.70)` bin mean_pred 0.636 vs empirical 0.547; N3's is 0.609 vs 0.521). Sharpening an over-confident head is the wrong direction. |
 | Raising `GATE_THRESHOLD` as an experiment | **Superseded by C1+C2** | The served gate is 0.58 and eval now reports there. Derive the operating point from the fixed-coverage P&L table, not from another sweep. |
@@ -479,7 +610,7 @@ laptop's `ml_analysis` container.
 | **Bar resolution — 15m → 5m** | **🟢 BANKED and frozen (2026-08-21)** | Replicated across three seeds: pooled mean-of-epochs 0.5219 ± 0.0014 vs F4's 0.5058, and pooled +22 gross bps/trade at the top 2% (§1.3). `5m / seq 384` is the permanent baseline. Nothing further to test here — do not run a fourth seed. |
 | **Bar resolution — finer than 5m** | **Closed (new, 2026-08-21)** | P2 ran 1m/seq768 as a direction probe: flat `dir_acc` (0.561 vs 0.559), materially worse economics, **destroyed calibration** (`emp_up ≈ 0.48` in every bin, brier 0.323 vs 0.250), 20h wall clock. The ladder has one rung and we are standing on it. The untested variant (1m at a 32h window, seq 1920) is unaffordable and context length is separately closed. §1.4 |
 | **Multi-checkpoint ensembling (probability averaging)** | **Closed (new, 2026-08-22)** | Q2 averaged three seeds of one configuration and compared against the best member on a matched split (Q0). Ranking improved by noise (+0.002 dir_acc), calibration by noise (−0.0005 brier), and **gross bps/trade got worse at four of five coverages**. The mechanism: averaging pulls every bar toward the consensus, which preserves the directional *order* but compresses exactly the outlier-confident bars where the large moves are. Reopen only if calibration — not P&L — becomes the binding constraint on M3. §1.1 |
-| **Per-timestep candle features (own-pair)** | **Closed (new, 2026-08-22)** | Two arms, both rejected. Q3 added 11 columns (30 total) and R1 added the well-conditioned 6 (25 total) with every §0.4 line green. R1's plateau mean is 0.4979 vs 0.5239, and — the fact that closes it — **R1's best validation loss (1.0451) is worse than the baseline's (1.0398–1.0404) at every epoch including epoch 1**, so no regularization arm can recover it. At `seq 384` (32h) every multiscale column is an exact function of bars already inside the window at the prediction timestep: zero information, six smooth channels that are far easier to memorize than `ret_1`. **Redundant re-parameterizations of the input are pure overfitting surface.** Reopen only for genuinely *external* information, and note Q1 already measured the informative member of that family and assigned it to M3. §1.6 |
+| **Per-timestep candle features (own-pair)** | **Closed (new, 2026-08-22)** | Two arms, both rejected. Q3 added 11 columns (30 total) and R1 added the well-conditioned 6 (25 total) with every §0.4 line green. R1's plateau mean is 0.4979 vs 0.5239, and — the fact that closes it — **R1's best validation loss (1.0451) is worse than the baseline's (1.0398–1.0404) at every epoch including epoch 1**, so no regularization arm can recover it. At `seq 384` (32h) every multiscale column is an exact function of bars already inside the window at the prediction timestep: zero information, six smooth channels that are far easier to memorize than `ret_1`. **Redundant re-parameterizations of the input are pure overfitting surface.** Reopen only for genuinely *external* information, and note Q1 already measured the informative member of that family and assigned it to M3. §1.6. ⚠️ *2026-09-13:* the five-column **market block** is that external information and was only ever tested inside Q3's bundle; it is registered on its own as X1 (§2), with a control family X0 on the same snapshot |
 | **"Add regularization and retry the feature set"** | **Withdrawn before it ran (2026-08-22)** | It was §2's pre-registered branch for a collapsed plateau, and R1 falsified its premise. Regularization lengthens a plateau; it cannot lower a model onto a validation loss it never reached in its single best epoch. Do not spend 3h GPU on a `DROPOUT` arm at 25 columns. |
 | **Gating M2 on a regime observable** | **Barred (new, 2026-08-22)** | Q1's `btc_absret_1d` finding is real and worth +26bps/trade of conditioning (§1.8), and it still must not be built into M2. Deciding *when to be in the market* is M3's job by the design in this document's preamble; building it into the signal model is the cost-aware-selection mistake in a new costume. M2 emits the observable, the policy acts on it. |
 | **Absolute `GATE_THRESHOLD` as a serving constant** | **Closed (new, 2026-08-21)** | Not a lever, a defect. The same probability is 1.2% / 2.5% / 1.7% coverage across three seeds of one configuration and 80% on P2 (§1.5). The gate must be a per-checkpoint coverage target chosen from the fixed-coverage P&L table. C13. |

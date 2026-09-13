@@ -280,6 +280,25 @@ applied symmetrically.
 
 ---
 
+## 🟡 Parked — new experiment ideas, 2026-09-13
+
+*Asked for on 2026-09-13 while the forward test idles: "other models / flow / data mangling",
+not process. Each row was checked against §5 of NEXT_TRAINING_PLAN and the tombstones below
+before it was written, so none re-proposes a closed lever. Every one needs a pre-registration
+written before a number is read; GPU runs are serial. The forward test is untouched by all of
+them — they are offline.* **Needed from Vadim: pick which to fund; X1 is recommended first
+and is registered (NEXT_TRAINING_PLAN §2).**
+
+| # | idea | what would be new | cost | grounded in | state |
+|---|---|---|---|---|---|
+| **X1** | **The cross-sectional block, separated** | The served model reads own-pair candle columns only. The five market columns (`btc_rel_ret_1h`, `beta_btc_1d`, `xs_rank_1h`, `xs_disp_1h`, `has_market`) were only ever tested inside Q3's 30-column bundle, whose six own-pair multiscale channels R1 later showed were pure memorisation surface. They are *external* information — other pairs' returns — which is the one reopening condition §5's feature row names. | GPU, serial: a 3-seed control family on the current (repaired) snapshot, then the 3-seed arm — six runs. The control is reusable by X2. | B3's O5 importances: `xs_disp_1h` carries 33–38% of the GBT's gain, more than any other feature, at 5m and 15m (BOOK_ERA_PLAN §R.3) | 🟡 **registered 2026-09-13** — NEXT_TRAINING_PLAN §2 "X0/X1": six serial GPU runs (~15 h, ≈ $9), exact commands there. **Needed from Vadim: push the `features.py` fix, then run the six commands in order and bring back the six logs.** Expectation recorded: FLAT |
+| **X2** | **Volatility-normalised labels** | The flat band is a fixed 0.6% at 4h in every regime (`FLAT_TH_4H`), so calm months are almost all "flat" and direction is learned mostly on volatile bars — which is why the served model is silent in a calm market. Label the sign of `fwd_ret / realised vol` with the band in vol units; the directional head then trains on calm bars too. Never tried (triple-barrier is the only vol-scaled label and it was voided, never redone). | GPU, 3 seeds, reusing X0's control | The regime finding: the edge lives in the top vol quintile (NEXT_TRAINING_PLAN §1.8); the served model emits nothing in calm (M3_5 §4.2) | 🟡 parked; register after X1 reads, one change per run |
+| **X3** | **Predicted-magnitude sizing** | The ladder — M3's largest measured effect, +8.6 bps on the worst window — keys on *backward-looking* BTC realised volatility. Fit a small tree model for the forward absolute 4h move on candle features over the full history and feed it as the harness's `size_col`; a paired comparison on the same entries against the realised-vol ladder. Never tried as a model. | CPU only, `ml_analysis` container; no M2 change | B1: book and candle features predict *magnitude*, not direction (VOL-PROXY, BOOK_ERA_PLAN §R.1); M3_PROTOCOL §5's bar that magnitude belongs in the policy, not the loss | 🟡 parked; independent of X1 |
+| **X4** | **Dynamic exits from the side-table** | Every hold is a fixed 240 minutes. M3-0b's price-path side-table makes signal-flip exits, hold extension while the signal persists, trailing stops and regime-conditional barriers scorable offline; M3_0B_RESULTS lists exactly these as untested. Gate must be net of the extra crossing. | CPU only | M3_0B_RESULTS §C4b: six fixed barriers all lost to the 4h hold, "trailing stops, vol-scaled bands and regime-conditional barriers stay untested" | 🟡 parked; independent of X1 |
+| **X5** | **An embargo on the split** | 4h labels on 5m bars overlap 48 ways and the chronological split has no purge, so the last two days of train leak into val and early-stop selection is slightly optimistic. Hygiene, not edge; expected to move nothing. | a small trainer change (no embargo knob exists in `train_m2.py` today) plus one control run to show it moves nothing | standard purged-CV practice; not found anywhere in the project's docs | 🟡 parked as a code item; **not** folded into X0, which must be the served recipe unchanged |
+
+---
+
 ## 🟡 Parked — collector / data quality
 
 | item | why it matters | source |

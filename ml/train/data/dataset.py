@@ -497,7 +497,7 @@ def build_m2_index_bundle(
             continue
 
         if want_market:
-            market_inputs[pair] = market_context_inputs(frame)
+            market_inputs[pair] = market_context_inputs(frame, candle_interval)
 
         feats = np.ascontiguousarray(
             frame.drop(columns=["close"]).to_numpy(dtype=np.float32)
