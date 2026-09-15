@@ -14,7 +14,7 @@ otherwise knows nothing about this folder.
 
 | date | where we are | needed from Vadim |
 |---|---|---|
-| 2026-09-15 | **P0 and P0b done.** Collector tables (candles 1m/5m/15m/1h 2022-08 →, book era, funding) and the public archive (`metrics` 5m, `depth` ±1–5 % bands at 30 s, `funding_archive`; all pairs 2023-01 →) are parquet on the work VM, inventory clean (DATA.md), folds fixed. **P1 (price the trade) started:** the tape (136 GB raw, streamed to a per-minute summary with an effective-spread estimate, `ft2 tape`) is running on the VM and powers it off when done (`output/logs/p1_tape.log`). Then the ladder export and the cost table (PLAN P1 has the three commands). | **The account's fee tier** (VIP level + BNB discount on/off, or a read-only key). Nothing else. |
+| 2026-09-15 | **P0 and P0b done; P1 started.** Collector tables and the public archive (`metrics` 5m, `depth` ±0.2–5 % bands at 30 s, `funding_archive`; all pairs 2023-01 →) are parquet on the work VM, inventory clean (DATA.md), folds fixed. The tape stream (`ft2 tape`, 136 GB raw → per-minute summary with an effective-spread estimate) was left running on the VM at 04:35 UTC; it powers the VM off when done. **Next session, in order:** (1) `vm.sh start`, then `vm.sh ssh 'tail -5 ~/fluxtrader2/output/logs/p0b_chain2.log'` — expect `tape-done`; if a pair shows `err`/`missing` days, `vm.sh run tape` once more (resumable); (2) `vm.sh run inventory`, `vm.sh pull`, fill the `tape` row of DATA.md "Archive tables as measured"; (3) PLAN P1 steps 2–3: windowed ladder export, then write and run `ft2 cost`. | **The account's fee tier** (VIP level + BNB discount on/off, or a read-only key). Nothing else. |
 
 ## The boundary with the first project
 

@@ -141,9 +141,11 @@ to contain; DATA.md "External data"):
 
 Commands, in order (all on the work VM):
 
-1. `vm.sh bg p1_tape tape` — **queued 2026-09-15** to start automatically after the P0b
-   inventory (`output/logs/p1_tape.log`); ~1–2 h, download-bound; the VM powers off at its end.
-   Re-run the same command to pick up any missing days (per-day parts are skipped if present).
+1. `ft2 tape` — **started 2026-09-15 04:35 UTC** on the VM (log `output/logs/p0b_chain2.log`,
+   the VM powers itself off at the end). ~1–2 h, download-bound. **Next session checks it:**
+   the log ends with one `tape <pair> {...}` line per pair and `tape-done`; any `err` or
+   unexpected `missing` count → `vm.sh run tape` again (per-day parts already done are skipped).
+   Then `vm.sh run inventory`, `vm.sh pull`, and fill the `tape` row in DATA.md.
 2. `FROM=2026-08-05 TO=2026-09-14 ./scripts/export.sh levels` then `vm.sh run ingest levels` —
    the ladder, windowed (several GB of jsonb).
 3. `vm.sh run cost` (to be written): the six measurements above → `output/cost.md` and
