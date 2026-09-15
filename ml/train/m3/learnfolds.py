@@ -174,9 +174,13 @@ def _fmt(rows: list[dict]) -> str:
 
 
 def _ledger(t: pd.DataFrame) -> pd.DataFrame:
+    """`signed_ret` already carries size (backtest._simulate_seed: side * fwd_ret * size), so
+    gross is `signed_ret` as is. ⚠️ Until 2026-09-15 this multiplied by size a second time,
+    which inflated the S2 (sized) arms' *informational* per-notional lines in §9.5's record;
+    the per-trade contrast that decided §9.5 never used this function."""
     size = t["size"].to_numpy(np.float64) if "size" in t else np.ones(len(t))
     day = pd.to_datetime(t["exit_ts"], unit="ns", utc=True).dt.floor("D").to_numpy()
-    return wf._ledger(day, t["signed_ret"].to_numpy(np.float64) * size, size, "trade")
+    return wf._ledger(day, t["signed_ret"].to_numpy(np.float64), size, "trade")
 
 
 def _notional_line(arm: pd.DataFrame, inc: pd.DataFrame) -> str:

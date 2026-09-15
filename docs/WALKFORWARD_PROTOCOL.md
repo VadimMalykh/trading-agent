@@ -1146,7 +1146,7 @@ day-clustered on the union of exit days:**
 | C2 ablation learnconf_R1_S1 (information) | 5,089 | −12.60 | −37.41 | [−81.25, +6.43] | −11.94 [−26.91, +3.03] | 0 trades on F1 |
 
 At the verified 11.84 line the chosen configuration's diff is −29.25 [−71.52, +13.01]; per unit
-of notional −49.35 [−103.99, +5.29]. R1 under the confidence-only fit entered **no bar on F1**
+of notional −49.35 [−103.99, +5.29] (⚠️ *2026-09-15: this per-notional figure was computed with size applied twice — `learnfolds._ledger` multiplied an already size-weighted `signed_ret` by size again; fixed. The per-trade contrast that decided §9.5 did not use it; do not quote the −49.35*). R1 under the confidence-only fit entered **no bar on F1**
 (coefficient +0.36 — the score never reaches 14 bps), the same collapse of an absolute
 threshold M3_3_RESULTS §F item 2 recorded.
 
@@ -1176,7 +1176,64 @@ the dumps cannot supply — the price/funding side-table or book features over t
 (BOOK_ERA_PLAN, the parked book-era wave) — under a fresh registration. §9.4's fundability
 reading stands as a statement about power; §9.5 is the statement about this class.
 
-### 9.6 X3 — predicted-magnitude sizing on the folds: the registration
+### 9.6 X3 — predicted-magnitude sizing on the folds: the registration — 🟢 CLOSED 2026-09-15, GATE NOT PASSED
+
+**RESULT, read 2026-09-15 from `logs/magsize_explore_20260915.log` (the second attempt; the
+first stopped at the fallback cap, Amendment 1 below).** Harness check **PASS on both folds**
+(the incumbent's own key through the overlay path reproduces the incumbent SIZED arm with
+Δsize = 0 and ΔΣ signed_ret = 0). Fallback trades: F0 104 of 2,009 (5.18%), F1 118 of 1,406
+(8.39%), both under the amended cap.
+
+| | F0 (166 clusters) | F1 (93 clusters) | F0+F1 pooled (259) |
+|---|---:|---:|---:|
+| incumbent SIZED, net per notional @14 | −0.57 | +43.56 | — |
+| **X3 − incumbent, per notional** | **−3.71 [−9.73, +2.31]** | **+0.06 [−6.57, +6.69]** | **−2.24 [−6.81, +2.33]**, se 2.33 |
+| seed-numbers s1 / s2 / s3, pooled | | | −4.91 / −2.11 / −0.14 → median −2.11 |
+| E: ladder's own worth (incumbent − flat, same entries) | −3.78 [−7.38, −0.19] ⚠ | −8.99 [−20.39, +2.41] ⚠ | **+8.05 [−0.08, +16.17]** |
+| ablation rv_1d − incumbent (information) | −3.51 [−12.06, +5.04] | +1.80 [−7.95, +11.54] | −0.40 [−6.71, +5.91] |
+| mean size, X3 / incumbent | 1.158 / 1.155 | 1.376 / 1.405 | 1.248 / 1.258 |
+| max drawdown @14, X3 / incumbent / flat | −3.45 / −3.03 / −2.59 | −4.62 / −4.65 / −2.80 | |
+
+⚠ The E row's per-fold cells are printed as *flat − incumbent* by the harness's arm line
+(sign reversed relative to the pooled cell, which is incumbent − flat); read them as the
+ladder being worth **+3.78 on F0 and +8.99 on F1**.
+
+**The fits.** Held F0 ← fit on F1: 555,204 rows, 51 rounds, winsor 7.30; held F1 ← fit on
+F0: 556,140 rows, 77 rounds, winsor 7.26. Gain share, both fits: `hour_utc` 26–33%, `dow`
+16–20%, `vol_expansion` 11–15%, `btc_absret_1d` 4.5–14.7%, `rv_7d` 8–10%; everything
+cross-sectional under 7%, `xs_disp_1h` 1.3–1.6%. The model learned **volatility seasonality**
+— time of day and day of week dominate — plus vol expansion.
+
+**Exploration gate: NOT PASSED** (pooled −2.24 ≤ 0; median seed-number −2.11 ≤ 0). **§9.6
+closes here; F2 and F3 were not loaded.** The forecast confirmation MDE, printed for the
+record, was 4.35 bps per notional.
+
+**Reading, in plain terms.** On the hand-written rule's own trades, sizing by a fitted
+prediction of the next four hours' move is **no better than sizing by BTC's trailing 24-hour
+move** — slightly worse on the 2026 fold, identical on the 2025–26 fold. The design was
+well-powered because both arms take the same trades: the pooled interval's upper bound is
++2.3 bps per notional, so it **excludes an improvement the size of the ladder itself (+8.05
+here, +10.35 in M3_2 §D1)**. Under the negative-results discipline this is a detected absence
+of a ladder-sized gain, not "not detectable". Two supporting facts: the no-model ablation
+(own-pair trailing vol as the key) lands at −0.40, so no key tried here beats the incumbent's;
+and the model's gain sits in hour-of-day and weekday, which are known to the incumbent's key
+only implicitly — knowing *when* magnitude is seasonally high did not turn into better sizing
+on these entries. Volatility clusters; the trailing proxy already captures what a magnitude
+model of these observables can see.
+
+**What closes and what would revive it.** 🔴 Closed on these folds: no second feature list,
+target, model setting or key on F2/F3 (§9.6 as written). The one observation carried forward
+is exploratory-lane only (M3_PROTOCOL §8.2): the magnitude model's importances say seasonality,
+which is a candidate *entry-hour* or *sizing-hour* observable that §9.2 already tested for
+direction (NOT CONFIRMED) — it is not re-opened by this. Revival trigger: a magnitude
+observable the dumps cannot supply (book depth or trade-flow over the fold era, once it exists
+inside the training window — the same ≈2027 calendar as everything else book-shaped), or the
+forward ledger's own R0 reading of the ladder at 50-trade steps (M3_5 §4.3). X4 (dynamic
+exits from the side-table) is the next BACKLOG item and is independent of this result.
+
+---
+
+**The registration as written on 2026-09-15, before the run:**
 
 **Written 2026-09-15, after X1 read WORSE and before any number of this section was
 computed. Vadim chose X3 the same day (BACKLOG "new experiment ideas").** Harness
