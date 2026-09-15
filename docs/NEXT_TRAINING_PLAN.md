@@ -433,10 +433,10 @@ it is not what R1 tests, because R1 has one variable already.
 
 ## §2 — THE RUN QUEUE
 
-**One registered experiment is queued: X0 + X1, six serial GPU runs (below).** Everything
-else open or parked is in [BACKLOG.md](./BACKLOG.md), which is the list to read — not this
-section. M2's §5 freeze is reopened for this one lever only, under the feature row's own
-reopening clause, and the freeze's wording is amended there with the date and the evidence.
+**Nothing is queued.** X0/X1 and X2, the two levers the freeze was reopened for, both ran and
+both closed WORSE (below); §5's freeze is re-sealed and its only reopening condition is §1.7's
+(≈2027). Everything else open or parked is in [BACKLOG.md](./BACKLOG.md), which is the list to
+read — not this section.
 
 ### 🟢 X0 / X1 — the cross-sectional block, separated. CLOSED 2026-09-15: **WORSE** (−0.021)
 
@@ -621,7 +621,58 @@ the table above) — bring the six logs, not a summary of them.
   split boundary moved back; they are not a change to M2 and they do not reopen §5.
 * **B3c**, the book-era 15m re-test — one CPU run on `gcp_gbt.sh`, parked until 2026-11-02 (below and in BACKLOG.md).
 
-### 🟡 X2 — volatility-normalised training labels. REGISTERED 2026-09-15, nothing run
+### 🟢 X2 — volatility-normalised training labels. CLOSED 2026-09-15: **WORSE** (−0.010)
+
+**In plain terms.** The idea was to stop calling every calm-market move "flat", so the model
+would learn direction on calm days too. It did not help: the model trained this way memorised
+its training data within 4–9 epochs (X0 holds out for 21–31), and its accuracy on the same
+validation period, scored the same way, is lower in all three seeds. Its best top-2% trades
+earned +8.7 bps gross (before costs) against the control's +10.9 — no better, within noise.
+Nothing served changes; M2 stays frozen.
+
+**Result, read 2026-09-15** (`logs/X2_s1..3.log`; s1/s2 on `03d7a22`, s3 on `150d37f` — no
+change under `ml/` or `scripts/` between them). All three pass §0.4 acceptance: `Split` line
+identical to X0's (`train=3724724 val=931182 | val [2025-12-14 09:35 → 2026-09-09 20:05 UTC]`),
+`Feature groups: legacy -> 19 columns`, `Pair embedding: ON dim=8`, the four label knobs
+resolved, and the `Labels:` line with k = 0.4076 / 0.4047 / 0.4019 and flat volnorm within
+0.0002 of flat fixed at every horizon (0.4153/0.4155, 0.4103/0.4105, 0.3745/0.3747).
+
+| run | run id | epochs | all-epoch mean LB | plateau n / mean | selected | cov 0.02 gross bps/trade, 240m |
+|---|---|---:|---|---|---|---:|
+| X2 s1 | `20260915T015514Z` | 24 | 0.5117 | 6 / 0.5287 | ep 4 (0.5444) | +9.73 (931) |
+| X2 s2 | `20260915T051139Z` | 28 | 0.5144 | 7 / 0.5313 | ep 8 (0.5477) | +4.12 (846) |
+| X2 s3 | `20260915T121504Z` | 24 | 0.5212 | 3 / 0.5243 | ep 4 (0.5479) | +11.55 (973) |
+
+- **The pre-registered fallback fired:** every X2 plateau is shorter than 15 epochs (6 / 7 / 3),
+  so both families are read on the all-epoch mean. X2 = **0.5158** (between-seed sd 0.0049);
+  X0 = **0.5254** (sd 0.0011). **Contrast X2 − X0 = −0.0096**, ≈ 3.3σ on the two families'
+  own spread (≈ 3.7σ on the registered 0.0026), every X2 seed below the X0 mean → **WORSE.**
+  It lands 0.0016 past the −0.008 line, under one SE — but FLAT and WORSE license the same
+  thing, and MOVED (+0.008) is excluded by ≈ 6σ, so the decision does not hang on that margin.
+- **Not deciding, reported for completeness:** the plateau-mean read gives +0.002 (0.5281 vs
+  0.5258), on 3–7 early epochs that §1.6 says are not comparable with X0's 21–31; the selected
+  (max) epoch is below X0's in all three seeds (0.544–0.548 vs 0.549–0.550).
+- **Mechanism — memorisation, earlier than any 19-column run:** `loss_tr` leaves 1.78 at epoch
+  7 / 9 / 4 and falls to ≈ 1.25 by the stop, and the fixed-label cov-0.05 LB decays with it to
+  ≈ 0.50–0.52. This is a training-set fact, not an artefact of `loss_va` being scored on the
+  fixed labels: X0 s2/s3 end at `loss_tr` 1.65 / 1.73. A plausible reading (a hypothesis, not
+  tested): dividing by a calm day's small σ turns noise-sized moves into directional labels,
+  which are easy to memorise and carry no forward information.
+- **Secondary reading (not deciding):** pooled cov-0.02 gross on the 240m head, X2 **+8.65**
+  over 2,750 trades vs X0 **+10.90** over 3,231 — same direction, well inside one SE (~5 bps).
+- **Class mix (`3cls_pred`, reported as registered):** the hoped-for "fewer flats" did not
+  appear while the head was useful — over the plateau epochs X2 predicts flat on 80–90% of val
+  bars vs X0's ≈ 62%; the mix only turns to ≈ 30% flat once memorisation starts. The checkpoints
+  are long-skewed at their served gates (s2: 52 longs / 0 shorts; s3: 3 trades at gate 0.769).
+- **Expectation recorded before the run was FLAT;** it came back one bucket lower.
+
+**What this licenses (as pre-registered):** the label row joins §5 and the M2 freeze is
+re-sealed with §1.7's reopening condition. Nothing licenses a fourth seed, another k rule,
+another window or a second label mode. The X2 checkpoints and dumps stay in the bucket
+unregistered; no `x2` era is added to `m3/dumps.py`.
+
+*The registration as written on 2026-09-15 follows, unchanged, as the record of what was fixed
+before the logs were read.*
 
 **The question.** The 3-class label calls a 4-hour move "flat" when it is inside a fixed
 ±0.6% band (`FLAT_TH_4H`) in every regime. In calm months almost every bar is therefore flat
@@ -748,7 +799,8 @@ laptop's `ml_analysis` container.
 | **Encoder capacity / layers / hidden** | 🔴 **CLOSED ON MEASUREMENT, 2026-08-23 — R3a and R3b both ran** | It was reopened once, on the one legitimate basis (the plateau-restricted mean resolves ~0.01, so a single run can now decide), and the bracket was run as designed. **Both arms are flat on the low side**: 128 units → plateau mean 0.5185, 32 units → 0.5199, against 0.5239 (between-seed sd 0.0032). Neither approaches the +0.011 the pre-registration required. The bracket also refutes the *shape* of the hypothesis, not just its size: going up produces pure memorization (`loss_tr` 1.72 → 0.888 with `loss_va` never reaching baseline, brier 0.419), and going *down* to a quarter of the parameters changes nothing. There is no monotone curve to climb, so **no third run is justified and this is closed for good.** §1.9 |
 | **Training data volume / pair count** | **Closed (new, 2026-08-22)** | O8 added ADA/AVAX/LINK/XRP for 4.59M samples, +58%, the largest data increase available without new *kinds* of data. Re-aggregated onto the original 8 pairs it is inside the 3-seed family's spread at every coverage (+23.9 / +21.3 / +6.8 vs +19.4 / +22.0 / +8.9), and the pair-mix-corrected plateau mean is ≈0.512 vs 0.5239. Crypto pairs are highly correlated, so 58% more *rows* is far less than 58% more independent observations — the effective-sample gain was small and the measured gain is zero. Do not start a pair-count ladder *as a data experiment*. 🟢 **Amended 2026-08-27; both halves are now closed.** Pair count as *traded universe* is a genuinely different lever from pair count as *training data*, and it was tested on its own: the T-wave ran two more 12-pair seeds and the single-seed "+7.5 net bps/trade" **did not replicate**, then T6 ran the fair comparisons — trade-count-matched, cut-matched, cap-re-tuned — and put the effect within a couple of bps of zero in every one, against a data-resolution limit of ±37 bps. **The traded-universe question is closed as *undecidable on this evaluation period*, not as decided against.** ⚠️ This row read "the incumbent 8-pair universe stands" until 2026-08-29; it no longer does — **the served universe is twelve**, once every added pair carried its own measured crossing cost. What stays closed is the *question*, not the universe. §1.9 and §1.10 in [archive/TRAINING_HISTORY.md](./archive/TRAINING_HISTORY.md), `docs/T6_RESULTS.md` |
 | **Magnitude / cost-shaped training losses (`DIR_MAG_WEIGHT`)** | **Closed (new, 2026-08-23)** | R2 was the second and better-designed attempt at teaching M2 about economics rather than accuracy (N3's selection-time cousin was the first, closed 2026-08-18). It ran correctly — `at_clip` under 1%, `scale` ≈ 0.98, `mean\|r\|` rising with horizon — and it lost gross bps/trade at every coverage while driving brier from 0.250 to 0.316 and flattening `emp_up` to ≈0.48 in all ten bins. The mechanism generalizes past this one knob: **up-weighting large moves teaches the head that "confident and large" is the same axis as "confident and correct", and it is not.** Position sizing by expected move magnitude is M3's job and belongs in the policy, where it can be applied without corrupting the probability M2 exists to emit. §1.9 |
-| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired.** ⚠️ *Amended 2026-09-13, resolved 2026-09-15:* reopened for **one** lever, X0/X1 in §2, under the feature row's own "genuinely external information" clause and on new evidence (B3's O5). **X1 came back WORSE (−0.020, §2) and the freeze is re-sealed.** Nine levers tested one at a time, one moved. ⚠️ *Amended again 2026-09-15:* reopened for **one** further lever, X2 (§2, volatility-normalised training labels), funded by Vadim as the last offline M2 lever with a rationale and registered before any run; its result re-seals the freeze either way. After X2 the only reopening condition is §1.7's | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
+| **Volatility-normalised training labels (`LABEL_MODE=volnorm`)** | **Closed (new, 2026-09-15) — WORSE** | X2 replaced the fixed ±0.6% flat band with a band in units of each pair's trailing one-day σ (k derived from the fixed label's flat share on the train window, so the class balance was unchanged), while selection and evaluation stayed on the fixed labels. Against a same-snapshot 3-seed control: **−0.0096** all-epoch mean LB (fallback read, every plateau under 15 epochs), every seed below the control, cov-0.02 gross +8.7 vs +10.9. `loss_tr` collapses from epoch 4–9, earlier than any 19-column run. The mechanism is the opposite of the hope: rescaling by a calm day's σ makes noise-sized moves directional, which the model memorises. It is the training-target cousin of the magnitude-loss row above — both try to change *what* M2 learns from calm vs volatile bars, and both lose. Do not try another k rule, vol window or label mode; the voided triple-barrier (`E3-tb`) is not reopened by this either. §2 |
+| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired.** ⚠️ *Amended 2026-09-13, resolved 2026-09-15:* reopened for **one** lever, X0/X1 in §2, under the feature row's own "genuinely external information" clause and on new evidence (B3's O5). **X1 came back WORSE (−0.020, §2) and the freeze is re-sealed.** ⚠️ *Amended again 2026-09-15, resolved the same day:* reopened for **one** further lever, X2 (§2, volatility-normalised training labels), funded by Vadim as the last offline M2 lever with a rationale. **X2 came back WORSE (−0.010, §2) and the freeze is re-sealed.** Eleven levers tested one at a time, one moved. The only reopening condition is §1.7's | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
 | Full architecture swap (transformer / TCN) | **Closed, and reaffirmed 2026-08-22** | Was gated behind O3; O3 came back negative. The reopening condition written in 2026-08-19 was "if richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit" — Q3 and R1 have now *both* run and the failure looks like the opposite: the model already memorizes the training set the moment it is handed anything easy (`loss_tr` 1.70 → 1.13 in R1), while its validation loss never improves. That is an **input** limit and an SNR floor, not a modelling limit. A higher-capacity family would make it worse, not better. **Do not write a transformer.** 🔴 **Reaffirmed again 2026-08-23: R3a ran the two-run bracket's upward arm and produced exactly this prediction** — `loss_tr` 1.72 → 0.888 with `loss_va` never once reaching the baseline's level, and the worst calibration in the ledger. More capacity of any kind makes this problem worse. There is no remaining capacity question. |
 | Confidence calibration / temperature / focal loss | **Closed** | F4's head is *over*-confident (`[0.60,0.70)` bin mean_pred 0.636 vs empirical 0.547; N3's is 0.609 vs 0.521). Sharpening an over-confident head is the wrong direction. |
 | Raising `GATE_THRESHOLD` as an experiment | **Superseded by C1+C2** | The served gate is 0.58 and eval now reports there. Derive the operating point from the fixed-coverage P&L table, not from another sweep. |
@@ -805,8 +857,8 @@ a loop or a "launch both" instruction, and state the total wall clock when propo
 replicates.
 
 ⚠️ Every new training run overwrites `checkpoints/latest.pt`. **`latest.pt` is currently
-Q3's checkpoint — the 30-column model whose calibration is inverted (§1.6) — and must not be
-promoted.** C13 made `--checkpoint <key>` required, so naming a key explicitly is now the
+X2 s3's checkpoint (`m2_multi_20260915T121504Z_150d37f5.pt`, volnorm labels, closed WORSE in
+§2) and must not be promoted.** C13 made `--checkpoint <key>` required, so naming a key explicitly is now the
 only way to promote at all. The checkpoints you may actually want:
 
 | run | key |
