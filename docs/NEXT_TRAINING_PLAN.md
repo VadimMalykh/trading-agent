@@ -696,7 +696,8 @@ FLAT / WORSE → the label row joins §5 and the freeze is re-sealed. Nothing in
 a fourth seed, another window, another k rule or a second label mode.
 
 **Commands — Vadim runs these; serial, one at a time, each after the previous reports DONE.**
-`<12>` is the launcher's incumbent list.
+(The pair list is spelled out: a `<12>` placeholder is a zsh redirection and aborts the
+whole pasted block — 2026-09-15.)
 
 ```sh
 # 0. the volnorm code must be on main first (the train VM clones GIT_REF=main)
@@ -705,7 +706,8 @@ git log --oneline -1 -- ml/train/data/dataset.py    # must show the volnorm comm
 
 # 1. do NOT clear the dump cache — X2 must train on X0's snapshot
 export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
-export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 TRAIN_PAIRS=<12>
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
 export DUMP_MAX_AGE_MIN=100000
 export LABEL_MODE=volnorm VN_VOL_WINDOW=288 VN_MIN_SIGMA=1e-5 VN_CALIB_END=2025-12-14T09:35:00Z
 
