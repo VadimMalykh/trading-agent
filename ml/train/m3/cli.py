@@ -1117,6 +1117,13 @@ def cmd_learnfolds(args) -> int:
                              config=args.config)
 
 
+def cmd_magsize(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.6 — X3: predicted-magnitude sizing on the folds."""
+    from . import magsize
+    return magsize.report(WINNER_SPEC, stage=args.stage,
+                          exploration_recorded=args.exploration_recorded)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1668,6 +1675,17 @@ def main() -> int:
     lf.add_argument("--config", default=None,
                     help="--stage confirm only: the configuration label transcribed from §9.5")
     lf.set_defaults(fn=cmd_learnfolds)
+
+    ms = sub.add_parser("magsize", help="WALKFORWARD_PROTOCOL §9.6 (X3): the incumbent's size "
+                        "ladder keyed on an out-of-fold PREDICTED forward 4h magnitude instead of "
+                        "trailing BTC |return|; same entries, same ladder; explore on F0+F1, "
+                        "confirm once on F2+F3 (needs M3_ERA=walkforward)")
+    ms.add_argument("--stage", choices=["explore", "confirm"], required=True,
+                    help="explore = fit F1->score F0 and F0->score F1; confirm = F2+F3 once")
+    ms.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: the exploration table, MDE forecast and "
+                         "gate verdict are written in §9.6")
+    ms.set_defaults(fn=cmd_magsize)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

@@ -19,3 +19,9 @@ pyarrow>=14.0.0
 # trustworthy at G = 22. Hand-rolling an inverse-t is exactly the kind of numerical code
 # that is wrong in the tails, which is where this one is read.
 scipy>=1.11.0,<2.0.0
+
+# lightgbm is here for ONE thing: WALKFORWARD_PROTOCOL §9.6 (X3) fits a small tree model for
+# the forward 4h magnitude as the key of the size ladder. Same library as
+# gbt_baseline.py (BOOK_ERA_PLAN O5), so the two importances are comparable. Needs libgomp1
+# at runtime (Dockerfile.analysis). pandas stays pinned below 3.0 — nothing here changes it.
+lightgbm>=4.1.0,<5.0.0

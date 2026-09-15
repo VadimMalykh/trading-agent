@@ -12,6 +12,10 @@ FROM python:3.11-slim-bookworm
 
 WORKDIR /workspace/train
 
+# libgomp1: LightGBM's OpenMP runtime (WALKFORWARD_PROTOCOL §9.6, X3). Nothing else.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.analysis.txt .
 RUN pip install --no-cache-dir -r requirements.analysis.txt
 

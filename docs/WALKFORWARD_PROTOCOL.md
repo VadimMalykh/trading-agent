@@ -1175,3 +1175,146 @@ dumps carry has now been tried three ways; what has not been tried is an observa
 the dumps cannot supply — the price/funding side-table or book features over the fold era
 (BOOK_ERA_PLAN, the parked book-era wave) — under a fresh registration. §9.4's fundability
 reading stands as a statement about power; §9.5 is the statement about this class.
+
+### 9.6 X3 — predicted-magnitude sizing on the folds: the registration
+
+**Written 2026-09-15, after X1 read WORSE and before any number of this section was
+computed. Vadim chose X3 the same day (BACKLOG "new experiment ideas").** Harness
+`ml/train/m3/magsize.py`, run as `M3_ERA=walkforward ./scripts/m3.sh -m m3 magsize --stage
+explore` and then, only if the exploration gate passes and its table is recorded here,
+`--stage confirm --exploration-recorded`. **CPU only, inside the analysis container**; the
+image gains `lightgbm` (and `libgomp1`) for it, and `m3 validate` must pass on the rebuilt
+image **before** anything below runs (M3_PROTOCOL §8.3 C3).
+
+**The question.** The incumbent's size ladder — M3's largest measured effect (M3_2_RESULTS
+§D1: pooled +13.82 vs +7.24 per trade, +10.35 per unit of notional at taker) — is keyed on
+`btc_absret_1d`, BTC's *trailing* 24-hour |return|: a backward-looking proxy for "the next four
+hours will move". Every feature family this project has measured predicts **magnitude, not
+direction** (B1's VOL-PROXY, BOOK_ERA_PLAN §R.1; O5's `xs_disp_1h`; X1, which added nothing
+directional). **On the incumbent's own trades, does a ladder keyed on a *forward-looking
+predicted* magnitude earn more per unit of notional than the same ladder keyed on the
+trailing proxy?** Nothing about *which* bars are traded changes; only how much.
+
+**Why this is not a re-proposal.** M3-3 and §9.5 fitted the *entry* (and a confidence-keyed
+size, S2) and lost three times; "a learned M3 policy" is a tombstone. X3 fits neither entry
+nor confidence: the entries are the hand-written rule's, unchanged, and the fitted quantity is
+a market observable — the thing §1.8 said M2 should *emit* and the policy *condition on*. It is
+the ladder with a different key, not a different policy.
+
+**One change (§0.2 of NEXT_TRAINING_PLAN, applied here).** Both arms are
+`backtest.PolicySpec` with the incumbent's fields — coverage 0.02 on the 240m head, hold 240,
+side from the model, no cap, `regime_col="btc_absret_1d"` kept as a *condition without a
+threshold* so a bar with no 24-hour BTC lookback is excluded from **both** arms exactly as the
+incumbent excludes it. The incumbent arm sets `size_by_regime=True`; the X3 arm sets
+`size_by_regime=False, size_col="xsize"` and receives its sizes through `backtest.run`'s
+`overlay`. **The mapping is identical on both arms:** bar-quintile edges at [0.2, 0.4, 0.6,
+0.8] of the key over the scored fold-seed's own bar population, size `(q + 1) / 3` ∈ {⅓, ⅔,
+1, 4⁄3, 5⁄3}. **Only the key differs.**
+
+**The key.** ŷ = the out-of-fold prediction of the pair-normalised forward magnitude
+**m = |fwd_ret₂₄₀| / rv_7d**, where `fwd_ret₂₄₀` is the dump's own 240m label (the return the
+harness books) and `rv_7d` is `regime.build`'s per-pair sd of trailing-60m returns over 7 days.
+Normalising by the pair's own vol is what keeps the key a *regime* observable like the
+incumbent's — it ranks **times and market states**, not pairs; an un-normalised |move| would
+size 1000PEPE at 5⁄3 forever, which is a per-pair leverage tilt and a different lever. m is
+winsorised at the training set's 99th percentile before fitting.
+
+**The observation vector, fixed now (13 columns; the list is the registration).** All are
+built from the dumps alone, lookahead-free, by `regime.build` / `regime.trailing_return`
+(Q1's construction, NEXT_TRAINING_PLAN §1.8) — no DB, no export:
+
+| # | column | what |
+|---|---|---|
+| 1 | `btc_absret_1d` | the incumbent key — included so the model can only add to it |
+| 2–4 | `rv_1d`, `rv_7d`, `rv_30d` | own-pair realised vol of trailing-60m returns |
+| 5 | `vol_expansion` | `rv_1d / rv_7d` |
+| 6–8 | `abs_trail_60m`, `abs_trail_240m`, `abs_trail_1440m` | own-pair trailing \|return\| |
+| 9 | `xs_disp_4h` | cross-sectional sd of trailing-240m returns at the bar (`regime.build`) |
+| 10 | `xs_disp_1h` | cross-sectional sd of trailing-60m returns — O5's largest-gain feature |
+| 11 | `xs_absmean_4h` | cross-sectional mean of \|trailing-240m return\| |
+| 12–13 | `hour_utc`, `dow` | intraday and weekly volatility seasonality |
+
+🔴 **Not in the vector, on purpose:** the model's confidence (that is M3-3's S2, closed), the
+pair identity (see the key), any book scalar (does not exist before 2026-07-17), and the
+label's own sign.
+
+**The model, fixed now.** LightGBM regression, L2 objective; `num_leaves 15, learning_rate
+0.05, min_data_in_leaf 5000, feature_fraction 0.8, bagging_fraction 0.8, bagging_freq 1,
+lambda_l2 10, seed 20260915, deterministic`. The number of rounds (≤ 2000) is chosen **inside
+the training folds only**: fit on the earlier calendar half of the training bars, early-stop
+(patience 50) on the later half, then refit on all training bars for that many rounds. The
+held-out fold is never consulted. The target and every feature are checkpoint-independent, so
+a fold's three seeds are **deduplicated on `(pair, ts)`** for the fit and receive the same key.
+Training bars are those with a complete vector and a target; a scored bar whose key is missing
+(the first 7 days of a fold's window have no `rv_7d`) **keeps the incumbent's size** — a
+fallback, counted and printed; if it exceeds 5% of either fold's trades the run stops and this
+section is revisited before anything is read.
+
+**The shape, under §9.0 rule 2 (as §9.5).** `explore` — F0 + F1, two-unit leave-one-out: fit on
+F1's bars, score F0; fit on F0, score F1. `confirm` — F2 + F3, once: fit on F0 + F1 + F3, score
+F2; fit on F0 + F1 + F2, score F3. Every key is out-of-fold; every entry is the incumbent's.
+
+**The statistic, fixed now.** Contrast = **X3 − incumbent, net bps per unit of notional at
+taker 14** (Σ signed_ret·size / Σ size; the fee cancels exactly in the difference),
+day-clustered on exit days, by `walkforward.paired_notional_diff_bps` — the unit M3_5 §4.3 R0
+already uses for the ladder's forward A/B, and the only fair one when two arms take the same
+trades at different sizes. **Reported, not deciding:** the per-trade diff (confounded by mean
+size), each arm's mean size, each arm's net at 5 / 11.84 / 14 per notional, max drawdown per
+arm per fold (M3_2 §D1: sizing into volatility buys drawdown), the count of fallback trades,
+and the model's gain importances (which observables it leaned on — a reading for BACKLOG row 7).
+
+**The harness check, before any contrast is read (falsifiable, as M3_3_PROTOCOL §6 C2).** The
+key `btc_absret_1d` itself, fed through the very same overlay-and-ladder code, must reproduce
+the incumbent SIZED arm **exactly** on every fold-seed: identical trade count, identical Σ size
+and identical Σ signed_ret·size to 1e-9. If it does not, the harness is wrong and is fixed
+first; the registration does not move.
+
+**One ablation, for information only, exploration stage only, never selected:** the key
+`rv_1d` (the pair's trailing realised vol — no model). It answers "is a *model* needed, or would
+the obvious backward-looking own-pair proxy do?" If it beats the fitted key, that is a reason
+to write a future registration, nothing more (M3_PROTOCOL §8.2).
+
+**Exploration gate.** Passes iff the pooled F0+F1 contrast is **> 0** *and* is positive on the
+**median seed-number** (s1, s2, s3 each pooled across F0+F1). If not passed, the registration
+closes here and **F2/F3 are not read.** The exploration stage also prints the **forecast MDE
+for the confirmation shape**: SE of the F0+F1 contrast × √(D_F0+F1 / D_F2+F3), D = exit-day
+clusters of the incumbent, × 1.96 — recorded here before `confirm` runs. **E**, the reference
+effect, is the ladder's own per-notional worth on F0+F1 (incumbent SIZED − flat anchor), printed
+beside it; §9.4 measured it at +13.04 per trade.
+
+**Confirmation criterion, fixed now.** **CONFIRMED iff** the pooled F2+F3 day-clustered 95%
+lower bound of the per-notional contrast is **> 0** **and** the contrast is positive on the
+median seed-number. NOT CONFIRMED means "not detectable at this power" unless the interval also
+excludes E, in which case it is a detected absence.
+
+**What each outcome licenses.** CONFIRMED licenses *writing* a registration to serve the X3 key
+under M3_PROTOCOL §8.3 C1–C5 — its ladder edges re-derived on the served checkpoint's own
+split (C4), and the magnitude model evaluated live from candles on the serve side, which is an
+engineering item this section does not build. Nothing served changes on any outcome of this
+section, and the forward test is untouched. Gate not passed, or NOT CONFIRMED, closes X3 on the
+folds: 🔴 no second feature list, target, model setting or key may be tried on F2/F3; revival is
+more independent days (forward, or further folds under a new registration). The exploration
+stage's ablation and importances are exploratory-lane observations whatever the verdict.
+
+**Expectation, recorded before the run: FLAT-TO-SMALL-POSITIVE, not detectable at
+confirmation.** The trailing proxy is a good predictor of the next four hours' magnitude
+already (vol clusters), so the fitted key's advantage is whatever the cross-sectional and
+seasonal columns add on top — plausibly a few bps per notional against an F2+F3 MDE that §9.4's
+per-trade calibration suggests will be of order 15–25.
+
+**Commands.** In this order, from the laptop; each stage is one container run of minutes.
+
+```sh
+# 0. the image gains lightgbm — rebuild explicitly (m3.sh only builds when the image is missing)
+docker build -f ml/train/Dockerfile.analysis -t trading_agent-ml_analysis:latest ml/train
+./scripts/m3.sh -m m3 validate                                        # C3: must pass first
+
+# 1. exploration — F0 + F1 only
+M3_ERA=walkforward ./scripts/m3.sh -m m3 magsize --stage explore 2>&1 | tee logs/magsize_explore_$(date -u +%Y%m%d).log
+# record the harness check, the table, the MDE forecast and the verdict in this section
+
+# 2. confirmation — F2 + F3, once, only if the gate passed and the table above is written
+M3_ERA=walkforward ./scripts/m3.sh -m m3 magsize --stage confirm --exploration-recorded 2>&1 | tee logs/magsize_confirm_$(date -u +%Y%m%d).log
+```
+
+**Bring back:** the two logs. The read happens in this document, under the gate as written.
