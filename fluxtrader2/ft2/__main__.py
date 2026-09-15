@@ -48,7 +48,7 @@ def cmd_tape(args):
 
 def cmd_cost(args):
     from . import cost
-    cost.main(args.rest)
+    print(cost.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS))
 
 
 def main(argv=None):
@@ -71,8 +71,12 @@ def main(argv=None):
     t.add_argument("--workers", type=int, default=6)
     t.add_argument("--keep-zip", action="store_true", help="keep the raw zips (only for a short validation window)")
     c = sub.add_parser("cost", help="P1: price the trade → output/cost.md, data/cost_daily.parquet, data/cost_table.parquet "
-                                    "(--taker-bps --maker-bps --fee-source --symbols; see ft2/cost.py)")
-    c.add_argument("rest", nargs=argparse.REMAINDER)
+                                    "(see ft2/cost.py)")
+    c.add_argument("--taker-bps", type=float, default=5.0, help="per side; default: the published VIP 0 schedule")
+    c.add_argument("--maker-bps", type=float, default=2.0)
+    c.add_argument("--fee-source", default="Binance USDⓈ-M published VIP 0 schedule (0.020 % maker / 0.050 % taker), "
+                                           "no BNB discount — PENDING the account's tier from Vadim")
+    c.add_argument("--symbols", nargs="*")
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory,
             "archive": cmd_archive, "tape": cmd_tape, "cost": cmd_cost}[args.cmd](args)

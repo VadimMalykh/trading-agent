@@ -32,7 +32,6 @@ Round-trip totals (bps) in the summary table:
 """
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import numpy as np
@@ -375,15 +374,3 @@ def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str])
     OUT_MD.parent.mkdir(parents=True, exist_ok=True)
     OUT_MD.write_text(text)
     return text
-
-
-def main(argv=None):
-    p = argparse.ArgumentParser(prog="ft2 cost")
-    p.add_argument("--taker-bps", type=float, default=5.0)
-    p.add_argument("--maker-bps", type=float, default=2.0)
-    p.add_argument("--fee-source", default="Binance USDⓈ-M published VIP 0 schedule (0.020 % maker / 0.050 % taker), "
-                                           "no BNB discount — PENDING the account's tier from Vadim")
-    p.add_argument("--symbols", nargs="*")
-    a = p.parse_args(argv)
-    from .__main__ import PAIRS
-    print(run(a.taker_bps, a.maker_bps, a.fee_source, a.symbols or PAIRS))
