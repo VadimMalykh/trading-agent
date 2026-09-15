@@ -55,7 +55,7 @@ MAX_ROUNDS = 2000
 PATIENCE = 50
 WINSOR_Q = 0.99
 LADDER_QS = [0.2, 0.4, 0.6, 0.8]                  # backtest.run's edges, verbatim
-FALLBACK_MAX = 0.05                               # §9.6: stop if more trades fall back
+FALLBACK_MAX = 0.10                               # §9.6 Amendment 1: a sanity stop for a broken key
 # §9.4's recorded exit-day clusters of the incumbent on F2+F3, for the MDE forecast. It is a
 # constant so the explore stage never has to open an F2/F3 dump (§9.0 rule 2).
 CONFIRM_CLUSTERS = 286

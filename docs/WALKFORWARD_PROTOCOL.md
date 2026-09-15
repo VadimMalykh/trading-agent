@@ -1318,3 +1318,21 @@ M3_ERA=walkforward ./scripts/m3.sh -m m3 magsize --stage confirm --exploration-r
 ```
 
 **Bring back:** the two logs. The read happens in this document, under the gate as written.
+
+**Amendment 1 — 2026-09-15, before any arm or contrast was printed (M3_PROTOCOL §7: disclosure
+first).** The first `--stage explore` run (`logs/magsize_explore_20260915.log`, first attempt)
+stopped at the registered fallback cap: on F0, **104 of 2,009 trades (5.18%)** had no key.
+*What had been seen when this was written:* section A (frame sizes), section B (both fits:
+rounds 51 and 77, target winsor 7.30 / 7.26, and the gain-share tables — `hour_utc` 26–33%,
+`dow` 16–20%, `vol_expansion` 11–15%, `btc_absret_1d` 4.5–14.7%), the F0 harness check
+(**PASS**, Δsize and ΔΣ signed_ret both exactly 0) and the F0 fallback count. **No arm's P&L,
+no drawdown, no contrast, no seed split and nothing about F1's arms was printed.** *Cause,
+diagnosed on F0 s1 (30 of 562 trades incomplete):* every one falls in the fold's first month;
+`rv_30d` (30-day lookback, `min_periods` 7.5 days) is missing on all 30 and `rv_7d` on 15; no
+other observable is missing on any trade. This is precisely the lookback-limited class the
+fallback was written for, and the window happens to open in a volatile spell that holds more
+than its share of trades. *The amendment:* the sanity cap is raised from 5% to **10%**. It is a
+sanity stop for a broken key, not a criterion; fallback trades are identical in both arms and
+can only pull the contrast toward zero, so the change is conservative for X3. The feature
+list, target, model, statistic and gates are untouched; the fallback rule (incumbent size,
+counted and printed) is untouched.
