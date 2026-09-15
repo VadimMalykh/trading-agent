@@ -1525,3 +1525,29 @@ M3_ERA=walkforward ./scripts/m3.sh -m m3 exits --stage confirm --exploration-rec
 ```
 
 **Bring back:** the two logs. The read happens in this document, under the gate as written.
+
+**EXPLORATION (F0+F1), run 2026-09-15 — GATE PASSED; chosen: `persist05`.** Log
+`logs/exits_explore_20260915.log`. Harness checks: compounding max |Δ| 2.4e-8 (F0) / 6.0e-8 (F1)
+on every pair; the null configuration reproduces the incumbent on all six fold-seeds exactly
+(Δsize 0, ΔΣ signed_ret 0). Fallbacks: 0 in every arm.
+
+| config | mean/seed-day, F0+F1 | 95% CI | s1 / s2 / s3 | median seed | trades | mean hold | per trade (info) |
+|---|---:|---|---|---:|---:|---:|---:|
+| `flip02` | −1.30 | [−3.27, +0.67] | −6.16 / 0 / 0 | 0.00 | 3,417 | 240 m | −0.31 |
+| `flip05` | −1.39 | [−3.36, +0.57] | −6.61 / 0 / 0 | 0.00 | 3,417 | 240 m | −0.33 |
+| `persist02` | +18.44 | [−50.67, +87.56] | +22.15 / +21.22 / +26.37 | +22.15 | 2,564 | 320 m | +13.82 |
+| **`persist05`** | **+43.84** | **[−28.37, +116.05]** | +53.51 / +63.64 / +47.08 | **+53.51** | 2,244 | 406 m | +28.24 |
+
+Per fold, `persist05` − incumbent: F0 +4.96 [−23.97, +33.89] per seed-day (166 days), F1
++111.78 [−79.95, +303.50] (95 days). Exit mix of `persist05`: F0 ext1 20% / ext2 14% / timer
+66%; F1 ext1 25% / ext2 42% / timer 33%. The flip arms fired on 0.0–0.1% of trades — an
+opposite-side bar above the cut inside three hours of an entry essentially never happens, so
+the flip question is answered by absence, not by P&L. E (the incumbent's own mean net per
+seed-day on these folds): +109.04. **Forecast MDE for the confirmation shape: 70.28 bps per
+seed-day** (SE 35.85 × 1.96), against a chosen effect of +43.84 — the confirmation is
+under-powered for an effect of this size unless F2+F3 come in stronger.
+
+⚠️ *Recorded before confirm, as a caution and not a change:* three-quarters of the pooled
+effect comes from F1, the fold whose incumbent earns +308 per seed-day; a longer hold in a
+strongly trending era captures drift the timer forgoes. Whether that survives F2+F3 is exactly
+what the confirmation asks.
