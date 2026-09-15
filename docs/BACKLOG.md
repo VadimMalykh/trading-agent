@@ -48,6 +48,8 @@ number was read, each closed under its own gate** (rows in "new experiment ideas
 
 - **X6** price-path exits (volatility-scaled and trailing stops) → **gate not passed**: every
   stop loses to the four-hour timer; the live 2%/4% brake costs ~30 bps per notional on the folds.
+- **X7** a book observable as the size-ladder key → exploration gate **passed weakly**; the one
+  confirmation on untouched forward bars is parked to **2027-03-10** (BOOK_ERA_PLAN §R.4).
 
 **Mode: build, with the forward clock in the background.** **Needed from Vadim now: nothing.**
 No GPU run is queued. The forward test keeps running; ask in
@@ -240,6 +242,22 @@ anyone does: B3's gate is stated in **net bps at maker**, and the executor has *
 at all** (M3-5 §3.1) — so a maker-side pass is not executable today without building resting orders.
 Prefer framing a new registration on the **taker** line, or scope the maker work explicitly.
 
+🔴 **Power, measured 2026-09-15 before any registration was written — the model form is not
+decidable for years.** Asked to write this registration, Claude first measured the noise a 240m
+book-era model would be read against, using the F0 walk-forward models' own 240m trades on the book
+era (2026-07-27 → 09-07, the 8 book pairs, incumbent rule; no book feature involved). One model
+trades 2.0/day at cov 0.02 and 4.5/day at cov 0.05, per-trade sd ≈170 bps, and the day-clustered
+95% half-width of net bps/trade is **±47–49 over 42 days**, scaling as 1/√days: **±41–43 at 54 val
+days** (the 2026-11-02 split), ±23 at 180, ±16 at 365, ±11 at 730. Against a 14-bps taker line a
+model as good as the full-history LSTM (+22 gross) needs ≈500 val days to show it clears costs —
+book history reaching ≈2029 with an even train/val split. **So a standalone 240m book-era model
+must NOT be run alongside B3c in November: it cannot pass or fail.** Two forms are decidable
+sooner and are the ones to register instead: (a) book scalars as a **filter or size on the
+incumbent's own 240m trades** — a same-entries paired design (the X3/X6 statistic), which is B2's
+frame and shares its data; (b) book history inside the **full-history M2 training window**, §1.7's
+M2 reopening condition (≈2027). **Decided 2026-09-15: (a)** — registered as X7, BOOK_ERA_PLAN §R.4
+(row X7 in the experiment-ideas table). (b) stays with the M2 freeze row.
+
 ---
 
 ### ✅ Closed 2026-09-10 — the 2026-09-01 note that B1's blocker was the export, not the calendar
@@ -296,7 +314,7 @@ before it was written, so none re-proposes a closed lever. Every one needs a pre
 written before a number is read; GPU runs are serial. The forward test is untouched by all of
 them — they are offline.* **Needed from Vadim: nothing. X1 (WORSE), X2 (WORSE), X3 (gate not
 passed) and X4 (not confirmed, sign consistent; carried as the forward reading R5) are closed;
-X5 is built (`SPLIT_EMBARGO`, default off) and closed without a run. X6 (price-path exits) closed at its gate. Every idea in this table is now closed.**
+X5 is built (`SPLIT_EMBARGO`, default off) and closed without a run. X6 (price-path exits) closed at its gate. X7 (book-keyed sizing) passed its exploration gate weakly and is parked to its confirmation date, 2027-03-10.**
 
 | # | idea | what would be new | cost | grounded in | state |
 |---|---|---|---|---|---|
@@ -306,6 +324,7 @@ X5 is built (`SPLIT_EMBARGO`, default off) and closed without a run. X6 (price-p
 | **X4** | **Dynamic exits from the side-table** | Every hold is a fixed 240 minutes. M3-0b's price-path side-table makes signal-flip exits, hold extension while the signal persists, trailing stops and regime-conditional barriers scorable offline; M3_0B_RESULTS lists exactly these as untested. Gate must be net of the extra crossing. | CPU only | M3_0B_RESULTS §C4b: six fixed barriers all lost to the 4h hold, "trailing stops, vol-scaled bands and regime-conditional barriers stay untested" | 🟢 **CLOSED 2026-09-15 — NOT CONFIRMED on F2+F3, sign consistent — [WALKFORWARD_PROTOCOL §9.7](./WALKFORWARD_PROTOCOL.md)** (registered, built, explored, confirmed and read the same day). Scoped to the signal-conditioned half; the flip arms never fire (0.0–0.1% of trades); **`persist05`** — hold past 4 h while the model still agrees at the 5% cut, 12 h cap — passed the exploration gate (+43.8 per seed-day on F0+F1) and came back **+25.7 [−23.2, +74.7] bps per seed-day on F2+F3**: positive on all four folds and all three seeds, lower drawdown on every fold, lower bound below zero. Not resolvable offline (MDE ≈ 70). ⚠️ Trailing stops / vol bands / intrabar barriers were never in scope: the side-table starts 2025-11-15 and does not cover the folds; they need an export and their own registration. **Carried forward as R5 of M3_5 §4.3 (registered 2026-09-15, Vadim's yes):** `persist05` reconstructed as a counterfactual from `policy_bars`, read at the same 50-trade steps as R0–R4 by `./scripts/gcp_forward_ledger.sh`; nothing served changes. **Needed from Vadim: nothing** |
 | **X5** | **An embargo on the split** | 4h labels on 5m bars overlap 48 ways and the chronological split has no purge, so the last two days of train leak into val and early-stop selection is slightly optimistic. Hygiene, not edge; expected to move nothing. | a small trainer change; **no GPU run** (below) | standard purged-CV practice; not found anywhere in the project's docs | 🟢 **CLOSED 2026-09-15 — BUILT, NO RUN.** **Needed from Vadim: nothing.** `SPLIT_EMBARGO=1` (config.py, forwarded by `gcp_train.sh`, default 0) drops the train samples whose longest-horizon label reaches val — 288 bars per pair at 5m, 3,456 of X0's 3.72M; val is untouched, a new `Embargo:` log line reports the count, the checkpoint meta records `split_embargo_bars`. Synthetic check in `ml_trainer` (both split kinds): exactly 288 bars/pair dropped, every kept label ends before val start, off = no-op. **Why no control run:** the split already puts train strictly before val, so the leak is one-sided and touches only ≈ the first day of val (≈ 0.4% of val bars, ~170 of ~30k gated at cov 0.05). Even if every one of those were predicted perfectly, dir_acc would move ≤ ≈ 0.003, and the realistic effect is far below X0's between-seed noise — a GPU A/B could only measure zero. **Revival trigger:** switch it on in the recipe of the next registered M2 family (§1.7, ≈2027) as part of that registration; it is off for every banked recipe and refused on walk-forward folds unless `ALLOW_RECIPE_DRIFT=1` |
 | **X6** | **Price-path exits: volatility-scaled and trailing stops** | X4 tested exits driven by the model's later opinion; the *price* half — trailing stops, vol-scaled bands, regime-conditional barriers — was out of scope because the only 5m price path started 2025-11-15. Fixed-% barriers lost to the timer (M3_0B §5), but no vol-scaled or trailing stop was ever scored, and a vol-scaled stop is what a real account would run as protection | CPU only; one export (done) | M3_0B_RESULTS §5 "untested"; WALKFORWARD §9.7 "needs the fold-era side-table first" | 🟢 **CLOSED 2026-09-15 at the exploration gate — [WALKFORWARD_PROTOCOL §9.8](./WALKFORWARD_PROTOCOL.md)** (registered, built, run and read the same day). **Needed from Vadim: nothing.** All five stops lose to the four-hour timer on every seed and both folds; the best (`stop_v25`, a stop at 2.5× the coin's normal 4-hour move) is **−9.42 [−20.29, +1.46] bps per notional**, and the tighter and trailing stops lose detectably (−12.7 to −17.7, intervals below zero). F2/F3 not read. Same ordering as M3-0b: the less a stop fires, the less it costs. **Also measured:** the live 2%/4% brake costs **−29.5 [−56.5, −2.5] per notional** on F0+F1 (brake row below). *Background:* fold-era 5m candles exported (`output/wf_side`, 2024-10 → 2026-09) and accepted against all twelve fold dumps exactly; harness `m3 pathexits`. **Revival trigger: none on these folds**; a stop that is not a price rule (e.g. a regime observable) would be its own registration |
+| **X7** | **A book observable as the size-ladder key** | The ladder sizes every trade by BTC's trailing 24h move, which pointed the wrong way on the book era (BOOK_ERA_PLAN §R.1). Swap only the key for one of §B2's ten registered market-wide book observables; identical trades, so the paired per-notional statistic resolves it far sooner than any book-era model | CPU only; explore now on the book era, confirm once on forward `policy_bars` | measured power (BACKLOG "tradeable horizon" row): re-size ±24 on one checkpoint over 37 days, ±11 at 180; B2's side-finding | 🟡 **PARKED — calendar: on or after 2027-03-10** ([BOOK_ERA_PLAN §R.4](./BOOK_ERA_PLAN.md)). **Needed from Vadim: nothing. Claude reads the confirmation once, on or after 2027-03-10**, for key **`book_composite_lo`**, on the served checkpoint's forward `policy_bars` from 2026-09-11 (the loader is built then, from §R.4's confirmation paragraph; `m3 bookladder --stage confirm` refuses before the date). *Background:* exploration gate **passed weakly** 2026-09-15 on the book era — chosen key +13.46 [−7.97, +34.89] per notional vs the incumbent ladder at cov 0.05, but only +5.1 vs flat sizing, and the same key is −12.0 at cov 0.02; the incumbent ladder is itself −8.4 vs flat there. Forecast confirmation MDE 11.1. Expectation: not detectable |
 
 ---
 

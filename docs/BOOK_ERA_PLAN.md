@@ -368,6 +368,151 @@ regime hypothesis is the one book item still standing.
 
 ---
 
+### §R.4 — X7: a book observable as the size-ladder key. 🟡 EXPLORATION GATE PASSED 2026-09-15 (weakly); confirmation parked to 2027-03-10
+
+**RESULT, read 2026-09-15.** Log `logs/bookladder_explore_20260915.log`. Population: s1/s2/s3,
+≈97.8k bars × 8 pairs, 2026-07-18 21:15 → 2026-09-03. **Harness check PASS at both coverages:**
+every key arm and the flat arm take the incumbent's trades exactly (670 at cov 0.05, 304 at 0.02),
+all sizes on the ladder.
+
+At **cov 0.05 (primary)** — incumbent net **−39.51** per notional at taker 14 over 43 days; E, the
+incumbent ladder's own worth (incumbent − flat), **−8.38 [−20.62, +3.86]**:
+
+| key | vs incumbent | 95% CI | s1 / s2 / s3 | vs flat |
+|---|---:|---|---|---:|
+| **`book_composite_lo`** (chosen) | **+13.46** | [−7.97, +34.89] | +9.46 / +19.28 / +8.12 | **+5.08** |
+| `trade_vol_mkt_lo` | +10.56 | [−9.67, +30.79] | +9.32 / +13.94 / +2.83 | +2.17 |
+| `oi_chg_mkt_lo` | +10.25 | [−13.03, +33.53] | +4.69 / +11.18 / +11.16 | +1.86 |
+| `spread_bps_mkt_lo` | +10.10 | [−0.90, +21.09] | +8.05 / +13.74 / +9.39 | +1.71 |
+| `trade_count_mkt_lo` | +9.17 | [−12.21, +30.56] | +7.52 / +13.47 / −0.13 | +0.79 |
+| `trade_count_mkt` | +8.03 | [−2.23, +18.29] | +7.22 / +12.38 / +3.28 | −0.35 |
+| `trade_vol_mkt` | +7.39 | [−2.75, +17.53] | +6.55 / +12.14 / +1.40 | −0.99 |
+| `oi_chg_mkt` | +6.39 | [−4.54, +17.33] | +10.44 / +14.14 / −7.35 | −1.99 |
+| `spread_bps_mkt` | +5.61 | [−11.41, +22.64] | +5.79 / +10.35 / −5.77 | −2.77 |
+| `book_composite` | +5.55 | [−4.50, +15.60] | +6.18 / +9.04 / −1.83 | −2.83 |
+
+**Verdict under §R.4 as written: GATE PASSED** — chosen `book_composite_lo` (size up when the
+market-wide mean percentile of spread, trade count, trade volume and OI change is *low*),
++13.46 with a positive median seed. Forecast confirmation MDE on the served checkpoint over 180
+days: **11.13** bps per notional.
+
+**Read it with three cautions, all visible in the log, none of which changes the verdict:**
+
+1. **Most of the gain is "not the incumbent", as the expectation said.** Every one of the ten keys
+   beats the incumbent, because the incumbent ladder itself is −8.4 against flat sizing on this
+   era. Against **flat**, the chosen key is only **+5.08**, and half the keys are below flat.
+2. **It flips at cov 0.02 (information only).** The same key is **−11.97 [−26.63, +2.68]** there,
+   negative on all three seeds, while the high-side `book_composite` is +10.48. At 304 trades that
+   is noise-sized, but it means the direction of this key is not settled by the book era.
+3. **The strategy loses on this era at cov 0.05** (−39.5 per notional) — the ladder is being tuned
+   on a losing population, which is the whole reason the answer must come from untouched bars.
+
+**What follows, as registered.** Nothing is exported now. The confirmation is read **once, on or
+after 2027-03-10**, for **`book_composite_lo`** only, on the served checkpoint's forward
+`policy_bars` from 2026-09-11 06:05 to 2027-03-10 00:00 UTC, exactly as the confirmation paragraph
+below specifies; its loader is built then. Expectation unchanged: not detectable.
+
+*The registration as written on 2026-09-15 follows, unchanged, as the record of what was fixed
+before the log was read.*
+
+**In plain terms.** The live policy trades at one of five sizes, from ⅓ to 5⁄3 of a unit, chosen
+by how much BTC moved over the last 24 hours (the "ladder"). On the book era that choice points
+the wrong way (§R.1's side-finding: the big-BTC-move bars lost money). This asks whether a
+**live order-book measurement** — for example how tight spreads are across the market right now —
+is a better thing to pick the size by. Nothing about *which* trades are taken changes; only how
+large each one is, so both versions take identical trades and the comparison is tight.
+
+**Written 2026-09-15, before any number of this section was computed. Vadim chose it the same
+day** (BACKLOG, "the tradeable horizon": option (a)). Harness `ml/train/m3/bookladder.py`, run as
+`M3_EXPORT_DIR=/workspace/train/output/book_era M3_ERA=repaired ./scripts/m3.sh -m m3 bookladder
+--stage explore`. CPU only.
+
+**Why this shape — the power, measured before writing.** A standalone 240m book-era model is
+undecidable for years (BACKLOG, same row: ±41–43 bps at 54 val days). A *filter* on the
+incumbent's own trades is ±17 at cov 0.05 over 42 days; a *re-size* is ±8 with three seeds
+(F0 fold models, random-key permutation, 200 draws). On the repaired dumps — the explore
+population below — a re-size is **±20 with three seeds over 37 days at cov 0.05, and ±24 on one
+checkpoint**, scaling to **±15 at 90 days and ±11 at 180**. At cov 0.02 one checkpoint is ±72: not
+decidable. So the reading is at **cov 0.05**, and confirmation, which has one checkpoint, needs
+about six months of untouched data.
+
+🔴 **Contamination, stated.** B1/B2 already read these book-era bars (07-17 → 09-09) and scored
+every key below as a *filter* at cov 0.02/0.05; `spread_bps_mkt_lo` passed §4.2. The exploration
+stage below is therefore **not clean evidence** — it can close the question (a gate not passed) but
+it cannot establish it. Only the confirmation on bars after 2026-09-10 can, and the key it reads is
+chosen by a mechanical rule over the **full registered list**, not by B2's winner.
+
+**Explore population.** The repaired era (`M3_ERA=repaired`: s1/s2/s3, the served recipe's three
+banked checkpoints; s2 is the served one), the 8 book pairs, restricted as §B2 does
+(`bookregime.restrict`) to bars in `book_era_5m.parquet` with book, tape and OI present, and further
+to bars where the incumbent key **and all ten book keys** are non-missing — so every arm ranks over
+the same bars. Window ≈ 2026-07-17 → 2026-09-03.
+
+**Entries — identical in every arm.** M3-2's winner rule (`WINNER_SPEC`) at **coverage 0.05**
+(cut per seed over that population), side from the 240m head, 240-minute hold, serial per pair.
+Only `regime_col` differs between arms, and in `backtest.run` it changes the ladder bucket and
+nothing else. Cov 0.02 is printed for information only.
+
+**The arms — the list is the registration.**
+
+| arm | size key (`backtest.run`, `size_by_regime=True`, quintile edges over the population's bars) |
+|---|---|
+| `incumbent` | `btc_absret_1d` — the live ladder |
+| `flat` | size 1 on the same trades (information: the ladder's own worth, E) |
+| ten book keys | `bookregime.primary_observables`: `spread_bps_mkt`, `trade_count_mkt`, `trade_vol_mkt`, `oi_chg_mkt`, `book_composite`, and each `_lo` (negated, so the low tail gets the large size) — the market-wide mean of within-pair percentiles, §B2's construction unchanged |
+
+**The statistic — §9.6's.** Contrast = **key arm − incumbent, net bps per unit of notional**,
+cluster-robust on UTC exit days (`walkforward.paired_notional_diff_bps`), three seeds pooled.
+Reported, not deciding: each arm's per-notional net at taker 14, each key − flat, the per-seed
+contrasts, cov 0.02.
+
+**Harness check, before any contrast is read (falsifiable).** Every arm's trade set equals the
+incumbent's exactly — the same `(seed, pair, entry_ts)` rows — and every size is one of ⅓, ⅔, 1,
+4⁄3, 5⁄3. If not, the harness is fixed; the registration does not move.
+
+**Exploration gate and choice rule, mechanical.** The key with the **highest pooled contrast** is
+chosen; the gate passes iff that contrast is **> 0** *and* positive on the **median seed**. Not
+passed → §R.4 closes and nothing is exported. The stage prints the forecast confirmation MDE: the
+chosen key's **s2-only** SE × √(explore days / 180) × 1.96.
+
+**Confirmation, fixed now and read once, on or after 2027-03-10.** Population: the served
+checkpoint's own forward predictions in `policy_bars` (horizon 240, the same 8 pairs) from
+**2026-09-11 06:05 to 2027-03-10 00:00 UTC** — every bar untouched by B1, B2 or this section.
+Forward 240m return from an exported 5m candle slice over the same window (positional 48 bars, as
+training), with the acceptance check that `policy_bars.price` equals the candle close at each
+`bar_ts`; incumbent key = `policy_bars.regime` (the served `btc_absret_1d`); the book keys built
+by `bookregime.observables` from a book-era export of that window; the coverage-0.05 cut and the
+quintile edges over that window's own bars. Same statistic, one checkpoint. **CONFIRMED iff the
+95% lower bound of chosen key − incumbent is > 0.** NOT CONFIRMED is "not detectable" unless the
+interval also excludes E on that window. The confirmation loader is **built when due**, from this
+paragraph; nothing in it may be changed after the explore log is read except to fix a defect,
+recorded as one. No earlier look at the confirmation window is permitted.
+
+**What each outcome licenses.** CONFIRMED licenses *writing* a served-change registration for the
+ladder key — which is also an engineering item, because the serve path would have to compute the
+book observable live. Nothing served changes on any outcome here; the forward test and its R0–R5
+readings are untouched (this reads `policy_bars` counterfactually, as R5 does, and takes no trade).
+Gate not passed or NOT CONFIRMED closes book-keyed sizing: no other key, construction, coverage or
+window.
+
+**Expectation, recorded before the run.** Exploration: the gate is likelier to pass than usual,
+for a reason that is not evidence — on this era the incumbent key itself sizes the wrong way
+(§R.1), so almost any key that is not a BTC-volatility proxy beats it, and `flat` may beat it too.
+Confirmation: **NOT CONFIRMED, not detectable** (forecast ±11 against a likely effect under +10).
+
+**Commands.**
+
+```sh
+export M3_EXPORT_DIR=/workspace/train/output/book_era M3_ERA=repaired
+./scripts/m3.sh -m m3 bookladder --stage explore 2>&1 | tee logs/bookladder_explore_$(date -u +%Y%m%d).log
+# record the check, the table, the chosen key, the MDE forecast and the gate verdict here
+```
+
+**Needed from Vadim: nothing.** Claude runs the exploration now; if it passes, the confirmation is
+a calendar row in BACKLOG dated 2027-03-10.
+
+---
+
 ## §0 — READ THIS FIRST (plain language, no statistics required)
 
 ### 0.1 The question this wave exists to answer

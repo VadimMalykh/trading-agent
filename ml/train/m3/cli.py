@@ -1138,6 +1138,13 @@ def cmd_pathexits(args) -> int:
                             exploration_recorded=args.exploration_recorded, config=args.config)
 
 
+def cmd_bookladder(args) -> int:
+    """BOOK_ERA_PLAN §R.4 — X7: a book observable as the size-ladder key."""
+    from . import bookladder
+    return bookladder.report(WINNER_SPEC, stage=args.stage,
+                             exploration_recorded=args.exploration_recorded, config=args.config)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1720,6 +1727,16 @@ def main() -> int:
                     help="required by --stage confirm: the exploration table and label are in §9.8")
     px.add_argument("--config", default=None, help="--stage confirm only: the label from §9.8")
     px.set_defaults(fn=cmd_pathexits)
+
+    bl = sub.add_parser("bookladder", help="BOOK_ERA_PLAN §R.4 (X7): the incumbent's trades with the "
+                        "size ladder keyed on a book observable instead of btc_absret_1d; explore on "
+                        "the book era (M3_ERA=repaired, M3_EXPORT_DIR=book_era), confirm once on "
+                        "forward policy_bars on or after 2027-03-10")
+    bl.add_argument("--stage", choices=["explore", "confirm"], required=True)
+    bl.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: the exploration table and key are in §R.4")
+    bl.add_argument("--config", default=None, help="--stage confirm only: the key from §R.4")
+    bl.set_defaults(fn=cmd_bookladder)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")
