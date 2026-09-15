@@ -1124,6 +1124,13 @@ def cmd_magsize(args) -> int:
                           exploration_recorded=args.exploration_recorded)
 
 
+def cmd_exits(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.7 — X4: signal-conditioned exits on the folds."""
+    from . import exits
+    return exits.report(WINNER_SPEC, stage=args.stage,
+                        exploration_recorded=args.exploration_recorded, config=args.config)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1686,6 +1693,16 @@ def main() -> int:
                     help="required by --stage confirm: the exploration table, MDE forecast and "
                          "gate verdict are written in §9.6")
     ms.set_defaults(fn=cmd_magsize)
+
+    ex = sub.add_parser("exits", help="WALKFORWARD_PROTOCOL §9.7 (X4): the incumbent's entries "
+                        "with signal-conditioned exits — flip at hourly marks, or hold extension "
+                        "while the signal persists; explore on F0+F1, confirm once on F2+F3 "
+                        "(needs M3_ERA=walkforward)")
+    ex.add_argument("--stage", choices=["explore", "confirm"], required=True)
+    ex.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: the exploration table and label are in §9.7")
+    ex.add_argument("--config", default=None, help="--stage confirm only: the label from §9.7")
+    ex.set_defaults(fn=cmd_exits)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

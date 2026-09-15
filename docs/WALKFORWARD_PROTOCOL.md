@@ -1393,3 +1393,135 @@ sanity stop for a broken key, not a criterion; fallback trades are identical in 
 can only pull the contrast toward zero, so the change is conservative for X3. The feature
 list, target, model, statistic and gates are untouched; the fallback rule (incumbent size,
 counted and printed) is untouched.
+
+### 9.7 X4 — signal-conditioned exits on the folds: the registration
+
+**Written 2026-09-15, after X3 closed and before any number of this section was computed.
+Vadim chose X4 the same day.** Harness `ml/train/m3/exits.py`, run as
+`M3_ERA=walkforward ./scripts/m3.sh -m m3 exits --stage explore`, then, only if the
+exploration gate passes and its table is recorded here, `--stage confirm
+--exploration-recorded --config <label>`. CPU only, inside the analysis container, no new
+dependency, no export.
+
+**The question.** Every trade the policy takes is closed by a 240-minute timer and nothing
+else (`Trading.Policy`, `@hold_minutes 240`; paper rows carry `exit_reason: "timer"`). The
+model re-scores the pair on every 5-minute bar during the hold, and that information is thrown
+away. **Does using it — leaving early when the model has turned against the trade, or staying
+when it still agrees — earn more than the fixed timer, net of every crossing?**
+
+**What is known, and why this is not a re-proposal.** M3_0B_RESULTS §5 scored six fixed
+(stop, target) barriers on the incumbent's entries: **every one loses to the timer**
+(best +9.24 vs +19.76 net), monotonically — the wider the band, the closer to the timer. The
+reading given there is that a 240-minute signal cut short by a *price* rule forfeits edge that
+has not arrived. §5 lists what stays untested: trailing stops, vol-scaled bands, regime-
+conditional barriers — and BACKLOG's X4 row adds signal-flip exits and hold extension. This
+registration takes the **signal-conditioned** half of that list, because it is the half with a
+mechanism the barrier result does not already speak to: a price barrier knows nothing the
+model does not; a flip or a persisting signal is the model's own later opinion. The blanket
+alternative to extension is also known and fails — the 24-hour hold at cov 0.02 is −2.0 net
+with a −66.7 worst window (M3_2_RESULTS_REPAIRED §B) — so "hold longer" is not the question;
+"hold longer *when the signal persists*" is.
+
+🔴 **Out of scope, stated:** trailing stops, volatility-scaled bands and intrabar barriers of
+any kind. They need a 5-minute price path with highs and lows, and the only side-table
+(`ml/train/output/m3_0b/side_5m.parquet`) begins 2025-11-15 — F1 is mostly and F2/F3 entirely
+outside it. They stay parked until a side-table over the fold era is exported (≈ 2 minutes,
+≈ 1.3 M rows; the collector's candle backfill depth to 2024-10 must be verified first) and a
+fresh registration is written. Nothing in this section may be read as evidence about them.
+
+**The price path, from the dumps alone.** The dumps carry no prices, but they carry the 60m
+head's `fwd_ret` on every 5-minute bar, and four consecutive 60-minute forward returns compound
+to the 240-minute return (NEXT_TRAINING_PLAN §1.8, max abs diff 3.2e-7; `regime.check_compounding`).
+So the trade's return to any hourly mark t+60k is Π(1 + r60(t+60j)) − 1 over j < k, and the
+return of a hold extended by another 240 minutes is (1 + r240(t))(1 + r240(t+240)) − 1. That is
+the entire price model of this section: exits at bar closes on the hourly grid, no intrabar
+fills. The harness re-verifies the compounding identity on every fold-seed before scoring.
+
+**Entries — the incumbent's, unchanged.** Coverage cut 0.02 over the fold-seed's own 240m
+confidences (`backtest.coverage_threshold`), side from the model, bars without a 24-hour BTC
+lookback excluded, size from the `btc_absret_1d` quintile ladder, serial per pair, no cap. ⚠️
+Unlike §9.6 this is **not** a same-entries design: a different exit frees the pair at a
+different time, so later entries differ. That is the policy under test, not a defect, and it is
+why the statistic below is per calendar day, not per trade.
+
+**The two exit rules, four configurations — the list is the registration.** c is a coverage
+level; cut(c) is `coverage_threshold` at c over the same fold-seed's bars, so `cut(0.02)` is the
+entry cut itself.
+
+| label | rule |
+|---|---|
+| `flip02`, `flip05` | at t+60, t+120, t+180: if the pair's 240m head at that bar takes the **opposite** side with conf ≥ cut(c), exit at that bar. Otherwise the timer at t+240. The pair is then free; the ordinary entry rule may re-enter (paying its own crossing) |
+| `persist02`, `persist05` | at t+240 (and again at t+480): if the 240m head at that bar takes the **same** side with conf ≥ cut(c), hold another 240 minutes with no crossing. At most two extensions — 12 hours cap. Otherwise the timer |
+
+Nothing else varies: no combination arm, no other marks, no other cut, no barrier. Each trade
+pays exactly one round trip (`metrics.TAKER_COST_BPS` = 14 × size) whatever its exit, which is
+what makes the gate "net of the extra crossing" by construction: a flip arm that re-enters pays
+the second crossing as a second trade; a persist arm that saves one is credited for it.
+
+**Fallback.** A mark whose bar is absent from the dump, or whose needed 60m leg is missing,
+cannot fire: the trade takes the timer exit, is counted and printed. If fallbacks exceed **10%**
+of a fold's trades in any arm, the run stops and this section is revisited first (§9.6
+Amendment 1's lesson, applied in advance).
+
+**The statistic, fixed now.** Per arm, the **net P&L per UTC exit day** in bps of one size unit
+of notional: Σ over the day's exits of (signed_ret × 10⁴ − 14 × size). The contrast is the
+day-by-day difference **arm − incumbent** over the union of days (a day on which one arm has no
+exit contributes zero for that arm), divided by the number of seeds pooled into it — **bps per
+seed-day** — with its mean, the SE over days (days are the independent units, as everywhere in
+this document) and the 95% interval. The total over a fold is that mean × the fold's days and
+is printed beside it. Per-trade diff (`universe.paired_diff_bps`), trade counts, mean hold, the
+exit-reason mix, mean size, drawdown and the fallback count are printed **for information**.
+The reason for the unit: a flip arm takes more, shorter trades and a persist arm fewer, longer
+ones, so "net per trade" moves mechanically in opposite directions without any money changing
+hands; money per day does not.
+
+**The shape, under §9.0 rule 2.** `explore` — F0 + F1, every fold-seed scored (nothing is
+fitted, so there is no leave-one-out; the two folds are simply the exploration population).
+`confirm` — F2 + F3, once, the one configuration chosen at exploration.
+
+**Harness checks, before any contrast is read (falsifiable).** (1) The **null configuration**
+(no flip, no persist) run through the new simulator must reproduce `backtest.run`'s incumbent
+trades on every fold-seed exactly: same count, same entries, same sizes, Σ signed_ret equal to
+1e-9. (2) The compounding identity holds on every fold-seed to 1e-5 (`regime.check_compounding`).
+If either fails, the harness is fixed; the registration does not move.
+
+**Choice rule at exploration, mechanical:** of the four, the configuration with the **highest
+pooled F0+F1 mean daily diff**. Its label and the full table are recorded here before `confirm`
+runs. **Exploration gate:** passes iff that best diff is **> 0** *and* positive on the median
+seed-number (s1, s2, s3 each pooled across F0+F1). If not passed, the registration closes and
+F2/F3 are not read. The explore stage also prints the **forecast MDE for the confirmation
+shape**: SE of the chosen contrast × √(D_F0+F1 / D_F2+F3) × 1.96, with D the number of calendar
+days in the fold spans (`dumps.WALKFORWARD_SPLITS`; ≈ 336 and ≈ 355) — no F2/F3 dump is opened.
+
+**Confirmation criterion, fixed now.** **CONFIRMED iff** the pooled F2+F3 95% lower bound of the
+chosen configuration's mean daily diff is **> 0** *and* the diff is positive on the median
+seed-number. NOT CONFIRMED is "not detectable at this power" unless the interval also excludes
+the reference effect **E** printed beside it — the incumbent's own mean daily net on the same
+folds — in which case it is a detected absence of an improvement the size of the strategy's
+whole daily edge.
+
+**What each outcome licenses.** CONFIRMED licenses *writing* a registration to serve the exit
+rule under M3_PROTOCOL §8.3 C1–C5 — the engine already re-scores every closed bar, so a flip or
+persist check is a policy change with no new data path — as its own registered clock restart.
+Nothing served changes on any outcome here; the forward test is untouched. Gate not passed, or
+NOT CONFIRMED, closes signal-conditioned exits on these folds: 🔴 no other mark, cut, cap or
+combination may be tried on F2/F3. The remaining exit family (trailing / vol-scaled / regime-
+conditional barriers) is unaffected either way and needs the fold-era side-table first.
+
+**Expectation, recorded before the run.** `flip*`: **negative to flat** — a flip is still a
+cut, and every cut measured so far has forfeited edge, though this is the one cut with the
+model's reason behind it. `persist*`: **flat to small positive** — it saves a crossing on each
+re-entry the incumbent would have made, against exposure to a horizon where the blanket hold
+loses. Overall: the best configuration passes or fails the gate by noise and is **not
+detectable at confirmation**.
+
+**Commands.** In this order, from the laptop; each stage is one container run of minutes.
+
+```sh
+./scripts/m3.sh -m m3 validate                                          # C3 — unchanged image, still first
+M3_ERA=walkforward ./scripts/m3.sh -m m3 exits --stage explore 2>&1 | tee logs/exits_explore_$(date -u +%Y%m%d).log
+# record the harness checks, the table, the chosen label, the MDE forecast and the gate verdict here
+M3_ERA=walkforward ./scripts/m3.sh -m m3 exits --stage confirm --exploration-recorded --config <label> 2>&1 | tee logs/exits_confirm_$(date -u +%Y%m%d).log
+```
+
+**Bring back:** the two logs. The read happens in this document, under the gate as written.
