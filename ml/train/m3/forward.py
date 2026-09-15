@@ -71,6 +71,16 @@ LADDER_P80 = LADDER_EDGES[-1]
 # recorded set" that §9.2 named as the only way to revive it.
 HOUR_SET = {0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22}
 
+# R5 (added 2026-09-15, WALKFORWARD §9.7's `persist05` carried forward as a counterfactual):
+# at the timer exit, if the served model's bar for the same pair takes the SAME side with
+# confidence >= the cov-0.05 cut, the hold is extended by another 240 minutes, at most twice.
+# The cut is `backtest.coverage_threshold(conf, 0.05)` on the same population as CUTS
+# (repaired era, seed s2, eight pairs, horizon 240) — derived 2026-09-15 with the ledger at
+# 7 signal bars; on that population 0.02 reproduces the served cut to the digit.
+EXT_CUT = 0.5892829895019531
+EXT_MAX = 2
+EXT_HOLD = pd.Timedelta(minutes=240)
+
 # §4.3's reading schedule: the first reading at this many closed policy-arm trades, then at
 # every further multiple. Readings before the first are printed as TEXTURE, never quoted.
 READ_AT = 50
@@ -94,13 +104,42 @@ class Ledger:
 
 def load(path: str) -> Ledger:
     df = pd.read_csv(path)
-    for c in ("entry_ts", "exit_ts"):
+    for c in ("entry_ts", "exit_ts", "exit_after_ts"):
         df[c] = pd.to_datetime(df[c], utc=True)
     closed = df[df["status"] == "closed"].copy()
     closed["per_notional"] = closed["net_bps"] / closed["size"]
     closed["day"] = closed["entry_ts"].dt.floor("D")
     closed["hour"] = closed["entry_ts"].dt.hour
     return Ledger(closed=closed, n_open=int((df["status"] == "open").sum()), n_rows=len(df))
+
+
+def load_bars(path: str) -> pd.DataFrame:
+    """`policy_bars` export: one row per (pair, closed 5m bar) with the served model's side,
+    confidence and the bar's price. Indexed by (pair, bar_ts) for the R5 lookups."""
+    b = pd.read_csv(path)
+    b["bar_ts"] = pd.to_datetime(b["bar_ts"], utc=True)
+    b = b.drop_duplicates(subset=["pair", "bar_ts"], keep="last")
+    return b.set_index(["pair", "bar_ts"]).sort_index()
+
+
+def check_bars(led: Ledger, bars: pd.DataFrame) -> list[str]:
+    """R5's own consistency: every closed policy trade's entry price must equal the stored
+    bar price at its entry bar — the proof that the bars and the ledger are the same tape."""
+    p = led.arm(ARM_POLICY)
+    problems, missing, mismatch = [], 0, 0
+    for r in p.itertuples():
+        key = (r.pair, r.entry_ts)
+        if key not in bars.index:
+            missing += 1
+            continue
+        px = float(bars.loc[key, "price"])
+        if not np.isclose(px, r.entry_price, rtol=1e-6):
+            mismatch += 1
+    if missing:
+        problems.append(f"{missing} policy trades have no policy_bars row at their entry bar")
+    if mismatch:
+        problems.append(f"{mismatch} policy trades' entry_price != the bar's stored price")
+    return problems
 
 
 def check(led: Ledger) -> list[str]:
@@ -302,11 +341,69 @@ def reading_counterfactual(led: Ledger) -> None:
     print(f"  the suppressed rows alone {_fmt(clustered(missing))}")
 
 
+def reading_extension(led: Ledger, bars: pd.DataFrame) -> None:
+    """R5 — WALKFORWARD §9.7's `persist05`, reconstructed on the forward ledger.
+
+    For each closed policy trade: at its timer exit bar, if the served model's row for the
+    same pair takes the same side with confidence >= EXT_CUT and the bar 240 minutes later
+    exists, the hold is extended to that bar (at most EXT_MAX times) and the exit is re-priced
+    at the later bar's stored price. A later recorded policy trade on the same pair whose
+    entry falls inside the extension is SWALLOWED — it could not have been taken, and its
+    P&L is what the extension replaces (that is the saved crossing). The counterfactual arm
+    is the recorded arm with those two edits; both are read per unit of notional and, because
+    extension changes notional-time rather than notional, also as total net (Σ net_bps).
+    Nothing served changes.
+    """
+    p = led.arm(ARM_POLICY).sort_values(["pair", "entry_ts"]).copy()
+    print(f"\nR5  hold extension while the signal persists — §9.7 persist05 as a counterfactual "
+          f"(same side, conf >= {EXT_CUT:.4f} at the exit bar, <= {EXT_MAX} extensions)")
+    if p.empty:
+        print("  no closed policy trades")
+        return
+    rows, swallowed_ids, n_ext = [], set(), {1: 0, 2: 0}
+    by_pair = {k: g for k, g in p.groupby("pair")}
+    for r in p.itertuples():
+        if r.Index in swallowed_ids:
+            continue
+        exit_ts, price, n = r.exit_after_ts, r.exit_price, 0
+        while n < EXT_MAX:
+            key = (r.pair, exit_ts)
+            if key not in bars.index:
+                break
+            row = bars.loc[key]
+            if not (int(row["side"]) == int(r.side) and float(row["confidence"]) >= EXT_CUT):
+                break
+            nxt = (r.pair, exit_ts + EXT_HOLD)
+            if nxt not in bars.index:
+                break
+            exit_ts, price, n = exit_ts + EXT_HOLD, float(bars.loc[nxt, "price"]), n + 1
+        if n:
+            n_ext[n] += 1
+            later = by_pair[r.pair]
+            eaten = later[(later["entry_ts"] > r.entry_ts) & (later["entry_ts"] < exit_ts)]
+            swallowed_ids.update(eaten.index.tolist())
+        gross = r.side * (price / r.entry_price - 1.0) * 1e4 if n else r.gross_bps
+        net = r.size * (gross - r.cost_bps)
+        rows.append({"pair": r.pair, "entry_ts": r.entry_ts, "exit_ts": exit_ts, "size": r.size,
+                     "net_bps": net, "day": r.day, "extensions": n})
+    # swallowed trades were skipped inside the loop (their swallower, an earlier trade of
+    # the same pair, is always processed first under the (pair, entry_ts) order)
+    cf = pd.DataFrame(rows)
+    cf["per_notional"] = cf["net_bps"] / cf["size"]
+    print(f"  extensions fired: ext1 {n_ext[1]}, ext2 {n_ext[2]} of {len(p)} trades; "
+          f"{len(swallowed_ids)} later trades swallowed; counterfactual arm {len(cf)} trades, "
+          f"mean hold {((cf['exit_ts'] - cf['entry_ts']).dt.total_seconds() / 60).mean():.0f} m")
+    print(f"  recorded policy arm       {_fmt(clustered(p))}   Σ net {p['net_bps'].sum():+.0f}")
+    print(f"  counterfactual (persist05) {_fmt(clustered(cf))}   Σ net {cf['net_bps'].sum():+.0f}")
+    print(_contrast_line("counterfactual − recorded", cf, p))
+    print(f"  Σ net difference: {cf['net_bps'].sum() - p['net_bps'].sum():+.1f} bps × size over the ledger")
+
+
 # ---------------------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------------------
 
-def run(path: str) -> int:
+def run(path: str, bars_path: str | None = None) -> int:
     led = load(path)
     p = led.arm(ARM_POLICY)
     n_policy = len(p)
@@ -334,6 +431,17 @@ def run(path: str) -> int:
     reading_regime(led)
     reading_hours(led)
     reading_counterfactual(led)
+    if bars_path:
+        bars = load_bars(bars_path)
+        bad = check_bars(led, bars)
+        if bad:
+            print("\nR5  skipped — the bars export does not match the ledger:")
+            for x in bad:
+                print(f"  - {x}")
+        else:
+            reading_extension(led, bars)
+    else:
+        print("\nR5  skipped — no --bars export given (scripts/gcp_forward_ledger.sh exports it)")
     print("\nEvery interval above is day-clustered on the UTC entry day. Per-trade sd on this "
           "policy offline is ~259 bps; ~290 trades resolve a +30 bps mean against zero.")
     return 0
@@ -347,4 +455,7 @@ def add_parser(sub) -> None:
     ap.add_argument("--ledger", required=True,
                     help="CSV export of paper_trades (both arms, all columns), container path "
                          "e.g. output/forward/paper_trades_<date>.csv")
-    ap.set_defaults(fn=lambda args: run(args.ledger))
+    ap.add_argument("--bars", default=None,
+                    help="CSV export of policy_bars (pair, bar_ts, confidence, side, price, …); "
+                         "enables R5, the hold-extension counterfactual")
+    ap.set_defaults(fn=lambda args: run(args.ledger, args.bars))

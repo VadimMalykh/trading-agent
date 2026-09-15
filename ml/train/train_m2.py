@@ -638,7 +638,11 @@ def main():
         LazyMultiHorizonDataset(bundle, tr_idx, horizon_keys),
         **{**loader_kw, "shuffle": True},
     )
-    val_loader = DataLoader(LazyMultiHorizonDataset(bundle, va_idx, horizon_keys), **loader_kw)
+    # Validation reads the FIXED labels (label_set="eval") so selection and every printed
+    # metric stay on the control family's definition under LABEL_MODE=volnorm (X2).
+    val_loader = DataLoader(
+        LazyMultiHorizonDataset(bundle, va_idx, horizon_keys, label_set="eval"), **loader_kw
+    )
 
     # Pair vocab = bundle.series order; the dataset's "__pair_idx" indexes into it.
     # Recorded in the checkpoint so eval/serve rebuild the same symbol→index map.

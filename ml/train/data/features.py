@@ -628,6 +628,32 @@ def triple_barrier_labels(
     return pd.Series(labels, index=close.index, dtype=int)
 
 
+def volnorm_z(close: pd.Series, horizon_bars: int, vol_window: int,
+              min_sigma: float) -> pd.Series:
+    """X2: the forward return in units of the pair's own TRAILING volatility.
+
+    sigma_t = rolling std of 1-bar returns over the `vol_window` bars ending at t (known at
+    t), scaled to the horizon by sqrt(horizon_bars) and floored at `min_sigma` per bar.
+    NaN where the window is not yet full (the first `vol_window` bars) — the caller falls
+    back to the fixed label there — and NaN where the forward return is unknown.
+    """
+    ret1 = close / close.shift(1) - 1.0
+    sigma = ret1.rolling(vol_window, min_periods=vol_window).std()
+    sigma = sigma.clip(lower=min_sigma) * float(np.sqrt(horizon_bars))
+    return forward_return(close, horizon_bars) / sigma
+
+
+def labels_from_z(z: pd.Series, k: float, fallback: pd.Series) -> pd.Series:
+    """0=down / 1=flat / 2=up on |z| vs k; `fallback` (the fixed label) where z is NaN
+    because the trailing window is not yet available; -1 stays -1 (unknown forward)."""
+    labels = fallback.copy()
+    ok = z.notna() & (fallback >= 0)
+    labels[ok] = 1
+    labels[ok & (z > k)] = 2
+    labels[ok & (z < -k)] = 0
+    return labels
+
+
 def make_labels_and_returns(
     close: pd.Series,
     horizon_bars: int,
@@ -647,6 +673,10 @@ def make_labels_and_returns(
     downstream).
     """
     fwd = forward_return(close, horizon_bars)
+    if label_mode == "volnorm":
+        # The band k is pooled across pairs and calibrated by the dataset builder (it needs
+        # every pair's z); here the mode is fixed-labelled and the builder relabels.
+        return labels_from_return(fwd, flat_threshold), fwd
     if label_mode == "triple_barrier":
         labels = triple_barrier_labels(close, horizon_bars)
         # Keep the invalid-tail semantics aligned with the return series so the

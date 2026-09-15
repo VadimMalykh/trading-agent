@@ -1114,7 +1114,7 @@ def main():
             book_of_sample[m] = ser.book_present[bundle.t_i[va_idx[m]]].astype(np.float64)
 
     loader = DataLoader(
-        LazyMultiHorizonDataset(bundle, va_idx, horizon_keys),
+        LazyMultiHorizonDataset(bundle, va_idx, horizon_keys, label_set="eval"),
         batch_size=64,
         shuffle=False,
         collate_fn=collate_mh,

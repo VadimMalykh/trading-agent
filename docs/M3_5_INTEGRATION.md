@@ -397,6 +397,26 @@ recomputed on the same draw).
 | **R3** | §9.2's hour set, on untouched data | policy arm, UTC entry hour ∈ **{0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22}** vs excluded | per-notional net of each; contrast in − excluded. Sub-sample, same caveat as R1 |
 | **R4** | M3_FIDELITY §4.2 — how much does the −50/day limit bias the estimate? | flat-arm rows with no policy-arm row at the same (pair, entry_ts) — a refusal, or the divergence after one | reconstruct each as a policy trade at the frozen ladder size for its own `regime`; report the recorded arm, the counterfactual arm (recorded + reconstructed) and the reconstructed rows alone |
 
+**R5 — added 2026-09-15, at 7 signal bars (unchanged since 09-11), before any further trade.**
+WALKFORWARD §9.7 tested hold extension while the signal persists (`persist05`) on the folds:
+positive on every fold and seed, NOT CONFIRMED at the registered bar (+25.7 [−23.2, +74.7] bps
+per seed-day), not resolvable offline. The forward ledger can carry the same question at no
+cost, because `policy_bars` stores the served model's side, confidence and the bar's price for
+every closed 5-minute bar. **R5** reconstructs `persist05` as a counterfactual of the recorded
+policy arm: at a trade's timer exit bar, if the bar's row for the same pair takes the **same
+side with confidence ≥ 0.5892829895019531** — `coverage_threshold(conf, 0.05)` on the same
+population as the cuts below, derived 2026-09-15 — and the bar 240 minutes later exists, the
+hold is extended to it and re-priced at its stored price; at most **two** extensions (12 h). A
+later recorded policy trade on the same pair whose entry falls inside the extension is
+**swallowed** (it could not have been taken; its P&L is what the extension replaces — the saved
+crossing). Cost stays the row's own `cost_bps`, once. Statistic: the counterfactual arm vs the
+recorded arm, **per unit of notional** as R0–R4, with the day-bootstrapped contrast, **and** the
+Σ net difference (extension changes notional-time, not notional). Consistency, enforced before
+it prints: every policy trade's `entry_price` equals the stored bar price at its entry bar.
+Executable: `forward.py:reading_extension`, `--bars`; the export script now pulls
+`policy_bars` too. Same schedule, same TEXTURE rule, same licence as R0–R4: a reading whose
+interval excludes zero licenses *writing* the served-change registration §9.7 describes.
+
 **The constants.** Coverage cuts are `backtest.coverage_threshold(conf, c)` over the served
 checkpoint's own split — repaired era, seed s2, the eight training pairs, horizon 240 — the
 population M3_FIDELITY §6 derives the served cut on. The 0.02 entry reproduces
@@ -435,11 +455,14 @@ A failure prints the problems and no tables.
 gitignored):
 
 ```sh
-./scripts/gcp_forward_ledger.sh              # export today's ledger and run the readings
-./scripts/m3.sh -m m3 forward --ledger output/forward/paper_trades_<YYYYMMDD>.csv   # re-read
+./scripts/gcp_forward_ledger.sh              # export today's ledger + policy_bars and run R0–R5
+./scripts/m3.sh -m m3 forward --ledger output/forward/paper_trades_<YYYYMMDD>.csv \
+    --bars output/forward/policy_bars_<YYYYMMDD>.csv                              # re-read
 ```
 
 Run 2026-09-13 on the seven: consistency ok, TEXTURE banner, R4 empty (no refusals yet).
+Run 2026-09-15 on the same seven with R5: consistency ok (entry prices match the bars), TEXTURE;
+R5 fired one extension and swallowed one later trade — texture, not a number.
 
 ---
 

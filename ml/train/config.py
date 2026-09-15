@@ -113,7 +113,22 @@ FLAT_THRESHOLD_PER_HORIZON = {
 # Barriers are volatility-scaled: TP/SL = TB_TP_MULT/TB_SL_MULT * rolling return std
 # (ret_std over TB_VOL_WINDOW bars) at the entry bar, floored at TB_MIN_BARRIER so a
 # dead-flat window still uses a sane band. Symmetric by default (TP == SL).
+#   volnorm:       (X2, NEXT_TRAINING_PLAN §2) the sign of the fixed-Δt forward return
+#                  measured in units of the pair's OWN trailing volatility: z = fwd_ret /
+#                  (rolling std of 1-bar returns over VN_VOL_WINDOW bars × sqrt(horizon
+#                  bars)). UP if z > k, DOWN if z < -k, FLAT otherwise. k is not a knob: per
+#                  horizon it is the |z| quantile, pooled over pairs on bars before
+#                  VN_CALIB_END, at the FIXED label's own flat share on those bars — so the
+#                  average band is the recipe's and only its shape (per pair, per time)
+#                  changes. Bars whose trailing vol is not yet available keep the fixed
+#                  label, so the valid-sample set and the split are identical to `fixed`.
+#                  Training uses these labels; SELECTION and EVALUATION use the fixed
+#                  labels (PairSeries.labels_eval), so every printed dir_acc / LB / dump y3
+#                  is on the same definition as the control family.
 LABEL_MODE = os.environ.get("LABEL_MODE", "fixed")
+VN_VOL_WINDOW = int(os.environ.get("VN_VOL_WINDOW", "288"))          # 1 day of 5m bars
+VN_MIN_SIGMA = float(os.environ.get("VN_MIN_SIGMA", "1e-5"))          # per-bar floor
+VN_CALIB_END = os.environ.get("VN_CALIB_END", "")                     # ISO UTC; "" = all bars
 TB_TP_MULT = float(os.environ.get("TB_TP_MULT", "1.5"))
 TB_SL_MULT = float(os.environ.get("TB_SL_MULT", "1.5"))
 TB_VOL_WINDOW = int(os.environ.get("TB_VOL_WINDOW", "15"))

@@ -32,5 +32,15 @@ if [[ "$ROWS" -lt 0 || ! -s "$OUT" ]]; then
   exit 1
 fi
 
+# R5 (M3_5 §4.3) reconstructs a hold-extension counterfactual, which needs every served
+# bar's side, confidence and price — `policy_bars`, one row per (pair, closed 5m bar).
+BARS="$OUT_DIR/policy_bars_${STAMP}.csv"
+echo "→ exporting policy_bars from $GCP_ALWAYS_ON …" >&2
+gssh "$GCP_ALWAYS_ON" "cd ~/$REMOTE_REPO_NAME && docker compose exec -T postgres \
+  psql -U fluxtrader -d fluxtrader -Atc \"\\copy (select pair, bar_ts, horizon_m, confidence, side, price, gated, regime from policy_bars order by bar_ts, pair) to stdout with csv header\"" \
+  2>/dev/null > "$BARS"
+echo "→ $(( $(wc -l < "$BARS") - 1 )) bars -> $BARS" >&2
+
 [[ "${1:-}" == "--no-read" ]] && exit 0
-exec "$REPO_ROOT/scripts/m3.sh" -m m3 forward --ledger "output/forward/paper_trades_${STAMP}.csv"
+exec "$REPO_ROOT/scripts/m3.sh" -m m3 forward --ledger "output/forward/paper_trades_${STAMP}.csv" \
+  --bars "output/forward/policy_bars_${STAMP}.csv"

@@ -18,6 +18,9 @@ from config import (
     HORIZON_MINUTES,
     HORIZONS_MINUTES,
     LABEL_MODE,
+    VN_CALIB_END,
+    VN_MIN_SIGMA,
+    VN_VOL_WINDOW,
     NORM_CLIP,
     NORM_DEGENERATE_MODE,
     NORM_DEGENERATE_STD,
@@ -35,6 +38,8 @@ from data.features import (
     market_context_inputs,
     make_labels,
     make_labels_and_returns,
+    labels_from_z,
+    volnorm_z,
 )
 
 
@@ -398,6 +403,10 @@ class PairSeries:
     returns: Dict[str, np.ndarray]  # key -> [T] float32 raw forward return (quantile target)
     close: np.ndarray = None  # [T] float64 close prices (momentum + buy-hold baselines)
     book_present: np.ndarray = None  # [T] bool raw has_book flag (pre-norm, pre-ablation)
+    # X2 (LABEL_MODE=volnorm): the FIXED labels, read by the validation loader and by
+    # eval_m2 so selection and every printed metric stay on the control family's
+    # definition. None under every other mode (== labels).
+    labels_eval: Optional[Dict[str, np.ndarray]] = None
 
 
 @dataclass
@@ -485,6 +494,7 @@ def build_m2_index_bundle(
         "market_context": bool(want_market),
     }
 
+    volnorm_z_by_pair: List[Dict[str, np.ndarray]] = []   # X2: aligned with series_list
     for pair in pairs:
         pair = pair.strip().upper()
         if not pair:
@@ -514,6 +524,7 @@ def build_m2_index_bundle(
         )
         label_cols: Dict[str, np.ndarray] = {}
         return_cols: Dict[str, np.ndarray] = {}
+        z_cols: Dict[str, np.ndarray] = {}
         for h in horizons_minutes:
             th = FLAT_THRESHOLD_PER_HORIZON.get(h, FLAT_THRESHOLD)
             lab, fwd = make_labels_and_returns(frame["close"], h_bars_map[h], th)
@@ -522,6 +533,12 @@ def build_m2_index_bundle(
             # validity mask below anyway (label == -1), so the value is unused.
             return_cols[str(h)] = fwd.to_numpy(dtype=np.float32)
             np.nan_to_num(return_cols[str(h)], copy=False)
+            if LABEL_MODE == "volnorm":
+                z_cols[str(h)] = volnorm_z(
+                    frame["close"], h_bars_map[h], VN_VOL_WINDOW, VN_MIN_SIGMA
+                ).to_numpy(dtype=np.float64)
+        if LABEL_MODE == "volnorm":
+            volnorm_z_by_pair.append(z_cols)
 
         # Raw close prices (for momentum + buy-and-hold baselines and P&L sim).
         close_arr = frame["close"].to_numpy(dtype=np.float64)
@@ -568,6 +585,65 @@ def build_m2_index_bundle(
         pair_i_list.append(np.full(n, pi, dtype=np.int32))
         t_i_list.append(idx.astype(np.int32))
         times_list.append(times_bar[idx])
+
+    # --- X2: volatility-normalised training labels, band calibrated across pairs -----
+    # k_h is the |z| quantile, pooled over every pair's bars before VN_CALIB_END, at the
+    # FIXED label's flat share on the same bars: the recipe's average band, reshaped per
+    # pair and per time. The fixed labels are kept as `labels_eval` for selection/eval.
+    if LABEL_MODE == "volnorm" and series_list:
+        calib_ns = (
+            np.int64(pd.Timestamp(VN_CALIB_END, tz="UTC").value) if VN_CALIB_END else None
+        )
+        vn_report = {}
+        for k in horizon_keys:
+            absz, is_flat = [], []
+            for ser, zc in zip(series_list, volnorm_z_by_pair):
+                z = zc[k]
+                fixed = ser.labels[k]
+                m = np.isfinite(z) & (fixed >= 0)
+                if calib_ns is not None:
+                    m &= ser.times < calib_ns
+                absz.append(np.abs(z[m]))
+                is_flat.append(fixed[m] == 1)
+            absz = np.concatenate(absz) if absz else np.zeros(0)
+            is_flat = np.concatenate(is_flat) if is_flat else np.zeros(0, dtype=bool)
+            if absz.size == 0:
+                raise SystemExit("volnorm: no calibration bars — check VN_CALIB_END")
+            flat_share = float(is_flat.mean())
+            k_h = float(np.quantile(absz, flat_share))
+            vn_report[k] = {"k": k_h, "flat_share_fixed": flat_share,
+                            "n_calib": int(absz.size)}
+        for ser, zc in zip(series_list, volnorm_z_by_pair):
+            ser.labels_eval = dict(ser.labels)
+            new_labels = {}
+            for k in horizon_keys:
+                fb = pd.Series(ser.labels[k])
+                new_labels[k] = labels_from_z(
+                    pd.Series(zc[k]), vn_report[k]["k"], fb
+                ).to_numpy(dtype=np.int64)
+            ser.labels = new_labels
+        volnorm_z_by_pair.clear()
+        # the flat share the new labels realise on the same calibration bars (a check)
+        for k in horizon_keys:
+            flats, n = 0, 0
+            for ser in series_list:
+                m = ser.labels_eval[k] >= 0
+                if calib_ns is not None:
+                    m &= ser.times < calib_ns
+                flats += int((ser.labels[k][m] == 1).sum())
+                n += int(m.sum())
+            vn_report[k]["flat_share_volnorm"] = flats / max(n, 1)
+        meta["volnorm"] = {"vol_window": VN_VOL_WINDOW, "min_sigma": VN_MIN_SIGMA,
+                           "calib_end": VN_CALIB_END, "per_horizon": vn_report}
+        print(
+            "Labels: mode=volnorm vol_window=%d calib_end=%s | "
+            % (VN_VOL_WINDOW, VN_CALIB_END or "all")
+            + " ".join(
+                f"{k}m: k={v['k']:.4f} flat fixed={v['flat_share_fixed']:.4f} "
+                f"volnorm={v['flat_share_volnorm']:.4f} n_calib={v['n_calib']:,}"
+                for k, v in vn_report.items()
+            )
+        )
 
     # --- C12 second pass: cross-pair / market-wide columns -----------------------
     # Runs after every pair's matrix exists because these columns are defined ACROSS
@@ -1018,11 +1094,17 @@ class LazyMultiHorizonDataset(Dataset):
         bundle: M2IndexBundle,
         sample_idx: np.ndarray,
         horizon_keys: Optional[Sequence[str]] = None,
+        label_set: str = "train",
     ):
         self.bundle = bundle
         self.sample_idx = np.asarray(sample_idx, dtype=np.int64)
         self.horizon_keys = list(horizon_keys or bundle.horizon_keys)
         self.seq_len = bundle.seq_len
+        # "train" -> PairSeries.labels (the training target); "eval" -> labels_eval, the
+        # fixed labels under LABEL_MODE=volnorm (X2), identical to labels otherwise.
+        if label_set not in ("train", "eval"):
+            raise ValueError(f"label_set must be 'train' or 'eval', got {label_set!r}")
+        self.label_set = label_set
 
     def __len__(self):
         return int(self.sample_idx.shape[0])
@@ -1034,8 +1116,13 @@ class LazyMultiHorizonDataset(Dataset):
         ser = self.bundle.series[pi]
         # copy so DataLoader collation owns the buffer
         x = np.array(ser.feats[t - self.seq_len : t], dtype=np.float32, copy=True)
+        labels = (
+            ser.labels_eval
+            if self.label_set == "eval" and ser.labels_eval is not None
+            else ser.labels
+        )
         y = {
-            k: torch.tensor(int(ser.labels[k][t]), dtype=torch.long)
+            k: torch.tensor(int(labels[k][t]), dtype=torch.long)
             for k in self.horizon_keys
         }
         # Raw forward-return target for the quantile head, under reserved "ret_<h>"
