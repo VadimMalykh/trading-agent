@@ -1394,7 +1394,52 @@ can only pull the contrast toward zero, so the change is conservative for X3. Th
 list, target, model, statistic and gates are untouched; the fallback rule (incumbent size,
 counted and printed) is untouched.
 
-### 9.7 X4 — signal-conditioned exits on the folds: the registration
+### 9.7 X4 — signal-conditioned exits on the folds: the registration — 🟢 CLOSED 2026-09-15, NOT CONFIRMED (sign consistent, power not there)
+
+**RESULT, read 2026-09-15.** Explore `logs/exits_explore_20260915.log` (gate passed, `persist05`
+chosen — table below); confirm `logs/exits_confirm_20260915.log`, F2+F3 read once. Harness checks
+passed on all twelve fold-seeds (compounding ≤ 6e-8; the null configuration reproduces the
+incumbent exactly); fallbacks 0 everywhere.
+
+| `persist05` − incumbent, bps per seed-day | mean | 95% CI | days | exit mix (ext1 / ext2 / timer) | per trade (info) | maxDD arm / inc |
+|---|---:|---|---:|---|---:|---|
+| F2 (2025-04 → 10) | +16.76 | [−52.46, +85.99] | 144 | 16% / 7% / 78% | +12.26 [−2.48, +26.99] | −3.60 / −4.08 |
+| F3 (2024-10 → 2025-04) | +34.55 | [−34.30, +103.39] | 144 | 23% / 16% / 61% | +21.23 [−2.39, +44.86] | −4.99 / −5.73 |
+| **F2+F3 pooled** | **+25.74** | **[−23.17, +74.65]**, se 24.95 | 287 | | +16.56 | |
+| seed-numbers s1 / s2 / s3 | +21.73 / +55.10 / +22.35 | median +22.35 | | | | |
+
+E, the incumbent's own mean net per seed-day on F2+F3: **+165.48**.
+
+**Verdict, under §9.7 as written: NOT CONFIRMED** — the lower bound is −23.17, not above zero;
+the median seed-number is positive. The interval excludes E, so what is detected as absent is an
+improvement the size of the strategy's whole daily edge; a smaller one — the +26 the point
+estimate suggests, roughly a sixth of E — is inside the interval and **not resolvable at this
+power** (forecast MDE 70, realised half-width 49).
+
+**Reading, in plain terms.** Letting a trade run past four hours *when the model still agrees at
+the 5% cut* looks like a small, steady gain: the sign is positive on all four folds (+5, +112,
++17, +35 per seed-day), on all three seeds at both stages, and on eleven of the twelve fold-seed
+cells, while drawdown is *lower* on every fold (fewer trades, fewer crossings, no exposure
+added on bars the model has gone quiet on). That is a coherent picture, and it is also exactly
+the picture that a longer hold in an era with drift would paint — F1, the trending fold, carries
+three-quarters of the exploration effect. The day-by-day interval says the folds cannot tell
+those two stories apart. The flip half of the question is answered by absence: an opposite-side
+bar above the cut inside three hours of an entry occurred on 0.0–0.1% of trades, so there is
+nothing for a flip rule to act on at these cuts.
+
+**What closes and what would revive it.** 🔴 Closed on these folds as registered: no other mark,
+cut, cap or combination may be tried on F2/F3, and `persist05` may not be re-read there.
+**Revival trigger: forward days, at zero cost** — the forward ledger records the model's side
+and confidence on every closed 5-minute bar (`policy_bars`), so `persist05` is reconstructable
+on the forward data as a *counterfactual* of the running policy without changing anything served.
+That reconstruction belongs in M3_5 §4.3's schedule as a further pre-registered reading (R5),
+written before the ledger holds enough trades to suggest it; it is proposed in BACKLOG, not
+written here. A CONFIRMED forward reading would license writing the served-change registration
+this section describes.
+
+---
+
+**The registration as written on 2026-09-15, before the run:**
 
 **Written 2026-09-15, after X3 closed and before any number of this section was computed.
 Vadim chose X4 the same day.** Harness `ml/train/m3/exits.py`, run as
