@@ -120,7 +120,38 @@ check) written into DATA.md as a measured table.
 
 **Needed from Vadim:** the work VM (PLAN §6). Then Claude runs P0 on it.
 
-### P1 — Price the trade (~1–2 sessions; started 2026-09-15 with the tape stream)
+### P1 — Price the trade (✅ measured 2026-09-15; the fee tier is still an assumption)
+
+**Result in plain words.** A basis point (bps) is 0.01 %; a "round trip" is entry plus exit.
+On a 10,000 USDT position, a **taker** round trip (crossing the spread both ways) costs
+**10.0–10.6 bps on BTC, ETH and SOL, 10.8–12.8 bps on DOGE, XRP, AVAX, LINK, HYPE and PEPE,
+11.9–13.3 on ADA, ~14.2 on WLD and 14.5–15.5 on ZEC** — that is 10 to 16 USDT per 10k
+traded. Of those, **10 bps are the exchange fee** (5 bps each way at the published VIP 0
+schedule); the spread and the book's depth add only 0.02–5.5 bps at this size. So at the sizes
+we would start with, the cost is the fee, and **the account's fee tier is the single biggest
+lever on cost** — still needed from Vadim. At 100,000 USDT the majors still cost ~10–11 bps but
+the thin pairs 17–28 and ZEC cannot be priced (the book is too shallow on most days: blank, not
+guessed). A **maker** round trip (resting at the touch, filled only when price trades through
+the order) costs **6–10 bps** — 4 bps of fees plus 1–3 bps of adverse drift after the fill —
+and gets filled within 15 minutes on 86–97 % of placements; the rest have to pay the taker
+path. Holding through funding costs 0.6–2.7 bps per 8 hours (unconditional on side), so a
+one-day hold adds 2–8 bps. **Bottom line for P2: a signal has to be worth more than ~10–13 bps
+per round trip at 10k (14–16 on ZEC) as a taker, or ~6–10 as a maker, before it can trade.**
+
+**Where each number comes from** (`ft2 cost`, `output/cost.md`, `data/cost_daily.parquet` for
+the harness, `data/cost_table.parquet` for the summary):
+
+| component | measured | validation / caveat |
+|---|---|---|
+| spread | tape bounce estimate per pair × day, 2023-01 → 09-13; BTC 0.02 bps, ETH 0.05, SOL 0.4–0.5, the rest 0.3–2.6; hour-of-day effect ≤ 30 % | vs the collector's quoted spread on the 2026-07 → 09 overlap: ratio 0.76–1.00, daily correlation 0.63–0.99; the per-pair ratio calibrates the whole history (`spread_cal_bps`) |
+| impact | ladder walk, 40 days, 8 notionals; at 10k: 0–0.6 bps beyond the half-spread on the majors, 0.5–1.6 on PEPE/WLD | carried back by the archive ±1 % depth as impact(N·(D_ref/D_day)^γ); γ = 0.5 chosen inside the window (deep half → shallow half, mean relative error 0.406 vs 0.424 with no scaling — depth scaling barely matters at the window's 1.2–1.9 depth ratios; the history reaches ratio 12 on ZEC, where censoring, not the curve, protects the number) |
+| maker fill / adverse selection | tape minutes: resting at the minute's last bid/ask, filled if a later trade goes through it within 5/15/30 min; drift vs the resting price conditional on the fill | coarse (1-minute, queue position unknown); trade-level check on a short raw window is parked (§7) |
+| fees | **input**: VIP 0, no BNB discount | PENDING — recorded in the report header; re-run with `--taker-bps/--maker-bps/--fee-source` once known |
+| funding | `funding_archive`, signed and absolute per day; interval 8 h (HYPE 4 h) | — |
+| candle proxy | per-pair regression of the daily spread on 5m range, dollar volume and price; applied to 2022-08 → 2022-12 (1,215 pair-days) | time-split error 3–19 % on 7 pairs, 31–71 % on AVAX, WLD, ZEC, PEPE, SOL; only fold F0 (never scored) uses it |
+
+**Not yet done:** the fee tier; the trade-level maker validation (parked).
+
 
 **Deliverable:** a cost table, per pair × side (taker/maker) × volatility regime, in bps per
 round trip at a range of notionals (decided in P1 from the measured depth), over the **whole
@@ -139,17 +170,23 @@ to contain; DATA.md "External data"):
 | **funding** | `funding_archive` (`rate`, `interval_h`) | 2020 → | a carry cost for holds that cross a funding time; interval is *not* constant (4 h / 2 h periods exist) |
 | **candle proxy** | 5m candles high/low/close | 2022-08 → | fitted on 2023-01 → against the tape estimate, error reported, applied to 2022-08 → 2022-12 only |
 
-Commands, in order (all on the work VM):
+Commands, in order (all on the work VM; the code is unit-tested on synthetic data first with
+`scripts/ft2.sh --test`, Docker, no VM):
 
 1. `ft2 tape` — **started 2026-09-15 04:35 UTC** on the VM (log `output/logs/p0b_chain2.log`,
-   the VM powers itself off at the end). ~1–2 h, download-bound. **Next session checks it:**
-   the log ends with one `tape <pair> {...}` line per pair and `tape-done`; any `err` or
-   unexpected `missing` count → `vm.sh run tape` again (per-day parts already done are skipped).
-   Then `vm.sh run inventory`, `vm.sh pull`, and fill the `tape` row in DATA.md.
-2. `FROM=2026-08-05 TO=2026-09-14 ./scripts/export.sh levels` then `vm.sh run ingest levels` —
-   the ladder, windowed (several GB of jsonb).
-3. `vm.sh run cost` (to be written): the six measurements above → `output/cost.md` and
-   `data/cost_table.parquet`; the table rows in this section are filled from it.
+   the VM powers itself off at the end). The log ends with one `tape <pair> {...}` line per pair
+   and `tape-done`; any `err` or unexpected `missing` count → `vm.sh run tape` again (per-day
+   parts already done are skipped). Then `vm.sh run inventory`, `vm.sh pull`, fill the `tape`
+   row in DATA.md.
+2. `vm.sh bgsh p1_levels_export 'FROM=2026-08-05 TO=2026-09-14 FT2_PG_HOST=10.212.0.2 bash scripts/export.sh levels'`
+   (started 2026-09-15 06:23 UTC, in parallel with the tape), then `vm.sh run ingest levels` →
+   `data/ladder/<symbol>.parquet` (DATA.md "ladder"; `ft2/ladder.py` holds the book walk).
+3. `vm.sh run cost` (`ft2/cost.py`, written 2026-09-15) → `output/cost.md`,
+   `data/cost_daily.parquet` (pair × day: regime, spread with its source, impact per notional,
+   maker fill/adverse selection, funding — what the harness re-prices trades from) and
+   `data/cost_table.parquet` (pair × regime summary). Fees enter as `--taker-bps/--maker-bps`
+   (default: the published VIP 0 schedule, 5 / 2 bps, recorded as PENDING in the report header)
+   and `--fee-source`. Then `vm.sh pull` and fill the table rows below from `output/cost.md`.
 
 **Needed from Vadim:** the account's Binance USDⓈ-M fee tier — either the VIP level and whether
 BNB fee discount is on, or a read-only API key so that `GET /fapi/v1/commissionRate` can be
@@ -285,6 +322,7 @@ registered positive on confirmation folds.
 | sequence / deep models | no evidence of interactions yet | P2 learning curve: tree > linear outside the noise floor and still rising |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
 | paper trading (P7) | nothing to trade yet | P5 registered positive on confirmation folds |
+| trade-level maker validation (`ft2 tape --keep-zip` on a ~2-week window; queue position and fill timing at the trade level) | P1's minute-level maker numbers (fill 86–97 %, adverse 1–3 bps) are coarse; refining them changes nothing until a maker path is on the table | P5 chooses a maker execution, or P2's verdict hinges on the 4-bps taker-vs-maker difference |
 
 ## 8. Registrations
 

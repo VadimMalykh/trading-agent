@@ -14,7 +14,8 @@ def cmd_smoke(_args):
           f"statsmodels {statsmodels.__version__}, lightgbm {lightgbm.__version__}")
 
 
-ARCHIVE_INGEST = {"metrics": "ingest_metrics", "depth": "ingest_depth", "funding_archive": "ingest_funding_archive"}
+ARCHIVE_INGEST = {"metrics": "ingest_metrics", "depth": "ingest_depth", "funding_archive": "ingest_funding_archive",
+                  "levels": "ingest_levels"}   # levels: the collector ladder, windowed export → data/ladder/
 
 
 def cmd_ingest(args):
@@ -45,6 +46,11 @@ def cmd_tape(args):
     tape.run(args.symbols or PAIRS, args.start, args.end, workers=args.workers, keep_zip=args.keep_zip)
 
 
+def cmd_cost(args):
+    from . import cost
+    cost.main(args.rest)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="ft2")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -64,9 +70,12 @@ def main(argv=None):
     t.add_argument("--end", default=None, help="inclusive; default: two days ago")
     t.add_argument("--workers", type=int, default=6)
     t.add_argument("--keep-zip", action="store_true", help="keep the raw zips (only for a short validation window)")
+    c = sub.add_parser("cost", help="P1: price the trade → output/cost.md, data/cost_daily.parquet, data/cost_table.parquet "
+                                    "(--taker-bps --maker-bps --fee-source --symbols; see ft2/cost.py)")
+    c.add_argument("rest", nargs=argparse.REMAINDER)
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory,
-            "archive": cmd_archive, "tape": cmd_tape}[args.cmd](args)
+            "archive": cmd_archive, "tape": cmd_tape, "cost": cmd_cost}[args.cmd](args)
 
 
 if __name__ == "__main__":

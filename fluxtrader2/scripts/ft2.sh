@@ -4,6 +4,7 @@
 #   ./fluxtrader2/scripts/ft2.sh smoke            # python -m ft2 smoke
 #   ./fluxtrader2/scripts/ft2.sh <subcommand> …   # any `python -m ft2 …` subcommand
 #   ./fluxtrader2/scripts/ft2.sh --shell          # interactive shell
+#   ./fluxtrader2/scripts/ft2.sh --test [args]    # pytest over tests/ (synthetic data, no VM needed)
 #   FT2_REBUILD=1 ./fluxtrader2/scripts/ft2.sh smoke   # force an image rebuild
 #
 # fluxtrader2/ is bind-mounted at /workspace/ft2, so code edits need no rebuild and
@@ -21,5 +22,8 @@ fi
 ARGS=(--rm -v "$DIR:/workspace/ft2" -w /workspace/ft2 "$IMAGE")
 if [[ "${1:-}" == "--shell" ]]; then
   exec docker run -it "${ARGS[@]}" /bin/bash
+fi
+if [[ "${1:-}" == "--test" ]]; then
+  shift; exec docker run "${ARGS[@]}" python -m pytest -q tests "$@"
 fi
 exec docker run "${ARGS[@]}" python -m ft2 "$@"

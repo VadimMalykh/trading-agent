@@ -14,7 +14,7 @@ otherwise knows nothing about this folder.
 
 | date | where we are | needed from Vadim |
 |---|---|---|
-| 2026-09-15 | **P0 and P0b done; P1 started.** Collector tables and the public archive (`metrics` 5m, `depth` ±0.2–5 % bands at 30 s, `funding_archive`; all pairs 2023-01 →) are parquet on the work VM, inventory clean (DATA.md), folds fixed. The tape stream (`ft2 tape`, 136 GB raw → per-minute summary with an effective-spread estimate) was left running on the VM at 04:35 UTC; it powers the VM off when done. **Next session, in order:** (1) `vm.sh start`, then `vm.sh ssh 'tail -5 ~/fluxtrader2/output/logs/p0b_chain2.log'` — expect `tape-done`; if a pair shows `err`/`missing` days, `vm.sh run tape` once more (resumable); (2) `vm.sh run inventory`, `vm.sh pull`, fill the `tape` row of DATA.md "Archive tables as measured"; (3) PLAN P1 steps 2–3: windowed ladder export, then write and run `ft2 cost`. | **The account's fee tier** (VIP level + BNB discount on/off, or a read-only key). Nothing else. |
+| 2026-09-15 | **P0, P0b and P1 done (PLAN P1 has the plain-language result).** Tape streamed for all 12 pairs (0 errors, 0 missing days), the collector's ladder exported and reduced (`data/ladder`), and `ft2 cost` measured: a 10k USDT taker round trip costs 10–13 bps on eleven pairs and 14–16 on ZEC, of which 10 bps are the VIP 0 fee; maker 6–10 bps with 86–97 % fills in 15 min. **Next session: P2, the ceiling audit** — write `ft2 ceiling` per PLAN P2's seven items, starting with #7 (share of bars whose forward move exceeds the P1 cost, read from `data/cost_daily.parquet`) and #1–3, on F1+F2 only; `scripts/ft2.sh --test` before every VM run; the VM is stopped (`vm.sh start` first). | **The account's fee tier** (VIP level + BNB discount on/off, or a read-only key); then `vm.sh run cost -- --taker-bps X --maker-bps Y --fee-source '…'` re-prices everything. Nothing else. |
 
 ## The boundary with the first project
 
@@ -40,7 +40,8 @@ fluxtrader2/
   scripts/vm_setup.sh installs the VM (venv + deps); idempotent; the reinstall runbook
   scripts/export.sh  export raw tables from the collector's DB into data/raw/ (run on the work VM)
   scripts/ft2.sh     run any ft2 command in Docker locally — the only local way
-  ft2/               the Python package (empty scaffold; grows with the phases)
+  ft2/               the Python package (grows with the phases)
+  tests/             pytest on synthetic data — `scripts/ft2.sh --test` (Docker, no VM needed)
   data/              exported slices, gitignored
   output/            results, gitignored
 ```
@@ -64,6 +65,7 @@ installed by `scripts/vm_setup.sh` (which is also the reinstall runbook).
 
 ```sh
 ./fluxtrader2/scripts/ft2.sh smoke          # builds the image on first use, prints versions
+./fluxtrader2/scripts/ft2.sh --test         # unit tests on synthetic data (run before any VM job that uses new code)
 ./fluxtrader2/scripts/ft2.sh --shell        # interactive shell in the image
 ```
 

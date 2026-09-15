@@ -48,7 +48,9 @@ case "$cmd" in
       "$ROOT/fluxtrader2/scripts/vm_setup.sh" "$ROOT/fluxtrader2/requirements.txt" "$VM:~/"
     gssh "bash ~/vm_setup.sh"
     exec "$0" push ;;
-  start)  gcloud compute instances start "$VM" --zone "$ZONE" --project "$PROJECT" --quiet ;;
+  start)  gcloud compute instances start "$VM" --zone "$ZONE" --project "$PROJECT" --quiet
+          # the external IP changes on every start; refresh the ssh alias rsync uses (push/pull)
+          gcloud compute config-ssh --project "$PROJECT" --quiet >/dev/null ;;
   stop)   gcloud compute instances stop  "$VM" --zone "$ZONE" --project "$PROJECT" --quiet ;;
   status) gcloud compute instances describe "$VM" --zone "$ZONE" --project "$PROJECT" \
             --format='value(status,machineType.basename(),networkInterfaces[0].networkIP,disks[0].diskSizeGb)' ;;

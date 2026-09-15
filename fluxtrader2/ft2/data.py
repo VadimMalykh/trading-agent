@@ -30,6 +30,7 @@ SLICES: dict[str, tuple[str, list[str]]] = {
     "depth": ("ts", ["symbol", "ts"]),              # data/depth/<symbol>.parquet, one file per pair
     "funding_archive": ("ts", ["symbol", "ts"]),
     "tape": ("ts", ["symbol", "ts"]),               # data/tape/<symbol>.parquet, per-minute (ft2 tape, P1)
+    "ladder": ("ts", ["symbol", "ts"]),             # data/ladder/<symbol>.parquet, per snapshot (ingest_levels, P1)
 }
 TIME_COLS = {"open_time", "close_time", "ts", "event_time", "transaction_time",
              "window_start", "next_funding_time"}
@@ -68,7 +69,8 @@ def load(slice_: str, columns: list[str] | None = None, symbols: list[str] | Non
         if symbols is not None:
             files = [f for f in files if f.stem in symbols]
         df = pd.concat((pd.read_parquet(f, columns=columns) for f in files), ignore_index=True)
-        df["symbol"] = df["symbol"].astype(str).astype("category")
+        if "symbol" in df:
+            df["symbol"] = df["symbol"].astype(str).astype("category")
         return df
     df = pd.read_parquet(PROC / f"{slice_}.parquet", columns=columns)
     if symbols is not None:
@@ -201,3 +203,50 @@ def ingest_funding_archive(symbols: list[str]) -> dict:
     df.to_parquet(PROC / "funding_archive.parquet", index=False)
     return {"slice": "funding_archive", "rows_in": n_in, "dups_dropped": n_in - len(df), "rows_out": len(df),
             "first": df["ts"].min(), "last": df["ts"].max(), "file": str(PROC / "funding_archive.parquet")}
+
+
+# ---- the collector's raw ladder (scripts/export.sh levels, windowed) --------------------------
+def ingest_levels(symbols: list[str], chunksize: int = 50_000) -> dict:
+    """data/raw/levels.csv.gz (raw `orderbook_levels`, 100-level JSON a side) → data/ladder/<symbol>.parquet.
+
+    The raw file is several GB of JSON text and is read once, in chunks; each row is reduced by
+    ft2.ladder.summarize to the touch, the near-touch notional and the slippage of a market
+    order at each of ft2.ladder.NOTIONALS (see that module's header). The raw file is kept."""
+    from . import ladder
+    # one file (export.sh levels over the whole window) or per-day parts data/raw/levels/<day>/levels.csv.gz
+    # (a resumable day-by-day export: OUT=data/raw/levels/$d FROM=$d TO=$d+1 export.sh levels)
+    srcs = [RAW / "levels.csv.gz"] if (RAW / "levels.csv.gz").exists() else sorted((RAW / "levels").glob("*/levels.csv.gz"))
+    if not srcs:
+        raise FileNotFoundError(RAW / "levels.csv.gz")
+    out_dir = PROC / "ladder"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    parts: dict[str, list[pd.DataFrame]] = {s: [] for s in symbols}
+    n_in = 0
+    print(f"  levels: {len(srcs)} raw file(s)", flush=True)
+    for src in srcs:
+        for i, chunk in enumerate(pd.read_csv(src, chunksize=chunksize, dtype={"bids": str, "asks": str})):
+            n_in += len(chunk)
+            s = ladder.summarize_frame(chunk)
+            for sym, g in s.groupby("symbol", observed=True):
+                if sym in parts:
+                    parts[sym].append(g)
+            if i % 10 == 0:
+                print(f"  levels: {n_in:>10,} rows read", flush=True)
+    totals = {"rows_in": n_in, "rows_out": 0, "dups_dropped": 0}
+    first, last = None, None
+    for sym in symbols:
+        if not parts[sym]:
+            continue
+        df = pd.concat(parts[sym], ignore_index=True)
+        n = len(df)
+        df = df.sort_values("ts", kind="mergesort").drop_duplicates(["ts"], keep="last").reset_index(drop=True)
+        df["symbol"] = df["symbol"].astype("category")
+        df.to_parquet(out_dir / f"{sym}.parquet", index=False)
+        totals["rows_out"] += len(df)
+        totals["dups_dropped"] += n - len(df)
+        first = df["ts"].min() if first is None else min(first, df["ts"].min())
+        last = df["ts"].max() if last is None else max(last, df["ts"].max())
+        print(f"  ladder {sym:<13} rows={len(df):>9,} {df['ts'].min():%Y-%m-%d} .. {df['ts'].max():%Y-%m-%d} "
+              f"spread_bps p50={df['spread_bps'].median():.3f} ask_extent_bps p50={df['ask_extent_bps'].median():.1f}", flush=True)
+        parts[sym] = []
+    return {"slice": "levels", **totals, "first": first, "last": last, "file": str(out_dir)}

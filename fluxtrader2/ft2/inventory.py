@@ -145,6 +145,9 @@ def run(out: Path = Path("output/inventory.md")) -> str:
     if "depth" in have:
         md += ["\n## depth (archive bookDepth, ~30 s): extent and cadence\n", _archive_cadence("depth", "30s").to_markdown(), "\n",
                "\n### depth: completeness (all ten levels present?)\n", _depth_completeness().to_markdown(), "\n"]
+    if "tape" in have:
+        md += ["\n## tape (archive aggTrades per minute, P1): extent and cadence — a 'gap' here is a run of minutes without a trade\n",
+               _archive_cadence("tape", "1min").to_markdown(), "\n"]
     if {"funding_archive", "funding"} <= set(have):
         md += ["\n## funding: archive vs collector at the same funding timestamp\n", _funding_crosscheck().to_markdown(), "\n"]
     if {"candles_1m", "candles_5m"} <= set(have):

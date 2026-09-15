@@ -77,6 +77,18 @@ ZEC, 1000PEPE and **2026-08-14 03:12** for ADA, AVAX, LINK, XRP; 235k–320k row
 2026-09-15. Large (several GB of jsonb on the VM); export it windowed and only when a phase needs
 the ladder (P1's impact walk does).
 
+#### ladder (derived from `orderbook_levels`; `ft2 ingest levels`, P1) — `data/ladder/<symbol>.parquet`, one row per snapshot
+
+The windowed export `FROM=2026-08-05 TO=2026-09-14 export.sh levels` (raw `levels.csv.gz`,
+kept) reduced per snapshot to: the touch (`best_bid`, `best_ask`, `mid`, `spread_bps`), the
+levels present and how far from mid the last one sits (`n_bid`, `n_ask`, `*_extent_bps`), the
+notional resting within 0.2 % and 1 % of mid on each side (`usd_bid_02` … `usd_ask_1`, the same
+bands as the archive `depth` table, for scaling impact back in time), and `slip_buy_<N>` /
+`slip_sell_<N>`: the fill VWAP of a market order of N USDT versus mid in bps for
+N ∈ {1k, 2.5k, 5k, 10k, 25k, 50k, 100k, 250k}, NaN when the ladder held less than N on that side
+(censored, never extrapolated). Column semantics in `ft2/ladder.py`. Cadence measured on
+2026-09-13: 7,006 rows per pair-day (≈ 12 s), not the ~5 s the collector aims for.
+
 ### market_trades — `(symbol, window_start) → trade_count, volume, buy_volume, sell_volume, vwap, high, low`
 
 Aggregated tape per ~5 s polling window. First window 2026-07-17 21:13 (BTC, ETH, SOL),
@@ -158,7 +170,8 @@ collector's quoted spread in their overlap in P1.
 | `metrics` (5m) | 12 (from listing: PEPE 2023-05-05, WLD 2023-07-24, HYPE 2025-05-30) | 2023-01-01 → 2026-09-13 | 4,322,018 | 2 duplicate keys dropped; cadence exactly 5 min; 4–6 gaps > 10 min per pair, the largest 10.5 h and common to every pair (an archive outage, not ours; AVAX has 15); WLD and ZEC each miss one whole day |
 | `depth` (30 s) | 12 (same starts) | 2023-01-01 → 2026-09-13 | 42,277,682 (from 438.8M long rows) | 0 duplicates; **0 rows missing a core ±1–5 % level**; 2,880 rows/day median on every pair; ±0.2 % bands on 668,748 rows per pair from **2026-01-15**; 2–5 whole days missing per long pair inside one common ~3-day archive hole (largest gap 2 d 22 h), plus ~11 short (> 60 s) gaps per day |
 | `funding_archive` | 12 | listing → 2026-08-31 (BTC/ETH from 2020-01-01) | 73,251 | 0 duplicates; vs the collector's `funding_rates` at the same funding timestamp: **99.94–100 % identical rates** on 2,706–4,469 overlapping rows per pair; `interval_h` is 8 on ten pairs, **4 on HYPE, and 2/4/8 on SOL** in different periods |
-| `tape` (1 min, P1) | 12 | 2023-01-01 → | *(streaming 2026-09-15; rows filled when `ft2 tape` finishes)* | per-day parts, resumable; raw zips not kept |
+| `tape` (1 min, P1) | 12 (PEPE 2023-05-05, WLD 2023-07-24, HYPE 2025-05-30) | 2023-01-01 → 2026-09-13 | 21,616,106 | streamed 2026-09-15 04:35–07:14 UTC, 0 fetch errors; **0 days missing on every pair**; 3 quiet runs > 2 min per pair, the largest 20 min and common to all (an exchange pause), ZEC 221 (thin book); per-day parts kept, raw zips not |
+| `ladder` (collector `orderbook_levels`, ~12 s, P1) | 12 | 2026-08-05 (ADA/AVAX/LINK/XRP 08-14) → 2026-09-13 | 3,388,622 | 40 per-day raw exports (3.5 GB gz, kept); 0 duplicates; the 100 levels reach only 1.7 bps from mid on BTC (4 on ETH, 13 on ZEC/HYPE) versus 70–480 bps on the thin pairs, so BTC/ETH ladders hold ~1–3 % of the archive's ±1 % notional and the archive band is what scales impact back in time |
 
 ## Folds (fixed 2026-09-15; `ft2/folds.py` is the code, this is the record)
 

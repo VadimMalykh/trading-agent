@@ -8,3 +8,4 @@ scikit-learn>=1.4,<2      # ridge / logistic baselines, rank transforms (PLAN P2
 statsmodels>=0.14,<1      # variance-ratio, Ljung-Box, HAC standard errors (PLAN P2)
 lightgbm>=4.1,<5          # shallow boosted trees (PLAN P2, P5); needs libgomp1 in the image
 tabulate>=0.9              # DataFrame.to_markdown for the inventory report (P0)
+pytest>=8                  # unit tests on synthetic data (tests/), run in Docker: scripts/ft2.sh --test
