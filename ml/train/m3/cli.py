@@ -1131,6 +1131,13 @@ def cmd_exits(args) -> int:
                         exploration_recorded=args.exploration_recorded, config=args.config)
 
 
+def cmd_pathexits(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.8 — X6: price-path exits (vol-scaled and trailing stops) on the folds."""
+    from . import pathexits
+    return pathexits.report(WINNER_SPEC, stage=args.stage,
+                            exploration_recorded=args.exploration_recorded, config=args.config)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1703,6 +1710,16 @@ def main() -> int:
                     help="required by --stage confirm: the exploration table and label are in §9.7")
     ex.add_argument("--config", default=None, help="--stage confirm only: the label from §9.7")
     ex.set_defaults(fn=cmd_exits)
+
+    px = sub.add_parser("pathexits", help="WALKFORWARD_PROTOCOL §9.8 (X6): the incumbent's trades "
+                        "with price-path exits — volatility-scaled and trailing stops on the 5m "
+                        "candle path (output/wf_side); explore on F0+F1, confirm once on F2+F3 "
+                        "(needs M3_ERA=walkforward)")
+    px.add_argument("--stage", choices=["explore", "confirm"], required=True)
+    px.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: the exploration table and label are in §9.8")
+    px.add_argument("--config", default=None, help="--stage confirm only: the label from §9.8")
+    px.set_defaults(fn=cmd_pathexits)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

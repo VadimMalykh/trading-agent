@@ -73,7 +73,8 @@ def load_candles(interval: str = "5m", export_dir: str | None = None) -> pd.Data
     downstream is an exact integer join rather than a float-tolerant timestamp compare.
     """
     d = export_dir or EXPORT_DIR
-    df = _csv(f"candles_{interval}", ["open_time", "close_time"], export_dir=d)
+    df = _csv(f"candles_{interval}", ["open_time", "close_time"], export_dir=d,
+              float_cols=["open", "high", "low", "close", "volume"])
     out = pd.DataFrame({
         "pair": df["symbol"].astype(str),
         "ts": pd.DatetimeIndex(df["open_time"]).asi8,

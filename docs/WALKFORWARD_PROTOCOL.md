@@ -1596,3 +1596,161 @@ under-powered for an effect of this size unless F2+F3 come in stronger.
 effect comes from F1, the fold whose incumbent earns +308 per seed-day; a longer hold in a
 strongly trending era captures drift the timer forgoes. Whether that survives F2+F3 is exactly
 what the confirmation asks.
+
+### 9.8 X6 — price-path exits (volatility-scaled and trailing stops) on the folds: the registration — 🟢 CLOSED 2026-09-15, GATE NOT PASSED (every stop loses, several detectably)
+
+**RESULT, read 2026-09-15.** Explore `logs/pathexits_explore_20260915.log`. Harness checks passed
+on all six F0/F1 fold-seeds: the candle rebuild equals each dump's 240m `fwd_ret` exactly, and the
+null walk reproduces the incumbent (max per-trade |Δret| ≤ 8.6e-9, 0 path fallbacks); fallbacks 0
+in every arm. `m3 validate` (C3) passed first. **F2 and F3 were not loaded.**
+
+| config | arm − incumbent, bps/notional, F0+F1 | 95% CI | s1 / s2 / s3 | exited early | +5 bps stop slip | F0 | F1 |
+|---|---:|---|---|---:|---:|---:|---:|
+| `stop_v15` | −12.66 | [−19.45, −5.88] | −12.05 / −16.82 / −8.55 | 15% | −13.46 | −5.77 | −20.77 |
+| **`stop_v25`** (chosen) | **−9.42** | [−20.29, +1.46] | −9.10 / −8.79 / −10.43 | 5% | −9.67 | −4.60 | −15.07 |
+| `trail_v15` | −17.71 | [−25.64, −9.78] | −14.99 / −23.68 / −13.56 | 23% | −18.88 | −6.31 | −31.11 |
+| `trail_v25` | −11.29 | [−23.33, +0.76] | −11.15 / −10.34 / −12.49 | 6% | −11.63 | −5.54 | −18.05 |
+| `trail_v15_hi` | −16.47 | [−24.04, −8.90] | −14.44 / −20.49 / −13.86 | 11% | −17.21 | −5.55 | −29.30 |
+
+E, the incumbent's own net per notional at taker 14 on F0+F1: **+19.72** [−15.67, +55.11]
+(F0 −0.57, F1 +43.56; 3,415 trades). Forecast confirmation MDE for the chosen arm: 10.59.
+
+**Verdict, under §9.8 as written: GATE NOT PASSED** — the best configuration is −9.42 with every
+seed negative. §9.8 closes here. As expected, and more clearly than expected: **all five arms are
+negative on every seed and both folds, and the three that fire most (`stop_v15`, `trail_v15`,
+`trail_v15_hi`) exclude zero** — the paired design delivered the tight interval it was chosen for,
+so this is a *detected* loss, not an undetectable one. The ordering is M3-0b's again: the rarer the
+stop fires, the smaller the loss; the trailing stop, which fires on ordinary give-backs, is worst.
+Restricting it to the top regime quintile (where the ladder is largest) does not help.
+
+**The brake, re-priced (information only).** The live `auto` path's 2% stop / 4% target on F0+F1:
+**−29.50 [−56.50, −2.49] bps per notional** against the timer (per trade −37.11; stop 28.9%, target
+7.8% of trades; F0 −6.05, F1 −57.05). M3-0b priced it at −10.5 gross per trade on 2025-12 →
+2026-08; on independent history it costs more, and in the volatile fold it costs more than the
+strategy's whole edge. This does not change REAL_MONEY_TRACK's Q2 decision by itself — the brake is
+catastrophe insurance, and no backtest of this length contains the catastrophe — but the premium is
+now measured on the folds, and it is large. Filed against BACKLOG's brake row.
+
+**What closes.** Price-path exits of the stop and trailing kind, on these folds: 🔴 no other k,
+reference price, vol window, target or combination may be tried on F2/F3. The one exit lever left
+standing is §9.7's `persist05` (hold longer while the model agrees), carried forward as R5.
+
+*The registration as written on 2026-09-15 follows, unchanged, as the record of what was fixed
+before the log was read.*
+
+**In plain terms.** Every trade closes after exactly four hours. §9.7 tested exits driven by the
+model's own later opinion; this tests the other family — exits driven by **price**: a stop that
+closes a trade once it has gone against us by a set multiple of that coin's normal 4-hour move,
+and a *trailing* stop that follows the trade's best price and closes it once it gives back that
+much. Fixed-percentage stops already lost to the four-hour hold (M3_0B_RESULTS §5), so the
+expectation is that these lose too; the reason to test them is that they have never been tested,
+and a volatility-scaled stop is the version a real account would actually run as protection.
+
+**Written 2026-09-15, after §9.7 closed and before any number of this section was computed.
+Vadim chose it the same day** ("start option 1"). Harness `ml/train/m3/pathexits.py`, run as
+`M3_ERA=walkforward ./scripts/m3.sh -m m3 pathexits --stage explore`, then, only if the
+exploration gate passes and its table is recorded here, `--stage confirm --exploration-recorded
+--config <label>`. CPU only, analysis container. §9.7 stated this family is "unaffected either
+way and needs the fold-era side-table first"; it is scored on F2/F3 under its own registration.
+
+**The price path — exported and accepted before this section was written.** 5m candles
+(open/high/low/close) for all twelve pairs, 2024-10-01 → 2026-09-11, from `fluxtrader-1`
+(`OUT=ml/train/output/wf_side FROM=2024-10-01 TO=2026-09-12 ONLY=candles_5m
+./scripts/gcp_m3_export.sh`): 2,387,682 bars, no duplicate `(pair, ts)`. **Acceptance, M3-0b's
+gate (sidetable module docstring):** the 240-minute forward return rebuilt from these candles
+equals every fold dump's own 240m `fwd_ret` **exactly after the float32 round-trip on all
+twelve fold-seeds** (580k bars each, 0 unmatched, max |diff| ≤ 6.3e-8). The live DB holds 5m
+candles from 2022-08 for ten pairs (HYPE from 2025-05, 1000PEPE 2023-05, WLD 2023-07, as in
+the fold dumps). One loader defect was fixed on the way (`bookprep._csv` inferred `volume` as
+int64 in some chunks; candle price/volume columns are now coerced to float64). The harness
+re-runs this equality on every fold-seed before scoring.
+
+**Entries — the incumbent's, unchanged, and identical in every arm.** `backtest.run` with
+M3-2's winner spec on each fold-seed: coverage cut 0.02, side from the 240m head, BTC 24h
+regime filter, quintile ladder size, serial per pair. 🔴 **Each arm may only shorten a trade,
+and the pair stays occupied until the original entry + 240 minutes even after an early exit**
+— so every arm takes exactly the incumbent's trades at the incumbent's sizes. That makes this a
+same-entries design (as §9.6, not §9.7), which is what lets the tight paired statistic below
+apply. A served version would have to keep the same lock; that is part of what is registered.
+
+**The volatility unit.** σ₄ₕ = the standard deviation of the pair's 5-minute log returns over
+the **288 bars ending at the entry bar** (one day, sample sd), × √48. A stop distance of k·σ₄ₕ
+is applied in log space: a long's stop is `ref · exp(−k·σ₄ₕ)`, a short's `ref · exp(+k·σ₄ₕ)`.
+
+**The five configurations — the list is the registration.**
+
+| label | rule |
+|---|---|
+| `stop_v15`, `stop_v25` | fixed stop at k = 1.5 / 2.5 from the entry price (`ref` = entry close); no target; otherwise the 240-minute timer |
+| `trail_v15`, `trail_v25` | trailing stop at k = 1.5 / 2.5 behind the **best close since entry** (`ref` starts at the entry close; for bar j the stop uses the best close through bar j−1, and bar j's close updates it only after bar j is tested); otherwise the timer |
+| `trail_v15_hi` | `trail_v15` applied **only to top-regime-quintile trades** (size 5⁄3); every other trade takes the timer — the regime-conditional barrier M3_0B §5 lists |
+
+**Fill rules, fixed now (conservative, one-directional).** Walk bars k+1 … k+48 (positional, as
+training's `fwd_ret`). On bar j: if the bar **opens** beyond the stop, fill at the open (a gap
+through the stop); else if its low (long) / high (short) touches the stop, fill at the stop;
+else continue. No target exists, so there is no same-bar ambiguity. Untouched → the close of bar
+k+48, which is the incumbent's own return. Every trade pays exactly one round trip whatever its
+exit, so the fee cancels in the contrast.
+
+**Fallback.** An entry bar absent from the grid, fewer than 48 bars after it, or no 288-bar σ₄ₕ
+→ the trade keeps the incumbent's return, is counted and printed. More than **10%** of a fold's
+trades in any arm → the run stops and this section is revisited first.
+
+**The statistic, fixed now — §9.6's.** Contrast = **arm − incumbent, net bps per unit of
+notional** (Σ signed_ret·size / Σ size), cluster-robust on UTC exit days, by
+`walkforward.paired_notional_diff_bps`, pooling all fold-seeds of the stage. **Reported, not
+deciding:** the per-fold contrast; the per-trade diff; the share of trades stopped and the mean
+hold; max drawdown per arm per fold; the fallback count; the same contrast with an extra
+**5 bps × size charged on every stopped trade** (a stop-market order's slippage beyond the
+3 bps in the taker line — a sensitivity, never a selector).
+
+**One informational arm, exploration stage only, never selectable:** the live `auto` path's
+brake, **2% stop / 4% target**, scored by `sidetable.barrier_exit` with M3-0b's own touch rule
+(intrabar, same-bar ambiguity charged as the stop). M3-0b priced it at −10.5 gross bps per trade
+on 2025-12 → 2026-08; this re-prices it on F0+F1 for REAL_MONEY_TRACK's Q2, whatever the verdict.
+
+**Harness checks, before any contrast is read (falsifiable).** (1) The candle rebuild of 240m
+`fwd_ret` equals the fold-seed's dump exactly (float32). (2) The **null configuration** (walk
+the path, never stop) reproduces the incumbent on every fold-seed: same trade count, same
+entries and sizes, per-trade |Δ return| ≤ 1e-6 (the dump stores float32). If either fails the
+harness is fixed; the registration does not move.
+
+**Shape, under §9.0 rule 2.** `explore` — F0 + F1, all five configurations. **Choice rule,
+mechanical:** the configuration with the highest pooled F0+F1 contrast; its label and the table
+are recorded here before `confirm`. **Exploration gate:** passes iff that contrast is **> 0**
+*and* positive on the **median seed-number** (s1, s2, s3 each pooled across F0+F1). If not, this
+section closes and F2/F3 are not read. The explore stage prints the **forecast MDE** for the
+confirmation shape: SE × √(D_F0+F1 / D_F2+F3) × 1.96, D = calendar days in the fold spans
+(`dumps.WALKFORWARD_SPLITS`). **E**, the reference effect, is the incumbent's own net bps per
+unit of notional at taker 14 on the same folds.
+
+**Confirmation criterion, fixed now.** `confirm` — F2 + F3, once, the chosen configuration.
+**CONFIRMED iff** the pooled F2+F3 95% lower bound of the contrast is **> 0** *and* the contrast
+is positive on the median seed-number. NOT CONFIRMED is "not detectable at this power" unless the
+interval also excludes E, in which case it is a detected absence.
+
+**What each outcome licenses.** CONFIRMED licenses *writing* a registration to serve the stop
+under M3_PROTOCOL §8.3 C1–C5 — which is an engineering item as well, since the paper arms close
+on the timer only and have no intrabar stop path — as its own registered clock restart. Nothing
+served changes on any outcome here; the forward test is untouched. Gate not passed or NOT
+CONFIRMED closes price-path exits on these folds: 🔴 no other k, reference price, vol window,
+target or combination may be tried on F2/F3. The brake arm is descriptive either way.
+
+**Expectation, recorded before the run: NEGATIVE, gate not passed.** Every fixed barrier lost to
+the timer, monotonically, because a 240-minute signal cut short forfeits edge that has not
+arrived (M3_0B §5); a volatility scale changes *where* the stop sits, not that it cuts. Wide
+stops (k = 2.5) should sit closest to zero because they rarely fire; trailing stops should be
+worst, because they fire on ordinary give-backs inside the hold. Because the design pairs the
+same trades, the interval should be tight — a few bps per notional — so a negative result here
+is expected to be a *detected* small negative, not an undetectable one.
+
+**Commands.** In this order, from the laptop; each stage is one container run of minutes.
+
+```sh
+./scripts/m3.sh -m m3 validate                                          # C3 — unchanged image, still first
+M3_ERA=walkforward ./scripts/m3.sh -m m3 pathexits --stage explore 2>&1 | tee logs/pathexits_explore_$(date -u +%Y%m%d).log
+# record the harness checks, the table, the chosen label, the MDE forecast and the gate verdict here
+M3_ERA=walkforward ./scripts/m3.sh -m m3 pathexits --stage confirm --exploration-recorded --config <label> 2>&1 | tee logs/pathexits_confirm_$(date -u +%Y%m%d).log
+```
+
+**Needed from Vadim: nothing.** Claude runs both stages and records them here.

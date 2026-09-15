@@ -53,7 +53,8 @@ TRADE_LIMIT = 200
 ERA_SPLIT = pd.Timestamp("2026-08-14", tz="UTC")
 
 
-def _csv(name: str, parse: list[str], export_dir: str | None = None) -> pd.DataFrame:
+def _csv(name: str, parse: list[str], export_dir: str | None = None,
+         float_cols: list[str] | None = None) -> pd.DataFrame:
     """Read one exported slice, caching a parquet next to it.
 
     The CSVs are ~300 MB gzipped and re-parsing them on every invocation dominates the
@@ -93,9 +94,17 @@ def _csv(name: str, parse: list[str], export_dir: str | None = None) -> pd.DataF
                 # "…04:04:51.243642", and one inferred format fails on whichever kind pandas
                 # did not see first.
                 chunk[c] = pd.to_datetime(chunk[c], utc=True, format="ISO8601")
+            # Chunks infer dtypes independently: a chunk of whole-number candle volumes parses
+            # as int64 while the next holds fractions, and the parquet schema is fixed by the
+            # first chunk. Columns the caller knows are floating-point are coerced in every
+            # chunk; any other mismatch gets a safe cast, which raises rather than truncating.
+            for c in float_cols or ():
+                chunk[c] = chunk[c].astype("float64")
             table = pa.Table.from_pandas(chunk, preserve_index=False)
             if writer is None:
                 writer = pqt.ParquetWriter(pq, table.schema)
+            elif table.schema != writer.schema:
+                table = table.cast(writer.schema)
             writer.write_table(table)
     except BaseException:
         # A half-written parquet is worse than none: the next run would read it as cached and
