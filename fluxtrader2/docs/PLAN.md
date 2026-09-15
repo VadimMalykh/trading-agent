@@ -89,15 +89,21 @@ Read this section first if you are new to the problem; it defines the words used
 Each phase names its deliverable, its exact command once the code exists, and what it needs
 from Vadim. Phases are serial unless stated. Times are rough and CPU-only.
 
-### P0 — Get the data in (✅ done 2026-09-15; P0b open)
+### P0 — Get the data in (✅ done 2026-09-15, P0b ✅ done 2026-09-15)
 
 **Result 2026-09-15:** all nine collector slices exported and ingested (DATA.md has the counts and
 the integrity summary: no duplicates, no interior gaps, 5m bars consistent with 1m, ~160 ms
 book clock skew, ≤1.8% censored tape windows); folds fixed in `ft2/folds.py`; the public
-archive's coverage measured (§9 #1) and its depth/metrics/funding files fetched for all pairs
-from 2023-01-01 (`ft2 archive`). **P0b (next):** ingest `bookDepth` and `metrics` zips to
-parquet (`ft2 ingest metrics` exists; depth needs its reader once the file format is inspected),
-add their rows to DATA.md, and re-run `ft2 inventory`. Then P1.
+archive's coverage measured (§9 #1).
+
+**P0b result 2026-09-15:** the archive's `metrics` (5m), `bookDepth` (30 s, ±1..5 % bands) and
+monthly `fundingRate` fetched for all twelve pairs from 2023-01-01 and ingested
+(`ft2 ingest metrics depth funding_archive`; DATA.md "External data" has the tables). Two
+corrections to what the plan assumed: **(a)** the first fetch had died silently on a connection
+reset after three pairs — the fetcher now retries and reports; **(b)** `bookDepth` holds *no best
+bid/ask* (it is depth within ±1–5 % of mid), so the historical spread must come from the tape,
+which is 136 GB zipped and is streamed into a per-minute summary (`ft2 tape`, DATA.md "tape")
+rather than kept. Archive funding matches the collector's funding 100 % where they overlap.
 
 **Deliverable:** one parquet per table under `fluxtrader2/data/`, a loader in `ft2.data`, and
 an integrity report (row counts, extents, interior gaps, duplicate timestamps, partial-bar
@@ -114,22 +120,38 @@ check) written into DATA.md as a measured table.
 
 **Needed from Vadim:** the work VM (PLAN §6). Then Claude runs P0 on it.
 
-### P1 — Price the trade (~1–2 sessions)
+### P1 — Price the trade (~1–2 sessions; started 2026-09-15 with the tape stream)
 
 **Deliverable:** a cost table, per pair × side (taker/maker) × volatility regime, in bps per
-round trip at a range of notionals (decided in P1 from the measured depth), plus a **candle-based cost proxy**
-for the years that have no book.
+round trip at a range of notionals (decided in P1 from the measured depth), over the **whole
+2023-01 → history** — not proxied — plus a **candle-based cost proxy** for 2022-08 → 2022-12
+and as a sanity check on the tape estimate.
 
-- From the book era: quoted spread, effective spread at the touch, walked-ladder impact for a
-  given notional, fill probability and adverse selection for a resting order (from the tape:
-  did price trade through the resting level, and where was it N minutes later).
-- Exchange fees: the venue's published taker/maker schedule, and the account's actual tier
-  if an API key is available to read it. Recorded as an input with its source; never assumed.
-- Proxy: fit a spread estimator that uses only candles (high/low/close based) on the book era
-  where the truth is known, report its error, then apply it backwards. Without this the
-  four-year history cannot be costed and P2's "does the ceiling clear the cost" has no cost.
+What each cost component is measured from (decided 2026-09-15 from what the data turned out
+to contain; DATA.md "External data"):
 
-**Needed from Vadim:** the account's fee tier (or a read-only key to fetch it).
+| component | source | window | how |
+|---|---|---|---|
+| **effective spread** (taker's half-spread paid at the touch) | archive tape per-minute summary `data/tape/` (`eff_spread_bps`, `ask_last`−`bid_last`) | 2023-01 → | per pair × hour-of-day × volatility tercile; **validated** against the collector's quoted `spread` in `snapshots` on their overlap (2026-07-17 → 09-13), which is the only window with both truth and estimate |
+| **impact** of a given notional | collector's raw ladder `orderbook_levels` (walk the book) | 2026-08-05 → 09-13, exported windowed | impact(notional) per pair; then **scaled back in time** by `depth` (`usd_m1`/`usd_p1`, the ±1 % band) — the scaling's error is reported from the overlap, not assumed |
+| **maker fill & adverse selection** | tape per-minute `high`/`low` (did price trade through a resting level within N minutes) and `close` N minutes later | 2023-01 → | coarse (1-minute) over the full history; **trade-level** on a short validation window fetched with `ft2 tape --keep-zip` |
+| **fees** | the venue's published schedule + the account's tier | input | recorded with its source; never assumed. **This is the one input Vadim must supply.** |
+| **funding** | `funding_archive` (`rate`, `interval_h`) | 2020 → | a carry cost for holds that cross a funding time; interval is *not* constant (4 h / 2 h periods exist) |
+| **candle proxy** | 5m candles high/low/close | 2022-08 → | fitted on 2023-01 → against the tape estimate, error reported, applied to 2022-08 → 2022-12 only |
+
+Commands, in order (all on the work VM):
+
+1. `vm.sh bg p1_tape tape` — **queued 2026-09-15** to start automatically after the P0b
+   inventory (`output/logs/p1_tape.log`); ~1–2 h, download-bound; the VM powers off at its end.
+   Re-run the same command to pick up any missing days (per-day parts are skipped if present).
+2. `FROM=2026-08-05 TO=2026-09-14 ./scripts/export.sh levels` then `vm.sh run ingest levels` —
+   the ladder, windowed (several GB of jsonb).
+3. `vm.sh run cost` (to be written): the six measurements above → `output/cost.md` and
+   `data/cost_table.parquet`; the table rows in this section are filled from it.
+
+**Needed from Vadim:** the account's Binance USDⓈ-M fee tier — either the VIP level and whether
+BNB fee discount is on, or a read-only API key so that `GET /fapi/v1/commissionRate` can be
+read once and recorded. Everything else in P1 runs without him.
 
 ### P2 — Ceiling audit: how much signal is there, per bet type and horizon (~2 sessions)
 
@@ -285,7 +307,7 @@ built here in P2 and needs no download.
 
 | # | data | source | what it unlocks | phase |
 |---|---|---|---|---|
-| 1 | **Historical book depth, tape and flow for the same twelve pairs** | Binance's public archive (`data.binance.vision`, USDⓈ-M futures; free, no key). **Coverage measured 2026-09-15:** 1-minute book depth at ± price levels (`bookDepth`) **2023-01-01 → today** for every pair (from listing for the younger ones), ~0.5 MB/day/pair; 5m open interest + long/short + taker ratios (`metrics`) 2020-09 → today; the full tape (`aggTrades`) 2019-12 → today, ~5 MB/day for BTC; funding monthly since 2020. Best bid/ask (`bookTicker`) was discontinued in 2024 — `bookDepth` covers it. 1m klines back to 2019-12 (2.7 years more than the collector holds). | The single biggest gap in our data was that book, tape and flow existed for two months while candles existed for four years. This closes it back to 2023-01: P1's cost model is measured over 3.7 years instead of proxied, and book/flow features (§7) become testable in a powered walk-forward over F1–F5. **Fetched in P0** (`ft2 archive`: bookDepth, metrics, fundingRate, all pairs, 2023-01-01 →); the tape waits for P1's fill study. | P0 → P1, P2 |
+| 1 | **Historical book depth, tape and flow for the same twelve pairs** | Binance's public archive (`data.binance.vision`, USDⓈ-M futures; free, no key). **Coverage measured 2026-09-15:** depth within ±1..5 % of mid (`bookDepth`, 30 s) **2023-01-01 → today** for every pair (from listing for the younger ones), ~0.5 MB/day/pair; 5m open interest + long/short + taker ratios (`metrics`) 2020-09 → today; the full tape (`aggTrades`) 2019-12 → today, **~136 GB zipped for our pairs from 2023-01** (BTC 14–27 MB/day); funding monthly since 2020. Best bid/ask (`bookTicker`) was discontinued in 2024 and **`bookDepth` does not replace it** (no touch prices in it) — the historical spread is estimated from the tape's bid–ask bounce. 1m klines back to 2019-12 (2.7 years more than the collector holds). | The single biggest gap in our data was that book, tape and flow existed for two months while candles existed for four years. This closes it back to 2023-01: P1's cost model is measured over 3.7 years instead of proxied, and book/flow features (§7) become testable in a powered walk-forward over F1–F5. **Done in P0b** (`bookDepth`, `metrics`, `fundingRate` ingested; DATA.md); the tape is streamed to a per-minute summary in P1 (`ft2 tape`, not kept raw). | P0b ✅ → P1, P2 |
 | 2 | **Candles for a wider universe** (the top ~30–50 USDⓈ-M perps by volume, 5m and 1h) | same archive | Breadth: the plan's edge comes from many semi-independent bets, and a cross-sectional strategy on twelve names is thin. More names also gives a cleaner "market" factor. The collector need not record them for research; only for trading later. | P2 (ceiling audit on 12 vs 40) |
 | 3 | **Spot klines for the same symbols** | same archive (spot) | Basis (perp minus spot) and its changes, a known carry/flow signal; also a cleaner index for the market factor | P2 |
 | 4 | **Same pairs on a second venue** (Bybit / OKX perps, 1m klines) | their public archives | Cross-venue lead-lag at short horizons; only relevant if P2 funds a sub-15m horizon | parked |

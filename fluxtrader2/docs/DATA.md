@@ -16,6 +16,9 @@ checks:
 Row counts after ingest: candles 1m 23,391,935 · 5m 4,678,346 · 15m 1,559,443 · 1h 389,860;
 snapshots 4,575,460; trades 3,847,849; funding 702,209; oi 653,883; lsr 175,905.
 Everything ends 2026-09-14 23:59 UTC (the export window is end-exclusive on the run date).
+**P0b (2026-09-15)** added the public archive from 2023-01-01: `metrics` 4,322,018 · `depth`
+42,277,682 · `funding_archive` 73,251 rows (section "External data" below; archive files end
+2026-09-13, the archive lags two days).
 
 ## Where it lives and how it gets here
 
@@ -102,15 +105,60 @@ serves ~30 days; the collector keeps what it saw).
 
 ## External data — Binance public archive (`ft2 archive`, `data/raw/external/binance/`)
 
-Coverage measured 2026-09-15 (PLAN §9 #1 has the full list). Being fetched in P0 for all
-twelve pairs from 2023-01-01: `bookDepth` (1-minute depth at ± price levels), `metrics` (5m open
-interest, long/short and taker ratios) and monthly `fundingRate`. The tape (`aggTrades`,
-~5 MB/day for BTC) waits for P1. Each file keeps its archive name and a verified sha256; the
-parquet ingestion of these lands in P0b with its own rows in this table.
+Coverage measured 2026-09-15 (PLAN §9 #1). **P0b (2026-09-15) fetched and ingested** three
+kinds for all twelve pairs from 2023-01-01 (from listing for the younger pairs); each raw file
+keeps its archive name and a verified sha256 next to it (`.ok`), and `ft2 archive` is resumable
+(the first run died on one connection reset; the fetcher now retries and continues). The first
+run's log claimed "fetched for all pairs" while only three pairs of `metrics` had landed —
+this table is what was measured after the re-run, by `ft2 inventory`.
 
-| kind | pairs | window fetched | rows / integrity |
-|---|---|---|---|
-| *(filled when the fetch finishes)* | | | |
+### metrics (archive, 5m) — `data/metrics.parquet`: `(symbol, ts) → oi, oi_value, top_ls_count, top_ls_sum, global_ls, taker_ratio`
+
+Open interest (contracts and USDT), top-trader long/short ratios (by accounts and by positions),
+global long/short ratio, taker buy/sell volume ratio, one row per 5 minutes. Replaces the
+collector's two-month `oi` and `lsr` tables for anything historical.
+
+### depth (archive `bookDepth`, ~30 s) — `data/depth/<symbol>.parquet`: `(symbol, ts) → qty_m5..qty_m1, qty_m02, qty_p02, qty_p1..qty_p5, usd_*` (same 12 levels)
+
+**What it is:** the cumulative quantity (`qty_*`, base units) and USDT notional (`usd_*`)
+resting within ±1, ±2, ±3, ±4, ±5 % of the mid, bid side (`m`) and ask side (`p`), sampled
+about every 30 s (2,880 rows/day; the archive's own description says 1-minute). **From
+2026-01-15 the archive also carries ±0.2 % bands** (`*_m02`, `*_p02`; NaN before that date) —
+much closer to the touch, and the level P1 should use for impact scaling where it exists.
+**What it is not:** best bid/ask. There is no spread in this data — PLAN §9 originally assumed `bookDepth`
+covered the discontinued `bookTicker`, and it does not. The historical spread comes from the
+tape (below). The ±1 % band on BTC holds tens of millions of USDT, so this is a *liquidity
+regime* measure and a scale for impact, not an impact measurement at the notionals we trade.
+
+### funding_archive (archive monthly `fundingRate`) — `data/funding_archive.parquet`: `(symbol, ts) → rate, interval_h`
+
+The settled funding rate per funding time, from each pair's listing (BTC/ETH 2020-01). Cross-
+check against the collector's `funding_rates` at the same funding timestamp: **100 % identical
+rates** on every overlapping row (see the table). `interval_h` is 8 on the majors; SOL and
+others carry 4 h and 2 h intervals in some periods — a cost input P1 must not assume constant.
+
+### tape (archive `aggTrades`, streamed by `ft2 tape` in P1) — `data/tape/<symbol>.parquet`, one row per minute
+
+The raw tape is **~136 GB zipped** for twelve pairs from 2023-01 (measured 2026-09-15 from the
+archive listing: BTC 14–27 MB/day, PEPE up to 45 MB/day in 2024-03) and does not fit the work VM
+next to everything else, so it is never kept: each daily file is fetched, reduced to one row per
+minute, and deleted. Columns: trade counts and volumes by aggressor side, notional, vwap/OHLC of
+trade prices, `ask_last`/`bid_last` (last taker-buy and last taker-sell price: the touch as the
+last trade on each side saw it), and `eff_spread_bps` — the mean realised bid–ask bounce
+|Δprice|/mid over consecutive trades with opposite aggressors, in bps. Spot check on three
+sample days (2026-09-15): BTC 2023-01-02 bounce 0.06 bps = exactly one 0.1 tick at 16,610;
+ZEC 2023-06-01 2.6 bps (tick 0.01 at 32); ZEC 2026-08-01 0.2 bps. It is a *lower-ish* bound of
+the effective spread (flips at the same price count as zero) and is validated against the
+collector's quoted spread in their overlap in P1.
+
+### Archive tables as measured (`ft2 inventory`, 2026-09-15)
+
+| table | pairs | window (UTC) | rows | integrity (`output/inventory.md` has the per-pair tables) |
+|---|---|---|---|---|
+| `metrics` (5m) | 12 (from listing: PEPE 2023-05-05, WLD 2023-07-24, HYPE 2025-05-30) | 2023-01-01 → 2026-09-13 | 4,322,018 | 2 duplicate keys dropped; cadence exactly 5 min; 4–6 gaps > 10 min per pair, the largest 10.5 h and common to every pair (an archive outage, not ours; AVAX has 15); WLD and ZEC each miss one whole day |
+| `depth` (30 s) | 12 (same starts) | 2023-01-01 → 2026-09-13 | 42,277,682 (from 438.8M long rows) | 0 duplicates; **0 rows missing a core ±1–5 % level**; 2,880 rows/day median on every pair; ±0.2 % bands on 668,748 rows per pair from **2026-01-15**; 2–5 whole days missing per long pair inside one common ~3-day archive hole (largest gap 2 d 22 h), plus ~11 short (> 60 s) gaps per day |
+| `funding_archive` | 12 | listing → 2026-08-31 (BTC/ETH from 2020-01-01) | 73,251 | 0 duplicates; vs the collector's `funding_rates` at the same funding timestamp: **99.94–100 % identical rates** on 2,706–4,469 overlapping rows per pair; `interval_h` is 8 on ten pairs, **4 on HYPE, and 2/4/8 on SOL** in different periods |
+| `tape` (1 min, P1) | 12 | 2023-01-01 → | *(streaming 2026-09-15; rows filled when `ft2 tape` finishes)* | per-day parts, resumable; raw zips not kept |
 
 ## Folds (fixed 2026-09-15; `ft2/folds.py` is the code, this is the record)
 

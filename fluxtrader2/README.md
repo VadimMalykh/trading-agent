@@ -14,7 +14,7 @@ otherwise knows nothing about this folder.
 
 | date | where we are | needed from Vadim |
 |---|---|---|
-| 2026-09-15 | **P0 done** on the work VM: every collector table exported (candles 1m/5m/15m/1h 2022-08 →, book era tables, funding 2022-08 →), ingested to parquet, inventory clean (DATA.md top), folds fixed (DATA.md, `ft2/folds.py`). **Public archive found and being fetched** (1-minute book depth 2023-01 →, exchange metrics, funding; PLAN §9 #1); the VM powers itself off when that finishes. **Next: P0b** — ingest the archive's depth and metrics to parquet, then **P1 (price the trade)**. | Nothing. (P1 will ask for the account's fee tier.) |
+| 2026-09-15 | **P0 and P0b done.** Collector tables (candles 1m/5m/15m/1h 2022-08 →, book era, funding) and the public archive (`metrics` 5m, `depth` ±1–5 % bands at 30 s, `funding_archive`; all pairs 2023-01 →) are parquet on the work VM, inventory clean (DATA.md), folds fixed. **P1 (price the trade) started:** the tape (136 GB raw, streamed to a per-minute summary with an effective-spread estimate, `ft2 tape`) is running on the VM and powers it off when done (`output/logs/p1_tape.log`). Then the ladder export and the cost table (PLAN P1 has the three commands). | **The account's fee tier** (VIP level + BNB discount on/off, or a read-only key). Nothing else. |
 
 ## The boundary with the first project
 

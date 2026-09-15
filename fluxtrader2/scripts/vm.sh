@@ -13,6 +13,7 @@
 #   ./fluxtrader2/scripts/vm.sh pull        # rsync output/ down (results, reports)
 #   ./fluxtrader2/scripts/vm.sh run <ft2 args…>     # python -m ft2 <args> on the VM, in tmux-less foreground
 #   ./fluxtrader2/scripts/vm.sh bg <name> <ft2 args…>  # same, detached with nohup, log in output/logs/<name>.log
+#   ./fluxtrader2/scripts/vm.sh bgsh <name> '<shell…>'   # any command line detached (chained jobs), same log
 #   ./fluxtrader2/scripts/vm.sh ssh [cmd]   # interactive shell or a one-off command
 #
 # Env: FT2_VM (default fluxtrader2-work), GCP_PROJECT (fluxtrader), GCP_ZONE (me-central1-b).
@@ -65,9 +66,16 @@ case "$cmd" in
   bg)
     name="$1"; shift
     "$0" push
+    # setsid + </dev/null: otherwise the ssh session stays attached to the detached job and never returns
     gssh "cd ~/$REMOTE_DIR && mkdir -p output/logs && source ~/ft2-venv/bin/activate && \
-          PYTHONPATH=. nohup python -m ft2 $* > output/logs/$name.log 2>&1 & echo started \$!"
+          PYTHONPATH=. setsid nohup python -m ft2 $* > output/logs/$name.log 2>&1 < /dev/null & echo started \$!"
     echo "log: ./fluxtrader2/scripts/vm.sh ssh 'tail -f ~/$REMOTE_DIR/output/logs/$name.log'" >&2 ;;
+  bgsh)
+    # run an arbitrary shell command line detached on the VM (for chained jobs): vm.sh bgsh <name> '<cmd…>'
+    name="$1"; shift
+    "$0" push
+    gssh "cd ~/$REMOTE_DIR && mkdir -p output/logs && source ~/ft2-venv/bin/activate && export PYTHONPATH=. && \
+          setsid nohup bash -c '$*' > output/logs/$name.log 2>&1 < /dev/null & echo started \$!" ;;
   ssh)
     if [[ $# -eq 0 ]]; then gcloud compute ssh --zone "$ZONE" --project "$PROJECT" "$VM"; else gssh "$@"; fi ;;
   *) sed -n '2,20p' "$0"; exit 2 ;;

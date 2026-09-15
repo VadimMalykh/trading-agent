@@ -14,13 +14,16 @@ def cmd_smoke(_args):
           f"statsmodels {statsmodels.__version__}, lightgbm {lightgbm.__version__}")
 
 
+ARCHIVE_INGEST = {"metrics": "ingest_metrics", "depth": "ingest_depth", "funding_archive": "ingest_funding_archive"}
+
+
 def cmd_ingest(args):
     from . import data
     slices = args.slices or [s for s in data.SLICES if (data.RAW / f"{s}.csv.gz").exists()]
     for s in slices:
-        r = data.ingest_metrics(PAIRS) if s == "metrics" else data.ingest(s)
-        print(f"{r['slice']:<12} rows_in={r['rows_in']:>10,} dups={r['dups_dropped']:>6,} "
-              f"rows_out={r['rows_out']:>10,}  {r['first']} .. {r['last']}")
+        r = getattr(data, ARCHIVE_INGEST[s])(PAIRS) if s in ARCHIVE_INGEST else data.ingest(s)
+        print(f"{r['slice']:<15} rows_in={r['rows_in']:>11,} dups={r['dups_dropped']:>6,} "
+              f"rows_out={r['rows_out']:>11,}  {r['first']} .. {r['last']}", flush=True)
 
 
 def cmd_inventory(args):
@@ -37,11 +40,17 @@ def cmd_archive(args):
     archive.main(args.kinds, args.symbols or PAIRS, args.start, args.end)
 
 
+def cmd_tape(args):
+    from . import tape
+    tape.run(args.symbols or PAIRS, args.start, args.end, workers=args.workers, keep_zip=args.keep_zip)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="ft2")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("smoke", help="import every dependency and print versions")
-    i = sub.add_parser("ingest", help="raw csv.gz -> parquet (all present slices, or the named ones)")
+    i = sub.add_parser("ingest", help="raw csv.gz -> parquet (all present collector slices, or the named ones; "
+                                      "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
@@ -49,9 +58,15 @@ def main(argv=None):
     a.add_argument("--symbols", nargs="*")
     a.add_argument("--start", default="2023-01-01")
     a.add_argument("--end", default=None, help="inclusive; default: two days ago")
+    t = sub.add_parser("tape", help="P1: stream archive aggTrades into data/tape/<symbol>.parquet (per-minute summary); zips are not kept")
+    t.add_argument("--symbols", nargs="*")
+    t.add_argument("--start", default="2023-01-01")
+    t.add_argument("--end", default=None, help="inclusive; default: two days ago")
+    t.add_argument("--workers", type=int, default=6)
+    t.add_argument("--keep-zip", action="store_true", help="keep the raw zips (only for a short validation window)")
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory,
-            "archive": cmd_archive}[args.cmd](args)
+            "archive": cmd_archive, "tape": cmd_tape}[args.cmd](args)
 
 
 if __name__ == "__main__":
