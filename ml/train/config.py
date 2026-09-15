@@ -212,6 +212,11 @@ VAL_OFFSET = float(os.environ.get("VAL_OFFSET", "0.0"))
 # fixes 0.5 so every fold trains on the same number of samples and only the
 # boundary moves. Only honoured on the windowed split (VAL_OFFSET > 0 or this > 0).
 TRAIN_FRACTION = float(os.environ.get("TRAIN_FRACTION", "0.0"))
+# X5 (BACKLOG): purge the split boundary. A train sample at bar t is labelled from the
+# close at t + h, so the last max-horizon bars of train (288 at 5m / 1440m) have labels
+# built from val-period prices. 1 drops those train samples; val is untouched. 0 keeps
+# every published checkpoint's recipe (the leak is bounded at ~0.4% of val bars).
+SPLIT_EMBARGO = int(os.environ.get("SPLIT_EMBARGO", "0"))
 # Patience raised: directional coverage kept climbing when the old run stopped.
 EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "10"))
 # Gate used when ranking checkpoints (matches serve default)

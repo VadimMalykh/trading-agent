@@ -774,6 +774,25 @@ def time_split_indices_window(
     return tr_idx, va_idx
 
 
+def embargo_train_indices(
+    times: np.ndarray,
+    tr_idx: np.ndarray,
+    va_idx: np.ndarray,
+    embargo_ns: int,
+) -> np.ndarray:
+    """Drop train samples whose label window reaches the val window (X5).
+
+    Both splits put train strictly before val, so the only overlap is one-sided: a
+    train sample at t is labelled from the close at t + h, which is a val-period price
+    when t + h >= the first val time. Keep train samples with t < val_start - embargo_ns,
+    embargo_ns being the longest horizon. Val is returned unchanged by the caller.
+    """
+    if embargo_ns <= 0 or tr_idx.size == 0 or va_idx.size == 0:
+        return tr_idx
+    val_start = int(times[va_idx].min())
+    return tr_idx[times[tr_idx] < val_start - int(embargo_ns)]
+
+
 # Row-chunk size for streaming norm stats / normalization. Keeps transient
 # float64 working memory bounded (~16MB/row at 19 features) instead of
 # materializing per-pair or global float64 copies of the whole matrix.

@@ -69,11 +69,13 @@ from config import (
     SEL_NET_WEIGHT,
     SEED,
     SEQ_LEN,
+    SPLIT_EMBARGO,
     TRAIN_FRACTION,
     VAL_FRACTION,
     VAL_OFFSET,
     WEIGHT_DECAY,
 )
+from data.dataset import BAR_MINUTES_BY_INTERVAL, embargo_train_indices
 from data.dataset import (
     LazyMultiHorizonDataset,
     apply_norm_to_bundle,
@@ -580,6 +582,19 @@ def main():
     else:
         tr_idx, va_idx = time_split_indices(bundle.times, val_frac)
         split_kind = "global_time"
+    embargo_bars = 0
+    if SPLIT_EMBARGO:
+        embargo_bars = max(int(v) for v in meta["horizon_bars"].values())
+        bar_min = BAR_MINUTES_BY_INTERVAL[meta["candle_interval"]]
+        n_before = int(tr_idx.shape[0])
+        tr_idx = embargo_train_indices(
+            bundle.times, tr_idx, va_idx, embargo_bars * bar_min * 60 * 1_000_000_000
+        )
+        print(
+            f"Embargo: SPLIT_EMBARGO=1 dropped {n_before - int(tr_idx.shape[0])} train "
+            f"samples within {embargo_bars} bars ({embargo_bars * bar_min} min) of val start"
+        )
+    meta["split_embargo_bars"] = embargo_bars
     t_tr = bundle.times[tr_idx]
     t_va = bundle.times[va_idx]
     print(
