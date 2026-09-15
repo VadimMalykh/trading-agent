@@ -37,6 +37,8 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 - M3 policy, live: `apps/fluxtrader/lib/fluxtrader/trading/` — `policy.ex` is the rule and the
   only place it exists; see `docs/M3_5_INTEGRATION.md`
 - DB: service `postgres` user/db `fluxtrader` / password `secret`
+- `fluxtrader2/`: a parallel from-scratch project on the same data; own README/PLAN/DATA, own
+  image (`fluxtrader2/scripts/ft2.sh`), no imports from `ml/` or `apps/` in either direction
 
 If a tool is missing on the host, use the matching container — never install it locally.
 

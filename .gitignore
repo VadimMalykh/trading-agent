@@ -43,3 +43,6 @@ __pycache__/
 logs/*
 
 docker-compose.override.yml
+# fluxtrader2 (parallel project) — exported data and results
+fluxtrader2/data/
+fluxtrader2/output/
