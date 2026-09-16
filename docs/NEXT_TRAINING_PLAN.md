@@ -433,10 +433,93 @@ it is not what R1 tests, because R1 has one variable already.
 
 ## §2 — THE RUN QUEUE
 
-**Nothing is queued.** X0/X1 and X2, the two levers the freeze was reopened for, both ran and
-both closed WORSE (below); §5's freeze is re-sealed and its only reopening condition is §1.7's
-(≈2027). Everything else open or parked is in [BACKLOG.md](./BACKLOG.md), which is the list to
-read — not this section.
+**Queued: U12, three serial GPU seeds — registered 2026-09-16, below.** It is not a lever and
+it does not reopen §5: no knob changes, only the pair set, and the pair set it moves to is the
+one the walk-forward folds already train on. X0/X1 and X2, the two levers the freeze *was*
+reopened for, both ran and both closed WORSE (below); §5's freeze stays sealed and its only
+reopening condition is still §1.7's (≈2027). Everything else open or parked is in
+[BACKLOG.md](./BACKLOG.md), which is the list to read — not this section.
+
+### 🔵 U12 — a twelve-pair checkpoint for the served universe. REGISTERED 2026-09-16, NOT YET RUN
+
+🔴 **This registration is written before any U12 number exists. Nothing below may be edited
+once the first log is read** (M3_PROTOCOL §0).
+
+**The defect that forces it, found 2026-09-16.** The served checkpoint
+`m2_multi_20260819T142759Z_a186182b.pt` (sha `882cd41…`) was trained on **eight** pairs, but
+the live path serves **twelve**. `serve.py:314` `_servable_pairs()` — the T5 fix — intersects
+the whitelist with the checkpoint's own `meta["pairs"]` and is applied only on `/predict_all`
+(`serve.py:636`). The engine does not use that endpoint: `signal_engine.ex:146` loops
+`active_pairs()` and calls `/predict?symbol=` per pair, which has no ceiling. Verified live on
+`fluxtrader-1`: `/predict_all` returns 8 pairs, `/predict?symbol=XRPUSDT` returns a prediction.
+So ADA / AVAX / LINK / XRP resolve to `pair_oov_id` — an `nn.Embedding` row no pair ever
+trained (`config.py:189`, `PAIR_EMBED_DIM=8`) — which is precisely the T5 defect
+(M3_PLAN §0.6), still live on the single-symbol path. Measured on the forward test's own
+untouched `policy_bars` (2026-09-11 → 09-16, 17,349 bars): **84 of the 109 bars above the
+frozen cut (77%), and 7 of the 12 closed policy trades, come from those four OOV pairs**;
+XRP alone is 50, and five of the eight *trained* pairs never cleared the cut at all.
+
+**Why twelve and not eight.** The twelve walk-forward folds are trained on the twelve
+(`WALKFORWARD_PROTOCOL.md` §5, and §5.1 check 5 requires "the twelve, not `dumps.BASE8`"),
+and `gcp_train.sh:234` defines `FLUX_INCUMBENT_PAIRS` as the twelve. **W1 = +33.23 net bps,
+CI [+9.28, +57.17] — the CONFIRMED verdict this project rests on — is a twelve-pair result.**
+Promoting a twelve-pair checkpoint puts the served model back onto the recipe the folds
+validated. Decided by Vadim 2026-09-16.
+
+**Why fresh seeds and not the three that exist.** O8 `20260822T012619Z`, T1 `20260827T050701Z`
+and T2 `20260827T114122Z` are already a three-seed twelve-pair family on this exact recipe
+(verified from their logs: `SEQ_LEN=384`, `CANDLE_INTERVAL=5m`, `PAIR_EMBED_DIM=8 n_pairs=12`,
+`HORIZONS=60,240,1440 PRIMARY=240`, `FEATURE_GROUPS=legacy`, `EARLY_STOP_PATIENCE=20`,
+`Split global_time val_frac=0.2`). They are not used: all three were trained *and* scored
+before the 2026-09-04 candle repair, so every T6 number about them is on partial bars. Vadim
+chose fresh training over a re-score on 2026-09-16.
+
+**The recipe — identical to the incumbent in every knob, pair set excepted.**
+`FEATURE_GROUPS=legacy CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20`,
+`TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240`, `TRAIN_PAIRS` = the twelve, `60 384`, no
+`VAL_OFFSET` / `TRAIN_FRACTION` so the split is `global_time val_frac=0.2 val_offset=0.0`.
+`SPLIT_EMBARGO` stays **off**. X5's row reserves the right to switch it on "in the recipe of
+the next registered M2 family" — but the whole point of U12 is recipe identity with the folds,
+which ran before the knob existed, so turning it on here would break the one property being
+bought. It is deferred to the §1.7 family, unchanged.
+
+**The selection rule, fixed in advance.** Three seeds, `SEED=1,2,3`, one shared snapshot.
+The served checkpoint is the **median of the three by plateau-restricted mean LB** (§0.3's
+statistic, with §0.3's documented fallback if a plateau is shorter than 15 epochs) — a
+selection statistic, never P&L. Ranking the three on net bps would be exactly the shopping §0
+forbids. Chosen by Vadim 2026-09-16 over "highest LB".
+
+**The acceptance bar, fixed in advance.** The chosen checkpoint must pass **Tier 1 under
+M3_PROTOCOL §9.2 on repaired dumps**, the same bar the incumbent clears (worst window −4.61
+against the −5 bps floor, pooled net positive at taker). ⚠️ This is a real risk, not a
+formality: T6 §3 found P3, the −5 worst-window floor, failing on *both* universes on
+pre-repair data. **If the chosen seed fails Tier 1, nothing is promoted.** The fallback,
+pre-committed by Vadim 2026-09-16, is to close the defect the other way — apply the T5 ceiling
+on the `/predict` path too, narrow `served_pairs` to the eight trained pairs, void and restart.
+Either branch ends with no pair served through the OOV row.
+
+**Then, and only if Tier 1 passes:** derive the served gate under C13 and the ladder p80 under
+C4 over the chosen checkpoint's own split; `gcp_promote.sh --checkpoint <key>` with
+`ML_GATE_THRESHOLD` set to the derived gate; update the constants in `policy.ex`; back up and
+void `paper_trades` + `policy_bars` on the VM; restart the forward clock (**fourth start**);
+run the `accept_76.py` replay. M3_5 §4.3's forward registration (R0–R5) is restated against the
+new checkpoint — R1's cut levels are per-checkpoint and change with it.
+
+**Expectation, recorded so the result cannot be rationalised afterwards:** the twelve-pair
+family lands inside the eight-pair family's between-seed spread on LB (O8 did, §1.9), and
+Tier 1 is genuinely uncertain because of T6 §3. U12 is not expected to earn more. It is
+expected to make the served universe legitimate.
+
+**Commands: `docs/BACKLOG.md`, the U12 row.** Three serial GPU runs, ~2–3 h and ≈$1.5 each,
+plus the fresh dump on the first — about 8–10 h of serial wall clock.
+
+**Bring back, per run (§0.4's checklist):** the `Split …` line; the `=== resolved knobs` block
+and `Feature groups: … -> 19 columns`; `Training pairs: [...]` showing **twelve**;
+`Pair embedding: ON dim=8 n_pairs=12`; `Early stop at epoch N`; the
+`epoch LB series @cov0.05: n=… mean=… sd=… max=… selected=…` line; the `Fixed-coverage
+directional edge` and `Fixed-coverage P&L` tables **for the 240m head** (the 60m block is what
+produced the retracted "repair bought back edge" headline, RETRAIN_PLAN §4); and the run id.
+The read happens in a fresh session — bring the three logs, not a summary of them.
 
 ### 🟢 X0 / X1 — the cross-sectional block, separated. CLOSED 2026-09-15: **WORSE** (−0.021)
 
