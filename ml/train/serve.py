@@ -472,9 +472,34 @@ def build_tensor(symbol: str):
 
 
 @torch.no_grad()
+def _untrained_refusal(symbol: str) -> dict | None:
+    """The T5 ceiling for ONE symbol: refuse a pair the checkpoint never trained on.
+
+    `_servable_pairs()` guards `/predict_all`, but the engine calls `/predict?symbol=` per
+    pair, and that path had no ceiling — so with an 8-pair checkpoint and a 12-pair
+    whitelist, four instruments traded through `pair_oov_id` for five days (found
+    2026-09-16, BACKLOG rows 10/11). The check lives in `predict_symbol` so that every
+    route to a prediction passes through it. A pre-C12 checkpoint records no pairs and is
+    served unfiltered, as in `_servable_pairs()`.
+    """
+    trained = _trained_pairs()
+    if trained and symbol.upper() not in set(trained):
+        return {
+            "ok": False,
+            "symbol": symbol,
+            "error": f"untrained_symbol: {symbol} is not in the checkpoint's "
+                     f"{len(trained)}-pair training universe",
+        }
+    return None
+
+
 def predict_symbol(symbol: str) -> dict:
     if _state["model"] is None:
         return {"ok": False, "error": _state.get("error") or "model not loaded"}
+
+    refusal = _untrained_refusal(symbol)
+    if refusal:
+        return refusal
 
     packed, err = build_tensor(symbol)
     if err:

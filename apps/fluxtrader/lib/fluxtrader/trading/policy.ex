@@ -95,43 +95,35 @@ defmodule FluxTrader.Trading.Policy do
   # `test/fluxtrader/trading/config_test.exs` is where this side asserts its copies, and a
   # change on either side has to be made on both.
   #
-  # Provenance — **seed 2, the SERVED checkpoint** `m2_multi_20260819T142759Z_a186182b.pt`
-  # (sha256 `882cd415…`, `frozen_checkpoint_sha256/0`), scored on the **REPAIRED** split —
-  # eval run `20260904T051921Z`, 586,736 bars in the 240m head over the eight pairs it was
-  # evaluated on, val 2025-12-22 → 2026-09-03. Re-derived 2026-09-04 under M3_PROTOCOL §8.3 C4
-  # after the candle-poll repair (CANDLE_POLL_DEFECT.md): same checkpoint, same rule,
-  # corrected data — a data correction, not a re-pick (M3_PROTOCOL §9.2). The pre-repair
-  # constants were cut 0.6318973898887634 / p80 0.025166796520352364. Re-derive with:
+  # Provenance — **U12 seed 2, the SERVED checkpoint** `m2_multi_20260916T164212Z_ace3ae5e.pt`
+  # (sha256 `30e6ac1e…`, `frozen_checkpoint_sha256/0`), a TWELVE-pair checkpoint scored on its
+  # own split — eval run `20260916T164212Z`, 931,182 bars in the 240m head over the twelve
+  # served pairs, val 2025-12-14 → 2026-09-09. Derived 2026-09-20 under M3_PROTOCOL §8.3 C4 at
+  # the U12 promote (NEXT_TRAINING_PLAN §2): chosen as the family median by plateau-mean LB
+  # before any P&L was read; failed one-split Tier 1 (P2, P5) and is certified by the
+  # walk-forward folds (RETRAIN_PLAN §8 Q2 (B), WALKFORWARD_PROTOCOL §7) — the promotion record
+  # says so. The previous constants (8-pair checkpoint `m2_multi_20260819T142759Z_a186182b.pt`,
+  # sha `882cd415…`) were cut 0.6708709597587585 / p80 0.025370502844452858. Re-derive with:
   #
-  #     M3_ERA=repaired ./scripts/m3.sh -m m3 fidelity --universe 8
+  #     M3_ERA=repaired ./scripts/m3.sh -c "from m3 import dumps, backtest, regime; ..."
+  #     (`backtest.coverage_threshold` over `dumps.load('20260916T164212Z').at(240)`, and
+  #     `regime.build(...)['btc_absret_1d'].quantile([.2,.4,.6,.8])` — logs/U12_tier1_20260920.log)
   #
-  # whose arm A is this rule. Recomputing the two lines below reproduces seed 2's arm A
-  # exactly: 490 trades, mean size 1.367, entry confidence 0.6296 .. 0.7820.
+  # Recomputing the two lines below reproduces the run's sized policy exactly: 847 trades,
+  # mean size 1.295, entry confidence 0.6709 .. 0.8409. The trainer's own
+  # `SERVED GATE (C13, coverage-targeted)` line reads 0.6709.
   #
-  # 🔴 THE CUT BELONGS TO A CHECKPOINT, NOT JUST TO A UNIVERSE. A first attempt at this
-  # freeze took the cut from O8 (run 20260822T012619Z), because O8 is the only run evaluated
-  # over all twelve served pairs. O8 is a DIFFERENT TRAINED MODEL, and NEXT_TRAINING_PLAN
-  # §1.5 closed absolute-threshold-across-checkpoints as "not a lever, a defect": the same
-  # probability is 1.2% / 2.5% / 1.7% coverage across three seeds of one configuration.
-  # Measured here: **O8's 0.5992 applied to seed 2's bars realizes 4.01% coverage**, double
-  # the 0.02 M3-2 searched. Serving another model's cut would have doubled the trade rate —
-  # a smaller version of the very defect this freeze exists to fix.
+  # 🔴 THE CUT BELONGS TO A CHECKPOINT, NOT JUST TO A UNIVERSE. Absolute thresholds do not
+  # transfer across checkpoints (NEXT_TRAINING_PLAN §1.5): the previous checkpoint's 0.6296
+  # applied to this model would roughly double the trade rate. Swap all three constants
+  # together or none.
   #
-  # ⚠️ KNOWN GAP, deliberate and recorded. These come from seed 2's **8-pair** split, and
-  # twelve pairs are served. A fixed threshold stays well-defined on a wider universe — it is
-  # a statement about this model's confidence scale, which does not change when pairs are
-  # added — but the *realized coverage* will not be exactly 2%. Closing that properly needs
-  # seed 2 re-evaluated over twelve pairs, for which no dump exists, and doing so would also
-  # settle the parked "coverage at twelve pairs" pre-registration (T6's count-matched cut is
-  # 0.01288) as a side effect. M3_PROTOCOL §0 says that question needs its own
-  # pre-registration, so it is left open rather than answered by accident.
-  # Sized on the walk-forward folds 2026-09-10 (WALKFORWARD_PROTOCOL §9.1): an eight-derived
-  # cut applied to twelve realizes 1.77–1.99% coverage, not 2.00%, and the trades it leaves
-  # out earned nothing on F0+F1 (diff −7.34 bps [−21.85, +7.17]) — a small gap, not a lever.
+  # 🟢 The former KNOWN GAP is closed: the cut is now derived over the same twelve pairs that
+  # are served, so realized coverage on the split is exactly 2%.
 
   # `coverage_threshold(conf, 0.02)` over the split — the k-th largest confidence,
   # k = round(n * 0.02). Selection is `conf >= threshold`, tie-inclusive.
-  @frozen_threshold 0.6296127438545227
+  @frozen_threshold 0.6708709597587585
 
   # `r["btc_absret_1d"].quantile([0.2, 0.4, 0.6, 0.8])` over BARS, not over trades — the
   # ladder has to be a statement about the market (invariant 3).
@@ -145,10 +137,10 @@ defmodule FluxTrader.Trading.Policy do
   # correct: §1.8 measured on an earlier window. The health endpoint compares the live
   # trailing p80 against THIS number, because this is the ladder in force.
   @frozen_regime_edges [
-                         0.003956599626690149,
-                         0.00888611190021038,
-                         0.015089680440723896,
-                         0.025596268475055695
+                         0.003849115688353777,
+                         0.008730954490602016,
+                         0.014942771755158901,
+                         0.025370502844452858
                        ]
 
   # 🔴 THE CHECKPOINT THE TWO CONSTANTS ABOVE BELONG TO — M3_PROTOCOL §8.3 C5 / §9.5.
@@ -159,7 +151,7 @@ defmodule FluxTrader.Trading.Policy do
   # therefore loud rather than silent — the 2026-08-31 served-vs-scored defect cannot recur
   # through this path. To promote: derive the new cut and ladder from the new checkpoint's
   # own split, update all three constants here and in `config_test.exs`, deploy.
-  @frozen_checkpoint_sha256 "882cd4153c2d2d401897aaca9e0ddc593a92b78a6baf71da5c229a154ab92d42"
+  @frozen_checkpoint_sha256 "30e6ac1e0e9233cd88b4ba9fdddba5cefca16a0311c66b34a54d27990977d6cf"
 
   # Retrain trigger (M3_PROTOCOL §9.1, §8.6 Q3 answered (b) on 2026-09-04): retrain when the
   # served checkpoint has gone this many days without a bar meeting its own cut. Calibrated

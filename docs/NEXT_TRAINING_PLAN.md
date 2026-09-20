@@ -433,14 +433,18 @@ it is not what R1 tests, because R1 has one variable already.
 
 ## §2 — THE RUN QUEUE
 
-**Queued: U12, three serial GPU seeds — registered 2026-09-16, below.** It is not a lever and
+**U12 ran 2026-09-16 → 17 and was read 2026-09-20 (result block below the registration): the
+selection rule picked seed 2, `20260916T164212Z`, and the family FAILED Tier 1 (P2, P5). **The "serve eight" fallback is NOT accepted** (Vadim,
+2026-09-20: twelve is the decided universe); the acceptance bar itself is contested as
+underpowered — see the result block. Decision pending: certify by the folds and promote.**
+It is not a lever and
 it does not reopen §5: no knob changes, only the pair set, and the pair set it moves to is the
 one the walk-forward folds already train on. X0/X1 and X2, the two levers the freeze *was*
 reopened for, both ran and both closed WORSE (below); §5's freeze stays sealed and its only
 reopening condition is still §1.7's (≈2027). Everything else open or parked is in
 [BACKLOG.md](./BACKLOG.md), which is the list to read — not this section.
 
-### 🔵 U12 — a twelve-pair checkpoint for the served universe. REGISTERED 2026-09-16, NOT YET RUN
+### 🔵 U12 — a twelve-pair checkpoint for the served universe. REGISTERED 2026-09-16, RUN 2026-09-16→17, READ 2026-09-20 — **TIER 1 FAILED; FALLBACK TO EIGHT REJECTED; BAR CONTESTED — DECISION PENDING**
 
 🔴 **This registration is written before any U12 number exists. Nothing below may be edited
 once the first log is read** (M3_PROTOCOL §0).
@@ -520,6 +524,84 @@ and `Feature groups: … -> 19 columns`; `Training pairs: [...]` showing **twelv
 directional edge` and `Fixed-coverage P&L` tables **for the 240m head** (the 60m block is what
 produced the retracted "repair bought back edge" headline, RETRAIN_PLAN §4); and the run id.
 The read happens in a fresh session — bring the three logs, not a summary of them.
+
+**Result, read 2026-09-20** (`logs/U12_s1.log`, `logs/U12-s2.log`, `logs/U12-s3.log`; dumps in
+`ml/train/output/eval_dumps/`). Nothing above this line was edited. All three pass §0.4: twelve
+pairs, `Pair embedding: ON dim=8 n_pairs=12`, 19 legacy columns, seq 384, patience 20, and the
+identical `Split global_time | val_frac=0.2 val_offset=0.0 | train=3724724 val=931182 | val
+[2025-12-14 09:35 → 2026-09-09 20:05 UTC]`.
+
+| run | run id | epochs | all-epoch mean LB | plateau n / mean | selected | cov 0.02 gross bps/trade, 240m |
+|---|---|---:|---|---|---|---:|
+| U12 s1 | `20260916T070245Z` | 31 | 0.5255 | 17 / **0.5305** | ep 11 (0.5508) | +9.29 |
+| **U12 s2** | **`20260916T164212Z`** | 45 | 0.5192 | 26 / **0.5276** ← median | ep 25 (0.5680) | +21.11 |
+| U12 s3 | `20260917T023537Z` | 27 | 0.5266 | 27 / **0.5266** | ep 7 (0.5492) | +4.24 |
+
+- **Selection: seed 2, `20260916T164212Z`** — the median by plateau-restricted mean LB. Every
+  plateau is ≥ 15 epochs, so the fallback did not fire. The order is the same at four decimals
+  (0.53038 / 0.52761 / 0.52665); the s2–s3 gap is 0.001, i.e. the rule picked mechanically
+  between two statistically indistinguishable seeds, which is what it is for.
+- **The recorded expectation held:** pooled 0.5282 against the eight-pair family's 0.5239
+  (0.5209–0.5273) and X0's 0.5258 — inside or at the top of the between-seed spread. Not an
+  improvement claim.
+- ⚠️ **Deviation 1 — the snapshot is shared but not fresh.** The val window still ends
+  2026-09-09: `DUMP_MAX_AGE_MIN=100000` was exported before run 1, so the launcher reused
+  `dumps/latest.sql.gz` and BACKLOG's "rm the cache" step bought nothing. The registration
+  asks for "one shared snapshot", which holds. Side effect worth keeping: val ends before the
+  forward test's first bar (2026-09-11), so C13/C4 constants derived on this split cannot
+  touch forward data.
+- ⚠️ **Deviation 2 — U12 is X0's recipe on X0's snapshot, and training is near-deterministic.**
+  U12 s3 is **bit-identical to X0 s3** (`20260914T193920Z`) on all 27 epoch lines; s1 and s2
+  differ from X0 s1/s2 only by GPU nondeterminism. So "three fresh seeds" is in practice a
+  second draw of X0, not independent of it. Harmless for the selection rule; it means a
+  future "fresh family" needs new seed numbers, not a new launch.
+- The 240m fixed-coverage P&L rows are texture, not Tier 1 (no regime ladder, no sizing):
+  net at the 14-bps taker line, cov 0.02 → −4.71 / **+7.11** / −9.76.
+
+**Tier 1, run 2026-09-20 — FAIL as registered. Nothing is promoted yet.**
+Pinned with Vadim before any policy P&L was read: the incumbent's spec only (`WINNER_SPEC`, the
+§3.2 sized variant of `cov0.02_hold240_rqnone_mcnone`), twelve pairs, P1–P6 at the 14-bps taker
+line, no grid; the stale snapshot accepted. Command (existing code, nothing changed):
+`M3_ERA=repaired ./scripts/m3.sh -m m3 universe --runs 20260916T070245Z,20260916T164212Z,20260917T023537Z`
+→ `logs/U12_tier1_20260920.log`. Confidence cuts reproduce each log's cov-0.02 `conf_thr`
+(0.694 / 0.671 / 0.591), so the dumps are the runs.
+
+| | trades | pooled net | w1 | w2 | w3 | w4 | s1 / s2 / s3 | P1–P6 |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| **U12, 12 pairs, sized** | 2,723 | **+4.95** [−41.6, +51.5] | −0.38 | +17.80 | +3.93 | **−4.64** | −1.85 / +24.35 / −4.83 | Y **N** Y Y **N** Y |
+| U12, 8-pair subset, sized | 1,864 | +6.86 | −8.53 | +19.80 | −1.08 | +2.82 | — | Y N N Y N Y |
+| U12, 12 pairs, unsized (texture) | 2,729 | −3.34 | −20.87 | +12.63 | +4.19 | −10.70 | −4.71 / +7.11 / −9.76 | fails P1,P2,P3,P5 |
+| incumbent of record (8-pair ckpt, repaired) | — | +13.82 | | | | −4.61 (w3) | +8.41 / +11.94 / +21.97 | all Y |
+
+- **Fails P2** (two of four windows positive, three needed) **and P5** (seeds 1 and 3 are
+  negative). P3 passes by a hair (−4.64 against −5). Chosen seed 2 alone is +24.35 pooled with
+  w3 at −14.3 on 53 trades — one good seed, which is exactly what the family test is there to
+  catch.
+- **What this does and does not say.** It says this family does not clear the bar the
+  registration fixed, so the fallback fires. It does **not** say twelve pairs are worse than
+  eight: the pooled interval is ±47 bps, the four new pairs earn +5.69 against the base eight's
+  +4.57 inside the same run, and T6 measured P5 failing ~54% of the time on the incumbent's own
+  bootstrap. The standing intent to trade twelve is unchanged; the route back is a twelve-pair
+  family in the next registered M2 wave (§1.7), or a registration that certifies a fresh
+  checkpoint on the walk-forward folds (M3_PROTOCOL §9.3 item 2) — written before its data is read.
+- 🔴 **The registered fallback ("serve the eight") is rejected, and the bar is contested —
+  2026-09-20.** Vadim: twelve pairs is the decided universe; a failure branch that reinstates
+  eight should never have been registered. Two facts on record *before* U12 ran show the
+  acceptance bar could not do its job: (1) T6_RESULTS' power table — the **incumbent itself
+  fails "all six" in 98.7% of day-resamples** (P3 97.8%, P2 74.7%, P5 52.4%), so one-split
+  Tier 1 cannot arbitrate a checkpoint swap; passing at −4.61 and failing at P2/P5 are the same
+  coin. (2) RETRAIN_PLAN §8 Q2 chose **(B) walk-forward certification** as how a fresh
+  checkpoint is certified, and it came back **CONFIRMED on twelve pairs on this recipe** (W1
+  +33.23, CI [+9.28, +57.17], all three seeds positive). This is a defect in the criterion,
+  named from prior records, not a threshold lowered after a result; the Tier 1 table above
+  stays as the record.
+- **Proposed amendment (needs Vadim's yes):** U12 seed 2 — chosen by median LB *before* any
+  P&L was read — is promoted as the full-window instance of the fold-certified recipe; the
+  promotion record states that the artefact failed one-split Tier 1 and is certified by the
+  folds. Then as registered: gate under C13 and ladder p80 under C4 from its own split,
+  `gcp_promote.sh`, `policy.ex` constants, `/predict` ceiling fix (BACKLOG row 11), ledgers
+  backed up and voided, fourth clock start, `accept_76.py` replay, R0–R5 restated. Twelve
+  pairs served throughout.
 
 ### 🟢 X0 / X1 — the cross-sectional block, separated. CLOSED 2026-09-15: **WORSE** (−0.021)
 

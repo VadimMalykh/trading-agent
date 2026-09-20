@@ -71,8 +71,9 @@ defmodule FluxTrader.Trading.Regime do
   # The value needs close(t) and close(t - 24h); a margin above the bare minimum so a
   # truncated fetch cannot present a single stale reading as ready.
   @min_value_bars @bars_per_day + 12
-  # Re-derived 2026-09-04 on the REPAIRED split (was 0.025166796520352364 pre-repair).
-  @frozen_p80 0.025596268475055695
+  # Re-derived 2026-09-20 from U12 seed 2's own split at the promote (was 0.025596268475055695
+  # for the 8-pair checkpoint).
+  @frozen_p80 0.025370502844452858
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 

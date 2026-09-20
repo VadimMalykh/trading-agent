@@ -49,21 +49,22 @@ BOOTSTRAP_SEED = 20260913          # the registration date; fixed so tables repr
 # --- the constants, transcribed from M3_5_INTEGRATION.md §4.3 -------------------------
 #
 # The coverage cuts are `backtest.coverage_threshold(conf, c)` over the served checkpoint's
-# own split (repaired era, seed s2, the eight training pairs, horizon 240), derived on
-# 2026-09-13 with the ledger at 7 signal bars — the 0.02 entry reproduces the served
+# own split (U12 seed 2, eval run 20260916T164212Z, the twelve served pairs, horizon 240),
+# re-derived 2026-09-20 at the U12 promote with the new ledger empty (the 8-pair checkpoint's
+# were 0.6296 / 0.6432 / 0.6499 / 0.6611) — the 0.02 entry reproduces the served
 # `Policy.frozen_threshold/0` to the digit, which is the check that the population is right.
 CUTS = {
-    0.02:    0.6296127438545227,   # the served cut — the full policy arm
-    0.015:   0.6431580185890198,
-    0.01288: 0.6498615741729736,   # T6's count-matched coverage on twelve pairs
-    0.01:    0.6610917448997498,
+    0.02:    0.6708709597587585,   # the served cut — the full policy arm
+    0.015:   0.6958397030830383,
+    0.01288: 0.7077147364616394,   # T6's count-matched coverage on twelve pairs
+    0.01:    0.7253025770187378,
 }
 SERVED_COVERAGE = 0.02
 
 # The frozen ladder (`Policy.frozen_regime_edges/0`); p80 is its last edge. The ledger's
 # `ladder_p80` column carries the same number on every row and is checked against it.
-LADDER_EDGES = [0.003956599626690149, 0.00888611190021038,
-                0.015089680440723896, 0.025596268475055695]
+LADDER_EDGES = [0.003849115688353777, 0.008730954490602016,
+                0.014942771755158901, 0.025370502844452858]
 LADDER_P80 = LADDER_EDGES[-1]
 
 # WALKFORWARD_PROTOCOL §9.2's recorded hour set (UTC entry hour), chosen on F0+F1 and NOT

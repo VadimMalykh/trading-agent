@@ -78,7 +78,7 @@ defmodule FluxTraderWeb.DashboardLiveTest do
 
       assert html =~ "M3 Policy — forward paper test"
       # The cut in force is on the page, and it is the constant.
-      assert html =~ "0.630"
+      assert html =~ "0.671"
       assert html =~ "There is no warmup"
 
       # None of the retired warmup vocabulary may come back.
