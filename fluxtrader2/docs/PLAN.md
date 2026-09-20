@@ -192,7 +192,70 @@ Commands, in order (all on the work VM; the code is unit-tested on synthetic dat
 BNB fee discount is on, or a read-only API key so that `GET /fapi/v1/commissionRate` can be
 read once and recorded. Everything else in P1 runs without him.
 
-### P2 — Ceiling audit: how much signal is there, per bet type and horizon (~2 sessions)
+### P2 — Ceiling audit: how much signal is there, per bet type and horizon (🔵 five of seven items measured 2026-09-20; #4 and #5 next)
+
+**Result so far, in plain words** (`ft2 ceiling`, `output/ceiling.md`; exploration folds F1+F2 only,
+2023-05-03 → 2024-08-31, eleven pairs, 485 days; fees still the assumed VIP 0). Words used: a
+*basis point* (bps) is 0.01 %; a *round trip* is entry plus exit — 12.3 bps as a taker, 7.2 as a
+maker (P1); *IC* is the correlation between a signal and the move that follows, 0 = useless,
+0.05 = a good weak signal; "IC needed" is the IC at which trading the strongest tenth of signals
+just pays its round trip.
+
+**Can anything trade profitably yet? Not shown.** The only horizons where a measured signal is as
+large as the cost bar are **4 hours and 1 day**; at 15 minutes and 1 hour the moves are too small
+for the cost at any signal strength we found. What exists at 4h–1d is a *candidate*, not a
+finding: it still has to survive the noise floor (#4) and the learning curves (#5), and the
+one honest out-of-sample forecast we fitted confirms it at 4h but **not** at 1d.
+
+| bet | horizon | mean move, bps | IC needed (taker / maker; *with vol timing*) | best IC measured (feature, t) | reading |
+|---|---|---|---|---|---|
+| directional | 15m | 30 | 0.19 / 0.11; *0.08 / 0.05* | 0.024 (last 15m return, −8.9) | **excluded** — signal is a quarter of the bar |
+| directional | 1h | 60 | 0.09 / 0.05; *0.04 / 0.03* | 0.031 (last 1d return, −5.5) | below the bar; reachable only as maker + timing |
+| directional | 4h | 120 | 0.047 / 0.027; *0.024 / 0.015* | 0.045 (last 1d return, −4.4), 0.043 (last 4h, −4.9) | **candidate** — at the bar; ridge forecast IC 0.035 (t 3.5) out of sample |
+| directional | 1d | 307 | 0.018 / 0.011; *0.011 / 0.007* | 0.051 (last 4h return, −5.0) | **candidate, weak evidence** — single features clear the bar, the ridge forecast does not (IC 0.012, t 0.6) |
+| relative | 15m | 20 | 0.29 / 0.17; *0.13 / 0.08* | 0.043 (last 15m return, −23.8) | **excluded** — very real, far too small |
+| relative | 1h | 39 | 0.14 / 0.08; *0.07 / 0.04* | 0.032 | excluded as taker; below the bar as maker |
+| relative | 4h | 79 | 0.071 / 0.041; *0.038 / 0.024* | 0.030 (last 4h return, −6.3) | **candidate as maker + timing only** |
+| relative | 1d | 205 | 0.027 / 0.016; *0.016 / 0.010* | 0.032 (±1 % book imbalance, −4.4), MDE 0.020 | **candidate, thin** — one feature just past the multiple-testing bar (|t| 3.74 for 276 tests) |
+
+What the five items say, each in a sentence:
+
+- **#7 Move vs cost.** Costs are small next to moves except at 15m: a sign bet must be right 70 %
+  of the time at 15m, 60 % at 1h, 55 % at 4h, 52 % at 1d (taker). The pair-vs-basket bet moves
+  only two-thirds as much as the pair itself, so its bar is higher at every horizon.
+- **#1 Magnitude vs direction.** *How much* price will move is predictable out of sample (R² 16 %
+  at 15m, 14 % at 1h, 11 % at 4h, 5 % at 1d); *which way* is not (R² ≤ 0.2 %). Trading only the
+  tenth of bars with the largest predicted move doubles the average move (×2.1 at 1h, ×1.9 at 4h,
+  ×1.7 at 1d) at the same cost — that is the "with vol timing" column, and it roughly halves
+  every bar. **Volatility timing is funded as a multiplier** (decision table row 2).
+- **#2 Linear structure.** Mild mean reversion everywhere: variance ratios 0.95 (15m) → 0.85 (1d),
+  never above 1 on any pair raw. The first principal component is 61–70 % of the pairs' variance
+  — two-thirds of what any pair does is "the market", which is what the relative bet removes.
+- **#3 IC screen** (24 features × 4 horizons × 3 bets). Every directional and relative signal
+  that survives is **reversal**: trailing returns with a negative sign, stable in 81–100 % of
+  months. Book depth, order flow, open interest, long/short ratios and funding add almost
+  nothing on direction (one marginal hit: ±1 % depth imbalance, relative 1d). For magnitude,
+  dollar-volume surprise and short/long volatility ratio carry IC ≈ 0.25.
+- **#6 Power.** 485 days resolve ±0.4 (15m) to ±3.5 (1d) bps per trade at a tenth of the bars
+  traded, and an IC of ±0.005–0.03. Power is not the constraint on these folds; signal size is.
+
+**Defect record.** The first run (2026-09-20 08:38 UTC) computed the directional and vol ICs as
+a within-day Spearman and read −0.2 at 1d with t = −16. Feature and label share the price at t,
+and demeaning inside the day (which uses the day's future prices) makes them negatively
+correlated on a pure random walk (−0.5 for one pair). Voided and re-run the same day with an
+uncentred daily correlation; `tests/test_p2.py::test_random_walk_has_no_directional_ic` holds
+the statistic at zero on a random walk and keeps the defect as a recorded assertion. #7, #1's R²,
+#2, #6 and the relative ICs were unaffected and are identical in both runs.
+
+**Next session, in order:** (1) **#4 noise floor** — the IC screen and the walk-forward ridge on
+labels shuffled within day (and, because the directional bet is mostly one market factor,
+block-shuffled across days), ≥ 200 draws, for the six candidate/edge rows above; (2) **#5 learning
+curves** — ridge vs a depth-2 boosted tree on growing windows at 4h and 1d, both bets;
+(3) fill the verdict column (fund / not detectable / excluded) and choose P4's bet from it.
+`scripts/ft2.sh --test`, then `vm.sh start`, `vm.sh bg p2 ceiling --items 4 5`, `vm.sh pull`,
+`vm.sh stop`. **Watch the job with the log's `wrote ` line, not `pgrep -f "ft2 ceiling"`** — the
+ssh command line matches itself, which left the VM idling for five hours on 2026-09-20.
+
 
 **Deliverable:** one table. Rows = bet type × horizon. Columns = signal ceiling, cost (from P1),
 noise floor, detectable effect, sample size, verdict (fund / not detectable / excluded).

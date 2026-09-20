@@ -42,6 +42,15 @@ This project runs **entirely in Docker**. Do **not** install or use host tooling
 
 If a tool is missing on the host, use the matching container — never install it locally.
 
+## Two projects — always name which one
+
+**fluxtrader1** = `apps/`, `ml/`, `docs/` (entry: `docs/BACKLOG.md`). **fluxtrader2** =
+`fluxtrader2/` (entry: `fluxtrader2/README.md`; parked items in its `docs/PLAN.md` §7). Every
+status, due date, number and "needed from Vadim" line carries its project label. Both have
+folds named F0… with different dates, different VMs (`fluxtrader-1` collector vs
+`fluxtrader2-work`), different cost numbers — never quote one project's inside the other's
+answer unlabelled. In a session about one project, mention the other's items only if overdue.
+
 ## Data lives on the always-on VM — NOT the local DB (permanent)
 
 **All real data (candles, order book, trades, funding/OI, and every backfilled pair)

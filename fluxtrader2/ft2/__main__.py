@@ -51,6 +51,12 @@ def cmd_cost(args):
     print(cost.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS))
 
 
+def cmd_ceiling(args):
+    from . import ceiling
+    ceiling.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.items)
+    print(f"wrote {ceiling.OUT_MD} and {ceiling.OUT_DIR}/")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="ft2")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -77,9 +83,15 @@ def main(argv=None):
     c.add_argument("--fee-source", default="Binance USDⓈ-M published VIP 0 schedule (0.020 % maker / 0.050 % taker), "
                                            "no BNB discount — PENDING the account's tier from Vadim")
     c.add_argument("--symbols", nargs="*")
+    g = sub.add_parser("ceiling", help="P2: the ceiling audit on F1+F2 → output/ceiling.md, output/ceiling/ (see ft2/ceiling.py)")
+    for a_ in c._actions:                      # the same fee inputs as `cost`, so both are priced alike
+        if a_.dest in ("taker_bps", "maker_bps", "fee_source"):
+            g.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
+    g.add_argument("--symbols", nargs="*")
+    g.add_argument("--items", nargs="*", choices=["7", "1", "2", "3", "6"], help="PLAN P2 item numbers; default all implemented")
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory,
-            "archive": cmd_archive, "tape": cmd_tape, "cost": cmd_cost}[args.cmd](args)
+            "archive": cmd_archive, "tape": cmd_tape, "cost": cmd_cost, "ceiling": cmd_ceiling}[args.cmd](args)
 
 
 if __name__ == "__main__":
