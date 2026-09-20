@@ -277,11 +277,7 @@ features, and a 4-draw trial read an IC of +0.09 … +0.18 for the ridge from th
 Replaced before the real run by whole-day shuffles that never hand a day the labels of the 8 days
 before it (`_shuffle_days`, with a test); nothing was read from the leaky version.
 
-**Next session (P3, then P4):** build `ft2 backtest` (P3), then register P4 in §8 **before** running it:
-directional, 4h hold, a ≤ 3-parameter reversal rule on trailing 4h/1d return, traded only in the
-top tenth of predicted volatility, maker and taker priced separately, refit window fixed in the
-registration at 120 days (the middle of the range that worked, chosen here so that it is not tuned
-on the confirmation folds). The work VM is stopped. To re-run the audit: `scripts/ft2.sh --test`,
+**What followed:** P3 and P4's stage 1 (below). The work VM is stopped. To re-run the audit: `scripts/ft2.sh --test`,
 `vm.sh start`, `vm.sh bg p2 ceiling` (≈ 45 min for all seven items on 4 vCPU), `vm.sh pull`,
 `vm.sh stop`. **Watch the job with the log's `wrote ` line, not `pgrep -f "ft2 ceiling"`** — the
 ssh command line matches itself, which left the VM idling for five hours on 2026-09-20.
@@ -319,7 +315,29 @@ The audit itself, per target (from the design conversation; each item is a subco
 
 Reads the exploration folds (F1+F2) only. **Needed from Vadim:** nothing.
 
-### P3 — The harness (~2 sessions; can start in parallel with P2 once P0 is done)
+### P3 — The harness (✅ built and checked on real data 2026-09-21)
+
+**Result.** `ft2 backtest <strategy>` (`ft2/backtest.py`; its docstring is the specification) → a report,
+the decisions, the fills per execution and the shuffles under `output/backtest/<name>/`. Two checks say
+the instrument reads true. On synthetic data a planted edge of 30 bps comes back as 30 within its
+interval, with taker and maker costs exact to the cent (`tests/test_p3.py`). On the real F1+F2 a coin
+(random side, a tenth of the bars, 26,500 trades) comes back at **−12.2 bps as a taker — P1's cost —
+and at −7.2 on the simulated maker against −7.4 on P1's day-average maker**: the bar-level fill
+simulation and the tape measurement, two independent methods, agree to 0.25 bps.
+
+What was added beyond the plan, and why: **the maker is simulated on the bars** (a limit order rests at
+the bar's close for 15 minutes; filled only if a later bar trades through it; otherwise it crosses as a
+taker at the price by then). P1's maker number is a day average and cannot know *which* orders fill; for a
+rule that buys what is falling, the unfilled orders are exactly the ones that ran away. Both are reported.
+Also enforced by the harness, not by the strategy: fits see only labels that ended before their block; a
+block is re-run on a market cut off mid-block and any changed decision is refused as reading its future;
+a confirmation fold needs a §8 block and is read once per registration
+(`output/backtest/confirmation_reads.csv`).
+
+**One known weakness of the noise floor:** whole-day shuffles give a volatility-timed rule the moves of
+*average* days, so the shuffles' spread is about half the rule's real day-to-day spread (4.7 vs 8.5 bps on
+R1). Read the day-clustered interval as the honest error bar and the shuffle p as a lower bound; a null
+that keeps the timing (every trade of a day gets the same random side) is the fix, queued for P5.
 
 **Deliverable:** `ft2 backtest` — walk-forward over the folds, the ledger (§3), the cost model
 from P1 plugged in, the shuffled-label noise floor, day-clustered intervals with MDE, and a
@@ -328,7 +346,31 @@ is recovered with the right interval.
 
 **Needed from Vadim:** nothing.
 
-### P4 — The dumbest trade generator, through the harness (~1 session)
+### P4 — The dumbest trade generator, through the harness (🟡 stage 1 read 2026-09-21: gate passed; the confirmation read is Vadim's decision)
+
+**Result in plain words** (registration R1, §8; `output/backtest/reversal4h/report.md`). The rule: when a
+pair has been unusually volatile for 4 hours and has moved a lot over the last 4 hours to a day, bet on it
+giving some back over the next 4 hours. No model, three fixed numbers, written down before it ran. On
+F1+F2 (2023-05 → 2024-08) it made **3,404 trades, 7 a day, right 57 % of the time, earning 17.9 bps
+before costs and +14.0 bps after them as a maker (+9.7 as a taker)** — on a 10,000 USDT position that is
++14 USDT a trade, about +100 USDT a day with up to eleven positions open. Not one of 200 shuffles came
+close (p 0.005), so the registered gate passed.
+
+**Can it trade profitably? Still not shown — three cautions, in order of weight:**
+
+1. **The error bar is ±17 bps.** The interval is [−2.7, +30.8]: trades bunch on volatile days (a third of
+   them fall on a tenth of the days; the best ten days are more than the whole profit and the worst ten
+   cancel them), so 3,400 trades are worth far fewer independent bets. The smallest edge this sample could
+   have proven is 24 bps; the rule's is 14.
+2. **All of the profit is on the long side: longs +51 bps, shorts −19.** F1+F2 was a rising market, so
+   part of this is "buy the dip in a bull market", which is a bet on the market, not a skill. P2 had
+   flagged that a quarter of the signal was drift; in the traded tail it is more.
+3. **The stricter null gives p 0.03, not 0.005** (P3 "known weakness").
+
+**Why F3 was not read although the gate passed.** R1's stage 2 reads F3 alone. At this rule's day-to-day
+spread, F3's 240 days would confirm a true 14-bps edge only about one time in five — four times in five
+the fold would be spent on "not detectable". Deferring a read changes nothing about the registration (no
+parameter moves; stage 2 can be run as written at any time), so it is parked in §7 with the choices.
 
 **Deliverable:** a fixed rule with ≤3 parameters for the bet type P2 funds (for relative value:
 "long the bottom-decile residual, short the top, hold N bars, size by inverse volatility"), run
@@ -409,11 +451,13 @@ registered positive on confirmation folds.
 
 | item | why parked | revival trigger |
 |---|---|---|
+| **R1 stage 2 — the confirmation read of `reversal4h`** | **Needed from Vadim: choose (a), (b) or (c).** Gate passed 2026-09-21, but F3 alone has ~20 % power for the +14 bps measured (P4). (a) *recommended*: do P5 first on F1+F2 — its job becomes cutting the day-to-day spread (size by inverse volatility, cap how many pairs trade the same day and side, test long and short separately against the market's drift) — then register ONE confirmation read of the better of P4/P5 with its power computed beforehand. (b) read F3 now as registered: `vm.sh start`, `vm.sh run backtest reversal4h --folds F3 --registration R1`, `vm.sh pull`, `vm.sh stop` — cheap, most likely "not detectable", and F3 is then spent for this question. (c) amend R1 *before any read* to pool F3+F4+F5 (~50 % power), leaving no unread fold for this question later | Vadim's choice; (b) and (c) need nothing else |
+| day-level side-flip null in the harness | the whole-day shuffle understates a volatility-timed rule's spread (P3 "known weakness"); computed by hand for R1 (p 0.031) | first thing in P5, before any P5 number is read |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | book/tape features as model inputs | P2 #3/#5 (2026-09-20): measured, a wash — single features add little on direction; all 24 vs the 11 candle features is ±0.01 IC, except directional 1d on all history (0.012 → 0.050), one cell | P4/P5 funds a 1d directional bet, or a registered contrast shows the 1d cell repeats on a confirmation fold |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
-| relative (pair-vs-basket) bet at 4h, as a **rank** rule | P2 (2026-09-20): single reversal features pass the noise floor (IC 0.024–0.030) but no fitted forecast reproduces them, and the bar is only met as maker + vol timing | P3's harness exists: one registered run of "long bottom-decile 4h residual return, short the top" — cheap, and the plan's original prior |
+| relative (pair-vs-basket) bet at 4h, as a **rank** rule | P2 (2026-09-20): single reversal features pass the noise floor (IC 0.024–0.030) but no fitted forecast reproduces them, and the bar is only met as maker + vol timing | **trigger met 2026-09-21 (the harness exists) — Claude does it next session:** one registered run of "long bottom-decile 4h residual return, short the top". More interesting after P4: a market-neutral book has no long/short drift problem, which is R1's main caution |
 | directional 1d with short refits | P2 #5: IC 0.06–0.08 on 30–120-day windows vs 0.012 on all history, but the window was picked after the fact and 485 days resolve only ±0.03 at 1d | P4's 4h result is in: register the 1d twin with the same fixed window |
 | paper trading (P7) | nothing to trade yet | P5 registered positive on confirmation folds |
 | trade-level maker validation (`ft2 tape --keep-zip` on a ~2-week window; queue position and fill timing at the trade level) | P1's minute-level maker numbers (fill 86–97 %, adverse 1–3 bps) are coarse; refining them changes nothing until a maker path is on the table | P5 chooses a maker execution, or P2's verdict hinges on the 4-bps taker-vs-maker difference |
@@ -443,7 +487,16 @@ Expectation:   Gross +8 to +15 bps per trade, a few trades a day. Maker net betw
                roughly 5–8 — so the likeliest stage-1 outcome is a small positive that does not clear its own
                noise, i.e. a FAIL on p. Taker net negative. A clear pass would be a surprise worth distrusting
                (check the fill simulation first).
-Result:        —
+Result:        **Stage 1, read 2026-09-21 (commit 1393fe7 holds this block as written before the read): GATE PASSED.**
+               maker net +14.03 bps [−2.69, +30.75], MDE 23.9, 3,404 trades / 485 days, gross +17.91, p = 0.005
+               (0 of 200 shuffles; shuffle mean −5.89 ± 4.74). taker +9.74 [−6.72, +26.20]; maker_ev +14.07.
+               F1 +14.98, F2 +13.07; ten of eleven pairs positive gross. Against the expectation: gross was higher
+               than expected (17.9 vs 8–15) and the MDE three times larger (24 vs 5–8) — the expectation ignored that
+               trades bunch on volatile days. The promised distrust check: both maker versions agree (14.03 / 14.07)
+               and the coin calibrates, so the fill simulation is not the source. Diagnostics, not gates: longs +51.4,
+               shorts −18.8; a day-level side-flip null gives p = 0.031.
+               **Stage 2: not read.** Power on F3 alone ≈ 20 % for a true +14 (se ≈ 12 on 243 days). Parked in §7;
+               runnable unchanged.
 
 Template:
 
