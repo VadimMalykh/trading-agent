@@ -33,7 +33,8 @@ Read this section first if you are new to the problem; it defines the words used
 - **Units.** A basis point (bps) is 0.01%. "Gross" is before costs, "net" after. A "taker" order
   crosses the spread and pays the exchange's taker fee; a "maker" order rests and may not
   fill. A "round trip" is entry plus exit, so every per-trade cost below is counted twice.
-- **The data.** Four years of 1m/5m/15m/1h candles on nine pairs (less on three), and about
+- **The data.** Four years of 1m/5m/15m/1h candles on nine pairs (less on three) — plus, since 2026-09-21, the public
+  archive's 5m candles for the same nine from 2020 (fold FP) — and about
   two months of order book, trades, funding and open interest. Details, extents and known
   defects in [DATA.md](./DATA.md). The two-month book era is *too short* to support a
   walk-forward with any statistical power on its own; it is used to calibrate cost and
@@ -381,47 +382,49 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 step 1 read 2026-09-21: the bet is not what P4 thought it was; re-aimed below)
+### P5 — Forecast + analytic decision (🟡 steps 1–2 read 2026-09-21: the one bet that looked good does not hold up outside the data it was found on)
 
-**Step 1 result in plain words** (registrations R2, R3 in §8; reports under `output/backtest/`; F1+F2 only).
-Three things were run: R1 again with new diagnostics (it reproduced to the cent), the market-neutral rank rule,
-and two mechanical ways of making R1's result less lumpy. *Hedged* below means "the trade's move minus what the
-other ten pairs did over the same four hours" — what was earned by picking that pair rather than by being in the market.
+**Can it trade profitably? Not shown, and the best candidate just got much weaker.** Plain version of where P5 stands
+(a bps is 0.01 %; on a 10,000 USDT position 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip):
 
-1. **R1's profit is the whole market bouncing, not the pair reverting.** Hedged, R1's trades *lose* 11.6 bps
-   [−19.1, −4.2]: the pair it buys does worse than the others. The longs earn +56 bps gross because the other pairs
-   rise 66 bps over those same four hours — the rule is, in effect, "buy after a violent market-wide fall". Longs are
-   positive in all six quarters (+23 to +98 net); shorts negative in five of six (−19 overall). With R1's 3,404
-   trades that is far fewer independent bets than it looked, which is where the ±17 bps comes from.
-2. **The rank rule loses, significantly: −20.6 bps per leg as a maker [−31.7, −9.5]**, gross −16.3, negative in all
-   six quarters and on eight of eleven pairs. Per R2's gate the *relative reversal* bet on twelve names is **closed**.
-   The surprise is the sign: when two pairs have been pulled far apart over 4 hours, they keep moving apart. P2's
-   reversal IC (+0.03) is the body of the distribution; the traded tail does the opposite. This and item 1 are the
-   same fact seen twice.
-3. **Neither spread-cutting change helped.** Inverse-volatility sizing: +11.3 net, t 1.23 (R1: 1.64). At most three
-   positions a side: **−6.9 net** — the 1,045 trades the cap removed had earned +61 bps each. The 4th-and-later
-   position opened on the same side is where the money is: the more pairs are in free fall at once, the better the
-   bounce. Per R3's gate R1 stays the candidate and no further cap/size variant is tried.
-4. The harness's flip null puts R1 at p 0.025 (by hand it had been 0.031).
-
-**Can it trade profitably? Still not shown.** What we have is sharper, not bigger: two hypotheses, both *found* on
-F1+F2 and therefore not yet evidence — (H1) **panic bounce**: go long the market after a violent market-wide fall,
-more so the more pairs are falling at once; never short a spike; (H2) **tail continuation**: a pair torn away from
-the others over 4 hours keeps going for the next 4.
+- **Step 1 (R2, R3; F1+F2 = 2023-05 → 2024-08).** P4's rule ("fade a volatile pair's move") was taken apart. Its profit was
+  not the pair reverting but **the whole market bouncing after a violent fall**: against the other pairs its picks lose
+  11.6 bps; its longs earned +51, its shorts −19. The market-neutral version loses outright (−20.6 bps a leg, all six
+  quarters; closed), and two ways of smoothing the result made it worse (closed). Two sharper hypotheses came out of it:
+  H1 "buy the market after a market-wide panic", H2 "a pair torn away from the others keeps going".
+- **Step 2 (R4, R5).** To test them on data that played no part in finding them — without spending a confirmation fold —
+  the public archive's 2020–2022 candles were added as a pre-history fold **FP** (DATA.md; nine pairs, identical to the
+  collector's bars where they overlap), read together with F0: three years, 2020-05 → 2023-05, a bull market, two crashes
+  and the 2022 bear.
+  - **H1 (`panic4h`): +39.9 bps a trade where it was found, +7.4 [−16.9, +31.7] where it was not.** Verdict by the
+    registered gate: NOT DETECTABLE — and the +40 itself is ruled out (it lies above the interval). By half-year the
+    picture is plain: **+6 to +31 net while the market was rising (2020-H2 → 2021), −8 to −12 in every half-year from
+    2022-H1 to 2023-H1.** So what F1+F2 showed was "buying dips works in a bull market". The five worst days are the
+    cascades (2021-05-19, 2022-05-11 LUNA, 2022-11-08/09 FTX): the first bounce fails and the rule buys again.
+  - **H2 (`rankcont4h`): real before costs, eaten by them.** Gross +12.5 bps a leg (hedged +14.2 [+1.8, +26.5]), net −0.2 as
+    a taker and +4.9 as a maker — under the +5 bar written beforehand, so FP+F0 was NOT spent on it (it could have
+    confirmed a true +5 only one time in ten). Parked with its revival trigger (§7), not closed.
+- **What this means for R1** (§7, first row): R1's profit *is* H1's bounce, so the pre-history read is the best evidence
+  about it too. Reading F3 for R1 now would very likely spend the fold on "not detectable".
+- **What the project gained regardless:** the exploration data grew from 1.3 years (F1+F2) to 4.3 (FP+F0+F1+F2) with
+  very different regimes in it, and the harness reads it (`--folds FP F0`, guarded like a confirmation fold: by
+  registration, once). Every earlier "found on F1+F2" result can now be checked for regime dependence before a
+  confirmation fold is spent on it.
 
 **Next session (Claude; needs nothing from Vadim):**
 
-1. **Get independent exploration data instead of spending a confirmation fold.** The public archive has 5m klines
-   back to 2019-12 for the older pairs (§9 #1; BTC, ETH, XRP, ADA, LINK from 2020-01, DOGE/SOL/AVAX from 2020-H2). Fetch
-   `klines/5m` 2020-01 → 2022-08 (`vm.sh run archive klines/5m --start 2020-01-01 --end 2022-08-17`, tens of MB),
-   ingest as its own table, add a pre-history fold **FP** (2020-04 → 2022-08: two bull legs, the 2021-05 crash, the
-   2022 bear — regimes F1+F2 do not contain). Costs there: fee + the P1 candle proxy (DATA.md row with its error).
-2. **Register H1 and H2 as R4/R5 before reading FP**, each as a fixed rule (H1: long-only, breadth-triggered, the
-   basket or the falling pairs — decide from the arithmetic, not from a run; H2: `rank4h` with the sides swapped,
-   taker and maker both reported, because a resting order that chases a move is filled when the move fails).
-   F1+F2 is a mechanical gate for both (costs, fills); FP is the first honest read; F3–F5 stay unread.
-3. Only then the forecast layer this phase was planned as — and aimed at the **market factor** (the basket's next
-   4 hours after a fall), since that is where the signal turned out to live, with breadth of the fall as a feature.
+1. **Re-measure the ceiling for the market factor on all 4.3 years** — P2's audit (#1 magnitude/direction, #3 IC screen, #4
+   noise floor) with the target "the equal-weight basket's next 4 hours" and features that the step-2 result points at:
+   breadth of the fall, the basket's own trailing 4h/1d/1w/30d return (the trend the bounce seems to depend on), realised
+   volatility. Reported **per year**, because the lesson of R4 is that a pooled number hides a sign that changes with
+   the regime. `ft2 ceiling` needs a `--target basket` and `--folds` option for this; FP+F0 are now *seen* for H1-like
+   rules, so anything found there is a hypothesis, and only F3–F5 can confirm it.
+2. **Only if #1 shows a stable IC above the bar in every regime** → the forecast layer below, aimed at the basket, with
+   short refits (decision-table row 4). If the sign flips with the regime and nothing predicts the regime, the honest
+   conclusion is decision-table row 6 for the directional bet on these twelve names, and the next lever is breadth:
+3. **The wider universe (§9 #2) for H2.** H2 is the only effect so far that is market-neutral, has the same sign in both
+   exploration folds and survives hedging; it fails on cost with one name a side. Fetch 5m klines for the top ~40 perps
+   (same fetcher, `--symbols`), and register the rank rule with 3–5 names a side before reading.
 
 **Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
@@ -491,7 +494,9 @@ registered positive on confirmation folds.
 
 | item | why parked | revival trigger |
 |---|---|---|
-| **R1 stage 2 — the confirmation read of `reversal4h`** | **Needed from Vadim: choose (a), (b) or (c).** Gate passed 2026-09-21, but F3 alone has ~20 % power for the +14 bps measured (P4). (a) *recommended, more strongly after P5 step 1*: not yet — R1 as registered carries a short leg that loses in five quarters of six and its profit is a market bounce (P5), so F3 would be spent on a rule we would not trade as is; test the two sharper hypotheses on pre-history data first (P5 "Next session"), then register ONE confirmation read with its power computed beforehand. (b) read F3 now as registered: `vm.sh start`, `vm.sh run backtest reversal4h --folds F3 --registration R1`, `vm.sh pull`, `vm.sh stop` — cheap, most likely "not detectable", and F3 is then spent for this question. (c) amend R1 *before any read* to pool F3+F4+F5 (~50 % power), leaving no unread fold for this question later | Vadim's choice; (b) and (c) need nothing else |
+| **R1 stage 2 — the confirmation read of `reversal4h`** | **Needed from Vadim: nothing unless you disagree — saying nothing = (a).** Gate passed 2026-09-21, but (a) *recommended, firmly after P5 step 2*: do not read. R1's profit is the market's bounce after a fall (R3), and that bounce, tested on three unseen years, is +7 bps [−17, +32], positive only in rising markets (R4). F3 would be spent on a rule we would not trade. (b) read F3 anyway as registered: `vm.sh start`, `vm.sh run backtest reversal4h --folds F3 --registration R1`, `vm.sh pull`, `vm.sh stop`. (c) amend R1 before any read to pool F3+F4+F5 | Vadim's choice; or P5 "Next session" #1 finds what predicts the regime |
+| **H1 panic bounce (`panic4h`, R4)** — NOT DETECTABLE on FP+F0 2026-09-21 | Claude does the next step (P5 "Next session" #1); nothing needed from Vadim. +7.4 bps [−16.9, +31.7] against +39.9 where it was found; sign follows the market's trend. R4 forbids variants on FP+F0 | a registered ceiling read shows a feature that predicts the bounce's sign in every year; the conditional rule is then a NEW registration and only F3–F5 can confirm it |
+| **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread for it | Claude does the next step (P5 "Next session" #3). Gross +12.5 bps a leg, hedged +14.2 [+1.8, +26.5]; net −0.2 taker / +4.9 maker, under the +5 bar | the wider universe (§9 #2) with 3–5 names a side, or a lower fee tier (VIP 1 / BNB discount takes 1–2 bps off a round trip) |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | book/tape features as model inputs | P2 #3/#5 (2026-09-20): measured, a wash — single features add little on direction; all 24 vs the 11 candle features is ±0.01 IC, except directional 1d on all history (0.012 → 0.050), one cell | P4/P5 funds a 1d directional bet, or a registered contrast shows the 1d cell repeats on a confirmation fold |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -631,7 +636,14 @@ Result:        **Stage 1, read 2026-09-21 (commit b33449e holds this block as wr
                gross +52.68, shuffle p 0.005 (null −8.45 ± 7.23), flip p 0.005. maker +45.71 [+24.79, +66.62]. F1 +22.2,
                F2 +57.0. Spread + impact doubled: +37.6. Against the expectation: inside it (gross 53 vs 50–90), the se half
                of what was guessed (10.7 vs 20). R1 re-run on the changed harness first: +14.03 / +9.74, identical.
-               **Stage 2:** —
+               **Stage 2, read 2026-09-21 on FP+F0 (commit 4857796 holds the block and the power as written before the read):
+               NOT DETECTABLE.** taker net +7.38 bps [−16.91, +31.66], se 12.4, MDE 34.7, 5,244 trades / 1,093 days (4.8 a
+               day on 258 days), right 56.9 %, gross +19.82; shuffle p 0.035, flip p 0.070 → larger p > 0.05. maker +11.71
+               [−12.35, +35.77]. FP +11.5, F0 −9.6. Spread + impact doubled: +4.7. Stage 1's +39.9 lies outside the
+               interval. Against the expectation: inside it (gross 15–45, net 5–35, "likeliest NOT DETECTABLE"); the se was
+               12.4, not 10, so the MDE is 35, not 28. Diagnostic, not a gate — net by half-year: 2020-H2 +6, 2021-H1 +31,
+               2021-H2 +23, 2022-H1 −12, 2022-H2 −9, 2023-H1 −8: positive only while the market was rising. Per the gate:
+               parked (§7), no variant is tried on FP+F0.
 
 ### R5 — rankcont4h, hypothesis H2: a pair torn away from the others keeps going (registered 2026-09-21, before the rule saw any real bar; stage 1 read —, stage 2 read —)
 Question:      R2 lost 16.3 bps gross per leg in all six quarters, i.e. its mirror image earns that before costs. Is it more
