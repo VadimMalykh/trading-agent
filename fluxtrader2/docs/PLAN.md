@@ -120,7 +120,7 @@ check) written into DATA.md as a measured table.
 
 **Needed from Vadim:** the work VM (PLAN §6). Then Claude runs P0 on it.
 
-### P1 — Price the trade (✅ measured 2026-09-15; the fee tier is still an assumption)
+### P1 — Price the trade (✅ measured 2026-09-15; fee tier ✅ read from the account 2026-09-20)
 
 **Result in plain words.** A basis point (bps) is 0.01 %; a "round trip" is entry plus exit.
 On a 10,000 USDT position, a **taker** round trip (crossing the spread both ways) costs
@@ -129,7 +129,7 @@ On a 10,000 USDT position, a **taker** round trip (crossing the spread both ways
 traded. Of those, **10 bps are the exchange fee** (5 bps each way at the published VIP 0
 schedule); the spread and the book's depth add only 0.02–5.5 bps at this size. So at the sizes
 we would start with, the cost is the fee, and **the account's fee tier is the single biggest
-lever on cost** — still needed from Vadim. At 100,000 USDT the majors still cost ~10–11 bps but
+lever on cost** — read from the account on 2026-09-20: VIP 0, as assumed. At 100,000 USDT the majors still cost ~10–11 bps but
 the thin pairs 17–28 and ZEC cannot be priced (the book is too shallow on most days: blank, not
 guessed). A **maker** round trip (resting at the touch, filled only when price trades through
 the order) costs **6–10 bps** — 4 bps of fees plus 1–3 bps of adverse drift after the fill —
@@ -146,11 +146,11 @@ the harness, `data/cost_table.parquet` for the summary):
 | spread | tape bounce estimate per pair × day, 2023-01 → 09-13; BTC 0.02 bps, ETH 0.05, SOL 0.4–0.5, the rest 0.3–2.6; hour-of-day effect ≤ 30 % | vs the collector's quoted spread on the 2026-07 → 09 overlap: ratio 0.76–1.00, daily correlation 0.63–0.99; the per-pair ratio calibrates the whole history (`spread_cal_bps`) |
 | impact | ladder walk, 40 days, 8 notionals; at 10k: 0–0.6 bps beyond the half-spread on the majors, 0.5–1.6 on PEPE/WLD | carried back by the archive ±1 % depth as impact(N·(D_ref/D_day)^γ); γ = 0.5 chosen inside the window (deep half → shallow half, mean relative error 0.406 vs 0.424 with no scaling — depth scaling barely matters at the window's 1.2–1.9 depth ratios; the history reaches ratio 12 on ZEC, where censoring, not the curve, protects the number) |
 | maker fill / adverse selection | tape minutes: resting at the minute's last bid/ask, filled if a later trade goes through it within 5/15/30 min; drift vs the resting price conditional on the fill | coarse (1-minute, queue position unknown); trade-level check on a short raw window is parked (§7) |
-| fees | **input**: VIP 0, no BNB discount | PENDING — recorded in the report header; re-run with `--taker-bps/--maker-bps/--fee-source` once known |
+| fees | **measured 2026-09-20**: VIP 0, maker 2.0 / taker 5.0 bps per side on every pair checked (`GET /fapi/v1/commissionRate`, read-only key) — exactly what P1 and P2 assumed, so no number changes and nothing is re-run | BNB fee-burn is ON on the account but the futures wallet holds **no BNB**, so the 10 % discount does not apply today. Holding a little BNB there makes it 1.8 / 4.5 bps (round trip 9 instead of 10 taker): `--taker-bps 4.5 --maker-bps 1.8` on `cost` and `ceiling` when that happens. The `output/*.md` headers generated before 2026-09-20 still say PENDING |
 | funding | `funding_archive`, signed and absolute per day; interval 8 h (HYPE 4 h) | — |
 | candle proxy | per-pair regression of the daily spread on 5m range, dollar volume and price; applied to 2022-08 → 2022-12 (1,215 pair-days) | time-split error 3–19 % on 7 pairs, 31–71 % on AVAX, WLD, ZEC, PEPE, SOL; only fold F0 (never scored) uses it |
 
-**Not yet done:** the fee tier; the trade-level maker validation (parked).
+**Not yet done:** the trade-level maker validation (parked).
 
 
 **Deliverable:** a cost table, per pair × side (taker/maker) × volatility regime, in bps per
@@ -195,7 +195,7 @@ read once and recorded. Everything else in P1 runs without him.
 ### P2 — Ceiling audit: how much signal is there, per bet type and horizon (🔵 five of seven items measured 2026-09-20; #4 and #5 next)
 
 **Result so far, in plain words** (`ft2 ceiling`, `output/ceiling.md`; exploration folds F1+F2 only,
-2023-05-03 → 2024-08-31, eleven pairs, 485 days; fees still the assumed VIP 0). Words used: a
+2023-05-03 → 2024-08-31, eleven pairs, 485 days; fees VIP 0, confirmed from the account 2026-09-20). Words used: a
 *basis point* (bps) is 0.01 %; a *round trip* is entry plus exit — 12.3 bps as a taker, 7.2 as a
 maker (P1); *IC* is the correlation between a signal and the move that follows, 0 = useless,
 0.05 = a good weak signal; "IC needed" is the IC at which trading the strongest tenth of signals

@@ -78,10 +78,10 @@ def main(argv=None):
     t.add_argument("--keep-zip", action="store_true", help="keep the raw zips (only for a short validation window)")
     c = sub.add_parser("cost", help="P1: price the trade → output/cost.md, data/cost_daily.parquet, data/cost_table.parquet "
                                     "(see ft2/cost.py)")
-    c.add_argument("--taker-bps", type=float, default=5.0, help="per side; default: the published VIP 0 schedule")
+    c.add_argument("--taker-bps", type=float, default=5.0, help="per side; default: the account's measured rate (VIP 0)")
     c.add_argument("--maker-bps", type=float, default=2.0)
-    c.add_argument("--fee-source", default="Binance USDⓈ-M published VIP 0 schedule (0.020 % maker / 0.050 % taker), "
-                                           "no BNB discount — PENDING the account's tier from Vadim")
+    c.add_argument("--fee-source", default="account read 2026-09-20 (GET /fapi/v1/commissionRate): VIP 0, 0.020 % maker / 0.050 % taker; "
+                                           "BNB fee-burn on but no BNB in the futures wallet, so no discount")
     c.add_argument("--symbols", nargs="*")
     g = sub.add_parser("ceiling", help="P2: the ceiling audit on F1+F2 → output/ceiling.md, output/ceiling/ (see ft2/ceiling.py)")
     for a_ in c._actions:                      # the same fee inputs as `cost`, so both are priced alike
