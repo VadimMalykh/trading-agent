@@ -15,7 +15,7 @@ def cmd_smoke(_args):
 
 
 ARCHIVE_INGEST = {"metrics": "ingest_metrics", "depth": "ingest_depth", "funding_archive": "ingest_funding_archive",
-                  "levels": "ingest_levels"}   # levels: the collector ladder, windowed export → data/ladder/
+                  "levels": "ingest_levels", "klines": "ingest_klines"}   # levels: the collector ladder, windowed export → data/ladder/
 
 
 def cmd_ingest(args):
@@ -51,6 +51,11 @@ def cmd_cost(args):
     print(cost.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS))
 
 
+def cmd_costpre(args):
+    from . import cost
+    print(cost.prehistory(args.symbols or PAIRS))
+
+
 def cmd_ceiling(args):
     from . import ceiling
     ceiling.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.items, args.draws)
@@ -70,7 +75,7 @@ def _param(s: str):
 def cmd_backtest(args):
     from . import backtest
     r = backtest.run(backtest.get_strategy(args.strategy, dict(args.param or [])), args.symbols or PAIRS, args.folds, args.execs, args.draws,
-                     args.taker_bps, args.maker_bps, args.latency, args.refit_days, args.registration, args.name, args.seed)
+                     args.taker_bps, args.maker_bps, args.latency, args.refit_days, args.registration, args.name, args.seed, args.cost_mult)
     print((r["dir"] / "report.md").read_text())
     print(f"wrote {r['dir']}/")
 
@@ -101,6 +106,8 @@ def main(argv=None):
     c.add_argument("--fee-source", default="account read 2026-09-20 (GET /fapi/v1/commissionRate): VIP 0, 0.020 % maker / 0.050 % taker; "
                                            "BNB fee-burn on but no BNB in the futures wallet, so no discount")
     c.add_argument("--symbols", nargs="*")
+    cp = sub.add_parser("costpre", help="P5: spread + impact for the days before the tape (candle proxy) → data/cost_daily_pre.parquet, output/cost_pre.md")
+    cp.add_argument("--symbols", nargs="*")
     g = sub.add_parser("ceiling", help="P2: the ceiling audit on F1+F2 → output/ceiling.md, output/ceiling/ (see ft2/ceiling.py)")
     for a_ in c._actions:                      # the same fee inputs as `cost`, so both are priced alike
         if a_.dest in ("taker_bps", "maker_bps", "fee_source"):
@@ -119,6 +126,7 @@ def main(argv=None):
     b.add_argument("--latency", type=int, default=1, help="bars between the decision and the execution price")
     b.add_argument("--refit-days", type=int, default=30)
     b.add_argument("--seed", type=int, default=0)
+    b.add_argument("--cost-mult", type=float, default=1.0, help="sensitivity: multiply spread + impact (not fees) by this")
     b.add_argument("--name", help="output directory under output/backtest/ (default: the strategy's name)")
     for a_ in c._actions:
         if a_.dest in ("taker_bps", "maker_bps"):
@@ -126,7 +134,7 @@ def main(argv=None):
     b.add_argument("--symbols", nargs="*")
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
-            "cost": cmd_cost, "ceiling": cmd_ceiling, "backtest": cmd_backtest}[args.cmd](args)
+            "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest}[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -76,12 +76,19 @@ LC_TREES = (50, 150, 300)                    # #5: the boosted tree is read at t
 
 
 # ---- the panel ---------------------------------------------------------------------------------
-def panel(symbols: list[str], end: pd.Timestamp = END) -> dict[str, pd.DataFrame]:
+def panel(symbols: list[str], end: pd.Timestamp = END, start: pd.Timestamp = START) -> dict[str, pd.DataFrame]:
     """Wide frames (decision time × pair) of close/high/low/dollar volume, cut at `end` (the audit's END
-    unless the harness, reading a registered fold, says otherwise)."""
-    c = data.load("candles_5m", columns=["symbol", "open_time", "high", "low", "close", "volume"], symbols=symbols)
+    unless the harness, reading a registered fold, says otherwise). A `start` before the collector's
+    history (the pre-history fold FP) puts the archive's klines under the collector's bars: wherever
+    both have a bar, the collector's is the one used."""
+    cols_ = ["symbol", "open_time", "high", "low", "close", "volume"]
+    c = data.load("candles_5m", columns=cols_, symbols=symbols)
+    if start < START:
+        c = pd.concat([data.load("candles_5m_archive", columns=cols_, symbols=symbols), c], ignore_index=True)
+        c["symbol"] = c["symbol"].astype(str)
+        c = c.drop_duplicates(["symbol", "open_time"], keep="last")
     c["t"] = c["open_time"] + BAR
-    c = c[(c["t"] >= START) & (c["t"] <= end)]
+    c = c[(c["t"] >= start) & (c["t"] <= end)]
     c["symbol"] = c["symbol"].astype(str)
     c["dv"] = c["volume"] * c["close"]
     idx = pd.date_range(c["t"].min(), c["t"].max(), freq="5min", name="t")

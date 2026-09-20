@@ -20,6 +20,7 @@ SLICES: dict[str, tuple[str, list[str]]] = {
     "candles_5m": ("open_time", ["symbol", "open_time"]),
     "candles_15m": ("open_time", ["symbol", "open_time"]),
     "candles_1h": ("open_time", ["symbol", "open_time"]),
+    "candles_5m_archive": ("open_time", ["symbol", "open_time"]),   # archive klines before the collector's history (ingest_klines, P5)
     "snapshots": ("ts", ["symbol", "ts"]),
     "trades": ("window_start", ["symbol", "window_start"]),
     "funding": ("ts", ["symbol", "ts"]),
@@ -94,8 +95,8 @@ METRICS_COLS = {
 }
 
 
-def _read_zips(kind: str, symbol: str, **read_csv_kw) -> pd.DataFrame:
-    files = sorted((EXT / kind / symbol).glob("*.zip"))
+def _read_zips(kind: str, symbol: str, pattern: str = "*.zip", **read_csv_kw) -> pd.DataFrame:
+    files = sorted((EXT / kind / symbol).glob(pattern))
     files = [f for f in files if f.with_suffix(".zip.ok").exists()]
     if not files:
         return pd.DataFrame()
@@ -119,6 +120,33 @@ def ingest_metrics(symbols: list[str]) -> dict:
     df.to_parquet(PROC / "metrics.parquet", index=False)
     return {"slice": "metrics", "rows_in": n_in, "dups_dropped": n_in - len(df), "rows_out": len(df),
             "first": df["ts"].min(), "last": df["ts"].max(), "file": str(PROC / "metrics.parquet")}
+
+
+KLINE_COLS = ["open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "count",
+              "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
+
+
+def ingest_klines(symbols: list[str], interval: str = "5m") -> dict:
+    """archive klines → data/candles_<interval>_archive.parquet, the collector's candle columns. The pre-history
+    (2020 → 2022-08) the collector never recorded; fetched a day past the collector's first bar so that the
+    inventory can compare the two on the overlap. Older daily files have no header row, newer ones do."""
+    parts = []
+    for sym in symbols:
+        df = _read_zips("klines", sym, pattern=f"{sym}-{interval}-*.zip", header=None, names=KLINE_COLS, dtype=str)
+        if df.empty:
+            continue
+        df = df[df["open_time"].str.isdigit()]
+        out = pd.DataFrame({"symbol": sym, "open_time": pd.to_datetime(df["open_time"].astype("int64"), unit="ms", utc=True)})
+        for c in ("open", "high", "low", "close", "volume", "quote_volume"):
+            out[c] = df[c].astype(float).to_numpy()
+        parts.append(out)
+    df = pd.concat(parts, ignore_index=True)
+    n_in, dst = len(df), PROC / f"candles_{interval}_archive.parquet"
+    df = df.sort_values(["symbol", "open_time"], kind="mergesort").drop_duplicates(["symbol", "open_time"], keep="last").reset_index(drop=True)
+    df["symbol"] = df["symbol"].astype("category")
+    df.to_parquet(dst, index=False)
+    return {"slice": dst.stem, "rows_in": n_in, "dups_dropped": n_in - len(df), "rows_out": len(df),
+            "first": df["open_time"].min(), "last": df["open_time"].max(), "file": str(dst)}
 
 
 DEPTH_LEVELS = [-5.0, -4.0, -3.0, -2.0, -1.0, -0.2, 0.2, 1.0, 2.0, 3.0, 4.0, 5.0]   # per cent from mid; negative = bid side

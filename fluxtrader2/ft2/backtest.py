@@ -9,7 +9,9 @@ What it guarantees, so that a strategy cannot get any of it wrong:
   the ledger     DECISIONS (what, when, which side, what size, why — and whether the book rule took
                  it) and FILLS (prices, every cost component, net) are separate tables. `price` turns
                  one into the other, so fees, latency and taker/maker are re-priced without re-deciding.
-  the cost       P1's pair × day series (data/cost_daily.parquet), per leg, at the day of that leg:
+  the cost       P1's pair × day series (data/cost_daily.parquet; before the tape, 2023-01, the candle-proxy
+                 series data/cost_daily_pre.parquet of `ft2 costpre`), per leg, at the day of that leg
+                 (`cost_mult` scales the spread + impact part: a sensitivity for proxied days):
                    taker  fee + half the calibrated spread + impact at NOTIONAL
                    maker  simulated on the bars, per leg: a limit order rests at the execution bar's close
                           for MAKER_WAIT bars; it is filled at that price (maker fee, nothing else) only if
@@ -39,7 +41,8 @@ What it guarantees, so that a strategy cannot get any of it wrong:
   diagnostics    `mkt_bps` on every fill is the equal-weight move of the OTHER pairs over the same two
                  bars; gross − side × mkt is the HEDGED gross — what the trade
                  earned against the market rather than with it. Long and short are reported apart.
-  folds          F1+F2 by default. A confirmation fold is read only with `--registration R<n>`, only if
+  folds          F1+F2 by default. FP+F0 is the pre-history (folds.PREHISTORY): FP puts the archive's klines
+                 under the collector's and has no maker_ev (P1 measured no fills there). A confirmation fold is read only with `--registration R<n>`, only if
                  that block exists in docs/PLAN.md §8, and only once per registration; every such read
                  is appended to output/backtest/confirmation_reads.csv.
 
@@ -59,7 +62,7 @@ import pandas as pd
 
 from . import ceiling, data, folds
 from .ceiling import BAR, MDE_K, NOTIONAL, MAKER_H, hac, day_lags
-from .cost import DAILY
+from .cost import DAILY, DAILY_PRE, TAPE_START
 
 OUT = Path("output/backtest")
 READS = OUT / "confirmation_reads.csv"
@@ -103,8 +106,11 @@ class Market:
         return Market(self.close.iloc[:n], self.high.iloc[:n], self.low.iloc[:n], self.dv.iloc[:n], {k: v.iloc[:n] for k, v in self.extra.items()})
 
 
-def market(symbols: list[str], end: pd.Timestamp) -> Market:
-    P = ceiling.panel(symbols, end)
+PRE_START = pd.Timestamp("2019-12-31", tz="UTC")        # the archive's first kline
+
+
+def market(symbols: list[str], end: pd.Timestamp, start: pd.Timestamp = ceiling.START) -> Market:
+    P = ceiling.panel(symbols, end, start)
     return Market(P["close"], P["high"], P["low"], P["dv"])
 
 
@@ -121,10 +127,13 @@ def _ns(x) -> np.ndarray:
     return pd.DatetimeIndex(x).as_unit("ns").asi8
 
 
-def load_costs(index: pd.DatetimeIndex, cols: pd.Index, end: pd.Timestamp) -> Costs:
+def load_costs(index: pd.DatetimeIndex, cols: pd.Index, end: pd.Timestamp, cost_mult: float = 1.0) -> Costs:
     d = pd.read_parquet(DAILY)
-    d = d[d["day"] < end]
     d["symbol"] = d["symbol"].astype(str)
+    if DAILY_PRE.exists():                                     # days before the tape: the candle proxy (`ft2 costpre`), never mixed into tape days
+        pre = pd.read_parquet(DAILY_PRE)
+        d = pd.concat([pre[pre["day"] < TAPE_START].assign(symbol=lambda x: x["symbol"].astype(str)), d[d["day"] >= TAPE_START]], ignore_index=True)
+    d = d[d["day"] < end]
     piv = lambda c: d.pivot(index="day", columns="symbol", values=c).reindex(columns=cols)      # noqa: E731
     sp = piv("spread_cal_bps")
     f = data.load("funding_archive", columns=["symbol", "ts", "rate"], symbols=list(cols))
@@ -134,7 +143,7 @@ def load_costs(index: pd.DatetimeIndex, cols: pd.Index, end: pd.Timestamp) -> Co
         e = f[f["symbol"].astype(str) == sym].sort_values("ts")
         if len(e):
             cum[:, j] = np.concatenate([[0.0], np.cumsum(e["rate"].to_numpy() * 1e4)])[np.searchsorted(_ns(e["ts"]), _ns(index), "right")]
-    return Costs(pd.DatetimeIndex(sp.index), (sp / 2 + piv(f"imp_{NOTIONAL}")).to_numpy(), piv(f"maker_adv_{MAKER_H}").to_numpy(),
+    return Costs(pd.DatetimeIndex(sp.index), (sp / 2 + piv(f"imp_{NOTIONAL}")).to_numpy() * cost_mult, piv(f"maker_adv_{MAKER_H}").to_numpy(),
                  piv(f"maker_fill_{MAKER_H}").to_numpy(), cum)
 
 
@@ -365,11 +374,11 @@ def open_positions(dec: pd.DataFrame, index: pd.DatetimeIndex, latency: int) -> 
 
 # ---- the run ----------------------------------------------------------------------------------------------
 def _guard(fold_names, registration: str | None) -> list[str]:
-    conf = [f for f in fold_names if f in folds.CONFIRMATION]
+    conf = [f for f in fold_names if f in folds.CONFIRMATION + folds.PREHISTORY]      # the pre-history is an honest read too: once, by registration
     if not conf:
         return conf
     if not registration or not re.fullmatch(r"R\d+", registration):
-        raise SystemExit(f"{conf} are confirmation folds: they are read only by a registered contrast (--registration R<n>, PLAN §3/§8)")
+        raise SystemExit(f"{conf} are confirmation folds (or the pre-history, guarded the same way): they are read only by a registered contrast (--registration R<n>, PLAN §3/§8)")
     if not PLAN.exists() or not re.search(rf"^### {registration} ", PLAN.read_text(), flags=re.M):
         raise SystemExit(f"no '### {registration} ' block in {PLAN}: write the registration before the read")
     if READS.exists():
@@ -381,12 +390,13 @@ def _guard(fold_names, registration: str | None) -> list[str]:
 
 
 def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, execs=EXECS, draws: int = 200, taker_bps: float = 5.0, maker_bps: float = 2.0,
-        latency: int = LATENCY, refit_days: int = REFIT_DAYS, registration: str | None = None, name: str | None = None, seed: int = 0) -> dict:
-    fold_names = sorted(fold_names)
+        latency: int = LATENCY, refit_days: int = REFIT_DAYS, registration: str | None = None, name: str | None = None, seed: int = 0,
+        cost_mult: float = 1.0) -> dict:
+    fold_names = folds.order(fold_names)
     conf = _guard(fold_names, registration)
     end = folds.bounds(fold_names[-1])[1]
-    M = market(symbols, end)
-    C = load_costs(M.index, M.columns, end)
+    M = market(symbols, end, PRE_START if "FP" in fold_names else ceiling.START)      # F1… runs see exactly the market they always saw
+    C = load_costs(M.index, M.columns, end, cost_mult)
     y = labels(M, strategy.hold, latency)
     print(f"{strategy.name}: walk-forward over {'+'.join(fold_names)}, {len(M.index):,} bars × {len(M.columns)} pairs…", flush=True)
     dec = walk(strategy, M, fold_names, y, latency, refit_days)
@@ -438,7 +448,7 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
     nul.to_parquet(out / "null.parquet", index=False)
     max_open, avg_open = open_positions(dec, M.index, latency)
     meta = {"strategy": strategy.name, "params": strategy.params(), "folds": fold_names, "registration": registration, "taker_bps": taker_bps,
-            "maker_bps": maker_bps, "latency_bars": latency, "refit_days": refit_days, "draws": draws, "seed": seed, "notional": NOTIONAL,
+            "maker_bps": maker_bps, "cost_mult": cost_mult, "latency_bars": latency, "refit_days": refit_days, "draws": draws, "seed": seed, "notional": NOTIONAL,
             "pairs": list(M.columns), "decisions": len(dec), "accepted": int(dec["accepted"].sum()), "max_open": max_open, "avg_open": avg_open,
             "generated": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC"}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
@@ -453,7 +463,8 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
 def report(meta: dict, res: pd.DataFrame, floor: pd.DataFrame) -> str:
     md = [f"# Backtest — `{meta['strategy']}` (`ft2 backtest`)\n", f"generated {meta['generated']}\n",
           f"\nparams {meta['params']} · folds {'+'.join(meta['folds'])}" + (f" · **registration {meta['registration']}**" if meta["registration"] else " (exploration)")
-          + f" · fees {meta['taker_bps']} taker / {meta['maker_bps']} maker bps per side · executed {meta['latency_bars']} bar(s) after the decision"
+          + f" · fees {meta['taker_bps']} taker / {meta['maker_bps']} maker bps per side"
+          + (f" · **spread and impact × {meta['cost_mult']:g}** (sensitivity)" if meta.get("cost_mult", 1.0) != 1.0 else "") + f" · executed {meta['latency_bars']} bar(s) after the decision"
           f" · blocks of {meta['refit_days']} days · {meta['decisions']:,} decisions, {meta['accepted']:,} taken (one position per pair)"
           f" · at most {meta['max_open']} positions open at once, {meta['avg_open']:.2f} on average\n",
           "\nWords: a basis point (bps) is 0.01 %; *gross* is the move earned before costs, *net* after fees, spread, impact and funding; "

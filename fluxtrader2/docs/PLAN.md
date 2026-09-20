@@ -592,6 +592,58 @@ Result:        **Read 2026-09-21 (commit b842d64): no variant passes; R1 stays t
                days with ≥ 8 same-side trades: +4 a trade, the rest +36 — the first entries into a fall lose, the later
                ones win). Longs +51.4 [25.1, 77.7], positive in 6 of 6 quarters; shorts −18.8, negative in 5 of 6.
 
+### R4 — panic4h, hypothesis H1: buy the market after a market-wide fall (registered 2026-09-21, before the rule saw any real bar; stage 1 read —, stage 2 read —)
+Question:      R1's profit turned out to be the whole market bouncing after a violent fall (R3's result). Stated as its own
+               rule — long only, triggered by how many pairs are falling at once, buying the market rather than the fallen
+               pairs — does it make money after costs on data that played no part in finding it?
+Rule:          `ft2/rules.py::Panic`. A pair is FALLING at a bar when R1 would buy it (R1's v, s, q_vol 0.90, q_sig 0.80,
+               120-day cuts — unchanged). When at least a third of the pairs that have cuts were falling at some bar of the
+               last 48 (11 pairs: 4; 9: 3; 6: 2), go long EVERY such pair, one unit each, hold 48 bars, one position per pair,
+               executed 1 bar later. Where the two free choices come from — both from R1's fills on F1+F2, which is why
+               F1+F2 is not evidence: (a) *a third*: R1's longs entered while ≥ 4 of 11 pairs had fired in the last 4 hours
+               saw the other pairs rise +90 bps over the hold, those entered with 1–3 saw +20 (1,055 vs 535 trades);
+               (b) *the basket, not the fallen pairs*: hedged, R1's picks lose 11.6 bps to the others. No other value was tried.
+Contrast:      mean net bps per unit of notional vs zero and vs both nulls (the shuffle null is what removes "long in a
+               rising market": it holds the same long positions on other days). Primary execution: `taker` — the edge, if it
+               exists, is several times the cost, and before 2023 the spread is a candle proxy (`ft2 costpre`), so the
+               execution that depends least on simulation decides. `maker` is reported. Sensitivity reported with the
+               result: spread + impact doubled (= taker net − other_cost).
+Folds read:    stage 1: F1+F2 — a mechanical gate (costs, fills, trade count), NOT evidence.
+               stage 2: FP+F0 (2020-05-01 → 2023-05-01; archive klines under the collector's; 5 → 9 pairs), once:
+               `ft2 backtest panic4h --folds FP F0 --registration R4 --execs taker maker`. F3–F5 are not read.
+Gate:          stage 1 passes if taker net > 0 AND the larger p ≤ 0.05; fail → stage 2 is not read and H1 is closed as an
+               artefact of how R1's trades were sliced. Before stage 2 runs, its power is written here from stage 1's
+               standard error. Stage 2: SUPPORTED if the taker interval's lower bound > 0 AND the larger p ≤ 0.05 → H1
+               becomes the candidate for the one confirmation read (replacing R1 in §7's first row) and the market factor
+               becomes P5's forecast target. REFUTED if the upper bound < 0 → closed. Otherwise NOT DETECTABLE, with the MDE;
+               it stays parked, no variant is tried on FP+F0. No parameter changes between the stages.
+Expectation:   Stage 1: gross +50 to +90 bps, 3–6 trades a day bunched on ~120 days, taker net +40 to +80, se ≈ 20, passes.
+               Stage 2: positive but much smaller — gross +15 to +45, taker net +5 to +35. 2021-05, 2022-05 and 2022-06 were
+               cascades in which the first bounce failed, and the rule was found in a rising market. With se ≈ 15 the
+               likeliest verdict is NOT DETECTABLE, SUPPORTED second.
+Power:         — (filled from stage 1's se before stage 2 is run)
+Result:        —
+
+### R5 — rankcont4h, hypothesis H2: a pair torn away from the others keeps going (registered 2026-09-21, before the rule saw any real bar; stage 1 read —, stage 2 read —)
+Question:      R2 lost 16.3 bps gross per leg in all six quarters, i.e. its mirror image earns that before costs. Is it more
+               than a round trip costs, and does it exist outside the data it was found on?
+Rule:          `ft2/rules.py::RankContinuation` = R2's rule with the sides swapped, nothing else touched (q_disp 0.90,
+               120 days, hold 48, both legs or neither): long the pair furthest ABOVE the others over 4 hours, short the
+               one furthest below.
+Contrast:      mean net bps per leg vs zero and vs both nulls; `taker` and `maker` both reported. A resting order that
+               chases a move is filled when the move stalls, so which execution is better is not known in advance: the
+               primary execution is the better of the two by stage 1's point estimate, fixed for stage 2.
+Folds read:    stage 1: F1+F2 — by construction the gross is R2's with the sign flipped; what is new is the cost side.
+               stage 2: FP+F0, once: `ft2 backtest rankcont4h --folds FP F0 --registration R5 --execs taker maker`.
+Gate:          stage 1 → stage 2 only if the primary net ≥ +5 bps per leg. Below that the honest read could not see it:
+               R2's se was 5.7 on 485 days, so FP+F0's ~1,090 days give se ≈ 4–5 and an MDE ≈ 12–14 — a true +3 would be
+               confirmed about one time in ten. In that case H2 is PARKED, not closed ("real before costs, not tradable at
+               VIP 0 fees on twelve names"), revival: a lower fee tier, or a wider universe (§9 #2) where the tails are
+               3–5 names a side. Stage 2 verdicts as in R4. No parameter changes between the stages.
+Expectation:   Stage 1: taker gross ≈ +13, net between −2 and +4; maker about the same or worse (adverse fills). The
+               likeliest outcome is below +5 → parked without reading FP+F0.
+Result:        —
+
 Template:
 
 ```

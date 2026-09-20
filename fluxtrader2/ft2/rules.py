@@ -23,6 +23,14 @@ P5's two spread-cutting variants of the same rule (registration R3; R1 is `size=
     trade long the pair with the lowest x, short the one with the highest, one unit each, as ONE
           unit of the book (both legs or neither) — only if the gap between them is at least its
           q_disp quantile over the `window_days` before the block
+
+P5's two hypotheses, found on F1+F2 by taking R1 and R2 apart (registrations R4, R5):
+`panic4h` (H1): buy the market after a market-wide fall. A pair is FALLING at t when R1 would buy it (same
+    v, s and cuts). When at least `breadth` of the pairs that have cuts were falling at some bar of the
+    last `memory` bars, go long EVERY such pair, one unit each, for 48 bars. Long only; the book rule
+    (one position per pair) makes it one basket per 4 hours for as long as the panic lasts.
+`rankcont4h` (H2): `rank4h` with the sides swapped — long the pair torn furthest above the others, short
+    the one furthest below.
 """
 from __future__ import annotations
 
@@ -94,4 +102,32 @@ class RankReversal(Strategy):
         return d.assign(group=M.index.get_indexer(d["t"]))
 
 
-STRATEGIES = {Reversal.name: Reversal, RankReversal.name: RankReversal}
+class RankContinuation(RankReversal):
+    name = "rankcont4h"
+
+    def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        d = super().decide(M, a, b)
+        return d.assign(side=-d["side"], signal=-d["signal"], why=d["why"].str.replace("rank:", "rank continuation:"))
+
+
+class Panic(Strategy):
+    name = "panic4h"
+
+    def __init__(self, breadth: float = 1 / 3, q_vol: float = 0.90, q_sig: float = 0.80, window_days: int = 120, hold: int = 48, memory: int = 48):
+        self.breadth, self.q_vol, self.q_sig, self.window_days, self.hold, self.memory = float(breadth), float(q_vol), float(q_sig), int(window_days), int(hold), int(memory)
+        self._r1 = Reversal(q_vol, q_sig, window_days, hold)
+
+    def fit(self, M: Market, y: pd.DataFrame, now: pd.Timestamp) -> None:
+        self._r1.fit(M, y, now)
+
+    def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        s, v = Reversal.features(M.close.loc[a - WARMUP:])
+        can = s.notna() & v.notna() & (self._r1._vol_cut.notna() & self._r1._sig_cut.notna())      # pairs that could fire at t
+        falling = ((v >= self._r1._vol_cut) & (s >= self._r1._sig_cut)).astype(float)                # s > 0: the pair fell
+        share = (falling.rolling(self.memory, min_periods=1).max() * can).sum(axis=1) / can.sum(axis=1).where(can.sum(axis=1) >= MIN_PAIRS)
+        on = share >= self.breadth - 1e-12
+        return decisions_from(can.astype(float).where(on, 0.0, axis=0), a, b, signal=pd.DataFrame({c: share for c in s.columns}),
+                              why=f"panic: ≥{self.breadth:.2f} of the pairs fell within {self.memory} bars")
+
+
+STRATEGIES = {Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}

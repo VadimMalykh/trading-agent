@@ -42,6 +42,8 @@ from . import data, ladder
 OUT_MD = Path("output/cost.md")
 DAILY = data.PROC / "cost_daily.parquet"
 TABLE = data.PROC / "cost_table.parquet"
+DAILY_PRE = data.PROC / "cost_daily_pre.parquet"      # `prehistory`: the days before the tape (P5's folds FP and F0)
+OUT_PRE_MD = Path("output/cost_pre.md")
 
 HOLDS = [5, 15, 30]            # minutes a maker order rests before we give up
 TAPE_START = pd.Timestamp("2023-01-01", tz="UTC")
@@ -54,9 +56,10 @@ def _day(ts: pd.Series) -> pd.Series:
 
 
 # ---- 1. volatility regimes ---------------------------------------------------------------------
-def regimes() -> pd.DataFrame:
-    c = data.load("candles_5m", columns=["symbol", "open_time", "close", "high", "low", "volume"])
-    c = c.sort_values(["symbol", "open_time"])
+def regimes(slices: tuple[str, ...] = ("candles_5m",)) -> pd.DataFrame:
+    c = pd.concat([data.load(s, columns=["symbol", "open_time", "close", "high", "low", "volume"]) for s in slices], ignore_index=True)
+    c["symbol"] = c["symbol"].astype(str)
+    c = c.drop_duplicates(["symbol", "open_time"], keep="last").sort_values(["symbol", "open_time"])
     c["r"] = np.log(c["close"]).groupby(c["symbol"], observed=True).diff()
     c["day"] = _day(c["open_time"])
     g = c.groupby(["symbol", "day"], observed=True)
@@ -280,6 +283,56 @@ def candle_proxy(reg: pd.DataFrame, sp: pd.DataFrame) -> tuple[pd.DataFrame, pd.
                                          "spread_proxy_bps": np.exp(X[pre.to_numpy()] @ b_all)}))
     rep = pd.DataFrame(report, columns=["symbol", "fit_days", "test_days", "r2_all", "test_mape", "b_range", "b_dollar_vol", "b_px"])
     return pd.concat(proxies, ignore_index=True) if proxies else pd.DataFrame(), rep.set_index("symbol").round(4)
+
+
+# ---- 7. the days before the tape (P5: folds FP and F0) ------------------------------------------
+PRE_IMPACT_Q = 0.90      # impact before 2023 = this quantile of the pair's first measured year: depth was not recorded, so a high constant
+
+
+def prehistory(symbols: list[str]) -> str:
+    """Spread and impact for every pair × day before TAPE_START, from candles alone → DAILY_PRE.
+    Spread: section 6's per-pair regression, refitted on ALL of the pair's tape days in DAILY, applied to the
+    day's range / dollar volume / price, then the pair's tape→quote calibration, floored at the pair's median over its
+    first measured year (the regression is extrapolated in price and volume here, and errs low). Impact at each notional: the
+    PRE_IMPACT_Q quantile of the pair's 2023 days. No maker fill statistics exist there (maker_ev is blank; the
+    harness's bar-simulated maker needs none). Fees are an input of the harness, not of this table."""
+    d = pd.read_parquet(DAILY)
+    d["symbol"] = d["symbol"].astype(str)
+    reg = regimes(("candles_5m_archive", "candles_5m"))
+    reg = reg[(reg["day"] < TAPE_START) & reg["symbol"].isin(symbols) & (reg["range_bps"] > 0) & (reg["dollar_vol"] > 0)]
+    imp_cols = [c for c in d.columns if c.startswith("imp_")]
+    out, rep = [], []
+    for sym, g in reg.groupby("symbol"):
+        t = d[(d["symbol"] == sym) & (d["spread_src"] == "tape") & (d["spread_bps"] > 0) & (d["range_bps"] > 0) & (d["dollar_vol"] > 0)]
+        if len(t) < 90:
+            continue
+        X = lambda f: np.column_stack([np.ones(len(f)), np.log(f["range_bps"]), np.log(f["dollar_vol"]), np.log(f["px"])])      # noqa: E731
+        b, *_ = np.linalg.lstsq(X(t), np.log(t["spread_bps"]), rcond=None)
+        ratio = float((t["spread_bps"] / t["spread_cal_bps"]).median())
+        first = d[(d["symbol"] == sym) & (d["day"] < TAPE_START + pd.Timedelta(days=365))]
+        o = pd.DataFrame({"symbol": sym, "day": g["day"].to_numpy(), "spread_bps": np.exp(X(g) @ b), "spread_src": "proxy_pre"})
+        o["spread_cal_bps"] = np.maximum(o["spread_bps"] / ratio, first["spread_cal_bps"].median())       # the extrapolation reads SOL 2020 at 0.05 bps: never cheaper than 2023
+        for c in imp_cols:
+            o[c] = first[c].quantile(PRE_IMPACT_Q)
+        out.append(o)
+        for y, gy in o.groupby(o["day"].dt.year):
+            rep.append({"symbol": sym, "year": y, "days": len(gy), "spread_cal_bps": gy["spread_cal_bps"].median(), "spread_cal_p95": gy["spread_cal_bps"].quantile(0.95),
+                        "tape_spread_cal_2023": first["spread_cal_bps"].median(), f"imp_{10_000}": gy[f"imp_{10_000}"].iloc[0],
+                        "taker_leg_other": (gy["spread_cal_bps"] / 2 + gy[f"imp_{10_000}"]).median()})
+    o = pd.concat(out, ignore_index=True)
+    for H in HOLDS:
+        o[f"maker_fill_{H}"] = np.nan
+        o[f"maker_adv_{H}"] = np.nan
+    o.to_parquet(DAILY_PRE, index=False)
+    text = "\n".join(["# Cost before the tape (`ft2 costpre`) — candle proxy, pair × year\n", f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC\n",
+                      f"\n{len(o):,} pair-days before {TAPE_START:%Y-%m-%d} → `{DAILY_PRE}`. spread_cal = the proxied full spread after calibration (bps), never below the pair's 2023 median (tape_spread_cal_2023); "
+                      f"imp = impact per side at 10k, the {PRE_IMPACT_Q:.0%} quantile of the pair's 2023 days; taker_leg_other = half spread + impact, "
+                      "what a taker leg pays on top of the fee. The proxy's measured error is in output/cost.md (3–19 % on 7 pairs, 31–71 % on AVAX, WLD, ZEC, PEPE, SOL); "
+                      "here it is also extrapolated in price and volume, so reads on these days carry a `--cost-mult 2` sensitivity.\n",
+                      pd.DataFrame(rep).round(3).to_markdown(index=False), "\n"])
+    OUT_PRE_MD.parent.mkdir(parents=True, exist_ok=True)
+    OUT_PRE_MD.write_text(text)
+    return text
 
 
 # ---- assemble ---------------------------------------------------------------------------------
