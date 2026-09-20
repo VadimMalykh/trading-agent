@@ -24,11 +24,21 @@ What it guarantees, so that a strategy cannot get any of it wrong:
                  guessed: the trade is counted as `unpriced` and left out.
   latency        A decision at t (the bar closed at t) is executed at the close LATENCY bars later.
   the book rule  One open position per pair; a decision made while one is open is recorded and skipped.
+                 Decisions that share a `group` id (the two legs of a pair trade) are taken or skipped
+                 together. A strategy's `max_side` caps the positions open at once on one side.
   statistics     Mean net bps per unit of notional, interval clustered by day (ratio estimator, HAC
                  over days — holds cross midnight), its MDE, and the same per fold and per pair.
-  noise floor    The whole pipeline — fit included, when the strategy uses labels — on labels whose
-                 days were shuffled (`ceiling._shuffle_days`), `draws` times. Costs stay real, so the
-                 null centres on minus the cost and the p-value is one-sided.
+  noise floor    Two nulls, `draws` times each; costs stay real, so both centre on minus the cost and
+                 the p-values are one-sided. The report's verdict uses the LARGER p.
+                   shuffle  the whole pipeline — fit included, when the strategy uses labels — on labels
+                            whose days were shuffled (`ceiling._shuffle_days`). Weakness: a rule that trades
+                            volatile days is handed the moves of average days, so this null is too narrow.
+                   flip     the real decisions on the real path, every decision of a calendar day multiplied
+                            by one random sign. The timing, the sizes, the bunching on volatile days and the
+                            side mix inside a day are the rule's own; only "which way, that day" is random.
+  diagnostics    `mkt_bps` on every fill is the equal-weight move of the OTHER pairs over the same two
+                 bars; gross − side × mkt is the HEDGED gross — what the trade
+                 earned against the market rather than with it. Long and short are reported apart.
   folds          F1+F2 by default. A confirmation fold is read only with `--registration R<n>`, only if
                  that block exists in docs/PLAN.md §8, and only once per registration; every such read
                  is appended to output/backtest/confirmation_reads.csv.
@@ -39,6 +49,7 @@ A strategy is a `Strategy` subclass: `hold` (bars), `uses_labels`, `fit(M, y, no
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import re
 from pathlib import Path
@@ -57,6 +68,7 @@ LATENCY = 1              # bars between the decision and the execution price
 REFIT_DAYS = 30          # a block: the strategy is refitted (if it fits anything) this often
 MAKER_WAIT = 3           # bars a maker order rests before the leg crosses as a taker (= P1's MAKER_H of 15 minutes)
 EXECS = ("taker", "maker", "maker_ev")
+SIDES = {"long": 1, "short": -1}
 
 
 # ---- the market a strategy sees -----------------------------------------------------------------------
@@ -76,6 +88,14 @@ class Market:
     @property
     def columns(self) -> pd.Index:
         return self.close.columns
+
+    @functools.cached_property
+    def others(self) -> np.ndarray:
+        """bar × pair: the cumulative equal-weight move (bps) of the OTHER pairs — the market a trade in that pair is hedged with."""
+        r = (np.log(self.close).diff() * 1e4).to_numpy()
+        have = ~np.isnan(r)
+        n = have.sum(1, keepdims=True) - have
+        return np.cumsum(np.where(n > 0, (np.nansum(r, 1, keepdims=True) - np.nan_to_num(r)) / np.maximum(n, 1), 0.0), axis=0)
 
     def until(self, t: pd.Timestamp) -> "Market":
         """The market strictly before t."""
@@ -123,6 +143,7 @@ class Strategy:
     name = "?"
     hold = 48                    # bars a position is held
     uses_labels = False          # True: `fit` reads y, and the noise floor refits on every shuffle
+    max_side = None              # book rule: at most this many positions open at once on one side (None = no cap)
 
     def params(self) -> dict:
         return {k: v for k, v in vars(self).items() if not k.startswith("_") and isinstance(v, (int, float, str, bool, tuple, list))}
@@ -214,19 +235,35 @@ def walk(strategy: Strategy, M: Market, fold_names, y: pd.DataFrame, latency: in
                 causal_check(strategy, M, ba, bb)
             out.append(d[(d["t"] >= ba) & (d["t"] < bb)].assign(hold=strategy.hold, fold=f, block=n))
     dec = pd.concat(out, ignore_index=True).sort_values(["t", "symbol"], kind="mergesort").reset_index(drop=True)
-    return accept(dec, M.index)
+    return accept(dec, M.index, strategy.max_side)
 
 
-def accept(dec: pd.DataFrame, index: pd.DatetimeIndex) -> pd.DataFrame:
+def accept(dec: pd.DataFrame, index: pd.DatetimeIndex, max_side: int | None = None) -> pd.DataFrame:
     """The book rule: one open position per pair. A position decided at row p is open until row p + hold
-    (both legs are shifted by the same latency), so the next decision in that pair is taken from there."""
-    pos, busy, acc = index.get_indexer(dec["t"]), {}, np.ones(len(dec), dtype=bool)
-    for n, (p, s, h) in enumerate(zip(pos, dec["symbol"], dec["hold"])):
-        if p < busy.get(s, -1):
-            acc[n] = False
-        else:
-            busy[s] = p + h
-    return dec.assign(accepted=acc, skip=np.where(acc, "", "position_open"))
+    (both legs are shifted by the same latency), so the next decision in that pair is taken from there.
+    Decisions with the same `group` id ≥ 0 (same t) stand or fall together; with `max_side`, a unit that
+    would put more than that many positions on one side at once is skipped (`side_cap`)."""
+    pos, sym, hold, side = index.get_indexer(dec["t"]), dec["symbol"].to_numpy(), dec["hold"].to_numpy(), np.sign(dec["side"].to_numpy()).astype(int)
+    grp = dec["group"].to_numpy() if "group" in dec else np.full(len(dec), -1)
+    units: dict = {}
+    for n, g in enumerate(grp):
+        units.setdefault((pos[n], g) if g >= 0 else (pos[n], -1 - n), []).append(n)
+    busy, open_, skip = {}, {1: [], -1: []}, np.full(len(dec), "", dtype=object)
+    for (p, _), ns in units.items():
+        blocked = [n for n in ns if p < busy.get(sym[n], -1)]
+        if blocked:
+            skip[ns] = "leg_skipped"
+            skip[blocked] = "position_open"
+            continue
+        if max_side is not None:
+            open_ = {k: [e for e in v if e > p] for k, v in open_.items()}
+            if any(len(open_[k]) + sum(side[n] == k for n in ns) > max_side for k in open_):
+                skip[ns] = "side_cap"
+                continue
+        for n in ns:
+            busy[sym[n]] = p + hold[n]
+            open_[side[n]].append(p + hold[n])
+    return dec.assign(accepted=skip == "", skip=skip)
 
 
 # ---- the ledger's second half: fills --------------------------------------------------------------------
@@ -269,10 +306,11 @@ def price(dec: pd.DataFrame, M: Market, C: Costs, exec_: str, taker_bps: float, 
     fee, other, p_fill = (legs["e"][k] + legs["x"][k] for k in (1, 2, 3))
     gross = np.where(ok, s * np.log(pxx / pe) * 1e4, np.nan)
     re_, rx = rows["e"][1], rows["x"][1]
+    mkt = np.where(ok, M.others[rows["x"][0], j] - M.others[rows["e"][0], j], np.nan)      # close to close: the maker's wait is not in it
     fund = -s * (C.fundcum[rx, j] - C.fundcum[re_, j])
     out = pd.DataFrame({"id": d.index, "t": d["t"].array, "symbol": d["symbol"].to_numpy(), "fold": d["fold"].to_numpy(), "side": s.astype(int),
                         "size": d["size"].to_numpy(), "exec": exec_, "entry_t": idx[re_], "exit_t": idx[rx], "entry_px": pe, "exit_px": pxx,
-                        "gross_bps": gross, "fee_bps": fee, "other_cost_bps": other, "p_fill": p_fill / 2, "funding_bps": fund})
+                        "gross_bps": gross, "mkt_bps": mkt, "hedged_bps": gross - s * mkt, "fee_bps": fee, "other_cost_bps": other, "p_fill": p_fill / 2, "funding_bps": fund})
     out["net_bps"] = out["gross_bps"] - out["fee_bps"] - out["other_cost_bps"] + out["funding_bps"]
     return out
 
@@ -300,12 +338,19 @@ def trade_stats(x: np.ndarray, w: np.ndarray, day: pd.DatetimeIndex, days: pd.Da
 def summarize(fills: pd.DataFrame, days: pd.DatetimeIndex, hold: int) -> dict:
     f = fills.dropna(subset=["net_bps"])
     day, w, lags = pd.DatetimeIndex(f["t"]).floor("D"), f["size"].to_numpy(), day_lags(hold)
-    r = {k: trade_stats(f[f"{k}_bps"].to_numpy(), w, day, days, lags) for k in ("net", "gross")}
+    r = {k: trade_stats(f[f"{k}_bps"].to_numpy(), w, day, days, lags) for k in ("net", "gross", "hedged")}
     wm = lambda c: float(np.average(f[c], weights=w)) if len(f) else np.nan                       # noqa: E731
     return {"trades": len(f), "unpriced": int(len(fills) - len(f)), "days": len(days), "trades_per_day": len(f) / max(len(days), 1),
-            "hit": float((f["gross_bps"] > 0).mean()) if len(f) else np.nan, "gross": r["gross"]["mean"], "fee": wm("fee_bps"),
+            "hit": float((f["gross_bps"] > 0).mean()) if len(f) else np.nan, "gross": r["gross"]["mean"], "hedged": r["hedged"]["mean"],
+            "hedged_lo": r["hedged"]["lo"], "hedged_hi": r["hedged"]["hi"], "fee": wm("fee_bps"),
             "other_cost": wm("other_cost_bps"), "funding": wm("funding_bps"), "p_fill": wm("p_fill"), **{f"net_{k}": v for k, v in r["net"].items() if k != "n"},
             "net": r["net"]["mean"]}
+
+
+def flip_days(dec: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
+    """The flip null's decisions: every decision of a calendar day (UTC, by decision time) × one random sign."""
+    day, pos = np.unique(pd.DatetimeIndex(dec["t"]).floor("D"), return_inverse=True)
+    return dec.assign(side=dec["side"].to_numpy() * rng.choice([-1, 1], len(day))[pos])
 
 
 def open_positions(dec: pd.DataFrame, index: pd.DatetimeIndex, latency: int) -> tuple[int, float]:
@@ -352,6 +397,7 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
         rows.append({"exec": e, "scope": "all", **summarize(f, days, strategy.hold)})
         rows += [{"exec": e, "scope": fo, **summarize(f[f["fold"] == fo], scored_days([fo], M.index[-1]), strategy.hold)} for fo in fold_names]
         rows += [{"exec": e, "scope": s, **summarize(f[f["symbol"] == s], days, strategy.hold)} for s in M.columns]
+        rows += [{"exec": e, "scope": k, **summarize(f[f["side"] == v], days, strategy.hold)} for k, v in SIDES.items()]
     res = pd.DataFrame(rows)
 
     # noise floor
@@ -365,15 +411,22 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
         d = walk(strategy, M, fold_names, pd.DataFrame(y.to_numpy()[src], index=y.index, columns=y.columns), latency, refit_days, check=False) if strategy.uses_labels else dec
         for e in execs:
             f = price(d, M, C, e, taker_bps, maker_bps, latency, src=src).dropna(subset=["net_bps"])
-            nul.append({"draw": draw, "exec": e, "trades": len(f), "net": float(np.average(f["net_bps"], weights=f["size"])) if len(f) else np.nan})
+            nul.append({"kind": "shuffle", "draw": draw, "exec": e, "trades": len(f), "net": float(np.average(f["net_bps"], weights=f["size"])) if len(f) else np.nan})
+        fl = flip_days(dec, np.random.default_rng([seed, draw, 1]))
+        for e in execs:
+            f = price(fl, M, C, e, taker_bps, maker_bps, latency).dropna(subset=["net_bps"])
+            nul.append({"kind": "flip", "draw": draw, "exec": e, "trades": len(f), "net": float(np.average(f["net_bps"], weights=f["size"])) if len(f) else np.nan})
         if draw % 20 == 0:
             print(f"noise floor: {draw}/{draws}", flush=True)
-    nul = pd.DataFrame(nul, columns=["draw", "exec", "trades", "net"])
+    nul = pd.DataFrame(nul, columns=["kind", "draw", "exec", "trades", "net"])
     floor = []
     for e in execs:
-        real, x = float(res.loc[(res["exec"] == e) & (res["scope"] == "all"), "net"].iloc[0]), nul.loc[nul["exec"] == e, "net"].dropna()
-        floor.append({"exec": e, "draws": len(x), "net": real, "null_mean": x.mean(), "null_sd": x.std(), "null_p95": x.quantile(0.95) if len(x) else np.nan,
-                      "p": (1 + int((x >= real).sum())) / (len(x) + 1) if len(x) else np.nan})
+        real, row = float(res.loc[(res["exec"] == e) & (res["scope"] == "all"), "net"].iloc[0]), {"exec": e}
+        for kind, pre in (("shuffle", ""), ("flip", "flip_")):
+            x = nul.loc[(nul["exec"] == e) & (nul["kind"] == kind), "net"].dropna()
+            row |= {"draws": len(x), "net": real, f"{pre}null_mean": x.mean(), f"{pre}null_sd": x.std(), f"{pre}null_p95": x.quantile(0.95) if len(x) else np.nan,
+                    f"{pre}p": (1 + int((x >= real).sum())) / (len(x) + 1) if len(x) else np.nan}
+        floor.append(row)
     floor = pd.DataFrame(floor)
 
     out = OUT / (name or strategy.name)
@@ -410,20 +463,23 @@ def report(meta: dict, res: pd.DataFrame, floor: pd.DataFrame) -> str:
           "*maker_ev* is P1's day-average version, blind to which orders fill — a reference, optimistic for a rule that buys what is falling. "
           "The interval is 95 %, clustered by day; "
           "*MDE* is the smallest true mean this sample could tell from zero (80 % power). The *noise floor* is the same pipeline on labels whose days were "
-          "shuffled; p is the share of shuffles that did at least as well.\n", "\n## Bottom line\n"]
+          "shuffled; p is the share of shuffles that did at least as well. *flip p* is the stricter null: the rule's own trades, with every day's sides "
+          "multiplied by one random sign. *hedged* is gross minus the side × the other pairs' average move over the same bars: what the trade earned "
+          "against the market rather than with it.\n", "\n## Bottom line\n"]
     for _, r in res[res["scope"] == "all"].iterrows():
         fl = floor[floor["exec"] == r["exec"]].iloc[0]
         usd, cap = r["net"] * meta["notional"] / 1e4, max(meta["max_open"], 1) * meta["notional"]
-        verdict = ("profitable outside the noise" if r["net_lo"] > 0 and fl["p"] <= 0.05 else "loses money outside the noise" if r["net_hi"] < 0
+        verdict = ("profitable outside the noise" if r["net_lo"] > 0 and max(fl["p"], fl["flip_p"]) <= 0.05 else "loses money outside the noise" if r["net_hi"] < 0
                    else "not distinguishable from zero on this sample")
         md.append(f"- **{r['exec']}: {verdict}.** {r['trades']:,} trades over {r['days']} days ({r['trades_per_day']:.1f} a day), right on {r['hit']:.1%}. "
-                  f"Gross {r['gross']:+.2f} bps, fees {r['fee']:.2f}, spread/impact/adverse {r['other_cost']:.2f}, funding {r['funding']:+.2f} → "
+                  f"Gross {r['gross']:+.2f} bps (hedged {r['hedged']:+.2f} [{r['hedged_lo']:+.2f}, {r['hedged_hi']:+.2f}]), fees {r['fee']:.2f}, spread/impact/adverse {r['other_cost']:.2f}, funding {r['funding']:+.2f} → "
                   f"**net {r['net']:+.2f} bps per trade [{r['net_lo']:+.2f}, {r['net_hi']:+.2f}]**, MDE {r['net_mde']:.2f}; noise floor {fl['null_mean']:+.2f} ± {fl['null_sd']:.2f}, "
-                  f"p = {fl['p']:.3f} ({int(fl['draws'])} shuffles). In money: {usd:+.2f} USDT per trade, {usd * r['trades_per_day']:+.1f} USDT a day on up to "
+                  f"p = {fl['p']:.3f} ({int(fl['draws'])} shuffles); flip null {fl['flip_null_mean']:+.2f} ± {fl['flip_null_sd']:.2f}, p = {fl['flip_p']:.3f}. In money: {usd:+.2f} USDT per trade, {usd * r['trades_per_day']:+.1f} USDT a day on up to "
                   f"{cap:,} USDT deployed ({usd * r['trades_per_day'] * 365 / cap:+.1%} a year, no leverage, no compounding)."
                   + (f" {r['unpriced']} trades left out as unpriceable." if r["unpriced"] else "") + "\n")
-    cols = ["exec", "scope", "trades", "trades_per_day", "hit", "gross", "fee", "other_cost", "funding", "net", "net_lo", "net_hi", "net_mde", "p_fill", "unpriced"]
-    fo = res["scope"].isin(["all", *meta["folds"]])
+    cols = ["exec", "scope", "trades", "trades_per_day", "hit", "gross", "hedged", "fee", "other_cost", "funding", "net", "net_lo", "net_hi", "net_mde", "p_fill", "unpriced"]
+    fo, sd = res["scope"].isin(["all", *meta["folds"]]), res["scope"].isin(list(SIDES))
     md += ["\n## Per fold (bps per unit of notional)\n", res.loc[fo, cols].round(3).to_markdown(index=False), "\n",
-           "\n## Per pair\n", res.loc[~fo, cols].round(3).to_markdown(index=False), "\n", "\n## Noise floor\n", floor.round(4).to_markdown(index=False), "\n"]
+           "\n## Long and short apart\n", res.loc[sd, cols].round(3).to_markdown(index=False), "\n",
+           "\n## Per pair\n", res.loc[~fo & ~sd, cols].round(3).to_markdown(index=False), "\n", "\n## Noise floor\n", floor.round(4).to_markdown(index=False), "\n"]
     return "\n".join(md)

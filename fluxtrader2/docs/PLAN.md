@@ -498,6 +498,48 @@ Result:        **Stage 1, read 2026-09-21 (commit 1393fe7 holds this block as wr
                **Stage 2: not read.** Power on F3 alone ≈ 20 % for a true +14 (se ≈ 12 on 243 days). Parked in §7;
                runnable unchanged.
 
+### R2 — rank4h, the pair-vs-basket bet as a rank rule (registered 2026-09-21, before the rule saw any real bar; read —)
+Question:      P2 found real single-feature reversal in a pair's move RELATIVE to the other pairs at 4h (IC 0.024–0.030)
+               that no fitted forecast reproduced. Does a rank rule — which needs no fit — turn it into money after costs?
+               It is market-neutral by construction, so it cannot be "buying dips in a rising market" (R1's main caution).
+Rule:          `ft2/rules.py::RankReversal`, parameters fixed here and not searched: at each bar, x = a pair's
+               vol-standardised last-4h return minus the all-pair mean; long the lowest x, short the highest, one unit
+               each, both legs or neither (the harness's `group`), hold 48 bars; only when the gap between the two is
+               at least its q_disp = 0.90 quantile over the 120 days before each 30-day block. Why 0.90 and one name a
+               side: with eleven names "the bottom decile" is one name, and at P2's IC of ~0.03 a leg pays its maker round
+               trip only at |x| ≈ 3 in dispersed (= volatile) bars — about the widest tenth of gaps. Arithmetic, not a run.
+Contrast:      mean net bps per unit of notional (per leg) vs zero and vs both nulls. Primary execution: `maker`.
+Folds read:    F1+F2 only. No confirmation fold is read by this registration.
+Gate:          PASS if maker net > 0 AND the larger of the shuffle p and the flip p ≤ 0.05 → the relative bet at 4h becomes
+               a funded arm of P5 next to the directional one. Otherwise: if the interval's upper bound is below +3 bps
+               (nothing worth a round trip is left) → the relative bet on twelve names is CLOSED; else NOT DETECTABLE —
+               it stays parked, and its revival trigger becomes a wider universe (§9 #2), where a decile is 3–5 names.
+               No parameter is changed after the read.
+Expectation:   Gross +4 to +10 bps per leg, 4–10 legs a day, maker net between −3 and +3, MDE 6–10: the likeliest
+               outcome is NOT DETECTABLE. Hedged gross ≈ gross (that is what neutral means); long ≈ short.
+Result:        —
+
+### R3 — P5 step 1: cut reversal4h's day-to-day spread (registered 2026-09-21, before any variant ran; read —)
+Question:      R1 earns +14 bps with a standard error of 8.5 because its trades bunch on a few violent days. Do two
+               mechanical changes — neither touches the signal — make the same edge more certain?
+Variants:      `reversal4h` with R1's three numbers unchanged, plus (A) `size=invvol`: vol_cut / v units, floored at 0.25;
+               (B) `max_side=3`: at most three positions open at once on one side; (C) both. Why 3: a third of R1's trades
+               fall on a tenth of the days (~23 a day there, against 7 on average) — a cap of 3 of 11 leaves ordinary days
+               untouched and turns a market-wide fall into three bets, not eleven. Chosen from that, not from a run.
+               Baseline: R1 re-run unchanged on the same folds (adds long/short, hedged gross and the flip p; its
+               decisions and its +14.03 must reproduce exactly, or the run is void).
+Contrast:      maker net ÷ its day-clustered standard error (t), variant vs baseline (R1: 14.03 / 8.53 = 1.64), F1+F2.
+Folds read:    F1+F2 only.
+Gate:          The candidate for the ONE confirmation read is the variant with the highest t, if it beats the baseline's t
+               by ≥ 0.3 (picking the best of three correlated variants is worth about that much by luck), its maker net
+               is ≥ +7 bps and its flip p ≤ 0.05. Otherwise R1 stays the candidate. Either way the confirmation read is
+               registered separately, with its power computed from the winner's standard error BEFORE the read.
+               No other variant, cap or floor is tried after this read.
+Expectation:   (A) net a little lower (the most violent bars are the most profitable per unit), se −15 to −25 %, t ≈ 1.8.
+               (B) ~2,000 trades, net about unchanged, se −25 to −35 %, t ≈ 2.1–2.4. (C) the best, t ≈ 2.3–2.6.
+               Hedged gross of the baseline: about half of gross (the rest is the market bouncing).
+Result:        —
+
 Template:
 
 ```

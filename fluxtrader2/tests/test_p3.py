@@ -108,12 +108,16 @@ def test_planted_edge_is_recovered_and_a_coin_pays_the_cost(tmp_path):
         assert abs(x["fee"] + x["other_cost"] - rt) < 1e-9
     fl = r["floor"].set_index("exec")
     assert (fl["p"] <= 0.05).all() and abs(fl.loc["taker", "null_mean"] + TAKER_RT) < 3        # the null centres on minus the cost
+    assert (fl["flip_p"] <= 0.05).all() and abs(fl.loc["taker", "flip_null_mean"] + TAKER_RT) < 3  # … and so does the day-flip null
+    assert abs(res.loc["taker", "hedged"] - EDGE) < 3            # independent walks: hedging with the other pairs costs nothing
+    sides = r["results"].query("exec == 'taker' and scope in ['long', 'short']")
+    assert sides["trades"].sum() == res.loc["taker", "trades"] and (sides["gross"] > EDGE / 2).all()
     assert (r["dir"] / "report.md").exists() and "profitable outside the noise" in (r["dir"] / "report.md").read_text()
 
     c = bt.run(bt.Coin(hold=HOLD), PAIRS, ["F1"], draws=40)
     x = c["results"].query("scope == 'all' and exec == 'taker'").iloc[0]
     assert abs(x["net"] + TAKER_RT) < 3 * x["net_se"] and x["net_hi"] < 0 and abs(x["hit"] - 0.5) < 0.05
-    assert c["floor"].set_index("exec").loc["taker", "p"] > 0.05
+    assert c["floor"].set_index("exec").loc["taker", ["p", "flip_p"]].min() > 0.05
 
     # the ledger: the same decisions re-priced — fee, execution and latency change fills, never decisions
     M, dec = bt.market(PAIRS, r["decisions"]["t"].max() + pd.Timedelta("2D")), r["decisions"]
@@ -145,7 +149,7 @@ def test_fit_never_sees_a_label_from_its_block_and_the_null_refits(tmp_path):
 
 def test_accept_one_position_per_pair():
     idx = pd.date_range("2024-01-01", periods=100, freq="5min", tz="UTC")
-    dec = pd.DataFrame({"t": idx[[10, 15, 22, 12]], "symbol": ["A", "A", "A", "B"], "hold": 12}).sort_values("t")
+    dec = pd.DataFrame({"t": idx[[10, 15, 22, 12]], "symbol": ["A", "A", "A", "B"], "side": 1, "hold": 12}).sort_values("t")
     out = bt.accept(dec, idx).set_index(["symbol", "t"])["accepted"]
     assert out["A", idx[10]] and not out["A", idx[15]] and out["A", idx[22]] and out["B", idx[12]]
 
@@ -193,3 +197,28 @@ def test_confirmation_folds_need_a_registration_and_are_read_once(tmp_path):
     assert list(pd.read_csv(bt.READS)["fold"]) == ["F3"]
     with pytest.raises(SystemExit, match="already read"):
         bt.run(Planted(), PAIRS, ["F3"], draws=0, registration="R1")
+
+
+def test_flip_null_keeps_the_timing_and_flips_whole_days():
+    idx = pd.date_range("2024-01-01", periods=3 * 288, freq="5min", tz="UTC")
+    dec = pd.DataFrame({"t": idx[[5, 9, 300, 310, 700]], "symbol": list("ABABA"), "side": [1, -1, 1, 1, -1], "size": 1.0})
+    seen = set()
+    for k in range(40):
+        f = bt.flip_days(dec, np.random.default_rng(k))
+        g = (f["side"] * dec["side"]).to_numpy()
+        assert f.drop(columns="side").equals(dec.drop(columns="side")) and g[0] == g[1] and g[2] == g[3]
+        seen.add(tuple(g[[0, 2, 4]]))
+    assert len(seen) == 8                                          # every combination of day signs turns up
+
+
+def test_hedged_gross_removes_a_move_every_pair_shares():
+    idx = pd.date_range("2024-01-01", periods=60, freq="5min", tz="UTC")
+    close = pd.DataFrame(100.0, index=idx, columns=list("ABC"))
+    close.iloc[20:] *= 1.01                          # the whole market gaps up 1 % while the position is open …
+    close.iloc[25:, 0] *= 1.002                      # … and A adds 20 bps of its own
+    M = bt.Market(close, close, close, close)
+    z = np.zeros((1, 3))
+    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, np.zeros((60, 3)))
+    dec = pd.DataFrame({"t": idx[[10]], "symbol": "A", "side": 1, "size": 1.0, "hold": 20, "fold": "F1", "accepted": True})
+    f = bt.price(dec, M, C, "taker", 0.0, 0.0).iloc[0]
+    assert abs(f["gross_bps"] - (np.log(1.01) + np.log(1.002)) * 1e4) < 1e-6 and abs(f["hedged_bps"] - np.log(1.002) * 1e4) < 1e-6
