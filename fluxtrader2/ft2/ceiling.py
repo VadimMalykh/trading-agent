@@ -76,11 +76,12 @@ LC_TREES = (50, 150, 300)                    # #5: the boosted tree is read at t
 
 
 # ---- the panel ---------------------------------------------------------------------------------
-def panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Wide frames (decision time × pair) of close/high/low/dollar volume, cut at END."""
+def panel(symbols: list[str], end: pd.Timestamp = END) -> dict[str, pd.DataFrame]:
+    """Wide frames (decision time × pair) of close/high/low/dollar volume, cut at `end` (the audit's END
+    unless the harness, reading a registered fold, says otherwise)."""
     c = data.load("candles_5m", columns=["symbol", "open_time", "high", "low", "close", "volume"], symbols=symbols)
     c["t"] = c["open_time"] + BAR
-    c = c[(c["t"] >= START) & (c["t"] <= END)]
+    c = c[(c["t"] >= START) & (c["t"] <= end)]
     c["symbol"] = c["symbol"].astype(str)
     c["dv"] = c["volume"] * c["close"]
     idx = pd.date_range(c["t"].min(), c["t"].max(), freq="5min", name="t")

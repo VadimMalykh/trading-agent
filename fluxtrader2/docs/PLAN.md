@@ -420,7 +420,30 @@ registered positive on confirmation folds.
 
 ## 8. Registrations
 
-*(empty — the first block will be P4's rule.)*
+### R1 — reversal4h, the P4 baseline rule (registered 2026-09-21, before the rule saw any real bar; stage 1 read —, stage 2 read —)
+Question:      Does the bet P2 funded — a pair's own next-4-hour move, by reversal, only when the pair is
+               volatile — make money after costs as a fixed rule with no model?
+Rule:          `ft2/rules.py::Reversal`, parameters fixed here and not searched: q_vol 0.90 (trade only when the
+               last 4 hours' volatility is in the pair's top tenth), q_sig 0.80 (and the reversal signal
+               −½(z_4h + z_1d) is in its top fifth by size), window 120 days (both cuts from the 120 days before
+               each 30-day block). Hold 48 bars, one unit, one position per pair, executed 1 bar after the decision.
+               Why 0.80: at P2's IC of ~0.045 a signal pays its maker round trip from about |z| ≈ 1.2 in volatile
+               bars — roughly the top fifth; chosen from that arithmetic, not from a run.
+Contrast:      the rule's mean net bps per unit of notional vs zero, and vs its own noise floor (200 whole-day
+               shuffles). Primary execution: `maker` (simulated on the bars). `taker` and `maker_ev` are reported,
+               never used to pass a gate.
+Folds read:    stage 1: F1+F2 (exploration — P2 chose the bet on these folds, so this stage is a gate, not evidence).
+               stage 2: F3 only, once. F4 and F5 stay unread for P5's contrast.
+Gate:          stage 1 passes if maker net > 0 (point estimate) AND noise-floor p ≤ 0.05. Fail → F3 is NOT read;
+               the rule stays as P5's baseline and the miss is diagnosed on F1+F2 only. Pass → stage 2:
+               `ft2 backtest reversal4h --folds F3 --registration R1`. Stage 2 verdicts: CONFIRMED if the maker
+               interval's lower bound > 0; REFUTED if its upper bound < 0; otherwise NOT DETECTABLE, with the MDE.
+               No parameter is changed between the stages.
+Expectation:   Gross +8 to +15 bps per trade, a few trades a day. Maker net between −2 and +5, with an MDE of
+               roughly 5–8 — so the likeliest stage-1 outcome is a small positive that does not clear its own
+               noise, i.e. a FAIL on p. Taker net negative. A clear pass would be a surprise worth distrusting
+               (check the fill simulation first).
+Result:        —
 
 Template:
 

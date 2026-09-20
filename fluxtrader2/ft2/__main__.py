@@ -57,6 +57,24 @@ def cmd_ceiling(args):
     print(f"wrote {ceiling.OUT_MD if not args.items else 'output/ceiling*.md'} and {ceiling.OUT_DIR}/")
 
 
+def _param(s: str):
+    k, v = s.split("=", 1)
+    for cast in (int, float):
+        try:
+            return k, cast(v)
+        except ValueError:
+            pass
+    return k, v
+
+
+def cmd_backtest(args):
+    from . import backtest
+    r = backtest.run(backtest.get_strategy(args.strategy, dict(args.param or [])), args.symbols or PAIRS, args.folds, args.execs, args.draws,
+                     args.taker_bps, args.maker_bps, args.latency, args.refit_days, args.registration, args.name, args.seed)
+    print((r["dir"] / "report.md").read_text())
+    print(f"wrote {r['dir']}/")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="ft2")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -91,9 +109,24 @@ def main(argv=None):
     g.add_argument("--items", nargs="*", choices=["7", "1", "2", "3", "6", "4", "5"],
                    help="PLAN P2 item numbers; default all, → output/ceiling.md; a partial run → output/ceiling_items_<…>.md")
     g.add_argument("--draws", type=int, default=200, help="#4: label shuffles per scheme")
+    b = sub.add_parser("backtest", help="P3: a strategy through the harness → output/backtest/<name>/ (see ft2/backtest.py)")
+    b.add_argument("strategy", help="a name in backtest.STRATEGIES / rules.STRATEGIES, e.g. coin")
+    b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")
+    b.add_argument("--folds", nargs="*", default=["F1", "F2"], help="a confirmation fold (F3–F5) needs --registration")
+    b.add_argument("--registration", help="R<n>: the PLAN §8 block this read belongs to")
+    b.add_argument("--execs", nargs="*", default=["taker", "maker", "maker_ev"], choices=["taker", "maker", "maker_ev"])
+    b.add_argument("--draws", type=int, default=200, help="noise floor: label shuffles")
+    b.add_argument("--latency", type=int, default=1, help="bars between the decision and the execution price")
+    b.add_argument("--refit-days", type=int, default=30)
+    b.add_argument("--seed", type=int, default=0)
+    b.add_argument("--name", help="output directory under output/backtest/ (default: the strategy's name)")
+    for a_ in c._actions:
+        if a_.dest in ("taker_bps", "maker_bps"):
+            b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
+    b.add_argument("--symbols", nargs="*")
     args = p.parse_args(argv)
-    return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory,
-            "archive": cmd_archive, "tape": cmd_tape, "cost": cmd_cost, "ceiling": cmd_ceiling}[args.cmd](args)
+    return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
+            "cost": cmd_cost, "ceiling": cmd_ceiling, "backtest": cmd_backtest}[args.cmd](args)
 
 
 if __name__ == "__main__":
