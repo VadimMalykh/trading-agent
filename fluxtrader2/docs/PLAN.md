@@ -621,8 +621,17 @@ Expectation:   Stage 1: gross +50 to +90 bps, 3–6 trades a day bunched on ~120
                Stage 2: positive but much smaller — gross +15 to +45, taker net +5 to +35. 2021-05, 2022-05 and 2022-06 were
                cascades in which the first bounce failed, and the rule was found in a rising market. With se ≈ 15 the
                likeliest verdict is NOT DETECTABLE, SUPPORTED second.
-Power:         — (filled from stage 1's se before stage 2 is run)
-Result:        —
+Power:         Written 2026-09-21 after stage 1, before stage 2. Stage 1's taker se is 10.65 on 485 days. FP+F0 has ~1,090
+               scored days and 2020–22 moved about 1.4× as much as 2023–24, so se ≈ 10.65 × √(485/1090) × 1.4 ≈ 10 and the
+               MDE ≈ 28 bps. A true edge equal to stage 1's (+40) would be SUPPORTED about 98 times in 100; half of it (+20)
+               about 1 time in 2; +28 four times in five. So SUPPORTED and REFUTED are both informative; NOT DETECTABLE
+               would mean "smaller than about +28, if it exists" — and is NOT a reason to close.
+Result:        **Stage 1, read 2026-09-21 (commit b33449e holds this block as written before the read): GATE PASSED.**
+               taker net +39.87 bps [+19.00, +60.75], se 10.65, MDE 29.8, 3,249 trades / 485 days (6.7 a day), right 61.6 %,
+               gross +52.68, shuffle p 0.005 (null −8.45 ± 7.23), flip p 0.005. maker +45.71 [+24.79, +66.62]. F1 +22.2,
+               F2 +57.0. Spread + impact doubled: +37.6. Against the expectation: inside it (gross 53 vs 50–90), the se half
+               of what was guessed (10.7 vs 20). R1 re-run on the changed harness first: +14.03 / +9.74, identical.
+               **Stage 2:** —
 
 ### R5 — rankcont4h, hypothesis H2: a pair torn away from the others keeps going (registered 2026-09-21, before the rule saw any real bar; stage 1 read —, stage 2 read —)
 Question:      R2 lost 16.3 bps gross per leg in all six quarters, i.e. its mirror image earns that before costs. Is it more
@@ -642,7 +651,12 @@ Gate:          stage 1 → stage 2 only if the primary net ≥ +5 bps per leg. B
                3–5 names a side. Stage 2 verdicts as in R4. No parameter changes between the stages.
 Expectation:   Stage 1: taker gross ≈ +13, net between −2 and +4; maker about the same or worse (adverse fills). The
                likeliest outcome is below +5 → parked without reading FP+F0.
-Result:        —
+Result:        **Stage 1, read 2026-09-21 (commit b33449e): primary = maker, +4.92 bps per leg [−6.33, +16.16] — below the +5 bar
+               (by 0.08; the bar was written first, so it holds) → PARKED, FP+F0 NOT read.** taker −0.20 [−11.27, +10.88],
+               gross +12.50 (taker prices) / +9.22 (maker: the chasing order does get the worse fills, −3.3), hedged +14.15
+               [+1.83, +26.47]; 1,777 legs, 3.7 a day; F1 +8.8, F2 −0.1 (maker). All of it is the long leg (the pair torn
+               UPWARDS keeps going: +20.7 gross; the one torn downwards: +4.3). As expected. The effect is real before
+               costs and the size of one round trip: not tradable at VIP 0 on twelve names. Revival in §7.
 
 Template:
 
