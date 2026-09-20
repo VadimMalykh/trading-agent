@@ -433,18 +433,16 @@ it is not what R1 tests, because R1 has one variable already.
 
 ## §2 — THE RUN QUEUE
 
-**U12 ran 2026-09-16 → 17 and was read 2026-09-20 (result block below the registration): the
-selection rule picked seed 2, `20260916T164212Z`, and the family FAILED Tier 1 (P2, P5). **The "serve eight" fallback is NOT accepted** (Vadim,
-2026-09-20: twelve is the decided universe); the acceptance bar itself is contested as
-underpowered — see the result block. Decision pending: certify by the folds and promote.**
-It is not a lever and
+**U12 is done: seed 2 (`20260916T164212Z`) was promoted 2026-09-20 as the twelve-pair served
+checkpoint, certified by the walk-forward folds after failing one-split Tier 1 (record below).
+Nothing is queued.** It is not a lever and
 it does not reopen §5: no knob changes, only the pair set, and the pair set it moves to is the
 one the walk-forward folds already train on. X0/X1 and X2, the two levers the freeze *was*
 reopened for, both ran and both closed WORSE (below); §5's freeze stays sealed and its only
 reopening condition is still §1.7's (≈2027). Everything else open or parked is in
 [BACKLOG.md](./BACKLOG.md), which is the list to read — not this section.
 
-### 🔵 U12 — a twelve-pair checkpoint for the served universe. REGISTERED 2026-09-16, RUN 2026-09-16→17, READ 2026-09-20 — **TIER 1 FAILED; FALLBACK TO EIGHT REJECTED; BAR CONTESTED — DECISION PENDING**
+### 🔵 U12 — a twelve-pair checkpoint for the served universe. REGISTERED 2026-09-16, RUN 2026-09-16→17, READ AND **PROMOTED 2026-09-20** (failed one-split Tier 1; certified by the folds)
 
 🔴 **This registration is written before any U12 number exists. Nothing below may be edited
 once the first log is read** (M3_PROTOCOL §0).
@@ -595,13 +593,20 @@ line, no grid; the stale snapshot accepted. Command (existing code, nothing chan
   +33.23, CI [+9.28, +57.17], all three seeds positive). This is a defect in the criterion,
   named from prior records, not a threshold lowered after a result; the Tier 1 table above
   stays as the record.
-- **Proposed amendment (needs Vadim's yes):** U12 seed 2 — chosen by median LB *before* any
-  P&L was read — is promoted as the full-window instance of the fold-certified recipe; the
-  promotion record states that the artefact failed one-split Tier 1 and is certified by the
-  folds. Then as registered: gate under C13 and ladder p80 under C4 from its own split,
-  `gcp_promote.sh`, `policy.ex` constants, `/predict` ceiling fix (BACKLOG row 11), ledgers
-  backed up and voided, fourth clock start, `accept_76.py` replay, R0–R5 restated. Twelve
-  pairs served throughout.
+- **Amendment accepted by Vadim 2026-09-20, and the promotion record.** U12 seed 2 — chosen by
+  median LB *before* any P&L was read — is served as the full-window instance of the
+  fold-certified recipe. **This artefact failed one-split Tier 1 (P2, P5) and is certified by
+  the walk-forward folds, not by Tier 1.** Checkpoint `m2_multi_20260916T164212Z_ace3ae5e.pt`,
+  sha256 `30e6ac1e0e9233cd88b4ba9fdddba5cefca16a0311c66b34a54d27990977d6cf`. C13/C4 from its
+  own split (931,182 bars, twelve pairs): cut **0.6708709597587585** (the trainer's SERVED GATE
+  line reads 0.6709), ladder `[0.003849…, 0.008731…, 0.014943…, 0.025370502844452858]`;
+  recomputing reproduces 847 trades, mean size 1.295. Deployed 2026-09-20 (`e5e3d12`): promote
+  script green at the requested gate, `/predict` ceiling fix live, old ledgers backed up and
+  cleared, **forward clock's fourth start 08:15:10 UTC**, health `checkpoint_bound: true` with
+  twelve served. R0–R5's per-checkpoint constants restated in M3_5 §4.3 with the ledger empty.
+  Still owed: the `accept_76.py` replay of the new start (BACKLOG row 1).
+- **Rule carried forward:** no registration may name "serve eight" as a failure branch, and an
+  acceptance bar's power on the incumbent is checked before it is registered.
 
 ### 🟢 X0 / X1 — the cross-sectional block, separated. CLOSED 2026-09-15: **WORSE** (−0.021)
 

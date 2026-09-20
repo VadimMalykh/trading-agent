@@ -78,7 +78,7 @@ HOUR_SET = {0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22}
 # The cut is `backtest.coverage_threshold(conf, 0.05)` on the same population as CUTS
 # (repaired era, seed s2, eight pairs, horizon 240) — derived 2026-09-15 with the ledger at
 # 7 signal bars; on that population 0.02 reproduces the served cut to the digit.
-EXT_CUT = 0.5892829895019531
+EXT_CUT = 0.6179307699203491   # U12 seed 2's split, 2026-09-20 (8-pair ckpt: 0.5892829895019531)
 EXT_MAX = 2
 EXT_HOLD = pd.Timedelta(minutes=240)
 
