@@ -101,9 +101,15 @@ def test_features_use_only_the_past(tmp_path, monkeypatch):
 
 def test_ceiling_end_to_end_recovers_planted_structure(tmp_path, monkeypatch):
     monkeypatch.setattr(ceiling, "MIN_PAIRS", 3)
+    monkeypatch.setenv("FT2_JOBS", "1")
     _synth(tmp_path)
-    text = ceiling.run(5.0, 2.0, "test", PAIRS)
+    text = ceiling.run(5.0, 2.0, "test", PAIRS, draws=3)
     assert "Summary" in text and ceiling.OUT_MD.exists()
+    assert {"floor_ic_p95", "ridge_p"} <= set(pd.read_parquet(ceiling.OUT_DIR / "summary.parquet").columns)
+    assert len(pd.read_parquet(ceiling.OUT_DIR / "learning_curves.parquet"))
+    ceiling.OUT_MD.write_text("kept")
+    ceiling.run(5.0, 2.0, "test", PAIRS, items=["7"])                           # a partial run never overwrites the full report
+    assert ceiling.OUT_MD.read_text() == "kept" and ceiling.OUT_MD.with_name("ceiling_items_7.md").exists()
     mv = pd.read_parquet(ceiling.OUT_DIR / "move_vs_cost.parquet").set_index(["bet", "horizon"])
     assert mv.loc[("directional", "15m"), "taker_rt"] == pytest.approx(2 * 5 + 1 + 2 * 0.5)
     assert mv.loc[("directional", "15m"), "maker_rt"] == pytest.approx(2 * 2 + 2 * 1.5)
@@ -141,3 +147,51 @@ def test_random_walk_has_no_directional_ic(tmp_path, monkeypatch):
     day = f.index.floor("D")
     ics = [f[day == d].rank().corr(y[day == d].rank()) for d in day.unique()]
     assert np.nanmean(ics) < -0.3
+
+
+def test_day_shuffle_moves_whole_days_and_never_feeds_a_feature_its_own_label():
+    idx = pd.date_range("2023-05-01 00:05", "2023-07-10 00:00", freq="5min", tz="UTC")      # first and last day partial
+    day, slot = (idx.floor("D") - idx[0].floor("D")).days.to_numpy(), (idx - idx.floor("D")) // ceiling.BAR
+    group = ((idx >= pd.Timestamp("2023-05-20", tz="UTC")) & (idx < pd.Timestamp("2023-06-25", tz="UTC"))).astype(float)
+    for seed in range(5):
+        b = ceiling._shuffle_days(idx, group, np.random.default_rng(seed))
+        assert sorted(b) == list(range(len(idx))) and (b != np.arange(len(idx))).mean() > 0.8
+        assert (slot[b] == slot).all() and (group[b] == group).all()            # time of day kept; scored days only trade with scored days
+        assert pd.Series(day[b]).groupby(day).nunique().eq(1).all()             # a day moves as one block
+        lag = day - day[b]
+        assert not ((lag > 0) & (lag <= ceiling.NULL_GAP)).any()                # no label from inside the features' lookback
+        partial = np.isin(day, [day[0], day[-1]])
+        assert (b[partial] == np.arange(len(idx))[partial]).all()
+
+
+def test_noise_floor_is_the_screen_statistic_and_planted_momentum_clears_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(ceiling, "MIN_PAIRS", 3)
+    _synth(tmp_path)
+    P = ceiling.panel(PAIRS)
+    D = ceiling.derive(P)
+    F = {k: v for k, v in ceiling.dir_features(D).items() if k.startswith("ret_")}
+    nic, nr = ceiling.noise_floor(D, F, draws=19, jobs=1, horizons=("15m",))      # where the planted AR(1) is strongest
+    ic, _ = ceiling.ic_screen(D, F, set())
+    real = nic[nic["draw"] == 0].merge(ic, on=["bet", "horizon", "feature"], suffixes=("", "_screen"))
+    assert len(real) == 2 * len(F)
+    np.testing.assert_allclose(real["t"], real["t_screen"], rtol=1e-9)           # draw 0 IS #3's number
+    screen, feats, ridge = ceiling.floor_tables(nic, nr)
+    blk = screen.set_index("bet")
+    assert (blk["p_fw"] == 1 / 20).all() and (blk["t"].abs() > blk["bar_t_p95"]).all()      # AR(1) momentum: beyond every noise draw
+    assert blk["null_t_sd"].between(0.5, 2.0).all()
+    r = ridge.set_index("bet")
+    assert r.loc["directional", "p"] == 1 / 20        # null_ic_mean is not asserted at 0: the ridge's intercept forecasts the sample's drift, shuffled or not
+
+
+def test_learning_curve_full_window_is_item_1s_ridge(tmp_path, monkeypatch):
+    monkeypatch.setattr(ceiling, "MIN_PAIRS", 3)
+    _synth(tmp_path)
+    P = ceiling.panel(PAIRS)
+    D = ceiling.derive(P)
+    ct, cm = ceiling.bar_cost(D["lr"].index, PAIRS, 5.0, 2.0)
+    r2, _ = ceiling.mag_vs_dir(D, ct, cm)
+    lc, lcp = ceiling.learning_curves(D, ceiling.dir_features(D), horizons=("15m",))
+    full = lcp[(lcp["features"] == "candle") & (lcp["window"] == "all")].set_index("bet")
+    assert full.loc["directional", "ridge_out"] == pytest.approx(r2.set_index(["target", "horizon"]).loc[("direction (own)", "15m"), "rank_ic"])
+    assert set(lc["window"]) == {"30", "all"} and (full["tree300_out"] > 0.02).all()         # the planted momentum, by both models
+    assert (lc["ic_in"] > 0).all()

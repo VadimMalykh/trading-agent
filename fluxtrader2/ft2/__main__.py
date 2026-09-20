@@ -53,8 +53,8 @@ def cmd_cost(args):
 
 def cmd_ceiling(args):
     from . import ceiling
-    ceiling.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.items)
-    print(f"wrote {ceiling.OUT_MD} and {ceiling.OUT_DIR}/")
+    ceiling.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.items, args.draws)
+    print(f"wrote {ceiling.OUT_MD if not args.items else 'output/ceiling*.md'} and {ceiling.OUT_DIR}/")
 
 
 def main(argv=None):
@@ -88,7 +88,9 @@ def main(argv=None):
         if a_.dest in ("taker_bps", "maker_bps", "fee_source"):
             g.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
     g.add_argument("--symbols", nargs="*")
-    g.add_argument("--items", nargs="*", choices=["7", "1", "2", "3", "6"], help="PLAN P2 item numbers; default all implemented")
+    g.add_argument("--items", nargs="*", choices=["7", "1", "2", "3", "6", "4", "5"],
+                   help="PLAN P2 item numbers; default all, → output/ceiling.md; a partial run → output/ceiling_items_<…>.md")
+    g.add_argument("--draws", type=int, default=200, help="#4: label shuffles per scheme")
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory,
             "archive": cmd_archive, "tape": cmd_tape, "cost": cmd_cost, "ceiling": cmd_ceiling}[args.cmd](args)

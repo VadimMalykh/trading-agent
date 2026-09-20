@@ -192,33 +192,37 @@ Commands, in order (all on the work VM; the code is unit-tested on synthetic dat
 BNB fee discount is on, or a read-only API key so that `GET /fapi/v1/commissionRate` can be
 read once and recorded. Everything else in P1 runs without him.
 
-### P2 — Ceiling audit: how much signal is there, per bet type and horizon (🔵 five of seven items measured 2026-09-20; #4 and #5 next)
+### P2 — Ceiling audit: how much signal is there, per bet type and horizon (✅ all seven items measured 2026-09-20; verdicts below)
 
-**Result so far, in plain words** (`ft2 ceiling`, `output/ceiling.md`; exploration folds F1+F2 only,
-2023-05-03 → 2024-08-31, eleven pairs, 485 days; fees VIP 0, confirmed from the account 2026-09-20). Words used: a
+**Result, in plain words** (`ft2 ceiling`, `output/ceiling.md`; exploration folds F1+F2 only,
+2023-05-03 → 2024-08-31, eleven pairs, 485 days; fees VIP 0, read from the account 2026-09-20). Words used: a
 *basis point* (bps) is 0.01 %; a *round trip* is entry plus exit — 12.3 bps as a taker, 7.2 as a
 maker (P1); *IC* is the correlation between a signal and the move that follows, 0 = useless,
 0.05 = a good weak signal; "IC needed" is the IC at which trading the strongest tenth of signals
-just pays its round trip.
+just pays its round trip; the *noise floor* is the IC the same search reaches on labels that were
+shuffled so that no signal can exist (200 shuffles) — a measured IC counts only above it.
 
-**Can anything trade profitably yet? Not shown.** The only horizons where a measured signal is as
-large as the cost bar are **4 hours and 1 day**; at 15 minutes and 1 hour the moves are too small
-for the cost at any signal strength we found. What exists at 4h–1d is a *candidate*, not a
-finding: it still has to survive the noise floor (#4) and the learning curves (#5), and the
-one honest out-of-sample forecast we fitted confirms it at 4h but **not** at 1d.
+**Can anything trade profitably yet? Not shown — but there is now one bet worth building.**
+A pair's **own move over the next 4 hours** is predictable by short-term *reversal* (what rose
+over the last hours to a day tends to give some back) at a strength that is (a) far outside the
+noise floor, (b) reproduced out of sample by a fitted forecast, and (c) as large as the cost bar
+if the order rests as a maker or if only high-volatility bars are traded. That is a funded
+*candidate*: nothing has been run through a ledger with costs yet, which is P3/P4's job.
+Everything at 15m and 1h is real but too small for the cost; the pair-vs-basket bet, the plan's
+prior favourite, did **not** hold up at 4h–1d.
 
-| bet | horizon | mean move, bps | IC needed (taker / maker; *with vol timing*) | best IC measured (feature, t) | reading |
-|---|---|---|---|---|---|
-| directional | 15m | 30 | 0.19 / 0.11; *0.08 / 0.05* | 0.024 (last 15m return, −8.9) | **excluded** — signal is a quarter of the bar |
-| directional | 1h | 60 | 0.09 / 0.05; *0.04 / 0.03* | 0.031 (last 1d return, −5.5) | below the bar; reachable only as maker + timing |
-| directional | 4h | 120 | 0.047 / 0.027; *0.024 / 0.015* | 0.045 (last 1d return, −4.4), 0.043 (last 4h, −4.9) | **candidate** — at the bar; ridge forecast IC 0.035 (t 3.5) out of sample |
-| directional | 1d | 307 | 0.018 / 0.011; *0.011 / 0.007* | 0.051 (last 4h return, −5.0) | **candidate, weak evidence** — single features clear the bar, the ridge forecast does not (IC 0.012, t 0.6) |
-| relative | 15m | 20 | 0.29 / 0.17; *0.13 / 0.08* | 0.043 (last 15m return, −23.8) | **excluded** — very real, far too small |
-| relative | 1h | 39 | 0.14 / 0.08; *0.07 / 0.04* | 0.032 | excluded as taker; below the bar as maker |
-| relative | 4h | 79 | 0.071 / 0.041; *0.038 / 0.024* | 0.030 (last 4h return, −6.3) | **candidate as maker + timing only** |
-| relative | 1d | 205 | 0.027 / 0.016; *0.016 / 0.010* | 0.032 (±1 % book imbalance, −4.4), MDE 0.020 | **candidate, thin** — one feature just past the multiple-testing bar (|t| 3.74 for 276 tests) |
+| bet | horizon | IC needed (taker / maker; *with vol timing*) | best IC measured (feature) | noise floor (IC) | fitted forecast, out of sample | **verdict** |
+|---|---|---|---|---|---|---|
+| directional | 15m | 0.19 / 0.11; *0.08 / 0.05* | 0.024 (last 15m return) | — | — | **excluded** — a quarter of the bar |
+| directional | 1h | 0.09 / 0.05; *0.04 / 0.03* | 0.031 (last 1d return) | 0.016 | 0.028, real (p 0.005) | **real, not funded** — below the bar except maker + timing, with no margin |
+| directional | 4h | 0.047 / 0.027; *0.024 / 0.015* | 0.045 (last 1d return), 0.043 (last 4h) | 0.026 | 0.035 on all history, 0.052–0.057 refitted on the last 30–120 days; real (p 0.005) | **FUND — P4's bet** |
+| directional | 1d | 0.018 / 0.011; *0.011 / 0.007* | 0.051 (last 4h return) | 0.045 | 0.012 on all history = noise (p 0.61); 0.06–0.08 on the last 30–120 days (t 2.5–3.9, window picked after the fact) | **not detectable yet** — second in line; the single features are real, the forecast is unstable |
+| relative | 15m | 0.29 / 0.17; *0.13 / 0.08* | 0.043 (last 15m return) | — | — | **excluded** — very real, far too small |
+| relative | 1h | 0.14 / 0.08; *0.07 / 0.04* | 0.032 (last 1h return) | 0.011 | 0.013, real (p 0.005) | **excluded on cost** |
+| relative | 4h | 0.071 / 0.041; *0.038 / 0.024* | 0.030 (last 4h return) | 0.021 | −0.002 = noise (p 0.75) at every window, ridge and tree | **not funded** — single features real, no forecast reproduces them |
+| relative | 1d | 0.027 / 0.016; *0.016 / 0.010* | 0.032 (±1 % book imbalance) | 0.036 | −0.028: the fitted relation *flips sign* out of sample (p 0.015) | **not detectable** — one feature, p 0.015 after paying for the search |
 
-What the five items say, each in a sentence:
+What the seven items say, each in a sentence:
 
 - **#7 Move vs cost.** Costs are small next to moves except at 15m: a sign bet must be right 70 %
   of the time at 15m, 60 % at 1h, 55 % at 4h, 52 % at 1d (taker). The pair-vs-basket bet moves
@@ -233,29 +237,54 @@ What the five items say, each in a sentence:
   — two-thirds of what any pair does is "the market", which is what the relative bet removes.
 - **#3 IC screen** (24 features × 4 horizons × 3 bets). Every directional and relative signal
   that survives is **reversal**: trailing returns with a negative sign, stable in 81–100 % of
-  months. Book depth, order flow, open interest, long/short ratios and funding add almost
-  nothing on direction (one marginal hit: ±1 % depth imbalance, relative 1d). For magnitude,
-  dollar-volume surprise and short/long volatility ratio carry IC ≈ 0.25.
+  months. Book depth, order flow, open interest, long/short ratios and funding add little on
+  direction. For magnitude, dollar-volume surprise and short/long volatility ratio carry IC ≈ 0.25.
 - **#6 Power.** 485 days resolve ±0.4 (15m) to ±3.5 (1d) bps per trade at a tenth of the bars
   traded, and an IC of ±0.005–0.03. Power is not the constraint on these folds; signal size is.
+- **#4 Noise floor** (200 whole-day label shuffles, 1h/4h/1d). The reversal signals are not an
+  artefact of searching 24 features: on noise the best of the screen reaches |t| 3.1–3.2
+  (directional) and 3.9–4.3 (relative), the real ones sit at 4.4–17.8, and no shuffle out of 200
+  matched them (relative 1d: 2 of 200). Two corrections to read #3 with: the **relative t-statistics
+  are overstated by ~1.4×** (their spread on noise is 1.4, not 1; directional is calibrated at
+  1.0), and about **a quarter of the directional forecast's IC is drift** — the fitted intercept
+  betting that the market's average direction continues (0.006 of 0.028 at 1h, 0.010 of 0.035 at 4h).
+- **#5 Learning curves** (ridge vs a depth-2 boosted tree, trained on the last 30 / 60 / 120 / 250
+  days or on everything before the fold; 4h and 1d). Three readings. *More history does not help —
+  it hurts*: directional 4h scores IC 0.052–0.057 on the last 30–120 days against 0.035 on all
+  ~500, and directional 1d 0.06–0.08 against 0.012; the relation drifts, so the lever is **short,
+  frequent refits, not more data** (decision table row 4). *The tree never beats the line*: equal
+  at best, worse by t −3 to −5 on short windows, while fitting its training window two to three
+  times better — no interactions evidenced, so nothing beyond linear is funded (§7). *Extra
+  sources are a wash*: all 24 features against the 11 candle ones is +0.008 at 4h on all history
+  and −0.01 on short windows; only directional 1d on all history improves (0.012 → 0.050, t 3.4),
+  one cell out of many, recorded and not acted on.
 
-**Defect record.** The first run (2026-09-20 08:38 UTC) computed the directional and vol ICs as
+**Why the relative bet is not funded although its single features are real.** At 4h the reversal
+features pass the noise floor (IC 0.024–0.030) but sit below the bar except as maker + timing, and
+neither model fitted on them reproduces any of it out of sample (in-sample IC only 0.014). The
+screen measures *ranks* across pairs, the forecast was fitted on raw vol-scaled values, and the
+young pairs' tails dominate a least-squares fit; whether a rank rule recovers it is cheap to see
+once P3's harness exists, and is parked in §7 with that trigger.
+
+**Defect records.** (1) The first run (2026-09-20 08:38 UTC) computed the directional and vol ICs as
 a within-day Spearman and read −0.2 at 1d with t = −16. Feature and label share the price at t,
 and demeaning inside the day (which uses the day's future prices) makes them negatively
 correlated on a pure random walk (−0.5 for one pair). Voided and re-run the same day with an
 uncentred daily correlation; `tests/test_p2.py::test_random_walk_has_no_directional_ic` holds
-the statistic at zero on a random walk and keeps the defect as a recorded assertion. #7, #1's R²,
-#2, #6 and the relative ICs were unaffected and are identical in both runs.
+the statistic at zero on a random walk. (2) #4 was planned as "labels shuffled within day". That
+is not a null here: a label moved to a later bar of its own day overlaps the trailing-return
+features, and a 4-draw trial read an IC of +0.09 … +0.18 for the ridge from that leak alone.
+Replaced before the real run by whole-day shuffles that never hand a day the labels of the 8 days
+before it (`_shuffle_days`, with a test); nothing was read from the leaky version.
 
-**Next session, in order:** (1) **#4 noise floor** — the IC screen and the walk-forward ridge on
-labels shuffled within day (and, because the directional bet is mostly one market factor,
-block-shuffled across days), ≥ 200 draws, for the six candidate/edge rows above; (2) **#5 learning
-curves** — ridge vs a depth-2 boosted tree on growing windows at 4h and 1d, both bets;
-(3) fill the verdict column (fund / not detectable / excluded) and choose P4's bet from it.
-`scripts/ft2.sh --test`, then `vm.sh start`, `vm.sh bg p2 ceiling --items 4 5`, `vm.sh pull`,
+**Next session (P3, then P4):** build `ft2 backtest` (P3), then register P4 in §8 **before** running it:
+directional, 4h hold, a ≤ 3-parameter reversal rule on trailing 4h/1d return, traded only in the
+top tenth of predicted volatility, maker and taker priced separately, refit window fixed in the
+registration at 120 days (the middle of the range that worked, chosen here so that it is not tuned
+on the confirmation folds). The work VM is stopped. To re-run the audit: `scripts/ft2.sh --test`,
+`vm.sh start`, `vm.sh bg p2 ceiling` (≈ 45 min for all seven items on 4 vCPU), `vm.sh pull`,
 `vm.sh stop`. **Watch the job with the log's `wrote ` line, not `pgrep -f "ft2 ceiling"`** — the
 ssh command line matches itself, which left the VM idling for five hours on 2026-09-20.
-
 
 **Deliverable:** one table. Rows = bet type × horizon. Columns = signal ceiling, cost (from P1),
 noise floor, detectable effect, sample size, verdict (fund / not detectable / excluded).
@@ -327,10 +356,10 @@ Each of these is parked (§7) with the measurement that would fund it:
 
 - **Learned decision layer / end-to-end model** — funded only if a registered contrast shows the
   analytic decision leaves money against an oracle sized on the same forecasts.
-- **Book/tape features as inputs** — with the archive's 1-minute depth back to 2023-01 (§9 #1)
-  these are testable on F1–F5 now; still funded only by a P2 ceiling reading that clears cost.
-- **Sequence / deep models** — funded only if the P2 learning curve for the tree keeps rising and
-  clears linear outside the noise floor.
+- **Book/tape features as inputs** — testable back to 2023-01 (§9 #1); P2 measured them as a wash
+  on direction (2026-09-20); revival trigger in §7.
+- **Sequence / deep models** — P2 #5 found no interactions (a depth-2 tree never beat ridge);
+  revival trigger in §7.
 
 ### P7 — Paper trading, then money
 
@@ -381,9 +410,11 @@ registered positive on confirmation folds.
 | item | why parked | revival trigger |
 |---|---|---|
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
-| book/tape features as model inputs | not yet measured | P2 ceiling audit on the archive's depth/flow features (2023-01 →) clears cost |
-| sequence / deep models | no evidence of interactions yet | P2 learning curve: tree > linear outside the noise floor and still rising |
+| book/tape features as model inputs | P2 #3/#5 (2026-09-20): measured, a wash — single features add little on direction; all 24 vs the 11 candle features is ±0.01 IC, except directional 1d on all history (0.012 → 0.050), one cell | P4/P5 funds a 1d directional bet, or a registered contrast shows the 1d cell repeats on a confirmation fold |
+| sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
+| relative (pair-vs-basket) bet at 4h, as a **rank** rule | P2 (2026-09-20): single reversal features pass the noise floor (IC 0.024–0.030) but no fitted forecast reproduces them, and the bar is only met as maker + vol timing | P3's harness exists: one registered run of "long bottom-decile 4h residual return, short the top" — cheap, and the plan's original prior |
+| directional 1d with short refits | P2 #5: IC 0.06–0.08 on 30–120-day windows vs 0.012 on all history, but the window was picked after the fact and 485 days resolve only ±0.03 at 1d | P4's 4h result is in: register the 1d twin with the same fixed window |
 | paper trading (P7) | nothing to trade yet | P5 registered positive on confirmation folds |
 | trade-level maker validation (`ft2 tape --keep-zip` on a ~2-week window; queue position and fill timing at the trade level) | P1's minute-level maker numbers (fill 86–97 %, adverse 1–3 bps) are coarse; refining them changes nothing until a maker path is on the table | P5 chooses a maker execution, or P2's verdict hinges on the 4-bps taker-vs-maker difference |
 

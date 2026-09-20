@@ -15,7 +15,7 @@ Bets:    directional  the pair's own forward return
          vol          the forward absolute move — a multiplier on the other two, not a bet
 Horizons: 15m, 1h, 4h, 1d.
 
-Items (PLAN P2's numbering; #4 noise floor and #5 learning curves are the next session's):
+Items (PLAN P2's numbering):
   #7 move_vs_cost      share of bars whose |move| exceeds the P1 round trip (taker at NOTIONAL,
                        maker at 15 min) from data/cost_daily.parquet; the perfect-foresight net;
                        the hit rate and the rank IC a signal needs to break even
@@ -29,9 +29,20 @@ Items (PLAN P2's numbering; #4 noise floor and #5 learning curves are the next s
                        HAC t-statistic over days, share of months agreeing in sign, and its MDE
   #6 power             bars, non-overlapping labels, days; the smallest per-trade mean (bps) a
                        strategy trading 10 % of bars could be told from zero (80 % power, 5 %)
+  #4 noise_floor       #3's screen and #1's walk-forward direction ridge re-run on shuffled labels
+                       (`_shuffle_days`: whole days trade places, whole rows move, so the market factor
+                       the pairs share stays intact), DRAWS times, at 1h/4h/1d: what the best of 24 features, and the ridge,
+                       reach on noise — the family-wise bar a measured IC has to clear
+  #5 learning_curves   ridge vs a depth-2 boosted tree on the most recent 30 … all days before each
+                       fold, 4h and 1d, both bets: in-sample vs out-of-sample IC (variance?), the
+                       slope in days (data-limited?), tree minus ridge per day (interactions?)
+
+A run of every item writes output/ceiling.md; a partial `--items` run writes
+output/ceiling_items_<…>.md and never overwrites the full report.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -56,6 +67,12 @@ Z_TOP = 1.755            # E[z | z > 90th percentile] for a standard normal
 MDE_K = 2.80             # (z_0.975 + z_0.80): detectable effect = MDE_K × standard error
 ALPHAS = [1.0, 1e2, 1e4, 1e6]
 Z_CLIP = 5.0
+DRAWS = 200                                  # #4: label shuffles
+NULL_GAP = 8                                 # #4: days; ≥ the longest return lookback (1w) + the longest horizon (1d)
+NULL_HORIZONS = ("1h", "4h", "1d")           # #4: the candidate / edge rows of #3 (15m is excluded on cost by #7)
+LC_HORIZONS = ("4h", "1d")                   # #5
+LC_DAYS = (30, 60, 120, 250)                 # #5: training windows in days, most recent first; then everything before the fold
+LC_TREES = (50, 150, 300)                    # #5: the boosted tree is read at these sizes
 
 
 # ---- the panel ---------------------------------------------------------------------------------
@@ -178,17 +195,23 @@ def dir_features(D: dict) -> dict[str, pd.DataFrame]:
     return F
 
 
+def _design(D: dict, F: dict[str, pd.DataFrame] | None = None) -> dict:
+    """The (bar × pair) cells of the direction forecasts, shared by #1, #4 and #5: Xd for a pair's own
+    move (the features and hour of day), Xr for the move against the basket (the features' deviations
+    from their cross-sectional mean). F defaults to the candle features of `dir_features`."""
+    idx, cols = D["lr"].index, D["lr"].columns
+    hour = pd.DataFrame(np.repeat(idx.hour.to_numpy()[:, None], len(cols), 1) * (2 * np.pi / 24), index=idx, columns=cols)
+    F = F or dir_features(D)
+    own = [k for k in F if not k.startswith("relret")]
+    return {"t": np.repeat(idx.tz_localize(None).to_numpy(), len(cols)), "pair": np.tile(np.arange(len(cols)), len(idx)),
+            "day": np.repeat((idx.floor("D") - idx[0].floor("D")).days.to_numpy(), len(cols)), "scored": np.repeat(D["scored"], len(cols)),
+            "Xd": _cells([*F.values(), np.sin(hour), np.cos(hour)]), "Xr": _cells([F[k].sub(basket(F[k]), axis=0) for k in own])}
+
+
 def mag_vs_dir(D: dict, ct: pd.DataFrame, cm: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     idx, cols = D["lr"].index, D["lr"].columns
-    t = np.repeat(idx.tz_localize(None).to_numpy(), len(cols))
-    pair = np.tile(np.arange(len(cols)), len(idx))
-    day = np.repeat((idx.floor("D") - idx[0].floor("D")).days.to_numpy(), len(cols))
-    scored = np.repeat(D["scored"], len(cols))
-    hour = pd.DataFrame(np.repeat(idx.hour.to_numpy()[:, None], len(cols), 1) * (2 * np.pi / 24), index=idx, columns=cols)
-    Fd = dir_features(D)
-    Xd = _cells([*Fd.values(), np.sin(hour), np.cos(hour)])
-    own = [k for k in Fd if not k.startswith("relret")]
-    Xr = _cells([Fd[k].sub(basket(Fd[k]), axis=0) for k in own])
+    G = _design(D)
+    t, pair, day, scored, Xd, Xr = (G[k] for k in ("t", "pair", "day", "scored", "Xd", "Xr"))
     tk, mk = ct.to_numpy().ravel(), cm.to_numpy().ravel()
     rows, mult = [], []
     for h, k in HORIZONS.items():
@@ -440,12 +463,182 @@ def power(D: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ---- #4 noise floor -------------------------------------------------------------------------------
+def _shuffle_days(idx: pd.DatetimeIndex, group: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Row indexer for a label null: the label at row i is taken from row src[i]. Whole days trade
+    places, time of day kept, only with days of the same `group` (scored / not scored), and whole rows
+    move — the market factor every pair shares at one instant, and a label's overlap with its
+    neighbours inside the day, stay intact; every link to the features is broken.
+
+    A day never receives the labels of one of the NULL_GAP days before it: such a label's window lies
+    inside the trailing-return features' lookback, and the feature would then contain the label.
+    (That is why the plan's first idea, shuffling rows WITHIN a day, is not used: a label moved to a
+    later bar of its own day always overlaps the features — a 4-draw trial on 2026-09-20 read an IC
+    of +0.09 … +0.18 for the ridge from that leak alone.)"""
+    day = (idx.floor("D") - idx[0].floor("D")).days.to_numpy()
+    per_day = int(pd.Timedelta("1D") / BAR)
+    slot = ((idx - idx.floor("D")) // BAR).to_numpy()
+    nd = int(day.max()) + 1
+    row_of = np.full((nd, per_day), -1)
+    row_of[day, slot] = np.arange(len(idx))
+    n_rows, n_in = np.bincount(day, minlength=nd), np.bincount(day, weights=group, minlength=nd)
+    src_day = np.arange(nd)
+    for members in (n_in == per_day, (n_in == 0) & (n_rows == per_day)):           # partial days stay where they are
+        ids = np.flatnonzero(members)
+        src_day[ids] = rng.permutation(ids)
+        while len(bad := ids[(ids - src_day[ids] > 0) & (ids - src_day[ids] <= NULL_GAP)]):
+            for d in bad:
+                o = rng.choice(ids)
+                src_day[d], src_day[o] = src_day[o], src_day[d]
+    return row_of[src_day[day], slot]
+
+
+def _null_feature(name: str, fs: pd.DataFrame, Zs: dict, Zr: dict, draws: int, seed: int) -> pd.DataFrame:
+    """One feature of #3's screen — the same statistics — on the real labels (draw 0) and on `draws`
+    shuffles. Shuffle number `draw` is the same for every feature, so the best of the screen can be
+    taken per draw."""
+    sidx = fs.index
+    day1 = (sidx.floor("D") - sidx[0].floor("D")).days.to_numpy()
+    dayc = np.repeat(day1, fs.shape[1])
+    fv = _pair_rank(fs).to_numpy().ravel()
+    rows = []
+    for draw in range(draws + 1):
+        src = _shuffle_days(sidx, np.ones(len(sidx)), np.random.default_rng([seed, draw])) if draw else np.arange(len(sidx))
+        for h in Zs:
+            series = {"directional": _ic_pooled(fv, Zs[h][src].ravel(), dayc)}
+            if not name.startswith("relret_"):
+                series["relative"] = _ic_xs(fs, pd.DataFrame(Zr[h][src], index=sidx, columns=fs.columns), day1)
+            for bet, ic in series.items():
+                mean, se, _ = hac(ic, day_lags(HORIZONS[h]))
+                rows.append({"bet": bet, "horizon": h, "feature": name, "draw": draw, "ic": mean, "t": mean / se if se else np.nan})
+    return pd.DataFrame(rows)
+
+
+def _null_ridge(X: np.ndarray, yw: np.ndarray, G: dict, idx: pd.DatetimeIndex, group: np.ndarray, k: int, draws: list[int], seed: int) -> list[tuple]:
+    """#1's walk-forward direction ridge, refitted on shuffled labels (training history included)."""
+    out = []
+    for draw in draws:
+        src = _shuffle_days(idx, group, np.random.default_rng([seed, draw])) if draw else np.arange(len(idx))
+        y = yw[src].ravel()
+        yhat = _walk_forward(X, y, G["t"], k)
+        ok = G["scored"] & ~np.isnan(yhat) & ~np.isnan(y)
+        ic, se, _ = hac(_ic_pooled(yhat[ok], y[ok], G["day"][ok]), day_lags(k))
+        out.append((draw, ic, ic / se if se else np.nan))
+    return out
+
+
+def noise_floor(D: dict, F: dict[str, pd.DataFrame], draws: int = DRAWS, jobs: int = 1, seed: int = 0,
+                horizons: tuple[str, ...] = NULL_HORIZONS) -> tuple[pd.DataFrame, pd.DataFrame]:
+    from joblib import Parallel, delayed
+    s, idx = D["scored"], D["lr"].index
+    Zs = {h: D["z"][h][s].clip(-Z_CLIP, Z_CLIP).to_numpy() for h in horizons}
+    Zr = {h: D["zres"][h][s].to_numpy() for h in horizons}
+    print(f"#4 noise floor: screen, {len(F)} features × {len(horizons)} horizons × {draws} draws…", flush=True)
+    nic = pd.concat(Parallel(n_jobs=jobs, verbose=5)(delayed(_null_feature)(name, f[s], Zs, Zr, draws, seed) for name, f in F.items()), ignore_index=True)
+    G = _design(D)
+    X, G = {"directional": G["Xd"], "relative": G["Xr"]}, {k: G[k] for k in ("t", "day", "scored")}
+    chunks = [list(c) for c in np.array_split(np.arange(1, draws + 1), max(1, draws // 10))]
+    chunks[0] = [0, *chunks[0]]
+    tasks = [(bet, h, c) for bet in ("directional", "relative") for h in horizons for c in chunks]
+    yw = {("directional", h): np.clip(D["z"][h].to_numpy(), -Z_CLIP, Z_CLIP) for h in horizons}
+    yw |= {("relative", h): np.clip(D["zres"][h].to_numpy(), -Z_CLIP, Z_CLIP) for h in horizons}
+    print(f"#4 noise floor: walk-forward ridge, {len(tasks)} tasks of ≤ {len(chunks[0])} draws…", flush=True)
+    res = Parallel(n_jobs=jobs, verbose=5)(delayed(_null_ridge)(X[bet], yw[bet, h], G, idx, s.astype(float), HORIZONS[h], c, seed) for bet, h, c in tasks)
+    nr = pd.DataFrame([{"bet": bet, "horizon": h, "draw": d, "ic": ic, "t": t_} for (bet, h, _), part in zip(tasks, res) for d, ic, t_ in part])
+    return nic, nr
+
+
+def floor_tables(nic: pd.DataFrame, nr: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(the screen per bet × horizon, every feature with its single and family-wise p, the ridge)."""
+    screen, feats, ridge = [], [], []
+    for (bet, h), x in nic.dropna(subset=["t"]).groupby(["bet", "horizon"], sort=False):
+        real, null = x[x["draw"] == 0], x[x["draw"] > 0]
+        mx = null.assign(a=null["t"].abs(), b=null["ic"].abs()).groupby("draw")[["a", "b"]].max()
+        best = real.loc[real["t"].abs().idxmax()]
+        p_fw = lambda t_: (1 + int((mx["a"] >= abs(t_)).sum())) / (len(mx) + 1)               # noqa: E731
+        screen.append({"bet": bet, "horizon": h, "features": len(real), "draws": len(mx), "best_feature": best["feature"], "ic": best["ic"], "t": best["t"],
+                       "null_t_sd": null["t"].std(), "bar_t_p95": mx["a"].quantile(0.95), "floor_ic_p95": mx["b"].quantile(0.95),
+                       "p_fw": p_fw(best["t"]), "n_clear": int((real["t"].abs() > mx["a"].quantile(0.95)).sum())})
+        for _, r in real.iterrows():
+            own = null.loc[null["feature"] == r["feature"]]
+            feats.append({"bet": bet, "horizon": h, "feature": r["feature"], "ic": r["ic"], "t": r["t"], "null_ic_sd": own["ic"].std(),
+                          "p_single": (1 + int((own["t"].abs() >= abs(r["t"])).sum())) / (len(own) + 1), "p_fw": p_fw(r["t"])})
+    for (bet, h), x in nr.groupby(["bet", "horizon"], sort=False):
+        real, null = x[x["draw"] == 0].iloc[0], x[x["draw"] > 0]
+        ridge.append({"bet": bet, "horizon": h, "draws": len(null), "ic": real["ic"], "t": real["t"], "null_ic_mean": null["ic"].mean(),
+                      "null_ic_sd": null["ic"].std(), "null_t_sd": null["t"].std(), "floor_ic_p95": null["ic"].abs().quantile(0.95),
+                      "p": (1 + int((null["t"].abs() >= abs(real["t"])).sum())) / (len(null) + 1)})
+    return pd.DataFrame(screen), pd.DataFrame(feats), pd.DataFrame(ridge)
+
+
+# ---- #5 learning curves ---------------------------------------------------------------------------
+def learning_curves(D: dict, F: dict[str, pd.DataFrame], horizons: tuple[str, ...] = LC_HORIZONS) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Ridge (as #1) and a depth-2 boosted tree, fitted on the most recent L days before each fold
+    and scored on the fold, on the candle features of #1 and on every feature of #3 (rows with a
+    missing feature dropped for both models). Returns (per fold, pooled over folds)."""
+    import lightgbm as lgb
+    from sklearn.linear_model import RidgeCV
+    rows, daily = [], {}
+    for sname, G in (("candle", _design(D)), ("all", _design(D, F))):
+        t, day = G["t"], G["day"]
+        for bet, X, tgt in (("directional", G["Xd"], D["z"]), ("relative", G["Xr"], D["zres"])):
+            finite = ~np.isnan(X).any(axis=1)
+            for h in horizons:
+                k = HORIZONS[h]
+                y = np.clip(tgt[h].to_numpy().ravel(), -Z_CLIP, Z_CLIP)
+                valid = finite & ~np.isnan(y)
+                for f in folds.EXPLORATION:
+                    a, b = (np.datetime64(x.tz_localize(None)) for x in folds.bounds(f))
+                    tr_end = np.datetime64((folds.training_end(f) - k * BAR).tz_localize(None))
+                    te = valid & (t >= a) & (t < b)
+                    avail = (tr_end - t[valid].min()) / np.timedelta64(1, "D")           # days of usable history before the fold
+                    for L in [*[d for d in LC_DAYS if d <= 0.9 * avail], None]:
+                        tr = valid & (t < tr_end) & ((t >= tr_end - np.timedelta64(L, "D")) if L else True)
+                        if tr.sum() < 1000 or not te.any():
+                            continue
+                        print(f"#5 {sname} {bet} {h} {f} window={L or 'all'} train cells={tr.sum():,}", flush=True)
+                        mu, sd = X[tr].mean(0), X[tr].std(0) + 1e-12
+                        ridge = RidgeCV(alphas=ALPHAS).fit((X[tr] - mu) / sd, y[tr])
+                        tree = lgb.LGBMRegressor(n_estimators=max(LC_TREES), learning_rate=0.05, max_depth=2, num_leaves=4, min_child_samples=1000,
+                                                 reg_lambda=10.0, deterministic=True, force_row_wise=True, random_state=0, verbose=-1).fit(X[tr], y[tr])
+                        either = tr | te
+                        preds = {"ridge": ridge.predict((X[either] - mu) / sd)} | {f"tree{n}": tree.predict(X[either], num_iteration=n) for n in LC_TREES}
+                        for model, p in preds.items():
+                            yhat = np.full(len(y), np.nan)
+                            yhat[either] = p
+                            ic_in, ic_out = _ic_pooled(np.where(tr, yhat, np.nan), y, day), _ic_pooled(np.where(te, yhat, np.nan), y, day)
+                            key = (sname, bet, h, model, str(L or "all"))
+                            for side, ic in (("in", ic_in), ("out", ic_out)):
+                                prev = daily.get((*key, side))
+                                daily[(*key, side)] = ic if prev is None else np.where(np.isnan(prev), ic, prev)
+                            m_out, se_out, _ = hac(ic_out, day_lags(k))
+                            rows.append({"features": sname, "bet": bet, "horizon": h, "model": model, "window": str(L or "all"), "fold": f,
+                                         "train_days": float(min(L or avail, avail)), "train_cells": int(tr.sum()), "ic_in": float(np.nanmean(ic_in)),
+                                         "ic_out": m_out, "t_out": m_out / se_out if se_out else np.nan,
+                                         "r2_out": float(1 - ((y[te] - yhat[te]) ** 2).sum() / (y[te] ** 2).sum())})
+    per_fold = pd.DataFrame(rows)
+    pooled = []
+    for (sname, bet, h, window), x in per_fold.groupby(["features", "bet", "horizon", "window"], sort=False):
+        lags = day_lags(HORIZONS[h])
+        r = {"features": sname, "bet": bet, "horizon": h, "window": window, "folds": "+".join(x["fold"].unique())}
+        for model in ("ridge", f"tree{max(LC_TREES)}"):
+            m, se, _ = hac(daily[(sname, bet, h, model, window, "out")], lags)
+            r |= {f"{model}_in": float(np.nanmean(daily[(sname, bet, h, model, window, "in")])), f"{model}_out": m, f"{model}_t": m / se if se else np.nan}
+        for n in LC_TREES[:-1]:
+            r[f"tree{n}_out"] = float(np.nanmean(daily[(sname, bet, h, f"tree{n}", window, "out")]))
+        m, se, _ = hac(daily[(sname, bet, h, f"tree{max(LC_TREES)}", window, "out")] - daily[(sname, bet, h, "ridge", window, "out")], lags)
+        r |= {"tree_minus_ridge": m, "tree_minus_ridge_t": m / se if se else np.nan}
+        pooled.append(r)
+    return per_fold, pd.DataFrame(pooled)
+
+
 # ---- assemble -------------------------------------------------------------------------------------
-ITEMS = ["7", "1", "2", "3", "6"]
+ITEMS = ["7", "1", "2", "3", "6", "4", "5"]
 
 
-def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str], items: list[str] | None = None) -> str:
+def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str], items: list[str] | None = None, draws: int = DRAWS) -> str:
     items = items or ITEMS
+    out_md = OUT_MD if set(items) >= set(ITEMS) else OUT_MD.with_name(f"ceiling_items_{'_'.join(items)}.md")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     print("panel…", flush=True)
     P = panel(symbols)
@@ -498,9 +691,10 @@ def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str],
                show(ls.assign(cell=ls["vr"].round(3).astype(str) + " (" + ls["vr_z"].round(1).astype(str) + ")")
                     .pivot(index=["series", "symbol"], columns="horizon", values="cell")[list(HORIZONS)].reset_index()), "\n",
                "\n### How much is 'the market': first principal component of the pairs' h-returns\n", show(pcs), "\n"]
-    if "3" in items:
-        print("#3 IC screen: features…", flush=True)
+    if {"3", "4", "5"} & set(items):
+        print("features…", flush=True)
         F, unsigned, notes = features(P, D, symbols)
+    if "3" in items:
         print(f"#3 IC screen: {len(F)} features × {len(HORIZONS)} horizons × 3 bets…", flush=True)
         ic, ic_daily = ic_screen(D, F, unsigned)
         ic.to_parquet(OUT_DIR / "ic.parquet", index=False)
@@ -534,9 +728,43 @@ def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str],
                "5 % two-sided), from the day-clustered (HAC) spread of a no-skill strategy's daily P&L on the same cells.\n", show(pw), "\n"]
         if summary is not None:
             summary = summary.merge(pw[["bet", "horizon", "mde_bps_per_trade"]], on=["bet", "horizon"], how="left")
+    if "4" in items:
+        nic, nr = noise_floor(D, F, draws, int(os.environ.get("FT2_JOBS", os.cpu_count() or 1)))
+        nic.to_parquet(OUT_DIR / "noise_ic.parquet", index=False)
+        nr.to_parquet(OUT_DIR / "noise_ridge.parquet", index=False)
+        screen, feats, ridge = floor_tables(nic, nr)
+        screen.to_parquet(OUT_DIR / "noise_floor.parquet", index=False)
+        feats.to_parquet(OUT_DIR / "noise_features.parquet", index=False)
+        md += [f"\n## #4 Noise floor — the same pipeline on shuffled labels, {draws} draws\n",
+               "Whole days of labels trade places (time of day kept, all pairs of one instant together, never from the 8 days before — see "
+               "`_shuffle_days`), which breaks every link between features and labels and keeps everything else. Draw 0 is the real data.\n",
+               "\n### The screen of #3: the best feature against the best of the same screen on noise\n",
+               "`null_t_sd` = spread of a single feature's t on noise (1 = the HAC t is calibrated); `bar_t_p95` / `floor_ic_p95` = the |t| and |IC| "
+               "the best of the screen reaches in 95 % of noise draws; `p_fw` = share of draws whose best |t| is at least the real best "
+               "(family-wise, so the choice among the features is paid for); `n_clear` = real features above `bar_t_p95`.\n", show(screen, 4), "\n",
+               "\n### Features with family-wise p ≤ 0.10\n", show(feats[feats["p_fw"] <= 0.10], 4), "\n",
+               "\n### The walk-forward direction ridge of #1, refitted on shuffled labels\n",
+               "`p` = share of draws whose |t| is at least the real one; `floor_ic_p95` = the |IC| the ridge reaches in 95 % of noise draws. "
+               "`null_ic_mean` need not be 0: the ridge's intercept forecasts the average move of the training history, and a shuffle keeps "
+               "that average — it is the part of the ridge's IC that is drift, not signal.\n", show(ridge, 4), "\n"]
+        if summary is not None:
+            fl = screen[["bet", "horizon", "floor_ic_p95", "bar_t_p95", "p_fw"]]
+            rd = ridge[["bet", "horizon", "ic", "p"]].rename(columns={"ic": "ridge_ic", "p": "ridge_p"})
+            summary = summary.merge(fl, on=["bet", "horizon"], how="left").merge(rd, on=["bet", "horizon"], how="left")
+    if "5" in items:
+        lc, lcp = learning_curves(D, F)
+        lc.to_parquet(OUT_DIR / "learning_curves_folds.parquet", index=False)
+        lcp.to_parquet(OUT_DIR / "learning_curves.parquet", index=False)
+        md += ["\n## #5 Learning curves — ridge vs a depth-2 boosted tree, growing training windows\n",
+               f"Each model is fitted on the most recent `window` days before a fold (`all` = everything before it, about 250 days for F1 and 490 for F2 — `train_days` below) and "
+               f"scored on the fold; pooled over the folds that have the window. `*_in` / `*_out` = mean daily IC on the training window / on the fold; "
+               f"`tree*` = {max(LC_TREES)} trees of depth 2, learning rate 0.05 (`tree50_out`, `tree150_out`: the same model read earlier); "
+               "`tree_minus_ridge_t` = HAC t of the daily IC difference. `candle` = the features of #1, `all` = every feature of #3. "
+               "Read: in ≫ out = fitting noise; out rising with the window = data-limited; tree above ridge with t > 2 = interactions.\n",
+               show(lcp, 4), "\n", "\n### Per fold\n", show(lc, 4), "\n"]
     if summary is not None:
         summary.to_parquet(OUT_DIR / "summary.parquet", index=False)
         md.insert(4, "\n## Summary — what a signal must clear, and the best single feature found\n\n" + show(summary, 4) + "\n")
     text = "\n".join(md)
-    OUT_MD.write_text(text)
+    out_md.write_text(text)
     return text
