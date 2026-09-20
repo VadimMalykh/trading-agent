@@ -336,8 +336,9 @@ a confirmation fold needs a §8 block and is read once per registration
 
 **One known weakness of the noise floor:** whole-day shuffles give a volatility-timed rule the moves of
 *average* days, so the shuffles' spread is about half the rule's real day-to-day spread (4.7 vs 8.5 bps on
-R1). Read the day-clustered interval as the honest error bar and the shuffle p as a lower bound; a null
-that keeps the timing (every trade of a day gets the same random side) is the fix, queued for P5.
+R1). **Fixed 2026-09-21:** the harness now also runs a *flip* null — the rule's own trades, every day's sides
+multiplied by one random sign — and the report's verdict uses the larger of the two p-values. Every fill also
+carries the other pairs' move over the same bars (*hedged* gross), and long and short are reported apart.
 
 **Deliverable:** `ft2 backtest` — walk-forward over the folds, the ledger (§3), the cost model
 from P1 plugged in, the shuffled-label noise floor, day-clustered intervals with MDE, and a
@@ -364,7 +365,8 @@ close (p 0.005), so the registered gate passed.
    have proven is 24 bps; the rule's is 14.
 2. **All of the profit is on the long side: longs +51 bps, shorts −19.** F1+F2 was a rising market, so
    part of this is "buy the dip in a bull market", which is a bet on the market, not a skill. P2 had
-   flagged that a quarter of the signal was drift; in the traded tail it is more.
+   flagged that a quarter of the signal was drift; in the traded tail it is more. **Measured in P5 step 1: it is not drift
+   but a bounce of the whole market after a fall — and against the other pairs the rule's picks lose.**
 3. **The stricter null gives p 0.03, not 0.005** (P3 "known weakness").
 
 **Why F3 was not read although the gate passed.** R1's stage 2 reads F3 alone. At this rule's day-to-day
@@ -379,9 +381,49 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (~3 sessions)
+### P5 — Forecast + analytic decision (🟡 step 1 read 2026-09-21: the bet is not what P4 thought it was; re-aimed below)
 
-**Deliverable:** a forecast of the forward target's distribution (ridge and a shallow boosted
+**Step 1 result in plain words** (registrations R2, R3 in §8; reports under `output/backtest/`; F1+F2 only).
+Three things were run: R1 again with new diagnostics (it reproduced to the cent), the market-neutral rank rule,
+and two mechanical ways of making R1's result less lumpy. *Hedged* below means "the trade's move minus what the
+other ten pairs did over the same four hours" — what was earned by picking that pair rather than by being in the market.
+
+1. **R1's profit is the whole market bouncing, not the pair reverting.** Hedged, R1's trades *lose* 11.6 bps
+   [−19.1, −4.2]: the pair it buys does worse than the others. The longs earn +56 bps gross because the other pairs
+   rise 66 bps over those same four hours — the rule is, in effect, "buy after a violent market-wide fall". Longs are
+   positive in all six quarters (+23 to +98 net); shorts negative in five of six (−19 overall). With R1's 3,404
+   trades that is far fewer independent bets than it looked, which is where the ±17 bps comes from.
+2. **The rank rule loses, significantly: −20.6 bps per leg as a maker [−31.7, −9.5]**, gross −16.3, negative in all
+   six quarters and on eight of eleven pairs. Per R2's gate the *relative reversal* bet on twelve names is **closed**.
+   The surprise is the sign: when two pairs have been pulled far apart over 4 hours, they keep moving apart. P2's
+   reversal IC (+0.03) is the body of the distribution; the traded tail does the opposite. This and item 1 are the
+   same fact seen twice.
+3. **Neither spread-cutting change helped.** Inverse-volatility sizing: +11.3 net, t 1.23 (R1: 1.64). At most three
+   positions a side: **−6.9 net** — the 1,045 trades the cap removed had earned +61 bps each. The 4th-and-later
+   position opened on the same side is where the money is: the more pairs are in free fall at once, the better the
+   bounce. Per R3's gate R1 stays the candidate and no further cap/size variant is tried.
+4. The harness's flip null puts R1 at p 0.025 (by hand it had been 0.031).
+
+**Can it trade profitably? Still not shown.** What we have is sharper, not bigger: two hypotheses, both *found* on
+F1+F2 and therefore not yet evidence — (H1) **panic bounce**: go long the market after a violent market-wide fall,
+more so the more pairs are falling at once; never short a spike; (H2) **tail continuation**: a pair torn away from
+the others over 4 hours keeps going for the next 4.
+
+**Next session (Claude; needs nothing from Vadim):**
+
+1. **Get independent exploration data instead of spending a confirmation fold.** The public archive has 5m klines
+   back to 2019-12 for the older pairs (§9 #1; BTC, ETH, XRP, ADA, LINK from 2020-01, DOGE/SOL/AVAX from 2020-H2). Fetch
+   `klines/5m` 2020-01 → 2022-08 (`vm.sh run archive klines/5m --start 2020-01-01 --end 2022-08-17`, tens of MB),
+   ingest as its own table, add a pre-history fold **FP** (2020-04 → 2022-08: two bull legs, the 2021-05 crash, the
+   2022 bear — regimes F1+F2 do not contain). Costs there: fee + the P1 candle proxy (DATA.md row with its error).
+2. **Register H1 and H2 as R4/R5 before reading FP**, each as a fixed rule (H1: long-only, breadth-triggered, the
+   basket or the falling pairs — decide from the arithmetic, not from a run; H2: `rank4h` with the sides swapped,
+   taker and maker both reported, because a resting order that chases a move is filled when the move fails).
+   F1+F2 is a mechanical gate for both (costs, fills); FP is the first honest read; F3–F5 stay unread.
+3. Only then the forecast layer this phase was planned as — and aimed at the **market factor** (the basket's next
+   4 hours after a fall), since that is where the signal turned out to live, with breadth of the fall as a feature.
+
+**Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
 expected value exceeds cost by a margin, size by expected value over variance, capped. No learned
 policy. Registered contrast: P5 vs the P4 rule on the confirmation folds.
@@ -389,8 +431,6 @@ policy. Registered contrast: P5 vs the P4 rule on the confirmation folds.
 Why the split and not one end-to-end model: the forecast learns from every bar with a
 comparatively clean label; a policy trained on trade profit sees only the bars it acted on,
 with execution noise added to the label. That is the wrong direction for a weak-signal problem.
-
-**Needed from Vadim:** nothing until a result is on the table.
 
 ### P6 — Earned capacity (only on a measurement from P5)
 
@@ -451,13 +491,13 @@ registered positive on confirmation folds.
 
 | item | why parked | revival trigger |
 |---|---|---|
-| **R1 stage 2 — the confirmation read of `reversal4h`** | **Needed from Vadim: choose (a), (b) or (c).** Gate passed 2026-09-21, but F3 alone has ~20 % power for the +14 bps measured (P4). (a) *recommended*: do P5 first on F1+F2 — its job becomes cutting the day-to-day spread (size by inverse volatility, cap how many pairs trade the same day and side, test long and short separately against the market's drift) — then register ONE confirmation read of the better of P4/P5 with its power computed beforehand. (b) read F3 now as registered: `vm.sh start`, `vm.sh run backtest reversal4h --folds F3 --registration R1`, `vm.sh pull`, `vm.sh stop` — cheap, most likely "not detectable", and F3 is then spent for this question. (c) amend R1 *before any read* to pool F3+F4+F5 (~50 % power), leaving no unread fold for this question later | Vadim's choice; (b) and (c) need nothing else |
-| day-level side-flip null in the harness | the whole-day shuffle understates a volatility-timed rule's spread (P3 "known weakness"); computed by hand for R1 (p 0.031) | first thing in P5, before any P5 number is read |
+| **R1 stage 2 — the confirmation read of `reversal4h`** | **Needed from Vadim: choose (a), (b) or (c).** Gate passed 2026-09-21, but F3 alone has ~20 % power for the +14 bps measured (P4). (a) *recommended, more strongly after P5 step 1*: not yet — R1 as registered carries a short leg that loses in five quarters of six and its profit is a market bounce (P5), so F3 would be spent on a rule we would not trade as is; test the two sharper hypotheses on pre-history data first (P5 "Next session"), then register ONE confirmation read with its power computed beforehand. (b) read F3 now as registered: `vm.sh start`, `vm.sh run backtest reversal4h --folds F3 --registration R1`, `vm.sh pull`, `vm.sh stop` — cheap, most likely "not detectable", and F3 is then spent for this question. (c) amend R1 *before any read* to pool F3+F4+F5 (~50 % power), leaving no unread fold for this question later | Vadim's choice; (b) and (c) need nothing else |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | book/tape features as model inputs | P2 #3/#5 (2026-09-20): measured, a wash — single features add little on direction; all 24 vs the 11 candle features is ±0.01 IC, except directional 1d on all history (0.012 → 0.050), one cell | P4/P5 funds a 1d directional bet, or a registered contrast shows the 1d cell repeats on a confirmation fold |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
-| relative (pair-vs-basket) bet at 4h, as a **rank** rule | P2 (2026-09-20): single reversal features pass the noise floor (IC 0.024–0.030) but no fitted forecast reproduces them, and the bar is only met as maker + vol timing | **trigger met 2026-09-21 (the harness exists) — Claude does it next session:** one registered run of "long bottom-decile 4h residual return, short the top". More interesting after P4: a market-neutral book has no long/short drift problem, which is R1's main caution |
+| ~~relative (pair-vs-basket) *reversal* at 4h~~ — **CLOSED 2026-09-21 (R2)** | the rank rule loses −20.6 bps per leg [−31.7, −9.5] in all six quarters; do not re-open as a reversal bet | none. The opposite sign (tail continuation) is a new hypothesis, H2 in P5, not a revival of this row |
+| caps and inverse-vol sizing on `reversal4h` — **CLOSED 2026-09-21 (R3)** | both lower the t; the capped-away trades were the profitable ones | none; R3 forbids further variants of this kind |
 | directional 1d with short refits | P2 #5: IC 0.06–0.08 on 30–120-day windows vs 0.012 on all history, but the window was picked after the fact and 485 days resolve only ±0.03 at 1d | P4's 4h result is in: register the 1d twin with the same fixed window |
 | paper trading (P7) | nothing to trade yet | P5 registered positive on confirmation folds |
 | trade-level maker validation (`ft2 tape --keep-zip` on a ~2-week window; queue position and fill timing at the trade level) | P1's minute-level maker numbers (fill 86–97 %, adverse 1–3 bps) are coarse; refining them changes nothing until a maker path is on the table | P5 chooses a maker execution, or P2's verdict hinges on the 4-bps taker-vs-maker difference |
@@ -517,7 +557,12 @@ Gate:          PASS if maker net > 0 AND the larger of the shuffle p and the fli
                No parameter is changed after the read.
 Expectation:   Gross +4 to +10 bps per leg, 4–10 legs a day, maker net between −3 and +3, MDE 6–10: the likeliest
                outcome is NOT DETECTABLE. Hedged gross ≈ gross (that is what neutral means); long ≈ short.
-Result:        —
+Result:        **Read 2026-09-21 (commit b842d64 holds this block as written before the read): FAIL → CLOSED.**
+               maker net −20.58 bps per leg [−31.69, −9.48], MDE 15.9, 1,780 legs / 485 days (3.7 a day), gross −16.30,
+               hedged −17.62 [−29.86, −5.38]; shuffle p 0.995, flip p 1.000 (i.e. in the LEFT tail of both). taker −25.16.
+               F1 −24.4, F2 −15.6; gross negative in 6 of 6 quarters and on 8 of 11 pairs (PEPE −87, DOGE +48).
+               Upper bound < +3 → closed as a reversal bet. Against the expectation: the sign. The tail continues; it does
+               not revert. Recorded as hypothesis H2 (P5), to be registered on its own before any read.
 
 ### R3 — P5 step 1: cut reversal4h's day-to-day spread (registered 2026-09-21, before any variant ran; read —)
 Question:      R1 earns +14 bps with a standard error of 8.5 because its trades bunch on a few violent days. Do two
@@ -538,7 +583,14 @@ Gate:          The candidate for the ONE confirmation read is the variant with t
 Expectation:   (A) net a little lower (the most violent bars are the most profitable per unit), se −15 to −25 %, t ≈ 1.8.
                (B) ~2,000 trades, net about unchanged, se −25 to −35 %, t ≈ 2.1–2.4. (C) the best, t ≈ 2.3–2.6.
                Hedged gross of the baseline: about half of gross (the rest is the market bouncing).
-Result:        —
+Result:        **Read 2026-09-21 (commit b842d64): no variant passes; R1 stays the candidate.** Baseline reproduced exactly
+               (3,404 trades, +14.03, se 8.53, t 1.64; flip p 0.025). (A) invvol +11.34, se 9.23, t 1.23. (B) cap 3: 2,359
+               trades, −6.88, se 7.43, t −0.93. (C) both: −7.30, se 7.65, t −0.95. Every expectation was wrong, for one
+               reason: baseline hedged gross is −11.64 [−19.13, −4.15], not "half of gross" — all of the profit and more is
+               the market's bounce (other pairs +66 bps over the longs' four hours), and it is largest exactly when many
+               pairs fall together, which is what (A) shrinks and (B) removes (the 1,045 capped trades had earned +61 each;
+               days with ≥ 8 same-side trades: +4 a trade, the rest +36 — the first entries into a fall lose, the later
+               ones win). Longs +51.4 [25.1, 77.7], positive in 6 of 6 quarters; shorts −18.8, negative in 5 of 6.
 
 Template:
 
