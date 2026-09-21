@@ -25,7 +25,7 @@ Items (PLAN P2's numbering):
   #2 linear_structure  variance ratios (Lo–MacKinlay, heteroskedasticity-robust z), lag-1
                        autocorrelation of non-overlapping returns, raw and basket-residual;
                        the first principal component's share of cross-pair variance
-  #3 ic_screen         rank IC of each candidate feature with each target, per day (no within-day demeaning),
+  #3 ic_screen         rank IC of each candidate feature with each target (whole-sample; nothing demeaned or normalised within a day),
                        HAC t-statistic over days, share of months agreeing in sign, and its MDE
   #6 power             bars, non-overlapping labels, days; the smallest per-trade mean (bps) a
                        strategy trading 10 % of bars could be told from zero (80 % power, 5 %)
@@ -719,7 +719,7 @@ def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str],
         bonf = float(norm.isf(0.025 / max(n_tests, 1)))
         md += ["\n## #3 Rank IC screen\n",
                "Daily correlation between the feature at t and the vol-standardised forward move. Directional: the feature as its per-pair rank "
-               "over the sample, the move clipped at ±5, uncentred correlation over the day's bars and pairs — nothing is demeaned inside the day "
+               "over the sample, the move clipped at ±5, the whole-sample uncentred correlation with a day-clustered t — nothing is demeaned or normalised inside a day "
                "(see `_ic_pooled`). Relative: Spearman across pairs per bar, averaged per day, both sides relative to the basket. Vol: |feature| "
                "for signed features against |move|, both as per-pair ranks. `t` = HAC t over days; `months_same_sign` = share of calendar months whose mean IC has the overall sign; "
                f"`ic_mde` = smallest |IC| detectable at this sample. **{n_tests} tests: |t| > {bonf:.2f} is the Bonferroni bar; |t| ≈ 2 is "

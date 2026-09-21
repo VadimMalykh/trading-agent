@@ -193,7 +193,7 @@ Commands, in order (all on the work VM; the code is unit-tested on synthetic dat
 BNB fee discount is on, or a read-only API key so that `GET /fapi/v1/commissionRate` can be
 read once and recorded. Everything else in P1 runs without him.
 
-### P2 — Ceiling audit: how much signal is there, per bet type and horizon (✅ all seven items measured 2026-09-20; verdicts below)
+### P2 — Ceiling audit: how much signal is there, per bet type and horizon (✅ measured 2026-09-20; directional numbers re-read 2026-09-21 with an unbiased IC, R7)
 
 **Result, in plain words** (`ft2 ceiling`, `output/ceiling.md`; exploration folds F1+F2 only,
 2023-05-03 → 2024-08-31, eleven pairs, 485 days; fees VIP 0, read from the account 2026-09-20). Words used: a
@@ -203,27 +203,26 @@ maker (P1); *IC* is the correlation between a signal and the move that follows, 
 just pays its round trip; the *noise floor* is the IC the same search reaches on labels that were
 shuffled so that no signal can exist (200 shuffles) — a measured IC counts only above it.
 
-**Can anything trade profitably yet? Not shown — but there is now one bet worth building.**
-A pair's **own move over the next 4 hours** is predictable by short-term *reversal* (what rose
-over the last hours to a day tends to give some back) at a strength that is (a) far outside the
-noise floor, (b) reproduced out of sample by a fitted forecast, and (c) as large as the cost bar
-if the order rests as a maker or if only high-volatility bars are traded. That is a funded
-*candidate*: nothing has been run through a ledger with costs yet, which is P3/P4's job.
-Everything at 15m and 1h is real but too small for the cost; the pair-vs-basket bet, the plan's
-prior favourite, did **not** hold up at 4h–1d.
+**Can anything trade profitably yet? Not shown — and the bet this audit first funded was an artefact of its own
+statistic (re-read 2026-09-21, registration R7).** The first read (2026-09-20) found short-term *reversal* in a pair's own
+next 4 hours at IC 0.045 and funded it; P4's rule was built on that. The IC was a mean of per-day correlations, and that
+statistic reads −0.02 to −0.03 for any trailing return on pure random walks (defect record 3). Measured with the
+whole-sample correlation, the last-4h return scores −0.013 (t −1.2, p 0.26) and the last-1d return +0.005: **there is no
+pair-level reversal on these folds.** What is left at 4h is a fitted forecast with a small real IC (0.030, p 0.025) that no
+single feature explains, and at 1d one book feature. Nothing here is funded as a rule; the numbers below are the re-read.
 
 | bet | horizon | IC needed (taker / maker; *with vol timing*) | best IC measured (feature) | noise floor (IC) | fitted forecast, out of sample | **verdict** |
 |---|---|---|---|---|---|---|
-| directional | 15m | 0.19 / 0.11; *0.08 / 0.05* | 0.024 (last 15m return) | — | — | **excluded** — a quarter of the bar |
-| directional | 1h | 0.09 / 0.05; *0.04 / 0.03* | 0.031 (last 1d return) | 0.016 | 0.028, real (p 0.005) | **real, not funded** — below the bar except maker + timing, with no margin |
-| directional | 4h | 0.047 / 0.027; *0.024 / 0.015* | 0.045 (last 1d return), 0.043 (last 4h) | 0.026 | 0.035 on all history, 0.052–0.057 refitted on the last 30–120 days; real (p 0.005) | **FUND — P4's bet** |
-| directional | 1d | 0.018 / 0.011; *0.011 / 0.007* | 0.051 (last 4h return) | 0.045 | 0.012 on all history = noise (p 0.61); 0.06–0.08 on the last 30–120 days (t 2.5–3.9, window picked after the fact) | **not detectable yet** — second in line; the single features are real, the forecast is unstable |
+| directional | 15m | 0.19 / 0.11; *0.08 / 0.05* | 0.016 (last 15m return) | — | — | **excluded** — a tenth of the bar |
+| directional | 1h | 0.09 / 0.05; *0.04 / 0.03* | 0.011 (1h change in open interest), family-wise p 0.035 | 0.017 | 0.019, real (p 0.01) | **real, not funded** — a fifth of the bar |
+| directional | 4h | 0.047 / 0.027; *0.024 / 0.015* | 0.017 (±1 % book imbalance), family-wise p 0.06 | 0.032 | 0.030, real (p 0.025; 0.005 of it drift); all 24 features on all history 0.044 (t 4.0) | **NOT FUNDED by R7's gate** (no single feature clears the screen) — the forecast is real and above the maker + timing bar: a candidate for P5's forecast layer, not for a rule |
+| directional | 1d | 0.018 / 0.011; *0.011 / 0.007* | 0.039 (±1 % book imbalance), family-wise p 0.005, 88 % of months | 0.062 | 0.048 (p 0.09); all 24 features on all history 0.067 (t 3.2) | **not detectable yet, and the most interesting cell** — above every bar in size, under the floor in certainty; the book feature is the lead (§7) |
 | relative | 15m | 0.29 / 0.17; *0.13 / 0.08* | 0.043 (last 15m return) | — | — | **excluded** — very real, far too small |
-| relative | 1h | 0.14 / 0.08; *0.07 / 0.04* | 0.032 (last 1h return) | 0.011 | 0.013, real (p 0.005) | **excluded on cost** |
-| relative | 4h | 0.071 / 0.041; *0.038 / 0.024* | 0.030 (last 4h return) | 0.021 | −0.002 = noise (p 0.75) at every window, ridge and tree | **not funded** — single features real, no forecast reproduces them |
-| relative | 1d | 0.027 / 0.016; *0.016 / 0.010* | 0.032 (±1 % book imbalance) | 0.036 | −0.028: the fitted relation *flips sign* out of sample (p 0.015) | **not detectable** — one feature, p 0.015 after paying for the search |
+| relative | 1h | 0.14 / 0.08; *0.07 / 0.04* | 0.030 (last 15m return) | 0.011 | 0.014, real (p 0.005) | **excluded on cost** |
+| relative | 4h | 0.071 / 0.041; *0.038 / 0.024* | 0.018 (last 15m return) | 0.021 | 0.018 (p 0.04) | **not funded** — half the cheapest bar; R2 closed the rank rule in money |
+| relative | 1d | 0.027 / 0.016; *0.016 / 0.010* | 0.032 (±1 % book imbalance), family-wise p 0.015 | 0.036 | 0.025 (p 0.06) | **not detectable** |
 
-What the seven items say, each in a sentence:
+What the seven items say, each in a sentence (#7, #2, #6 do not use the defective statistic and are as first read):
 
 - **#7 Move vs cost.** Costs are small next to moves except at 15m: a sign bet must be right 70 %
   of the time at 15m, 60 % at 1h, 55 % at 4h, 52 % at 1d (taker). The pair-vs-basket bet moves
@@ -236,36 +235,22 @@ What the seven items say, each in a sentence:
 - **#2 Linear structure.** Mild mean reversion everywhere: variance ratios 0.95 (15m) → 0.85 (1d),
   never above 1 on any pair raw. The first principal component is 61–70 % of the pairs' variance
   — two-thirds of what any pair does is "the market", which is what the relative bet removes.
-- **#3 IC screen** (24 features × 4 horizons × 3 bets). Every directional and relative signal
-  that survives is **reversal**: trailing returns with a negative sign, stable in 81–100 % of
-  months. Book depth, order flow, open interest, long/short ratios and funding add little on
-  direction. For magnitude, dollar-volume surprise and short/long volatility ratio carry IC ≈ 0.25.
+- **#3 IC screen** (24 features × 4 horizons × 3 bets). *Relative:* reversal of the last 15 minutes to an hour, stable in
+  every month, too small for the cost. *Directional:* trailing returns carry nothing beyond 15 minutes; what clears or
+  nearly clears the screen is **book imbalance within ±1 % (more bids than asks → lower prices, 4h and 1d)** and the 1h
+  change in open interest. For magnitude, dollar-volume surprise and the short/long volatility ratio carry IC ≈ 0.2.
 - **#6 Power.** 485 days resolve ±0.4 (15m) to ±3.5 (1d) bps per trade at a tenth of the bars
-  traded, and an IC of ±0.005–0.03. Power is not the constraint on these folds; signal size is.
-- **#4 Noise floor** (200 whole-day label shuffles, 1h/4h/1d). The reversal signals are not an
-  artefact of searching 24 features: on noise the best of the screen reaches |t| 3.1–3.2
-  (directional) and 3.9–4.3 (relative), the real ones sit at 4.4–17.8, and no shuffle out of 200
-  matched them (relative 1d: 2 of 200). Two corrections to read #3 with: the **relative t-statistics
-  are overstated by ~1.4×** (their spread on noise is 1.4, not 1; directional is calibrated at
-  1.0), and about **a quarter of the directional forecast's IC is drift** — the fitted intercept
-  betting that the market's average direction continues (0.006 of 0.028 at 1h, 0.010 of 0.035 at 4h).
-- **#5 Learning curves** (ridge vs a depth-2 boosted tree, trained on the last 30 / 60 / 120 / 250
-  days or on everything before the fold; 4h and 1d). Three readings. *More history does not help —
-  it hurts*: directional 4h scores IC 0.052–0.057 on the last 30–120 days against 0.035 on all
-  ~500, and directional 1d 0.06–0.08 against 0.012; the relation drifts, so the lever is **short,
-  frequent refits, not more data** (decision table row 4). *The tree never beats the line*: equal
-  at best, worse by t −3 to −5 on short windows, while fitting its training window two to three
-  times better — no interactions evidenced, so nothing beyond linear is funded (§7). *Extra
-  sources are a wash*: all 24 features against the 11 candle ones is +0.008 at 4h on all history
-  and −0.01 on short windows; only directional 1d on all history improves (0.012 → 0.050, t 3.4),
-  one cell out of many, recorded and not acted on.
-
-**Why the relative bet is not funded although its single features are real.** At 4h the reversal
-features pass the noise floor (IC 0.024–0.030) but sit below the bar except as maker + timing, and
-neither model fitted on them reproduces any of it out of sample (in-sample IC only 0.014). The
-screen measures *ranks* across pairs, the forecast was fitted on raw vol-scaled values, and the
-young pairs' tails dominate a least-squares fit; whether a rank rule recovers it is cheap to see
-once P3's harness exists, and is parked in §7 with that trigger.
+  traded, and an IC of ±0.01–0.03 at 4h. Power is not the constraint on these folds; signal size is.
+- **#4 Noise floor** (200 whole-day label shuffles, 1h/4h/1d). On noise the best of the screen reaches |t| 3.1–3.2
+  (directional) and 3.9–4.3 (relative). Directional: 1h and 1d clear it (p 0.035, 0.005), 4h just misses (0.06).
+  The **relative t-statistics are overstated by ~1.4×** (their spread on noise is 1.4, not 1). About a sixth of the
+  directional forecast's IC is drift (0.004 of 0.019 at 1h, 0.005 of 0.030 at 4h).
+- **#5 Learning curves** (ridge vs a depth-2 boosted tree; last 30 / 60 / 120 / 250 days or everything before the fold).
+  *More history helps*: directional 4h scores IC 0.011–0.012 on 30–60 days, 0.029 on 120 and on all ~500; 1d −0.006 →
+  0.048. (The first read said the opposite — short windows were best at fitting the statistic's bias.) So decision-table
+  row 3 applies: **extend the data before the model** — which FP now does. *The tree never beats the line* (t −2.9 to
+  +1.4). *Extra sources help on all history*: all 24 features against the 11 candle ones is 0.044 vs 0.030 at 4h and
+  0.067 vs 0.048 at 1d — the book and flow features are no longer "a wash" (§7).
 
 **Defect records.** (1) The first run (2026-09-20 08:38 UTC) computed the directional and vol ICs as
 a within-day Spearman and read −0.2 at 1d with t = −16. Feature and label share the price at t,
@@ -276,7 +261,14 @@ the statistic at zero on a random walk. (2) #4 was planned as "labels shuffled w
 is not a null here: a label moved to a later bar of its own day overlaps the trailing-return
 features, and a 4-draw trial read an IC of +0.09 … +0.18 for the ridge from that leak alone.
 Replaced before the real run by whole-day shuffles that never hand a day the labels of the 8 days
-before it (`_shuffle_days`, with a test); nothing was read from the leaky version.
+before it (`_shuffle_days`, with a test); nothing was read from the leaky version. (3) **Found 2026-09-21 while testing P5's
+basket audit:** the directional, vol and forecast ICs were means of PER-DAY uncentred correlations. A day's normaliser
+√(Σf² Σy²) is largest on the days that trend — the days whose products f·y are positive — so a trailing return reads
+−0.02 … −0.03 (pooled pairs) or −0.06 … −0.12 (one series) on pure random walks, and the day-shuffle null cannot show it
+(a shuffle breaks the within-day link that causes it). `_ic_pooled` is now each day's share of the whole-sample
+correlation; `tests/test_p5_market.py::test_ic_statistic_is_unbiased_on_random_walks` holds both at zero. All seven items
+were re-run (R7); the first report is kept as `output/ceiling_2026-09-20_biased.md`. The relative screen (Spearman across
+pairs per bar) was not affected and reproduced to the digit. Money results (R1–R5, the harness) never used this statistic.
 
 **What followed:** P3 and P4's stage 1 (below). The work VM is stopped. To re-run the audit: `scripts/ft2.sh --test`,
 `vm.sh start`, `vm.sh bg p2 ceiling` (≈ 45 min for all seven items on 4 vCPU), `vm.sh pull`,
@@ -348,7 +340,11 @@ is recovered with the right interval.
 
 **Needed from Vadim:** nothing.
 
-### P4 — The dumbest trade generator, through the harness (🟡 stage 1 read 2026-09-21: gate passed; the confirmation read is Vadim's decision)
+### P4 — The dumbest trade generator, through the harness (stage 1 read 2026-09-21: gate passed — but the rule's premise is WITHDRAWN, R7; no confirmation read)
+
+**Premise withdrawn 2026-09-21 (R7):** the pair-level reversal this rule was built to trade was an artefact of P2's IC
+statistic; measured without the bias it is zero. The rule's money result below stands as measured (the harness never
+used that statistic) and P5 step 1 already explained it: a market-wide bounce in a rising market, not reversal.
 
 **Result in plain words** (registration R1, §8; `output/backtest/reversal4h/report.md`). The rule: when a
 pair has been unusually volatile for 4 hours and has moved a lot over the last 4 hours to a day, bet on it
@@ -382,49 +378,50 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 steps 1–2 read 2026-09-21: the one bet that looked good does not hold up outside the data it was found on)
+### P5 — Forecast + analytic decision (🟡 steps 1–3 read 2026-09-21: no rule is ready for a confirmation read; one market-timing rule is parked one step short of it; P2's funded signal turned out to be a statistical artefact)
 
-**Can it trade profitably? Not shown, and the best candidate just got much weaker.** Plain version of where P5 stands
-(a bps is 0.01 %; on a 10,000 USDT position 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip):
+**Can it trade profitably? Not shown.** Plain version of where P5 stands (a bps is 0.01 %; on a 10,000 USDT position
+1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip; *IC* = the correlation between a signal and the
+move that follows, 0.03–0.05 is what a tradable weak signal looks like here):
 
-- **Step 1 (R2, R3; F1+F2 = 2023-05 → 2024-08).** P4's rule ("fade a volatile pair's move") was taken apart. Its profit was
-  not the pair reverting but **the whole market bouncing after a violent fall**: against the other pairs its picks lose
-  11.6 bps; its longs earned +51, its shorts −19. The market-neutral version loses outright (−20.6 bps a leg, all six
-  quarters; closed), and two ways of smoothing the result made it worse (closed). Two sharper hypotheses came out of it:
-  H1 "buy the market after a market-wide panic", H2 "a pair torn away from the others keeps going".
-- **Step 2 (R4, R5).** To test them on data that played no part in finding them — without spending a confirmation fold —
-  the public archive's 2020–2022 candles were added as a pre-history fold **FP** (DATA.md; nine pairs, identical to the
-  collector's bars where they overlap), read together with F0: three years, 2020-05 → 2023-05, a bull market, two crashes
-  and the 2022 bear.
-  - **H1 (`panic4h`): +39.9 bps a trade where it was found, +7.4 [−16.9, +31.7] where it was not.** Verdict by the
-    registered gate: NOT DETECTABLE — and the +40 itself is ruled out (it lies above the interval). By half-year the
-    picture is plain: **+6 to +31 net while the market was rising (2020-H2 → 2021), −8 to −12 in every half-year from
-    2022-H1 to 2023-H1.** So what F1+F2 showed was "buying dips works in a bull market". The five worst days are the
-    cascades (2021-05-19, 2022-05-11 LUNA, 2022-11-08/09 FTX): the first bounce fails and the rule buys again.
-  - **H2 (`rankcont4h`): real before costs, eaten by them.** Gross +12.5 bps a leg (hedged +14.2 [+1.8, +26.5]), net −0.2 as
-    a taker and +4.9 as a maker — under the +5 bar written beforehand, so FP+F0 was NOT spent on it (it could have
-    confirmed a true +5 only one time in ten). Parked with its revival trigger (§7), not closed.
-- **What this means for R1** (§7, first row): R1's profit *is* H1's bounce, so the pre-history read is the best evidence
-  about it too. Reading F3 for R1 now would very likely spend the fold on "not detectable".
-- **What the project gained regardless:** the exploration data grew from 1.3 years (F1+F2) to 4.3 (FP+F0+F1+F2) with
-  very different regimes in it, and the harness reads it (`--folds FP F0`, guarded like a confirmation fold: by
-  registration, once). Every earlier "found on F1+F2" result can now be checked for regime dependence before a
-  confirmation fold is spent on it.
+- **Step 1 (R2, R3; 2023-05 → 2024-08).** P4's rule ("fade a volatile pair's move") earned its money from **the whole
+  market bouncing after a violent fall**, not from the pair reverting: against the other pairs its picks lose 11.6 bps.
+  The market-neutral version loses outright (closed). Two hypotheses came out: H1 "buy the market after a panic", H2 "a
+  pair torn away from the others keeps going".
+- **Step 2 (R4, R5).** The public archive's 2020–22 candles were added as a pre-history fold **FP** (exploration data grew
+  from 1.3 to 4.3 years, with a bear market in it). H1 earned +40 bps a trade where it was found and **+7 [−17, +32] on
+  the three unseen years** — positive only while the market was rising. H2 is real before costs (+12.5 bps a leg) and
+  eaten by them (−0.2 taker / +4.9 maker); parked (§7).
+- **Step 3 (R6, R7, R8).**
+  - *R6 — what predicts the market's next 4 hours, per year, on all 4.3 years?* A forecast refitted on the last 120 days:
+    IC 0.015 against a needed 0.034, negative in 2022 — **not funded**. Plain reversal of the market: nothing (IC −0.007).
+    **One feature holds its sign in all five years: the size of the market's 4-hour fall, signed by its 30-day trend**
+    (IC +0.032, p 0.015 after paying for the search). In money: after a ≥ 2σ fall the market gains +54 bps over the next
+    4 hours when the 30-day trend is up and +5 when it is down.
+  - *R8 — that feature as a rule through the harness* (`trendfall4h`: market fell ≥ 2σ in 4h and the 30-day trend is up →
+    buy every pair for 4 hours). **+52 bps a trade after costs [+26, +77] on 3,384 trades, p 0.005 — about +110 USDT a
+    day at 10,000 USDT a position.** But it is found and measured on the same 4.3 years, it is pure market timing (zero
+    against the other pairs), 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose
+    18–92 bps a trade. By its own gate it is **parked, no confirmation fold read**; §7's first row has the one decision
+    that could un-park it (Vadim's, recommendation: leave parked).
+  - *R7 — a defect in P2's statistic, found while testing R6's code.* P2's directional IC was a mean of per-day
+    correlations, which reads −0.02 to −0.03 for any trailing return on pure random walks. Re-read without the bias,
+    **the pair-level 4h reversal P2 funded (IC 0.045) is zero** (−0.013, p 0.26); P4's premise is withdrawn. What
+    survives: a fitted 4h forecast with a small real IC (0.030, p 0.025), and a new lead — **±1 % book imbalance
+    predicts a pair's next day** (IC −0.039, family-wise p 0.005), with all 24 features beating the candle-only set on all
+    history. "More history hurts" reversed too: more history helps.
 
 **Next session (Claude; needs nothing from Vadim):**
 
-1. **Re-measure the ceiling for the market factor on all 4.3 years** — P2's audit (#1 magnitude/direction, #3 IC screen, #4
-   noise floor) with the target "the equal-weight basket's next 4 hours" and features that the step-2 result points at:
-   breadth of the fall, the basket's own trailing 4h/1d/1w/30d return (the trend the bounce seems to depend on), realised
-   volatility. Reported **per year**, because the lesson of R4 is that a pooled number hides a sign that changes with
-   the regime. `ft2 ceiling` needs a `--target basket` and `--folds` option for this; FP+F0 are now *seen* for H1-like
-   rules, so anything found there is a hypothesis, and only F3–F5 can confirm it.
-2. **Only if #1 shows a stable IC above the bar in every regime** → the forecast layer below, aimed at the basket, with
-   short refits (decision-table row 4). If the sign flips with the regime and nothing predicts the regime, the honest
-   conclusion is decision-table row 6 for the directional bet on these twelve names, and the next lever is breadth:
-3. **The wider universe (§9 #2) for H2.** H2 is the only effect so far that is market-neutral, has the same sign in both
-   exploration folds and survives hedging; it fails on cost with one name a side. Fetch 5m klines for the top ~40 perps
-   (same fetcher, `--symbols`), and register the rank rule with 3–5 names a side before reading.
+1. **The book-imbalance lead at 1d (§7).** It is the only per-pair directional signal that clears the screen after the
+   re-read, it gives twelve bets a bar instead of one (the market), and its size (0.039) is above every 1d bar (0.011–0.018).
+   Register before any run: a fixed rule (short the pairs whose ±1 % book is bid-heavy beyond a quantile, long the
+   ask-heavy; hold 1 day) through the harness on F1+F2, both as-is and hedged; power for F3 written before a read.
+   Data: archive `bookDepth` from 2023-01, already ingested — FP cannot check this one.
+2. **The wider universe (§9 #2) for H2.** Fetch 5m klines for the top ~40 perps (same fetcher, `--symbols`), register the
+   rank-continuation rule with 3–5 names a side before reading.
+3. **P5's forecast layer, only if 1 or 2 funds it:** ridge on all history (R7: more history helps; the tree never beats it),
+   all 24 features, 4h and 1d, through the harness with the closed-form decision below.
 
 **Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
@@ -494,16 +491,16 @@ registered positive on confirmation folds.
 
 | item | why parked | revival trigger |
 |---|---|---|
-| **R1 stage 2 — the confirmation read of `reversal4h`** | **Needed from Vadim: nothing unless you disagree — saying nothing = (a).** Gate passed 2026-09-21, but (a) *recommended, firmly after P5 step 2*: do not read. R1's profit is the market's bounce after a fall (R3), and that bounce, tested on three unseen years, is +7 bps [−17, +32], positive only in rising markets (R4). F3 would be spent on a rule we would not trade. (b) read F3 anyway as registered: `vm.sh start`, `vm.sh run backtest reversal4h --folds F3 --registration R1`, `vm.sh pull`, `vm.sh stop`. (c) amend R1 before any read to pool F3+F4+F5 | Vadim's choice; or P5 "Next session" #1 finds what predicts the regime |
-| **H1 panic bounce (`panic4h`, R4)** — NOT DETECTABLE on FP+F0 2026-09-21 | Claude does the next step (P5 "Next session" #1); nothing needed from Vadim. +7.4 bps [−16.9, +31.7] against +39.9 where it was found; sign follows the market's trend. R4 forbids variants on FP+F0 | a registered ceiling read shows a feature that predicts the bounce's sign in every year; the conditional rule is then a NEW registration and only F3–F5 can confirm it |
+| ~~R1 stage 2 — the confirmation read of `reversal4h`~~ — **CLOSED 2026-09-21** | Needed from Vadim: nothing. The rule's premise (pair-level reversal) was a statistical artefact (R7) and its profit was the market's bounce in a rising market (R3, R4). F3 stays unspent | none; the bounce lives on as R8 |
+| **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21 | **Needed from Vadim: nothing unless you want it read — saying nothing = (a).** On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. (a) *recommended*: leave it parked; the bar was written first. (b) a NEW registration that reads F3+F4+F5 pooled for the unchanged rule — honest (nothing is re-tuned; the failed gate guarded the fold budget, not validity), power 4 in 5 for a true +52, 1 in 4 for +25: `vm.sh run backtest trendfall4h --folds F3 F4 F5 --registration R<n> --execs taker maker` after the block is written | Vadim chooses (b); or F5 grows by ~6 months (more power for the same read); or a measured observable separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread for it | Claude does the next step (P5 "Next session" #3). Gross +12.5 bps a leg, hedged +14.2 [+1.8, +26.5]; net −0.2 taker / +4.9 maker, under the +5 bar | the wider universe (§9 #2) with 3–5 names a side, or a lower fee tier (VIP 1 / BNB discount takes 1–2 bps off a round trip) |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
-| book/tape features as model inputs | P2 #3/#5 (2026-09-20): measured, a wash — single features add little on direction; all 24 vs the 11 candle features is ±0.01 IC, except directional 1d on all history (0.012 → 0.050), one cell | P4/P5 funds a 1d directional bet, or a registered contrast shows the 1d cell repeats on a confirmation fold |
+| **book/tape features as model inputs — a lead since the R7 re-read** | Claude does it after R8 and H2's universe; nothing needed from Vadim. ±1 % book imbalance predicts a pair's next day (IC −0.039, family-wise p 0.005, 88 % of months; 4h −0.017, p 0.06); all 24 features beat the 11 candle ones on all history (4h 0.044 vs 0.030, 1d 0.067 vs 0.048). Found on F1+F2 only — the archive depth starts 2023-01, so FP cannot check it | register a fixed rule or a ridge on the book features at 1d through the harness on F1+F2 (stage 1), power for F3 written before any confirmation read |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
 | ~~relative (pair-vs-basket) *reversal* at 4h~~ — **CLOSED 2026-09-21 (R2)** | the rank rule loses −20.6 bps per leg [−31.7, −9.5] in all six quarters; do not re-open as a reversal bet | none. The opposite sign (tail continuation) is a new hypothesis, H2 in P5, not a revival of this row |
 | caps and inverse-vol sizing on `reversal4h` — **CLOSED 2026-09-21 (R3)** | both lower the t; the capped-away trades were the profitable ones | none; R3 forbids further variants of this kind |
-| directional 1d with short refits | P2 #5: IC 0.06–0.08 on 30–120-day windows vs 0.012 on all history, but the window was picked after the fact and 485 days resolve only ±0.03 at 1d | P4's 4h result is in: register the 1d twin with the same fixed window |
+| ~~directional 1d with short refits~~ — **CLOSED 2026-09-21 (R7)** | the short-window advantage was the biased statistic; unbiased, 30–60 days score −0.006 … +0.011 and all history 0.048 | none |
 | paper trading (P7) | nothing to trade yet | P5 registered positive on confirmation folds |
 | trade-level maker validation (`ft2 tape --keep-zip` on a ~2-week window; queue position and fill timing at the trade level) | P1's minute-level maker numbers (fill 86–97 %, adverse 1–3 bps) are coarse; refining them changes nothing until a maker path is on the table | P5 chooses a maker execution, or P2's verdict hinges on the 4-bps taker-vs-maker difference |
 
@@ -712,7 +709,7 @@ Result:        **Read 2026-09-21 (commit 237240a holds this block as written bef
                Per the gate: H1's revival trigger (§7) is met → a NEW registration for the conditional rule; this read is
                on seen data and is a hypothesis only.
 
-### R7 — P2's directional numbers re-read with an unbiased IC (registered 2026-09-21, before the re-run; read —)
+### R7 — P2's directional numbers re-read with an unbiased IC (registered 2026-09-21, before the re-run; read 2026-09-21)
 Question:      P2's directional and vol ICs were means of per-day correlations. On correlated random walks that statistic
                reads −0.02 to −0.03 for a trailing return at 4h (`tests/test_p5_market.py`), and P2's day-shuffle null
                cannot show it (a shuffle breaks the within-day link that causes it). P2's funded signal was "reversal,
@@ -728,9 +725,17 @@ Expectation:   The 4h reversal ICs fall from 0.043–0.045 to 0.015–0.025, sti
                0.035 to 0.01–0.02 — at or under the bar. 1h similar in proportion. Vol ICs barely move (|move| and
                volatility share no price). Likeliest verdict: real but NOT FUNDED — which is what R1's hedged loss
                and R4's pre-history read already say in money.
-Result:        —
+Result:        **Read 2026-09-21 (commit 237240a holds this block as written before the read; `output/ceiling.md`): directional 4h
+               is NOT FUNDED — it fails the first condition.** Best single feature at 4h: `depth_imb_1` −0.017, p_fw 0.060
+               (> 0.05). The ridge passes its two: IC 0.030, p 0.025, ≥ 0.015. The reversal features: `ret_4h` at 4h −0.0425
+               (t −4.9) → −0.0128 (t −1.2, p_single 0.26); `ret_1d` −0.0451 → +0.0047; `ret_1h` −0.0297 → −0.0057; at 1h and
+               1d the same. The relative screen reproduced to the digit, as required. Against the expectation: the
+               reversal ICs did not shrink to 0.015–0.025, they went to zero — the artefact was the whole signal, not
+               half of it; the ridge (0.030) held up better than expected (0.01–0.02), and "short refits beat all history"
+               reversed (30–60 days 0.011, all history 0.029). Vol ICs moved by ≤ 0.02, as expected. Consequences: P2's
+               table rewritten, R1's premise withdrawn (P4), §7's rows for 1d short refits and for book features updated.
 
-### R8 — trendfall4h: buy the market's fall only while its 30-day trend is up (registered 2026-09-21, before the rule saw any real bar; stage 1 read —, stage 2 read —)
+### R8 — trendfall4h: buy the market's fall only while its 30-day trend is up (registered 2026-09-21, before the rule saw any real bar; stage 1 read 2026-09-21: gate FAILED by 0.9 bps on 2022; stage 2 not read)
 Question:      R6's one regime-stable feature, stated as a rule: does it make money after costs through the harness, in
                every year — and is a confirmation read on F3–F5 worth spending?
 Rule:          `ft2/rules.py::TrendFall`, both numbers are R6's money view, written before R6 was read and not searched:
@@ -753,7 +758,20 @@ Expectation:   Stage 1: gross +40 to +55 (the money view's +54 is per bar in the
                bar of each 4 hours, which R3 showed is the WORST entry into a fall), taker net +25 to +40, se 9–12,
                2–3 trades a day on ~300 days, 2022 between −10 and +5 → passes, or fails on 2022. Stage-2 power will
                be poor on F3 alone (se ≈ 25–30) and fair pooled (se ≈ 15).
-Result:        —
+Result:        **Stage 1, read 2026-09-21 (commit 808f1e5 holds this block as written before the read;
+               `output/backtest/trendfall4h/report.md`): GATE FAILED on its third condition → PARKED, no confirmation fold read.**
+               taker net +51.91 bps [+26.38, +77.45], se 13.0, MDE 36.5, 3,384 trades on 288 of 1,578 days (2.1 a day), right
+               63.7 %, gross +65.6, hedged −0.03 (all of it is the market, by construction); shuffle p 0.005, flip p 0.005.
+               maker +54.87 [+29.70, +80.05]. By fold: FP +69.8, F0 −11.0, F1 +69.3, F2 +19.9. By calendar year (taker net,
+               trade-days): 2020 +64.6 (61), 2021 +102.8 (78), **2022 −5.9 (43)**, 2023 +43.5 (63), 2024 +19.9 (43) — the bar
+               was −5, written first, so it holds (as R5's +4.92 against +5 did). By half-year the regime is still visible:
+               2022-H1 −17.9, 2023-H1 −24.1, 2024-H2 −92.4 (ten days; 2024-08-05 is the worst day of the sample, −11,630 bps
+               summed over its trades); the best days are all 2020-11 → 2021-05. Against the expectation: gross higher
+               (66 vs 40–55), se as guessed (13 vs 9–12), 2022 inside its range (−10 … +5) — and on the wrong side of the bar.
+Power:         Written 2026-09-21 for whoever revives it. se 13.0 on 1,578 days → F3 alone (243 days) se ≈ 33, MDE ≈ 93:
+               a true +52 confirmed about 1 time in 3, a true +25 about 1 in 8. F3+F4+F5 pooled (~745 days) se ≈ 19,
+               MDE ≈ 53: a true +52 about 4 times in 5, a true +25 about 1 in 4. Only the pooled read is worth making.
+
 
 Template:
 
