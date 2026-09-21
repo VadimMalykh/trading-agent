@@ -406,3 +406,58 @@ was recreated back in `simulation` afterwards.
 one-way), and any automatic switch to production. `TRADING_MODE=auto` on `fluxtrader-1`
 without `BINANCE_TESTNET=true` would trade real money on the next signal — it is a deliberate
 act, and §4 says the evidence for it does not exist yet.
+
+## §7 — The micro-pilot: real orders at ~$100 a trade, paper test untouched (built 2026-09-21)
+
+**Needed from Vadim: a Binance API key with futures-trading rights (no withdrawal rights,
+IP-restricted to the VM if possible) and ~$500 USDT in the USDⓈ-M futures wallet. Then say
+"turn the pilot on" — Claude runs the steps below over `gcloud compute ssh`.** Decided by
+Vadim 2026-09-21: build now, $500 budget for now, revisit the amount later (every number
+below is an env var, changed with a restart).
+
+**In plain language.** Each time the paper policy opens a trade, the app also places the same
+trade on Binance with real money, small and at a fixed size, holds it the same four hours
+behind the same 2% stop / 4% target, and books the exchange's real fill prices under arm
+**`live`**. The paper test (arms `policy` and `flat_size`) keeps running exactly as registered
+— the executor stays in `simulation`, so §4's objection to `TRADING_MODE=auto` (real fills
+landing in the registered ledger) does not apply. **What it is for:** proving real fills,
+slippage, the brake and the account plumbing. **What it is not:** evidence. At $100 a trade
+the backtested edge (+33 bps, 1 bp = 0.01%) is ~$0.33 a trade; R0–R5 never read this arm.
+
+| setting (env var) | default | meaning |
+|---|---|---|
+| `LIVE_PILOT` | `false` | the switch; also needs credentials and a non-`auto` executor |
+| `LIVE_PILOT_NOTIONAL_USD` | 100 | position size per trade, flat (the 1/3..5/3 ladder is not mirrored) |
+| `LIVE_PILOT_LEVERAGE` | 1 | exchange leverage setting |
+| `LIVE_PILOT_MAX_POSITIONS` | 4 | concurrent `live` positions → at most $400 deployed at 1x |
+| `LIVE_PILOT_DAILY_LOSS_USD` | 10 | realised loss since 00:00 UTC after which entries stop for the day |
+| `LIVE_PILOT_MAX_TOTAL_LOSS_USD` | 100 | **kill level**: cumulative realised loss after which the pilot stays off until raised |
+| `LIVE_PILOT_CAPITAL_USD` | 500 | informational (reported on `/api/health`), the budget decided above |
+
+Limits are computed from the `live` rows in `paper_trades` on every entry, so a restart cannot
+reset them (`Trading.LivePilot`). ⚠️ **BTCUSDT cannot trade at $100**: its minimum order is
+0.001 BTC (> $100), so BTC signals are counted as `live_open_failed` and skipped; every other
+served pair's minimum is $5–20. Raise the notional to ~150 (and drop max positions to 3) if BTC
+matters. ⚠️ With four slots, a fifth simultaneous policy trade is not mirrored
+(`live_refused_max_positions`) — acceptable for an operations pilot.
+
+**Turn it on (Claude, on `fluxtrader-1`):**
+1. Vadim puts the trading key into `~/trading_agent/.env` as `BINANCE_API_KEY` /
+   `BINANCE_API_SECRET` (replacing the read-only key; `mix flux.fee_tier` keeps working) and
+   adds `LIVE_PILOT=true`. Account must be in **one-way** position mode.
+2. Wait until no paper position is open (`/api/health` → `ab[].open == 0`), then
+   `docker compose up -d app` (recreate — `restart` does not re-read `.env`).
+3. Verify `/api/health`: `live_pilot.enabled: true`, `executor.mode: "simulation"`,
+   `executor.live_orders: true`, `user_stream.status: "connected"`, policy block unchanged
+   (`checkpoint_bound: true`, 12 pairs). Boot log carries `[LIVE] MICRO-PILOT IS ON … (PRODUCTION)`.
+4. First real trade: compare the `live` row's `entry_price` with the `policy` row's — that gap
+   is the slippage paper assumes — and confirm both brakes exist on the exchange.
+
+**Rehearsal before real money (optional, local stack only, never the VM):**
+`BINANCE_TESTNET=true LIVE_PILOT=true` with demo keys; same code path against the demo exchange.
+
+**Turn it off:** set `LIVE_PILOT=false`, recreate `app`. Open `live` rows still close on the
+exchange at their timer (an exchange-filled row closes on the exchange in every mode).
+
+**Reinstall on another instance:** nothing beyond the repo and `.env` — the pilot is app
+config, the `live` rows live in `paper_trades`, no timer or service is installed.

@@ -30,6 +30,14 @@ services:
       # true = every SIGNED call (orders, brakes, listenKey) goes to the USDⓈ-M testnet.
       # Market data always reads production. See config/runtime.exs.
       BINANCE_TESTNET: ${BINANCE_TESTNET:-false}
+      # The real-money micro-pilot (arm `live`); off by default. docs/REAL_MONEY_TRACK.md §7.
+      LIVE_PILOT: ${LIVE_PILOT:-false}
+      LIVE_PILOT_CAPITAL_USD: ${LIVE_PILOT_CAPITAL_USD:-500}
+      LIVE_PILOT_NOTIONAL_USD: ${LIVE_PILOT_NOTIONAL_USD:-100}
+      LIVE_PILOT_LEVERAGE: ${LIVE_PILOT_LEVERAGE:-1}
+      LIVE_PILOT_MAX_POSITIONS: ${LIVE_PILOT_MAX_POSITIONS:-4}
+      LIVE_PILOT_DAILY_LOSS_USD: ${LIVE_PILOT_DAILY_LOSS_USD:-10}
+      LIVE_PILOT_MAX_TOTAL_LOSS_USD: ${LIVE_PILOT_MAX_TOTAL_LOSS_USD:-100}
       ML_INFERENCE_URL: http://ml_inference:8001
       # Serve/product gate. Eval (run 20260723) showed gate<=0.50 trades ~100% of
       # bars at ~coin-flip; edge only appears at gate>=0.55. 0.58 harvests it.

@@ -89,6 +89,35 @@ if config_env() != :test do
     end
 
   config :fluxtrader, :trading, mode: mode
+
+  # The real-money micro-pilot (arm `live`, `Trading.LivePilot`, REAL_MONEY_TRACK §7). Off
+  # unless LIVE_PILOT says so; a malformed number is the default, never a crash at boot on
+  # the collector VM.
+  pilot_float = fn name, default ->
+    case Float.parse(System.get_env(name, "")) do
+      {v, ""} when v > 0 -> v
+      _ -> default
+    end
+  end
+
+  pilot_int = fn name, default ->
+    case Integer.parse(System.get_env(name, "")) do
+      {v, ""} when v > 0 -> v
+      _ -> default
+    end
+  end
+
+  config :fluxtrader, :live_pilot,
+    enabled: System.get_env("LIVE_PILOT", "false") in ~w(true 1 yes),
+    capital_usd: pilot_float.("LIVE_PILOT_CAPITAL_USD", 500.0),
+    notional_usd: pilot_float.("LIVE_PILOT_NOTIONAL_USD", 100.0),
+    leverage: pilot_int.("LIVE_PILOT_LEVERAGE", 1),
+    max_positions: pilot_int.("LIVE_PILOT_MAX_POSITIONS", 4),
+    daily_loss_usd: pilot_float.("LIVE_PILOT_DAILY_LOSS_USD", 10.0),
+    max_total_loss_usd: pilot_float.("LIVE_PILOT_MAX_TOTAL_LOSS_USD", 100.0)
+
+  # No policy entries for the first minutes of an app start — see `PolicyEngine` init.
+  config :fluxtrader, :policy_boot_grace_s, pilot_int.("POLICY_BOOT_GRACE_S", 300)
 end
 
 # Ecto query logging — every environment, resolved at boot rather than at compile time so

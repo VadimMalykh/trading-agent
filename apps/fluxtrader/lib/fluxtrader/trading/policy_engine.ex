@@ -146,10 +146,15 @@ defmodule FluxTrader.Trading.PolicyEngine do
   use GenServer
   require Logger
 
-  alias FluxTrader.Trading.{ExecCost, Executor, Ledger, Policy, Regime, RiskManager}
+  alias FluxTrader.Trading.{ExecCost, Executor, Ledger, LivePilot, Policy, Regime, RiskManager}
 
   @policy_arm "policy"
   @control_arm "flat_size"
+  # Side arms (2026-09-21), outside the registered A/B — see `PaperTrade`. `explore_cov05`
+  # is the same rule at the top-5% cut, paper; `live` mirrors each opened policy row on the
+  # exchange at a small flat notional when `LivePilot` is enabled.
+  @explore_arm "explore_cov05"
+  @live_arm LivePilot.arm()
   @tick_ms 30_000
   @prune_every_ticks 2_880
   # A mark older than this is not good enough to close a position against.
@@ -189,6 +194,13 @@ defmodule FluxTrader.Trading.PolicyEngine do
        # Returns whether `ml_inference` reports it builds features on CLOSED candles only
        # (`closed_bars_only` on /health), or nil for a serve.py that predates that field.
        closed_bars_fun: Keyword.get(opts, :closed_bars_fun, &__MODULE__.default_closed_bars/0),
+       # No entries for this long after boot. The collector backfills its candles pair by
+       # pair for the first minutes of an app start, and the 2026-09-20 restart scored 7 of
+       # the first tick's 12 bars on stale partial rows (acceptance replay, 2026-09-21).
+       # Bars are still recorded; they are just never decided.
+       boot_grace_s:
+         Keyword.get(opts, :boot_grace_s, Application.get_env(:fluxtrader, :policy_boot_grace_s, 0)),
+       started_at: DateTime.utc_now(),
        checkpoint: nil,
        served_interval: nil,
        served_closed_bars: nil,
@@ -324,7 +336,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
       |> refresh_rolling_threshold(now)
       |> refresh_last_cut_exceeded()
       |> close_due(now)
-      |> open_new(fresh)
+      |> open_unless_booting(fresh, now)
       |> maybe_prune(now)
 
 
@@ -558,6 +570,12 @@ defmodule FluxTrader.Trading.PolicyEngine do
   # The open sets are read once per tick and updated as positions are taken, so a tick that
   # opens on eight pairs costs two queries rather than sixteen. The partial unique index is
   # still the authority — this is a fast path, not the invariant.
+  defp open_unless_booting(state, bars, now) do
+    if DateTime.diff(now, state.started_at) < state.boot_grace_s,
+      do: count_skips(state, :boot_grace, length(bars)),
+      else: open_new(state, bars)
+  end
+
   defp open_new(%{checkpoint_bound: false} = state, bars) do
     # The guard: nothing is entered on either arm against constants that belong to a
     # different checkpoint. Due positions were already closed above; only entries stop.
@@ -577,13 +595,16 @@ defmodule FluxTrader.Trading.PolicyEngine do
   defp open_new(state, bars) do
     open = %{
       @policy_arm => Ledger.open_pairs(@policy_arm),
-      @control_arm => Ledger.open_pairs(@control_arm)
+      @control_arm => Ledger.open_pairs(@control_arm),
+      @explore_arm => Ledger.open_pairs(@explore_arm),
+      @live_arm => Ledger.open_pairs(@live_arm)
     }
 
     {state, _open} =
       Enum.reduce(bars, {state, open}, fn bar, {acc, open} ->
         {acc, open} = try_policy_arm(acc, bar, open)
-        try_control_arm(acc, bar, open)
+        {acc, open} = try_control_arm(acc, bar, open)
+        try_explore_arm(acc, bar, open)
       end)
 
     state
@@ -622,8 +643,11 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
             case Executor.open(@policy_arm, decision, order) do
               {:ok, _trade} ->
-                {count_decision(state, :policy_opened),
-                 Map.update!(open, @policy_arm, &MapSet.put(&1, decision.pair))}
+                open = Map.update!(open, @policy_arm, &MapSet.put(&1, decision.pair))
+
+                state
+                |> count_decision(:policy_opened)
+                |> mirror_live(decision, open)
 
               {:error, _} ->
                 # The order did not open, so the slot RiskManager just reserved must go back.
@@ -667,6 +691,45 @@ defmodule FluxTrader.Trading.PolicyEngine do
           {:error, _} ->
             {state, open}
         end
+    end
+  end
+
+  # The exploratory arm: `Policy.decide/3` again with one field of the ctx changed — the cut.
+  # Paper, never risk-checked, and its skips are not counted: `skips` on /api/health is the
+  # policy's, and a second arm's reasons in the same map would make it unreadable.
+  defp try_explore_arm(state, bar, open) do
+    ctx = %{
+      threshold: Policy.explore_threshold(),
+      regime: bar.regime,
+      regime_edges: bar.regime_edges,
+      open_pairs: open[@explore_arm],
+      open_count: MapSet.size(open[@explore_arm])
+    }
+
+    with {:enter, decision} <- Policy.decide(state.spec, bar, ctx),
+         {:ok, _} <- Executor.open(@explore_arm, stamp_provenance(state, decision)) do
+      {count_decision(state, :explore_opened),
+       Map.update!(open, @explore_arm, &MapSet.put(&1, decision.pair))}
+    else
+      _ -> {state, open}
+    end
+  end
+
+  # The micro-pilot mirrors EXECUTIONS of the paper policy arm, at a flat size: its job is to
+  # show what a real fill does to a row the paper book also holds, so a policy row that never
+  # opened has nothing to mirror. Every refusal is named on /api/health except the resting
+  # state of a pilot nobody asked for.
+  defp mirror_live(state, decision, open) do
+    with false <- MapSet.member?(open[@live_arm], decision.pair),
+         {:ok, order} <- LivePilot.check(decision),
+         {:ok, _} <- Executor.open(@live_arm, %{decision | size: 1.0}, order) do
+      {count_decision(state, :live_opened),
+       Map.update!(open, @live_arm, &MapSet.put(&1, decision.pair))}
+    else
+      true -> {count_decision(state, :live_skipped_position_open), open}
+      {:reject, :not_requested} -> {state, open}
+      {:reject, reason} -> {count_decision(state, :"live_refused_#{reason}"), open}
+      {:error, _} -> {count_decision(state, :live_open_failed), open}
     end
   end
 

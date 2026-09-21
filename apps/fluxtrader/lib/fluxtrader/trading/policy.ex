@@ -124,6 +124,8 @@ defmodule FluxTrader.Trading.Policy do
   # `coverage_threshold(conf, 0.02)` over the split — the k-th largest confidence,
   # k = round(n * 0.02). Selection is `conf >= threshold`, tie-inclusive.
   @frozen_threshold 0.6708709597587585
+  # Top-5% cut over the same split (forward.py EXT_CUT). Exploratory arm only.
+  @explore_threshold 0.6179307699203491
 
   # `r["btc_absret_1d"].quantile([0.2, 0.4, 0.6, 0.8])` over BARS, not over trades — the
   # ladder has to be a statement about the market (invariant 3).
@@ -209,6 +211,14 @@ defmodule FluxTrader.Trading.Policy do
   the scoring code did.
   """
   def frozen_threshold, do: @frozen_threshold
+
+  @doc """
+  The cut of the **exploratory** paper arm `explore_cov05` (2026-09-21): the top-5% cut over
+  the same split of the same checkpoint — `ml/train/m3/forward.py`'s `EXT_CUT`, which R5
+  already uses. It is NOT the policy: nothing registered reads that arm, and it is bound to
+  the checkpoint exactly as `frozen_threshold/0` is, so re-derive both together.
+  """
+  def explore_threshold, do: @explore_threshold
 
   @doc """
   The sizing ladder's quintile edges in force, from the same split as `frozen_threshold/0`.

@@ -19,6 +19,17 @@ defmodule FluxTrader.Trading.PaperTrade do
   # truncated in the same deploy — no row carries the old value.
   @arms ~w(policy flat_size)
 
+  # Side arms, added 2026-09-21. Neither is part of the registered A/B and neither may be
+  # quoted as evidence for it; `arms/0` stays the A/B pair so every registered reader
+  # (`Ledger.ab_summary/0`, `ml/train/m3/forward.py`) is untouched.
+  #
+  #   * `explore_cov05` — the policy's rule at the top-5% cut (`Policy.explore_threshold/0`).
+  #     Paper, never risk-checked. It exists so the mechanics are visible in a calm market.
+  #   * `live` — the real-money micro-pilot: mirrors each opened `policy` row with a small
+  #     exchange order (`Trading.LivePilot`). The only arm that may carry
+  #     `fill_source: "exchange"` while the executor's mode is `simulation`.
+  @side_arms ~w(explore_cov05 live)
+
   schema "paper_trades" do
     field(:arm, :string)
     field(:pair, :string)
@@ -61,12 +72,14 @@ defmodule FluxTrader.Trading.PaperTrade do
   @required ~w(arm pair side size entry_ts exit_after_ts entry_price status)a
 
   def arms, do: @arms
+  def side_arms, do: @side_arms
+  def all_arms, do: @arms ++ @side_arms
 
   def changeset(trade, attrs) do
     trade
     |> cast(attrs, @fields)
     |> validate_required(@required)
-    |> validate_inclusion(:arm, @arms)
+    |> validate_inclusion(:arm, @arms ++ @side_arms)
     |> validate_inclusion(:side, [-1, 1])
     |> validate_inclusion(:status, ~w(open closed))
     |> validate_inclusion(:fill_source, ~w(paper exchange))

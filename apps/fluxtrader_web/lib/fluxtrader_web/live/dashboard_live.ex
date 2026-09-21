@@ -172,7 +172,7 @@ defmodule FluxTraderWeb.DashboardLive do
         <% end %>
 
         <h3 style="color:#888;font-size:13px;font-weight:normal;letter-spacing:0.08em;text-transform:uppercase;margin:24px 0 8px;">
-          A/B arms (paper)
+          A/B arms (paper) + side arms
         </h3>
         <%= if @m3.ab in [nil, []] do %>
           <p style="color:#666;">
@@ -197,7 +197,10 @@ defmodule FluxTraderWeb.DashboardLive do
               <tbody>
                 <%= for arm <- @m3.ab do %>
                   <tr style="border-top:1px solid #0f0f23;text-align:right;">
-                    <td style="text-align:left;padding:8px 10px;"><strong><%= arm[:arm] %></strong></td>
+                    <td style="text-align:left;padding:8px 10px;">
+                      <strong><%= arm[:arm] %></strong>
+                      <span style="color:#888;font-size:11px;"><%= arm_note(arm[:arm]) %></span>
+                    </td>
                     <td style="padding:8px 10px;"><%= arm[:trades] %></td>
                     <td style="padding:8px 10px;"><%= metric(arm, arm[:trades_per_day], 2) %></td>
                     <td style={"padding:8px 10px;color:#{metric_color(arm, arm[:net_bps])};"}>
@@ -423,7 +426,9 @@ defmodule FluxTraderWeb.DashboardLive do
   end
 
   defp safe_ab do
-    FluxTrader.Trading.Ledger.ab_summary()
+    # The registered A/B first, then the side arms (exploratory top-5% paper arm, real-money
+    # micro-pilot) — one table, because the columns are the same; the label says which is which.
+    FluxTrader.Trading.Ledger.ab_summary() ++ FluxTrader.Trading.Ledger.side_summary()
   rescue
     e ->
       Logger.warning("ledger ab_summary failed: #{Exception.message(e)}")
@@ -676,6 +681,10 @@ defmodule FluxTraderWeb.DashboardLive do
   # nil, and `cum_net_bps` / `max_drawdown_bps` come back a structural 0.0 that means "no
   # trades", not "measured, and it is zero". Both render as an em dash — rendering 0.00 would
   # claim a measurement that has not been taken.
+  defp arm_note("explore_cov05"), do: "exploratory · top 5% · paper · not evidence"
+  defp arm_note("live"), do: "REAL orders · micro-pilot · flat size"
+  defp arm_note(_), do: ""
+
   defp metric(arm, value, decimals) do
     if arm[:trades] in [0, nil] or is_nil(value) do
       "—"

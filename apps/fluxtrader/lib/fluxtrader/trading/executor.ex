@@ -55,11 +55,16 @@ defmodule FluxTrader.Trading.Executor do
   require Logger
 
   alias FluxTrader.Binance.{Client, Trade}
-  alias FluxTrader.Trading.{ExchangeOrders, ExecCost, Ledger, PaperTrade, RiskManager}
+  alias FluxTrader.Trading.{ExchangeOrders, ExecCost, Ledger, LivePilot, PaperTrade, RiskManager}
 
   # The A/B's control arm is a measurement ledger and must never reach the exchange: it
   # exists to say what M2's raw gate would have earned, not to trade it.
-  @paper_only_arms ["flat_size"]
+  @paper_only_arms ["flat_size", "explore_cov05"]
+
+  # The micro-pilot's arm goes to the exchange in EVERY mode but `auto`, and nowhere at all
+  # unless `LivePilot.enabled?/0` — see that module. It is how real fills are taken while
+  # the registered `policy` arm stays paper.
+  @live_arm LivePilot.arm()
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -114,6 +119,16 @@ defmodule FluxTrader.Trading.Executor do
       )
     end
 
+    if LivePilot.enabled?() do
+      cfg = LivePilot.config()
+
+      Logger.warning(
+        "[LIVE] MICRO-PILOT IS ON: arm `live` places real orders against #{Client.trade_url()}" <>
+          if(Client.testnet?(), do: " (TESTNET)", else: " (PRODUCTION)") <>
+          " at $#{cfg[:notional_usd]} a trade, #{cfg[:leverage]}x, max #{cfg[:max_positions]} open"
+      )
+    end
+
     {:ok,
      %{
        mode: mode,
@@ -153,7 +168,7 @@ defmodule FluxTrader.Trading.Executor do
        mode: state.mode,
        requested_mode: state.requested_mode,
        auto_refused: state.auto_refused,
-       live_orders: state.mode == "auto",
+       live_orders: state.mode == "auto" or LivePilot.enabled?(),
        trade_url: Client.trade_url(),
        testnet: Client.testnet?(),
        credentials_present: Client.credentials?(),
@@ -176,7 +191,7 @@ defmodule FluxTrader.Trading.Executor do
 
   def handle_call(:get_positions, _from, state) do
     positions =
-      Enum.flat_map(PaperTrade.arms(), fn arm ->
+      Enum.flat_map(PaperTrade.all_arms(), fn arm ->
         arm
         |> Ledger.open_trades()
         |> Enum.map(&to_display(&1, state.marks))
@@ -196,6 +211,12 @@ defmodule FluxTrader.Trading.Executor do
 
   # ------------------------------------------------------------------ open
 
+  defp do_open(_mode, @live_arm, decision, order, state) do
+    if LivePilot.enabled?(),
+      do: exchange_open(@live_arm, decision, order, state),
+      else: {{:error, :live_pilot_disabled}, state}
+  end
+
   defp do_open(mode, arm, decision, _order, state) when mode in ["simulation", "signal", "manual"] do
     # Every non-auto mode books the same paper row. `signal` and `manual` differ from
     # `simulation` in what they do about a REAL order, and none of them places one — the
@@ -209,7 +230,10 @@ defmodule FluxTrader.Trading.Executor do
     {paper_open("simulation", arm, decision), state}
   end
 
-  defp do_open("auto", arm, decision, order, state) do
+  defp do_open("auto", arm, decision, order, state),
+    do: exchange_open(arm, decision, order, state)
+
+  defp exchange_open(arm, decision, order, state) do
     with {:ok, filters, state} <- ensure_filters(state),
          req = %{
            symbol: decision.pair,
@@ -320,7 +344,9 @@ defmodule FluxTrader.Trading.Executor do
        when arm in @paper_only_arms,
        do: do_close("simulation", trade, exit_price, state)
 
-  defp do_close("auto", %PaperTrade{fill_source: "exchange"} = trade, mark_price, state) do
+  # An exchange-filled row closes on the exchange whatever the mode is now: the position is
+  # real, and the micro-pilot's `live` rows exist while the mode is `simulation`.
+  defp do_close(_mode, %PaperTrade{fill_source: "exchange"} = trade, mark_price, state) do
     # Re-read first: a brake may have filled and been booked by the user-data stream
     # between the due-list read and now, and a closed row must not be booked twice.
     case Ledger.reload(trade) do

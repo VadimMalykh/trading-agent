@@ -396,6 +396,28 @@ defmodule FluxTrader.Trading.Ledger do
     Enum.map(PaperTrade.arms(), &arm_summary(&1, now))
   end
 
+  @doc "The side arms (`explore_cov05`, `live`) — reported apart from the registered A/B."
+  def side_summary(now \\ DateTime.utc_now()) do
+    Enum.map(PaperTrade.side_arms(), &arm_summary(&1, now))
+  end
+
+  @doc """
+  Realised P&L of one arm's closed rows in quote currency, optionally since `since` (by exit
+  time). `net_bps` is per unit of size and `notional` is the whole position, so the money is
+  `net_bps / 1e4 * notional` exactly as `RiskManager.record_closed_trade/1` books it. Rows
+  without a notional (the control arm) contribute nothing.
+  """
+  def realised_usd(arm, since \\ nil) do
+    query =
+      from(t in PaperTrade,
+        where: t.arm == ^arm and t.status == "closed" and not is_nil(t.notional),
+        select: sum(t.net_bps / 1.0e4 * t.notional)
+      )
+
+    query = if since, do: from(t in query, where: t.exit_ts >= ^since), else: query
+    Repo.one(query) || 0.0
+  end
+
   defp mean([]), do: nil
   defp mean(xs), do: Enum.sum(xs) / length(xs)
 

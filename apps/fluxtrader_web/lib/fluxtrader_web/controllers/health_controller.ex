@@ -35,6 +35,11 @@ defmodule FluxTraderWeb.HealthController do
       regime: safe(fn -> Regime.status() end, %{error: "regime unavailable"}),
       risk: safe(fn -> RiskManager.get_stats() end, %{error: "risk manager unavailable"}),
       ab: safe(fn -> Ledger.ab_summary() end, %{error: "database unavailable"}),
+      # Outside the registered A/B: the exploratory top-5% paper arm and the real-money
+      # micro-pilot. Never quoted as evidence for the policy.
+      side_arms: safe(fn -> Ledger.side_summary() end, %{error: "database unavailable"}),
+      live_pilot:
+        safe(fn -> FluxTrader.Trading.LivePilot.status() end, %{error: "database unavailable"}),
       exec_cost: %{
         # The numbers every paper trade is charged, and where they came from: M3-4's
         # measured per-pair round trip, plus the fee-tier correction found 2026-09-10.

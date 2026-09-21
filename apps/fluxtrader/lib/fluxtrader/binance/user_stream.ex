@@ -45,7 +45,10 @@ defmodule FluxTrader.Binance.UserStream do
 
   @impl true
   def init(opts) do
-    enabled? = Keyword.get(opts, :enabled, fn -> Executor.mode() == "auto" end)
+    enabled? =
+      Keyword.get(opts, :enabled, fn ->
+        Executor.mode() == "auto" or FluxTrader.Trading.LivePilot.enabled?()
+      end)
     enabled? = if is_function(enabled?, 0), do: safe_bool(enabled?), else: enabled?
 
     state = %{
@@ -66,7 +69,7 @@ defmodule FluxTrader.Binance.UserStream do
       Logger.info("Binance.UserStream starting → wss://#{Client.user_stream_host()}/ws/<listenKey>")
       {:ok, %{state | status: :connecting}}
     else
-      Logger.info("Binance.UserStream disabled (mode is not auto, or no credentials)")
+      Logger.info("Binance.UserStream disabled (neither auto nor the live pilot, or no credentials)")
       {:ok, state}
     end
   end
