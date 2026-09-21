@@ -320,20 +320,27 @@ def _pair_rank(x: pd.DataFrame) -> pd.DataFrame:
 
 
 def _ic_pooled(f: np.ndarray, y: np.ndarray, day: np.ndarray) -> np.ndarray:
-    """Per day, the UNCENTRED correlation Σ f·y / √(Σf² Σy²) over every (bar, pair) cell of that day.
+    """Each day's share of the WHOLE-SAMPLE uncentred correlation Σ f·y / √(Σf² Σy²) over every (bar, pair)
+    cell: the day's Σ f·y × (number of days) / the sample's √(Σf² Σy²). The mean over days IS that
+    correlation, and its HAC t is the day-clustered t of the sums.
 
-    Nothing is ranked or demeaned inside the day. A within-day Spearman is biased here: feature
-    and label share the price at t (f = p_t − p_{t−k}, y = p_{t+h} − p_t), and removing the day's
-    mean of y — which holds future prices — makes them negatively correlated on a pure random walk
-    (the first run of this audit, 2026-09-20, read −0.2 at 1d from exactly that; voided). Inputs
-    must come with a natural zero: `_pair_rank` for features, the vol-standardised move itself."""
+    Nothing is ranked, demeaned or NORMALISED inside the day — two defects, both found on random walks:
+    (1) a within-day Spearman: feature and label share the price at t (f = p_t − p_{t−k}, y = p_{t+h} − p_t),
+    and removing the day's mean of y — which holds future prices — makes them negatively correlated (the
+    first run of this audit, 2026-09-20, read −0.2 at 1d from exactly that; voided). (2) a per-day
+    normaliser √(Σ_day f² Σ_day y²): it is largest on the days that trend, i.e. on the days whose products
+    are positive, so the mean of per-day correlations of a trailing return reads −0.02 … −0.03 on
+    correlated random walks (found 2026-09-21; every P2 number read before that date carries it).
+    Inputs must come with a natural zero: `_pair_rank` for features, the vol-standardised move itself."""
     ok = ~(np.isnan(f) | np.isnan(y))
     nd = int(day.max()) + 1 if len(day) else 0
     d, ff, yy = day[ok], f[ok], y[ok]
-    cnt = np.bincount(d, minlength=nd)
+    use = np.bincount(d, minlength=nd) >= 100
+    num, sf, sy = np.bincount(d, ff * yy, nd), np.bincount(d, ff * ff, nd), np.bincount(d, yy * yy, nd)
+    norm = np.sqrt(sf[use].sum() * sy[use].sum())
     with np.errstate(invalid="ignore", divide="ignore"):
-        ic = np.bincount(d, ff * yy, nd) / np.sqrt(np.bincount(d, ff * ff, nd) * np.bincount(d, yy * yy, nd))
-    ic[cnt < 100] = np.nan
+        ic = num * use.sum() / norm
+    ic[~use] = np.nan
     return ic
 
 

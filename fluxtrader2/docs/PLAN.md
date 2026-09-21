@@ -670,6 +670,49 @@ Result:        **Stage 1, read 2026-09-21 (commit b33449e): primary = maker, +4.
                UPWARDS keeps going: +20.7 gross; the one torn downwards: +4.3). As expected. The effect is real before
                costs and the size of one round trip: not tradable at VIP 0 on twelve names. Revival in §7.
 
+### R6 — the market factor's ceiling on 4.3 years, per year (registered 2026-09-21, before the audit saw any real bar; read —)
+Question:      R4 says the market's bounce after a fall has a sign that follows the regime. Is there ANY feature, or a
+               short-refit forecast, that predicts the equal-weight basket's next 4 hours with one sign in every year
+               2020 → 2024 and at a size that pays a round trip?
+Audit:         `ft2/market.py` (its docstring is the specification), `ft2 ceiling --target basket --folds FP F0 F1 F2`.
+               17 features fixed here: the basket's trailing return over 1h/4h/1d/1w/30d; breadth of the fall and of the
+               rise (share of pairs ±1σ over 4h), dispersion; three volatility ratios; dollar-volume surprise; mean
+               funding; and the four interactions R4 points at (−4h return × sign of the 30d / 1w trend, the fall alone,
+               the fall × 30d trend). Null: 200 circular shifts of the labels (day shuffles would flatter slow features).
+               Forecast: ridge without intercept, refitted every 30 days on the last 120 days (the gate's window; 365
+               and all are reported). IC = whole-sample correlation with a day-clustered t (the per-day statistic P2
+               used is biased on random walks — found while testing this module; R7).
+Folds read:    FP+F0+F1+F2, all already seen for H1-like rules: whatever is found is a HYPOTHESIS, confirmable only on F3–F5.
+Gate:          FUND a basket forecast (P5's deliverable, aimed at the market) if the 120-day ridge at 4h has one-sided
+               shift p ≤ 0.05 AND a positive IC in each of the five calendar years AND a pooled IC ≥ the smaller of the
+               two bars "maker, all bars" and "taker, most volatile tenth of bars". A single feature with family-wise
+               p ≤ 0.05 AND one sign in all five years is recorded as a hypothesis for a new registration (this is
+               H1's revival trigger in §7 if it is one of the interactions). Neither → the directional/market bet on
+               these twelve names gets decision-table row 6, and the next step is the wider universe for H2.
+Expectation:   Pooled, the 4h and 1d trailing returns show reversal (IC −0.01 to −0.03) that is strongest in 2020–21 and
+               2023–24 and near zero or positive in 2022; the trend interactions are a little better pooled (+0.01 to
+               +0.03) but still fail 2022. Ridge IC +0.00 to +0.02, positive in 3–4 of 5 years. Volatility features
+               predict |move| with IC > 0.2 in every year. Likeliest verdict: NOT FUNDED, no regime-stable feature.
+Result:        —
+
+### R7 — P2's directional numbers re-read with an unbiased IC (registered 2026-09-21, before the re-run; read —)
+Question:      P2's directional and vol ICs were means of per-day correlations. On correlated random walks that statistic
+               reads −0.02 to −0.03 for a trailing return at 4h (`tests/test_p5_market.py`), and P2's day-shuffle null
+               cannot show it (a shuffle breaks the within-day link that causes it). P2's funded signal was "reversal,
+               IC 0.045 at 4h". How much of it is left when the statistic is the whole-sample correlation?
+Re-run:        `ft2 ceiling` unchanged except `_ic_pooled` (now each day's share of the whole-sample correlation); all
+               seven items, F1+F2 as before. The relative bet's statistic (Spearman across pairs per bar) is not
+               affected and must reproduce. The first report is kept as `output/ceiling_2026-09-20_biased.md`.
+Gate:          Directional 4h stays FUNDED only if its best single feature clears the screen's family-wise bar
+               (p_fw ≤ 0.05) AND the walk-forward ridge is real (p ≤ 0.05) AND the ridge's IC is ≥ the "maker + vol
+               timing" bar (0.015). Otherwise P2's verdict for it becomes "not funded", P2's table is rewritten (the
+               old numbers deleted, the defect recorded), and R1's premise is marked as withdrawn.
+Expectation:   The 4h reversal ICs fall from 0.043–0.045 to 0.015–0.025, still above the noise floor; the ridge from
+               0.035 to 0.01–0.02 — at or under the bar. 1h similar in proportion. Vol ICs barely move (|move| and
+               volatility share no price). Likeliest verdict: real but NOT FUNDED — which is what R1's hedged loss
+               and R4's pre-history read already say in money.
+Result:        —
+
 Template:
 
 ```

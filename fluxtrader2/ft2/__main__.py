@@ -57,7 +57,12 @@ def cmd_costpre(args):
 
 
 def cmd_ceiling(args):
-    from . import ceiling
+    from . import ceiling, market
+    if args.target == "basket":
+        market.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.folds, args.draws)
+        return print(f"wrote {market.OUT_MD} and {market.OUT_DIR}/")
+    if args.folds:
+        raise SystemExit("--folds is for --target basket; the pair audit reads F1+F2")
     ceiling.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.items, args.draws)
     print(f"wrote {ceiling.OUT_MD if not args.items else 'output/ceiling*.md'} and {ceiling.OUT_DIR}/")
 
@@ -116,6 +121,9 @@ def main(argv=None):
     g.add_argument("--items", nargs="*", choices=["7", "1", "2", "3", "6", "4", "5"],
                    help="PLAN P2 item numbers; default all, → output/ceiling.md; a partial run → output/ceiling_items_<…>.md")
     g.add_argument("--draws", type=int, default=200, help="#4: label shuffles per scheme")
+    g.add_argument("--target", choices=["pairs", "basket"], default="pairs",
+                   help="basket: P5's audit of the market factor, per year → output/market.md (see ft2/market.py)")
+    g.add_argument("--folds", nargs="*", help="--target basket only: exploration folds to read (default FP F0 F1 F2)")
     b = sub.add_parser("backtest", help="P3: a strategy through the harness → output/backtest/<name>/ (see ft2/backtest.py)")
     b.add_argument("strategy", help="a name in backtest.STRATEGIES / rules.STRATEGIES, e.g. coin")
     b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")
