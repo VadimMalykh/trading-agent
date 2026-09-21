@@ -121,8 +121,12 @@ defmodule FluxTraderWeb.DashboardLiveTest do
       # a measurement that has not been taken.
       refute html =~ "0.00"
       assert html =~ "a dash means not measured yet, not zero"
-      # The fee tier is still unverified against the account and the panel must not hide it.
-      assert html =~ "fee tier UNVERIFIED"
+      # The fee tier was verified against the account on 2026-09-10 (5.0 bps taker); the panel
+      # reads the date and the fee from ExecCost rather than carrying its own copy.
+      assert html =~ "fee tier verified 2026-09-10 (taker 5.0 bps/side)"
+      refute html =~ "UNVERIFIED"
+      # The pilot's state is said in words: off by default, and then no real order is placed.
+      assert html =~ "real-money pilot (arm live): OFF (not_requested)"
     end
 
     test "a not_served skip renders the universe-drift warning in full", %{conn: conn} do

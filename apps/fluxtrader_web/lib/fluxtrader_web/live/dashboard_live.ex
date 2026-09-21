@@ -220,8 +220,11 @@ defmodule FluxTraderWeb.DashboardLive do
           </div>
           <p style="color:#666;font-size:12px;margin-top:8px;margin-bottom:0;">
             charged M3-4 measured per-pair crossing cost (pooled <%= @m3.pooled_bps %> bps)
-            · <span style="color:#f39c12;">fee tier UNVERIFIED</span>
+            · <span style="color:#2ecc71;">fee tier verified <%= @m3.fee_verified_on %> (taker <%= @m3.taker_fee_bps %> bps/side)</span>
             · <span style="color:#888;">a dash means not measured yet, not zero</span>
+          </p>
+          <p style="color:#666;font-size:12px;margin-top:4px;margin-bottom:0;">
+            <%= pilot_line(@m3.pilot) %>
           </p>
         <% end %>
 
@@ -396,6 +399,9 @@ defmodule FluxTraderWeb.DashboardLive do
       rule: rule_label(),
       coverage: FluxTrader.Trading.Policy.coverage(),
       pooled_bps: FluxTrader.Trading.ExecCost.pooled_bps(),
+      fee_verified_on: FluxTrader.Trading.ExecCost.fee_verified_on(),
+      taker_fee_bps: FluxTrader.Trading.ExecCost.taker_fee_bps_per_side(),
+      pilot: safe_pilot(),
       skips: count_map(Map.get(policy, :skips)),
       risk_rejections: count_map(Map.get(policy, :risk_rejections)),
       stale: not (liveness_ok and ab_ok) and carried?
@@ -436,6 +442,30 @@ defmodule FluxTraderWeb.DashboardLive do
   catch
     :exit, _ -> nil
   end
+
+  defp safe_pilot do
+    FluxTrader.Trading.LivePilot.status()
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
+  # One line saying whether real orders are being placed, at what size, and how much of the
+  # loss limits is used — the `live` row above is all dashes until the first mirrored trade.
+  defp pilot_line(nil), do: "real-money pilot: status unavailable"
+
+  defp pilot_line(%{enabled: false, refusal: refusal}),
+    do: "real-money pilot (arm live): OFF (#{refusal}) — no real orders are placed"
+
+  defp pilot_line(%{enabled: true} = p) do
+    "real-money pilot (arm live): ON — mirrors each opened policy trade with a real " <>
+      "$#{usd(p.notional_usd)} order at #{p.leverage}x · open #{p.open}/#{p.max_positions} · " <>
+      "realised today $#{usd(p.realised_usd_today)} (stops at -$#{usd(p.daily_loss_usd)}) · " <>
+      "total $#{usd(p.realised_usd_total)} (kill at -$#{usd(p.max_total_loss_usd)})"
+  end
+
+  defp usd(x), do: :erlang.float_to_binary(x * 1.0, decimals: 2)
 
   defp safe_collector_pairs do
     FluxTrader.Settings.get_whitelist() |> Enum.sort()
