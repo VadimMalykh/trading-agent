@@ -182,6 +182,59 @@ defmodule FluxTrader.Trading.LivePilotTest do
     assert Fake.calls(:place_order) == []
   end
 
+  test "a symbol the account already holds a position on is never touched — nor one that cannot be read" do
+    pilot([])
+
+    for {answer, n} <- [
+          {{:ok, [%{"symbol" => "BTCUSDT", "positionAmt" => "-0.250"}]}, 1},
+          {{:error, :timeout}, 2}
+        ] do
+      {:ok, _} = Fake.start(responses: %{position_risk: [answer]})
+      start_supervised!({Executor, []}, id: {:executor, n})
+
+      now = DateTime.utc_now()
+
+      d = %{
+        pair: "BTCUSDT", side: 1, size: 1.0, entry_price: 100_000.0, confidence: 0.9,
+        entry_ts: now, exit_after_ts: DateTime.add(now, 14_400, :second)
+      }
+
+      {:ok, order} = LivePilot.check(d)
+      assert Executor.open("live", d, order) == {:error, :foreign_position}
+
+      # Nothing but the read: no leverage change, no order, no brake, no cancel.
+      assert Enum.map(Fake.calls(), &elem(&1, 0)) == [:position_risk]
+      assert Ledger.open_trades("live") == []
+      stop_supervised!({:executor, n})
+    end
+  end
+
+  test "the engine names a foreign-position refusal and still books the paper arms" do
+    pilot([])
+    {:ok, _} = Fake.start(responses: %{position_risk: [{:ok, [%{"positionAmt" => "676"}]}]})
+    start_supervised!({Executor, []})
+    start_supervised!({RiskManager, []})
+
+    start_supervised!(
+      {PolicyEngine,
+       [
+         autotick: false,
+         signals_fun: fn -> [signal("BTCUSDT", 0.97)] end,
+         regime_fun: fn -> %{value: 0.025, edges: Policy.frozen_regime_edges(), samples: 8640} end,
+         checkpoint_fun: fn -> Policy.frozen_checkpoint_sha256() end,
+         interval_fun: fn -> Policy.candle_interval() end,
+         closed_bars_fun: fn -> true end
+       ]}
+    )
+
+    :ok = PolicyEngine.refresh()
+
+    assert Ledger.open_pairs("policy") == MapSet.new(["BTCUSDT"])
+    assert Ledger.open_pairs("live") == MapSet.new()
+    assert PolicyEngine.status().decisions[:live_refused_foreign_position] == 1
+    assert Fake.calls(:place_order) == []
+  end
+
   test "the pilot refuses to double an auto executor, and refuses without credentials" do
     pilot([])
     Application.put_env(:fluxtrader, :trading, mode: "auto")

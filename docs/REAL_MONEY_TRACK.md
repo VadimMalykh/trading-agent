@@ -441,6 +441,16 @@ served pair's minimum is $5–20. Raise the notional to ~150 (and drop max posit
 matters. ⚠️ With four slots, a fifth simultaneous policy trade is not mirrored
 (`live_refused_max_positions`) — acceptable for an operations pilot.
 
+🔴 **The account is shared with Vadim's manual trades** (preflight 2026-09-21: one-way mode,
+`canTrade`, wallet $437, manual positions on WLDUSDT, ASTERUSDT, ADAUSDT and one resting
+order). The pilot's brakes are `closePosition` and its close cancels every order on the symbol,
+so **it refuses any symbol on which the exchange already shows a position**
+(`live_refused_foreign_position`; an unreadable position counts as one). What code cannot
+guard: **opening a manual position or order on a symbol while the pilot holds it** — the
+pilot's stop would close both and its timed close would cancel the manual orders. Check the
+dashboard's open `live` positions before trading a served pair by hand, or move the pilot to a
+sub-account (the clean fix: new key in `.env`, nothing else changes).
+
 **Turn it on (Claude, on `fluxtrader-1`):**
 1. Vadim puts the trading key into `~/trading_agent/.env` as `BINANCE_API_KEY` /
    `BINANCE_API_SECRET` (replacing the read-only key; `mix flux.fee_tier` keeps working) and

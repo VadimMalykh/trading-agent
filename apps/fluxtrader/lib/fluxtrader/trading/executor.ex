@@ -212,10 +212,45 @@ defmodule FluxTrader.Trading.Executor do
   # ------------------------------------------------------------------ open
 
   defp do_open(_mode, @live_arm, decision, order, state) do
-    if LivePilot.enabled?(),
-      do: exchange_open(@live_arm, decision, order, state),
-      else: {{:error, :live_pilot_disabled}, state}
+    cond do
+      not LivePilot.enabled?() ->
+        {{:error, :live_pilot_disabled}, state}
+
+      foreign_position?(state.client, decision.pair) ->
+        Logger.warning(
+          "[LIVE] #{decision.pair}: the account already holds a position the pilot does not " <>
+            "own (or it could not be read) — not mirrored"
+        )
+
+        {{:error, :foreign_position}, state}
+
+      true ->
+        exchange_open(@live_arm, decision, order, state)
+    end
   end
+
+  # The pilot shares a one-way account with its owner's manual trades (found 2026-09-21: three
+  # manual positions on the day it was switched on). Its brakes are `closePosition` and its
+  # close cancels every order on the symbol, so on a symbol that already carries a position
+  # it would net against, stop out and cancel things it does not own. The engine never asks
+  # for a pair with an open `live` row, so ANY non-zero position here is foreign. Fails
+  # closed: an unreadable position is treated as a position.
+  defp foreign_position?(client, symbol) do
+    case client.position_risk(symbol) do
+      {:ok, rows} when is_list(rows) -> Enum.any?(rows, &(position_amt(&1) != 0.0))
+      _ -> true
+    end
+  end
+
+  defp position_amt(%{"positionAmt" => amt}) when is_binary(amt) do
+    case Float.parse(amt) do
+      {f, _} -> f
+      :error -> 1.0
+    end
+  end
+
+  defp position_amt(%{"positionAmt" => amt}) when is_number(amt), do: amt * 1.0
+  defp position_amt(_), do: 1.0
 
   defp do_open(mode, arm, decision, _order, state) when mode in ["simulation", "signal", "manual"] do
     # Every non-auto mode books the same paper row. `signal` and `manual` differ from

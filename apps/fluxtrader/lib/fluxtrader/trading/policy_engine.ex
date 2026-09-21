@@ -729,6 +729,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
       true -> {count_decision(state, :live_skipped_position_open), open}
       {:reject, :not_requested} -> {state, open}
       {:reject, reason} -> {count_decision(state, :"live_refused_#{reason}"), open}
+      {:error, :foreign_position} -> {count_decision(state, :live_refused_foreign_position), open}
       {:error, _} -> {count_decision(state, :live_open_failed), open}
     end
   end
