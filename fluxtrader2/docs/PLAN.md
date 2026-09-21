@@ -670,7 +670,7 @@ Result:        **Stage 1, read 2026-09-21 (commit b33449e): primary = maker, +4.
                UPWARDS keeps going: +20.7 gross; the one torn downwards: +4.3). As expected. The effect is real before
                costs and the size of one round trip: not tradable at VIP 0 on twelve names. Revival in §7.
 
-### R6 — the market factor's ceiling on 4.3 years, per year (registered 2026-09-21, before the audit saw any real bar; read —)
+### R6 — the market factor's ceiling on 4.3 years, per year (registered 2026-09-21, before the audit saw any real bar; read 2026-09-21)
 Question:      R4 says the market's bounce after a fall has a sign that follows the regime. Is there ANY feature, or a
                short-refit forecast, that predicts the equal-weight basket's next 4 hours with one sign in every year
                2020 → 2024 and at a size that pays a round trip?
@@ -693,7 +693,24 @@ Expectation:   Pooled, the 4h and 1d trailing returns show reversal (IC −0.01 
                2023–24 and near zero or positive in 2022; the trend interactions are a little better pooled (+0.01 to
                +0.03) but still fail 2022. Ridge IC +0.00 to +0.02, positive in 3–4 of 5 years. Volatility features
                predict |move| with IC > 0.2 in every year. Likeliest verdict: NOT FUNDED, no regime-stable feature.
-Result:        —
+Result:        **Read 2026-09-21 (commit 237240a holds this block as written before the read; `output/market.md`): forecast NOT
+               FUNDED; one regime-stable feature recorded as a hypothesis.** 1,578 days, 6–11 pairs. The bar at 4h: IC 0.034
+               (maker, all bars; = taker on the most volatile tenth); buying the basket costs 12.8 bps a round trip as a taker.
+               Ridge 120 d: IC +0.015, p 0.14, 2022 negative (−0.029) → fails all three conditions. Reported, not the gate:
+               365 d +0.023 (p 0.015, 2022 −0.001); all history +0.030 (p 0.005), positive in 5 of 5 years (+0.021 … +0.054) —
+               the opposite of P2 #5's "short refits are better", which was read with the biased statistic (R7).
+               Screen at 4h: ONE feature has p_fw ≤ 0.05 and one sign in every year — `fall_x_trend30d` (the size of the
+               basket's 4h fall, signed by the 30-day trend): IC +0.032, t 3.4, p_fw 0.015; by year +0.009, +0.053, +0.032,
+               +0.035, +0.024; also first at 1d (+0.051, p_fw 0.035, 5 of 5) and 5 of 5 at 1h. The 30-day trend itself
+               (`mret_30d`) +0.030, 5 of 5 years, p_fw 0.075. Plain reversal is NOT there: `mret_4h` −0.007 (p 0.47),
+               `mret_1d` −0.004, signs mixed by year; the fall alone flips in 2022 (+0.040 against −0.02 … −0.07).
+               Money view, gross bps over the next 4 h after a ≥ 2σ 4h fall of the basket: 30-day trend UP +54.3 (t 4.7;
+               by year +19, +132, +3, +58, +29; 306 days), trend DOWN +5.5 (t 0.4; 2022 −9.9). Broad fall: up +32.4 (t 3.9,
+               2022 −15.9), down −0.4. Every bar: up +5.6 (t 2.3), down −2.2. |move|: volatility ratios IC 0.16–0.24 in
+               every year. Against the expectation: the ridge and the verdict as expected; NOT expected — no pooled
+               reversal at all, and an interaction that holds its sign through 2022 (there it is ≈ 0 in money, not negative).
+               Per the gate: H1's revival trigger (§7) is met → a NEW registration for the conditional rule; this read is
+               on seen data and is a hypothesis only.
 
 ### R7 — P2's directional numbers re-read with an unbiased IC (registered 2026-09-21, before the re-run; read —)
 Question:      P2's directional and vol ICs were means of per-day correlations. On correlated random walks that statistic
@@ -711,6 +728,31 @@ Expectation:   The 4h reversal ICs fall from 0.043–0.045 to 0.015–0.025, sti
                0.035 to 0.01–0.02 — at or under the bar. 1h similar in proportion. Vol ICs barely move (|move| and
                volatility share no price). Likeliest verdict: real but NOT FUNDED — which is what R1's hedged loss
                and R4's pre-history read already say in money.
+Result:        —
+
+### R8 — trendfall4h: buy the market's fall only while its 30-day trend is up (registered 2026-09-21, before the rule saw any real bar; stage 1 read —, stage 2 read —)
+Question:      R6's one regime-stable feature, stated as a rule: does it make money after costs through the harness, in
+               every year — and is a confirmation read on F3–F5 worth spending?
+Rule:          `ft2/rules.py::TrendFall`, both numbers are R6's money view, written before R6 was read and not searched:
+               the basket fell ≥ 2 of its own 4h sigmas AND its 30-day return is positive → long every pair, one unit,
+               48 bars, one position per pair, executed 1 bar later. No fit.
+Contrast:      mean net bps per unit of notional vs zero and vs both nulls; primary execution `taker` (as R4, and for
+               R4's reasons); `maker` and spread + impact doubled reported. Per calendar year.
+Folds read:    stage 1: FP+F0+F1+F2 — ALL SEEN by R6, which chose the rule: a mechanical gate (costs, fills, the book
+               rule's effect, the day-clustered se), NOT evidence.
+               `ft2 backtest trendfall4h --folds FP F0 F1 F2 --registration R8 --execs taker maker`
+               stage 2: confirmation folds, once. WHICH folds (F3 alone, or F3+F4+F5 pooled) is decided from stage 1's
+               se and written here as "Power" before the read; pooling all three spends every confirmation fold
+               this project has on one rule, so that choice is Vadim's.
+Gate:          stage 1 passes if taker net > 0 AND the larger p ≤ 0.05 AND taker net ≥ −5 bps in each calendar year with
+               ≥ 30 trade-days (the point of the rule is that it does not lose in a bear market; a year at −10 means the
+               harness disagrees with the money view). Fail → parked with H1, no variant tried. Stage 2: CONFIRMED if
+               the taker interval's lower bound > 0 AND the larger p ≤ 0.05; REFUTED if the upper bound < 0; else NOT
+               DETECTABLE with the MDE. No parameter changes between the stages.
+Expectation:   Stage 1: gross +40 to +55 (the money view's +54 is per bar in the state; the book rule takes the first
+               bar of each 4 hours, which R3 showed is the WORST entry into a fall), taker net +25 to +40, se 9–12,
+               2–3 trades a day on ~300 days, 2022 between −10 and +5 → passes, or fails on 2022. Stage-2 power will
+               be poor on F3 alone (se ≈ 25–30) and fair pooled (se ≈ 15).
 Result:        —
 
 Template:

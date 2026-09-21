@@ -29,6 +29,9 @@ P5's two hypotheses, found on F1+F2 by taking R1 and R2 apart (registrations R4,
     v, s and cuts). When at least `breadth` of the pairs that have cuts were falling at some bar of the
     last `memory` bars, go long EVERY such pair, one unit each, for 48 bars. Long only; the book rule
     (one position per pair) makes it one basket per 4 hours for as long as the panic lasts.
+`trendfall4h` (R6's hypothesis, registration R8): H1 made conditional on the regime. The basket (equal weight, ≥ MIN_PAIRS)
+    has fallen by at least `fall` of its own 4h sigmas (trailing 1-week volatility) AND its `trend_days` return is
+    positive → long every pair, one unit each, 48 bars. No fit, no quantile: both numbers are `market.py`'s money view.
 `rankcont4h` (H2): `rank4h` with the sides swapped — long the pair torn furthest above the others, short
     the one furthest below.
 """
@@ -38,7 +41,7 @@ import numpy as np
 import pandas as pd
 
 from .backtest import Market, Strategy, decisions_from
-from .ceiling import MIN_PAIRS, W
+from .ceiling import MIN_PAIRS, W, basket
 
 WARMUP = pd.Timedelta(days=9)            # σ_1w needs a week of bars, the 1d return a day more
 
@@ -130,4 +133,21 @@ class Panic(Strategy):
                               why=f"panic: ≥{self.breadth:.2f} of the pairs fell within {self.memory} bars")
 
 
-STRATEGIES = {Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
+class TrendFall(Strategy):
+    name = "trendfall4h"
+
+    def __init__(self, fall: float = 2.0, trend_days: int = 30, hold: int = 48):
+        self.fall, self.trend_days, self.hold = float(fall), int(trend_days), int(hold)
+
+    def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        close = M.close.loc[a - WARMUP - pd.Timedelta(days=self.trend_days):]
+        b1 = basket(np.log(close).diff() * 1e4)
+        blr = b1.fillna(0.0).cumsum().where(b1.notna())
+        k = W["4h"]
+        m4 = (blr - blr.shift(k)) / (b1.rolling(W["1w"], min_periods=int(W["1w"] * 0.8)).std() * np.sqrt(k))
+        on = (m4 <= -self.fall) & ((blr - blr.shift(self.trend_days * 288)) > 0)
+        return decisions_from(close.notna().astype(float).where(on, 0.0, axis=0), a, b, signal=pd.DataFrame({c: -m4 for c in close.columns}),
+                              why=f"basket fell ≥{self.fall:g}σ in 4h, {self.trend_days}d trend up")
+
+
+STRATEGIES = {TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}

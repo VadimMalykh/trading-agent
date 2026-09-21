@@ -118,3 +118,21 @@ def test_shifts_stay_away_from_zero_and_confirmation_folds_are_refused(tmp_path,
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit):
         mk.run(5.0, 2.0, "test", ["AUSDT"], ["F2", "F3"])
+
+
+def test_trendfall_buys_every_pair_after_a_market_fall_only_when_the_trend_is_up():
+    from ft2 import backtest as bt
+    from ft2.rules import TrendFall
+    for drift, traded in ((+1.0, True), (-1.0, False)):
+        rng = np.random.default_rng(5)
+        idx = pd.date_range("2024-01-01", periods=60 * 288, freq="5min", tz="UTC")
+        r = rng.normal(0, 5.0, (len(idx), N)) + drift                                                    # ±1 bps a bar ≈ ±86 % over the 30 days
+        r[-24:] -= 25                                                                                   # every pair loses ~600 bps in the last 2 hours
+        close = pd.DataFrame(100 * np.exp(np.cumsum(r, axis=0) / 1e4), index=idx, columns=list("ABCDEF"))
+        M = bt.Market(close, close, close, close)
+        now = M.index[-288]
+        d = TrendFall().decide(M, now, M.index[-1] + bt.BAR)
+        last = d[d["t"] == M.index[-1]]
+        assert (len(last) == N and (last["side"] == 1).all()) if traded else last.empty
+        assert d[d["t"] < M.index[-24]].empty                                                           # nothing before the fall
+    bt.causal_check(TrendFall(), M, now, M.index[-1] + bt.BAR)
