@@ -215,8 +215,8 @@ STRATEGIES: dict[str, type[Strategy]] = {"coin": Coin}
 
 
 def get_strategy(name: str, params: dict) -> Strategy:
-    from . import rules                                       # imported here: rules.py itself imports this module
-    return {**STRATEGIES, **rules.STRATEGIES}[name](**params)
+    from . import forecast, rules                             # imported here: both import this module
+    return {**STRATEGIES, **rules.STRATEGIES, **forecast.STRATEGIES}[name](**params)
 
 
 # ---- walk-forward -------------------------------------------------------------------------------------
@@ -334,6 +334,7 @@ def price(dec: pd.DataFrame, M: Market, C: Costs, exec_: str, taker_bps: float, 
                         "size": d["size"].to_numpy(), "exec": exec_, "entry_t": idx[re_], "exit_t": idx[rx], "entry_px": pe, "exit_px": pxx,
                         "gross_bps": gross, "mkt_bps": mkt, "hedged_bps": gross - s * mkt, "fee_bps": fee, "other_cost_bps": other, "p_fill": p_fill / 2, "funding_bps": fund})
     out["net_bps"] = out["gross_bps"] - out["fee_bps"] - out["other_cost_bps"] + out["funding_bps"]
+    out["hedged_net_bps"] = out["net_bps"] - s * mkt                 # net against the market; the hedge leg itself is not costed
     return out
 
 
@@ -360,11 +361,12 @@ def trade_stats(x: np.ndarray, w: np.ndarray, day: pd.DatetimeIndex, days: pd.Da
 def summarize(fills: pd.DataFrame, days: pd.DatetimeIndex, hold: int) -> dict:
     f = fills.dropna(subset=["net_bps"])
     day, w, lags = pd.DatetimeIndex(f["t"]).floor("D"), f["size"].to_numpy(), day_lags(hold)
-    r = {k: trade_stats(f[f"{k}_bps"].to_numpy(), w, day, days, lags) for k in ("net", "gross", "hedged")}
+    r = {k: trade_stats(f[f"{k}_bps"].to_numpy(), w, day, days, lags) for k in ("net", "gross", "hedged", "hedged_net")}
     wm = lambda c: float(np.average(f[c], weights=w)) if len(f) else np.nan                       # noqa: E731
     return {"trades": len(f), "unpriced": int(len(fills) - len(f)), "days": len(days), "trades_per_day": len(f) / max(len(days), 1),
             "hit": float((f["gross_bps"] > 0).mean()) if len(f) else np.nan, "gross": r["gross"]["mean"], "hedged": r["hedged"]["mean"],
-            "hedged_lo": r["hedged"]["lo"], "hedged_hi": r["hedged"]["hi"], "fee": wm("fee_bps"),
+            "hedged_lo": r["hedged"]["lo"], "hedged_hi": r["hedged"]["hi"], "hedged_net": r["hedged_net"]["mean"],
+            "hedged_net_lo": r["hedged_net"]["lo"], "hedged_net_hi": r["hedged_net"]["hi"], "fee": wm("fee_bps"),
             "other_cost": wm("other_cost_bps"), "funding": wm("funding_bps"), "p_fill": wm("p_fill"), **{f"net_{k}": v for k, v in r["net"].items() if k != "n"},
             "net": r["net"]["mean"]}
 
@@ -468,6 +470,9 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
             "generated": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC"}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     (out / "report.md").write_text(report(meta, res, floor))
+    if hasattr(strategy, "oos"):                               # a forecasting strategy: the held-out IC read, next to the ledger
+        from .forecast import forecast_report
+        (out / "forecast.md").write_text(forecast_report(strategy, M, fold_names, latency))
     if conf:                                                   # only once the number exists
         READS.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame({"read_at": meta["generated"], "registration": registration, "fold": conf, "strategy": strategy.name,
@@ -492,7 +497,7 @@ def report(meta: dict, res: pd.DataFrame, floor: pd.DataFrame) -> str:
           "*MDE* is the smallest true mean this sample could tell from zero (80 % power). The *noise floor* is the same pipeline on labels whose days were "
           "shuffled; p is the share of shuffles that did at least as well. *flip p* is the stricter null: the rule's own trades, with every day's sides "
           "multiplied by one random sign. *hedged* is gross minus the side × the other pairs' average move over the same bars: what the trade earned "
-          "against the market rather than with it.\n", "\n## Bottom line\n"]
+          "against the market rather than with it; *hedged net* is that minus the same costs (the hedge leg is not costed).\n", "\n## Bottom line\n"]
     for _, r in res[res["scope"] == "all"].iterrows():
         fl = floor[floor["exec"] == r["exec"]].iloc[0]
         usd, cap = r["net"] * meta["notional"] / 1e4, max(meta["max_open"], 1) * meta["notional"]
@@ -500,11 +505,11 @@ def report(meta: dict, res: pd.DataFrame, floor: pd.DataFrame) -> str:
                    else "not distinguishable from zero on this sample")
         md.append(f"- **{r['exec']}: {verdict}.** {r['trades']:,} trades over {r['days']} days ({r['trades_per_day']:.1f} a day), right on {r['hit']:.1%}. "
                   f"Gross {r['gross']:+.2f} bps (hedged {r['hedged']:+.2f} [{r['hedged_lo']:+.2f}, {r['hedged_hi']:+.2f}]), fees {r['fee']:.2f}, spread/impact/adverse {r['other_cost']:.2f}, funding {r['funding']:+.2f} → "
-                  f"**net {r['net']:+.2f} bps per trade [{r['net_lo']:+.2f}, {r['net_hi']:+.2f}]**, MDE {r['net_mde']:.2f}; noise floor {fl['null_mean']:+.2f} ± {fl['null_sd']:.2f}, "
+                  f"**net {r['net']:+.2f} bps per trade [{r['net_lo']:+.2f}, {r['net_hi']:+.2f}]**, MDE {r['net_mde']:.2f} (hedged net {r['hedged_net']:+.2f} [{r['hedged_net_lo']:+.2f}, {r['hedged_net_hi']:+.2f}]); noise floor {fl['null_mean']:+.2f} ± {fl['null_sd']:.2f}, "
                   f"p = {fl['p']:.3f} ({int(fl['draws'])} shuffles); flip null {fl['flip_null_mean']:+.2f} ± {fl['flip_null_sd']:.2f}, p = {fl['flip_p']:.3f}. In money: {usd:+.2f} USDT per trade, {usd * r['trades_per_day']:+.1f} USDT a day on up to "
                   f"{cap:,} USDT deployed ({usd * r['trades_per_day'] * 365 / cap:+.1%} a year, no leverage, no compounding)."
                   + (f" {r['unpriced']} trades left out as unpriceable." if r["unpriced"] else "") + "\n")
-    cols = ["exec", "scope", "trades", "trades_per_day", "hit", "gross", "hedged", "fee", "other_cost", "funding", "net", "net_lo", "net_hi", "net_mde", "p_fill", "unpriced"]
+    cols = ["exec", "scope", "trades", "trades_per_day", "hit", "gross", "hedged", "fee", "other_cost", "funding", "net", "net_lo", "net_hi", "net_mde", "hedged_net", "hedged_net_lo", "hedged_net_hi", "p_fill", "unpriced"]
     fo, sd = res["scope"].isin(["all", *meta["folds"]]), res["scope"].isin(list(SIDES))
     md += ["\n## Per fold (bps per unit of notional)\n", res.loc[fo, cols].round(3).to_markdown(index=False), "\n",
            "\n## Long and short apart\n", res.loc[sd, cols].round(3).to_markdown(index=False), "\n",

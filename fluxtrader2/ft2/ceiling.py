@@ -324,7 +324,7 @@ def _pair_rank(x: pd.DataFrame) -> pd.DataFrame:
     return x.rank(pct=True) - 0.5
 
 
-def _ic_pooled(f: np.ndarray, y: np.ndarray, day: np.ndarray) -> np.ndarray:
+def _ic_pooled(f: np.ndarray, y: np.ndarray, day: np.ndarray, min_cells: int = 100) -> np.ndarray:
     """Each day's share of the WHOLE-SAMPLE uncentred correlation Σ f·y / √(Σf² Σy²) over every (bar, pair)
     cell: the day's Σ f·y × (number of days) / the sample's √(Σf² Σy²). The mean over days IS that
     correlation, and its HAC t is the day-clustered t of the sums.
@@ -340,7 +340,7 @@ def _ic_pooled(f: np.ndarray, y: np.ndarray, day: np.ndarray) -> np.ndarray:
     ok = ~(np.isnan(f) | np.isnan(y))
     nd = int(day.max()) + 1 if len(day) else 0
     d, ff, yy = day[ok], f[ok], y[ok]
-    use = np.bincount(d, minlength=nd) >= 100
+    use = np.bincount(d, minlength=nd) >= min_cells
     num, sf, sy = np.bincount(d, ff * yy, nd), np.bincount(d, ff * ff, nd), np.bincount(d, yy * yy, nd)
     norm = np.sqrt(sf[use].sum() * sy[use].sum())
     with np.errstate(invalid="ignore", divide="ignore"):

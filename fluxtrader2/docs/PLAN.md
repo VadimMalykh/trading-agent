@@ -381,7 +381,7 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 steps 1–6 read, last 2026-09-22: no rule is ready for a confirmation read; R8, R9, R11 parked by their own stage-1 gates, H2 closed on breadth by R10; next is the forecast layer, pair-held-out)
+### P5 — Forecast + analytic decision (🟡 steps 1–6 read; step 7 — the forecast layer, pair-held-out — REGISTERED 2026-09-23 as R12 and running on the work VM, not read; R8, R9, R11 parked by their own stage-1 gates, H2 closed on breadth by R10)
 
 **Can it trade profitably? Not shown.** Plain version of where P5 stands (a bps is 0.01 %; on a 10,000 USDT position
 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip; *IC* = the correlation between a signal and the
@@ -438,15 +438,15 @@ move that follows, 0.03–0.05 is what a tradable weak signal looks like here):
 closed-form decision — has not been built yet, and the restated goal (§0: a model trained on other pairs) makes the 40-pair
 universe from R10 the place to build it.
 
-**Next session (Claude; needs nothing from Vadim):**
-
-1. **P5's forecast layer on the 40-pair universe, pair-held-out.** Ridge on all history (R7: more history helps; the tree never
-   beats it), the 11 candle features (the 24 need book data the new pairs lack), 4h and 1d targets, fitted on 30 pairs and scored
-   on the 10 held out (four rotations, so every pair is scored by a model that never saw it), through the harness with the
-   closed-form decision below (trade when the forecast clears cost by a margin, size by forecast over variance, capped;
-   market-neutralised — R8/R11 say any long bias will look like skill in F1). Register the pair split, the margin and the cap
-   before reading. What would count: hedged net > 0 outside both nulls on F1+F2, then F3.
-2. **Only if 1 shows an IC that survives the pair hold-out:** the demeaned imbalance as a ceiling screen on the twelve (§7).
+- **Step 7 (R12, registered 2026-09-23, RUNNING — not read).** The forecast layer on the 40-pair universe, pair-held-out: a ridge
+  on the 11 candle features (the 24 need book data the new pairs lack), fitted on 30 pairs and scored on the 10 held out (four
+  rotations, so every pair is scored by a model that never saw it), target = the pair's move against its peers (no market
+  direction), through the harness with the closed-form decision (trade when the forecast clears 15 bps, size by forecast over
+  variance, capped). Two arms, 1d primary and 4h. What would count: hedged net > 0 outside both nulls on F1+F2 AND a held-out
+  IC with t ≥ 2 — then F3. `ft2/forecast.py`; the registration (§8 R12) has the exact commands and the gate. Four jobs were
+  started in parallel on the work VM on 2026-09-23 (`output/logs/r12_*.log`); **next session (Claude): `vm.sh pull`, read
+  `output/backtest/r12_ridgebook_1d/report.md` and `forecast.md` (and the three twins), fill R12's Result, apply the gate.**
+- **Step 8 (only if step 7's held-out IC is real):** the demeaned imbalance as a ceiling screen on the twelve (§7 book row (b)).
 
 **Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
@@ -952,6 +952,64 @@ Result:        **Stage 1, read 2026-09-22 (output/backtest/r11_bookimb1d_long): 
                +47-gross long tail was a small, market-carried sample; the ask-heavy book is not a per-pair signal worth a
                day's long at these costs. The book row in §7 keeps its (b) and (c): a demeaned imbalance as a ceiling screen,
                and the book inside P5's ridge — where R7 measured the level's value (1d IC 0.067 vs 0.048 without).**
+
+### R12 — ridgebook: P5's forecast layer, fitted on 30 pairs and scored on the 10 it never saw (registered 2026-09-23, before the strategy saw any real bar; stage 1 read —, stage 2 read —)
+Question:      §0's goal is a model that trades pairs it was not trained on. R7 left one funded directional signal — a ridge
+               on the 11 candle features (IC 0.030 at 4h, 0.048 at 1d, walk-forward IN pair, twelve names) — and R10 left a
+               40-pair universe with clean 5m history and a priced cost. Does that forecast survive being applied to pairs it
+               never saw, and does a closed-form decision on it make money against the market after costs?
+Strategy:      `ft2/forecast.py::RidgeBook` (`ridgebook`; the module docstring is the specification). Universe `universe.WIDE`
+               (40, R10's, unchanged). Hold-out: group g = every 4th name of WIDE in its volume-rank order starting at g
+               (g = rank index mod 4; ten names each, spanning the liquidity range); a pair in group g is scored ONLY by the
+               ridge fitted on the other 30. Features: `ceiling.dir_features` (the P2 set, one definition) + hour of day
+               (sin, cos) = 12 columns, standardised on the training rows. Label: the harness's y (gross bps, execution to
+               exit at `hold`) / (σ_1w·√hold), clipped ±5, MINUS the mean over the training pairs present at the bar
+               (≥ 5) — the move against peers, so the forecast carries no market direction. Model: RidgeCV over
+               ceiling.ALPHAS, no intercept, refitted every 30-day block on every hourly row whose label ended before the
+               block (all history from 2022-08-18, as the harness builds the market for F1+F2). Decision grid: bars on the
+               hour (24 a day a pair). Forecast f = ẑ·σ_1w·√hold in bps. Trade when |f| ≥ 15 bps (a taker round trip of
+               ~12.5 on the twelve + 2.5 margin; the thin names cost more, which the `--cost-mult 2` twin covers), side =
+               sign(f), one position per pair (harness), size = (|f|/15)·(σ_ref/σ_h)² floored 0.25, capped 2 (expected value
+               over variance; the harness weights means by size, bps stay per unit). Fixed here, not searched: groups 4,
+               grid 12, min_bps 15, cap 2, min_pairs 5, ALPHAS, no intercept.
+               Two arms, both read: PRIMARY hold 288 (1d: R7's larger IC, and a round trip is ~3 % of the typical move);
+               secondary hold 48 (4h). The 4h arm is expected to clear 15 bps on very few cells — that is its reading.
+Cost:          as R10 — the 8 measured pairs from the tape, the 32 others from `ft2 costwide`; funding from the archive; every
+               read twice, as priced and with spread + impact doubled.
+Contrast:      taker net per unit of notional vs zero and vs both nulls (shuffle: the fit is re-walked on day-shuffled labels,
+               200 draws; flip: the book's own days' sides flipped); `maker` reported; **hedged net** (net minus side × the
+               other pairs' move, the hedge leg uncosted — added to the harness for this read) is the second number; and the
+               held-out IC of ẑ against the realised move vs peers on the whole decision grid (`forecast.md`, pooled, day-
+               clustered t, per fold and per held-out group) is the third: the forecast has to be real out of pair whether
+               or not the trade pays.
+Folds read:    stage 1: F1+F2 (exploration), 4 jobs in parallel on the work VM (OMP_NUM_THREADS=1 each):
+                 `backtest ridgebook --param hold=288 --universe wide --execs taker maker --name r12_ridgebook_1d`
+                 `backtest ridgebook --param hold=288 --universe wide --execs taker maker --cost-mult 2 --name r12_ridgebook_1d_cost2`
+                 `backtest ridgebook --param hold=48  --universe wide --execs taker maker --name r12_ridgebook_4h`
+                 `backtest ridgebook --param hold=48  --universe wide --execs taker maker --cost-mult 2 --name r12_ridgebook_4h_cost2`
+               stage 2: F3 alone, once, primary arm, same parameters — after the 32 new pairs' klines 2024-09 → 2025-05 are
+               fetched (`ft2 archive klines/5m --universe wide --monthly --start 2024-09-01 --end 2025-05-01`) and
+               `ft2 costwide` re-run to cover them:
+                 `backtest ridgebook --param hold=288 --universe wide --folds F3 --registration R12 --execs taker maker`
+               No parameter changes between the stages.
+Gate:          stage 1 → stage 2 only if ALL of, on the PRIMARY arm as priced, taker: (i) net > 0; (ii) hedged net > 0;
+               (iii) the larger of the two null p ≤ 0.05; (iv) net ≥ −5 bps in each of F1 and F2; (v) the held-out IC on
+               the grid (all groups pooled) has t ≥ 2. A pass on the 4h arm alone opens nothing (a new registration would).
+               Fail → PARKED with the numbers; no variant on F1+F2 (a different threshold, grid, feature set or target is a
+               NEW registration). If (v) passes and (i)–(iii) fail, the forecast is real out of pair but not tradable at this
+               cost: record that, and the next registration is the demeaned book imbalance as a ceiling screen (P5 step 8),
+               not another threshold. Stage 2: CONFIRMED if taker hedged net's lower bound > 0 AND the larger p ≤ 0.05;
+               REFUTED if the hedged net's upper bound < 0; else NOT DETECTABLE with the MDE.
+Expectation:   Held-out IC at 1d 0.02–0.04 (R7's in-pair 0.048 less what is pair-specific), t 2–4 on 485 days; per group
+               within ±0.02 of the pooled. Forecast sd ≈ IC × σ_1d ≈ 8–15 bps, so 10–25 % of cells clear 15 bps; with one
+               position per pair for a day: 20–35 trades a day, ~12,000 on F1+F2, se ≈ 3, MDE ≈ 6–8. Gross a trade +8 … +18
+               if the forecast is roughly calibrated (the calibration table says); hedged ≈ gross (the target is the residual);
+               taker cost 12.5 on the majors, 14–19 on the thin names → taker net −6 … +4; maker net higher by ~5 but its fills
+               select against the forecast (R10). Costs doubled: net 4–8 lower. Likeliest: (v) passes, (i)–(iii) do not —
+               "real out of pair, not tradable at VIP 0 with candle features alone", and the book row's (c) becomes the next
+               question. 4h arm: < 3 % of cells clear 15 bps, a few hundred trades, uninformative on money; its IC (0.01–0.03)
+               is the number worth keeping.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
