@@ -37,12 +37,11 @@ PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "LIN
 
 
 def _symbols(args) -> list[str]:
-    """--symbols, or --universe wide (the twelve plus ft2.universe.WIDE, in that order, no duplicates), or the twelve."""
+    """--symbols, or --universe wide (exactly ft2.universe.WIDE: the forty chosen by volume before F0 — eight of the twelve are in it,
+    the other four are not, by the same rule), or the twelve."""
     if getattr(args, "universe", None) == "wide":
         from .universe import WIDE
-        if not WIDE:
-            raise SystemExit("ft2/universe.py::WIDE is empty: run `ft2 universe` and freeze its list there first")
-        return list(dict.fromkeys([*PAIRS, *WIDE]))
+        return list(WIDE)
     return args.symbols or PAIRS
 
 
@@ -114,7 +113,7 @@ def main(argv=None):
                                       "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
     i.add_argument("--symbols", nargs="*", help="archive slices only: which pairs (default the twelve)")
-    i.add_argument("--universe", choices=["wide"], help="archive slices only: the twelve plus ft2.universe.WIDE")
+    i.add_argument("--universe", choices=["wide"], help="archive slices only: ft2.universe.WIDE (R10)")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
     a.add_argument("kinds", nargs="+", help="bookDepth metrics aggTrades fundingRate klines/1m …")
@@ -171,7 +170,7 @@ def main(argv=None):
         if a_.dest in ("taker_bps", "maker_bps"):
             b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
     b.add_argument("--symbols", nargs="*")
-    b.add_argument("--universe", choices=["wide"], help="the twelve plus ft2.universe.WIDE (R10)")
+    b.add_argument("--universe", choices=["wide"], help="ft2.universe.WIDE, the forty of R10, instead of the twelve")
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,

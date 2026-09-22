@@ -501,7 +501,7 @@ registered positive on confirmation folds.
 |---|---|---|
 | ~~R1 stage 2 — the confirmation read of `reversal4h`~~ — **CLOSED 2026-09-21** | Needed from Vadim: nothing. The rule's premise (pair-level reversal) was a statistical artefact (R7) and its profit was the market's bounce in a rising market (R3, R4). F3 stays unspent | none; the bounce lives on as R8 |
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21 | **Needed from Vadim: nothing unless you want it read — saying nothing = (a).** On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. (a) *recommended*: leave it parked; the bar was written first. (b) a NEW registration that reads F3+F4+F5 pooled for the unchanged rule — honest (nothing is re-tuned; the failed gate guarded the fold budget, not validity), power 4 in 5 for a true +52, 1 in 4 for +25: `vm.sh run backtest trendfall4h --folds F3 F4 F5 --registration R<n> --execs taker maker` after the block is written | Vadim chooses (b); or F5 grows by ~6 months (more power for the same read); or a measured observable separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule |
-| **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread for it | Claude does the next step (P5 "Next session" #3). Gross +12.5 bps a leg, hedged +14.2 [+1.8, +26.5]; net −0.2 taker / +4.9 maker, under the +5 bar | the wider universe (§9 #2) with 3–5 names a side, or a lower fee tier (VIP 1 / BNB discount takes 1–2 bps off a round trip) |
+| **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread for it; **its revival is running as R10 (2026-09-22)** | Needed from Vadim: nothing. Gross +12.5 bps a leg, hedged +14.2 [+1.8, +26.5]; net −0.2 taker / +4.9 maker, under the +5 bar. R10 = the same rule with four names a side on the 40-pair universe of `ft2 universe` (§8 R10) | R10's stage 1 read; failing that, a lower fee tier (VIP 1 / BNB discount takes 1–2 bps off a round trip) |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9)** — PARKED by its own stage-1 gate 2026-09-22 | Needed from Vadim: nothing. The screen's IC (−0.039 at 1d, p_fw 0.005) did not turn into money as a fixed rule: −2.2 bps a trade taker [−25, +21], gross +8, hedged +6.7, 9 trades a day on F1+F2, p 0.05 / flip 0.16. The pooled correlation lives in the slow per-pair level of the imbalance, which a daily short cannot collect at 12 bps a round trip. 79 % of trades were shorts; the long side (ask-heavy book, 930 trades) earned +47 gross / +32 net [−5, +69] | (a) a NEW registration for the long side only (ask-heavy book, fixed quantile of −imb, 1d) — P5 "Next session" #2; (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -841,6 +841,47 @@ Result:        **Stage 1, read 2026-09-22 (commit 69bd804 holds this block as wr
 Template:
 
 ```
+### R10 — rankcont4h on the wider universe, four names a side (registered 2026-09-22, before the rule saw any real bar of the 32 new pairs; stage 1 read —, stage 2 read —)
+Question:      R5 found H2 (a pair torn away from the others keeps going) real before costs — +12.5 bps gross a leg, hedged
+               +14.2 [+1.8, +26.5] — and eaten by them on twelve names (net −0.2 taker / +4.9 maker, bar +5). Its own revival
+               trigger was "a wider universe where the tails are 3–5 names a side". Is it more than a round trip costs there?
+Universe:      `ft2/universe.py::WIDE` — the 40 USDT perpetuals with the highest MEDIAN daily quote volume over 2022-04-18 →
+               2022-08-17 (the four months before F0) that have a 1d bar on every day of that window; chosen by `ft2 universe`
+               on 2026-09-22 05:19 UTC from 854 archive symbols and frozen in code before any 5m bar of the 32 new pairs was
+               read (output/universe_wide.md has the ranking). Nothing after 2022-08-17 entered the choice. Eight of the
+               twelve are in it; ZEC ranked 50th, PEPE / WLD / HYPE did not exist. Delisted names (WAVES, UNFI, OGN, …)
+               stay in: the harness trades the pairs present at each bar, so there is no survivorship in F1+F2.
+Rule:          `ft2/rules.py::RankContinuation(k=4)` = R5's rule with four names a side, nothing else touched (q_disp 0.90,
+               120 days, hold 48): long the 4 pairs furthest ABOVE the others over 4 hours, short the 4 furthest below; the
+               i-th lowest and the i-th highest are one unit (both legs or neither); the trigger (the gap between the two
+               extremes ≥ its q_disp quantile) is R5's. k = 4 of 40 is the top decile each way — the same fraction P2's cost
+               bars were written for; k was fixed here, not searched.
+Cost:          the 8 measured pairs from the tape (P1, `data/cost_daily.parquet`); the 32 others from `ft2 costwide` —
+               ONE pooled regression log(cost) ~ log(range) + log(dollar volume) + log(tick) fitted on the twelve's tape
+               days, its leave-one-pair-out error on the twelve in `output/cost_wide.md`, the fitted spread never below the
+               day's tick. Funding from the archive for all 40. The proxy is read before the backtest; the rule's numbers
+               are not. Every read is run twice: as priced, and with spread + impact doubled (`--cost-mult 2`).
+Contrast:      mean net bps per leg vs zero and vs both nulls (shuffle, flip); `taker` and `maker` both reported; the primary
+               execution is the better of the two by stage 1's point estimate, fixed for stage 2 (as R5).
+Folds read:    stage 1: F1+F2 (exploration):
+                 `vm.sh run backtest rankcont4h --param k=4 --universe wide --execs taker maker --name r10_rankcont4h_k4`
+                 `vm.sh run backtest rankcont4h --param k=4 --universe wide --execs taker maker --cost-mult 2 --name r10_rankcont4h_k4_cost2`
+               stage 2: FP+F0, once, same universe and parameters, after the 32 new pairs' klines from 2020 are fetched:
+                 `vm.sh run backtest rankcont4h --param k=4 --universe wide --folds FP F0 --registration R10 --execs taker maker`
+               (FP carries one bias the twelve did not: a pair delisted before 2022-04-18 cannot be in the universe.)
+Gate:          stage 1 → stage 2 only if the primary net ≥ +5 bps per leg as priced (R5's bar, unchanged). Before stage 2 is
+               read, the proxy is checked on the new pairs with a two-week tape sample per pair (`ft2 tape --symbols …`,
+               2024-07): if the sampled spread + impact differs from the proxy by more than ×1.5 on the median new pair, the
+               stage 1 ledger is RE-PRICED (not re-decided) at the sampled cost and the gate applied again. Below the bar:
+               H2 is PARKED again with "real before costs, not tradable at VIP 0 on forty names either" and its next
+               revival is a lower fee tier only. Stage 2 verdicts as in R4. No parameter changes between the stages.
+Expectation:   Gross a leg like R5's (+8 … +15: the tails of 40 at the decile are about as extreme as the two ends of 12);
+               the 32 new pairs cost more to cross (half spread + impact at 10k ≈ 1.5–4.5 bps a leg against 0.5–1.5 on the
+               twelve), so taker net ≈ +1 … +8, maker ≈ +3 … +10; R5's long leg carried everything (+20.7 gross vs +4.3),
+               expect the same asymmetry. About 8 legs per trigger, 15–30 legs a day, ~10,000 legs on F1+F2; legs of one bar
+               are correlated, so se ≈ 3 and MDE ≈ 8. Likeliest: the primary net lands within ±3 of the bar — the read decides.
+Result:        —
+
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
 Contrast:      A vs B, per <trade | unit notional>, bps
@@ -858,7 +899,7 @@ built here in P2 and needs no download.
 | # | data | source | what it unlocks | phase |
 |---|---|---|---|---|
 | 1 | **Historical book depth, tape and flow for the same twelve pairs** | Binance's public archive (`data.binance.vision`, USDⓈ-M futures; free, no key). **Coverage measured 2026-09-15:** depth within ±1..5 % of mid (`bookDepth`, 30 s) **2023-01-01 → today** for every pair (from listing for the younger ones), ~0.5 MB/day/pair; 5m open interest + long/short + taker ratios (`metrics`) 2020-09 → today; the full tape (`aggTrades`) 2019-12 → today, **~136 GB zipped for our pairs from 2023-01** (BTC 14–27 MB/day); funding monthly since 2020. Best bid/ask (`bookTicker`) was discontinued in 2024 and **`bookDepth` does not replace it** (no touch prices in it) — the historical spread is estimated from the tape's bid–ask bounce. 1m klines back to 2019-12 (2.7 years more than the collector holds). | The single biggest gap in our data was that book, tape and flow existed for two months while candles existed for four years. This closes it back to 2023-01: P1's cost model is measured over 3.7 years instead of proxied, and book/flow features (§7) become testable in a powered walk-forward over F1–F5. **Done in P0b** (`bookDepth`, `metrics`, `fundingRate` ingested; DATA.md); the tape is streamed to a per-minute summary in P1 (`ft2 tape`, not kept raw). | P0b ✅ → P1, P2 |
-| 2 | **Candles for a wider universe** (the top ~30–50 USDⓈ-M perps by volume, 5m and 1h) | same archive | Breadth: the plan's edge comes from many semi-independent bets, and a cross-sectional strategy on twelve names is thin. More names also gives a cleaner "market" factor. The collector need not record them for research; only for trading later. | P2 (ceiling audit on 12 vs 40) |
+| 2 | **Candles for a wider universe** (the top ~30–50 USDⓈ-M perps by volume, 5m and 1h) | same archive | Breadth: the plan's edge comes from many semi-independent bets, and a cross-sectional strategy on twelve names is thin. More names also gives a cleaner "market" factor. The collector need not record them for research; only for trading later. **Done 2026-09-22 for R10:** `ft2 universe` chose 40 (`ft2/universe.py::WIDE`, ranking in output/universe_wide.md), monthly 5m klines 2022-04 → 2024-08 and funding for the 32 the collector lacks are in `candles_5m_archive` / `funding_archive` (DATA.md); their cost is `ft2 costwide`'s pooled candle proxy. | R10 (P5 step 5) |
 | 3 | **Spot klines for the same symbols** | same archive (spot) | Basis (perp minus spot) and its changes, a known carry/flow signal; also a cleaner index for the market factor | P2 |
 | 4 | **Same pairs on a second venue** (Bybit / OKX perps, 1m klines) | their public archives | Cross-venue lead-lag at short horizons; only relevant if P2 funds a sub-15m horizon | parked |
 | 5 | On-chain, news, sentiment | various | Low prior at these horizons, high engineering cost; not now | parked |

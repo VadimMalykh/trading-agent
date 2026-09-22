@@ -28,18 +28,23 @@ SELECT_N = 40
 OUT_MD = Path("output/universe_wide.md")
 EXCLUDE = {"BTCDOMUSDT", "DEFIUSDT", "BTCSTUSDT", "USDCUSDT", "BTCUSDT_", "FOOTBALLUSDT", "BLUEBIRDUSDT"}   # indices / stables: not a pair in the sense used here
 
-# Frozen 2026-09-22 from output/universe_wide.md (see that file for the ranking); the twelve are inside it where they qualify.
-WIDE: list[str] = []
+# Frozen 2026-09-22 05:19 UTC from output/universe_wide.md (854 candidates, 135 with a bar on all 122 days of the window). Eight of the
+# collector's twelve are in it (BTC, ETH, SOL, AVAX, ADA, XRP, DOGE, LINK); ZEC ranked below 40, PEPE / WLD / HYPE did not exist yet.
+WIDE: list[str] = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'GMTUSDT', 'AVAXUSDT', 'APEUSDT', 'BNBUSDT', 'ADAUSDT', 'NEARUSDT', 'XRPUSDT', 'FTMUSDT', 'SANDUSDT', 'MATICUSDT', 'DOTUSDT', 'WAVESUSDT', '1000SHIBUSDT', 'DOGEUSDT', 'GALAUSDT', 'ETCUSDT', 'LINKUSDT', 'AXSUSDT', 'ATOMUSDT', 'LTCUSDT', 'TRXUSDT', 'MANAUSDT', 'AAVEUSDT', 'CRVUSDT', 'UNFIUSDT', 'PEOPLEUSDT', 'RUNEUSDT', 'DYDXUSDT', 'BCHUSDT', 'FILUSDT', 'EOSUSDT', 'ZILUSDT', 'THETAUSDT', 'ENSUSDT', 'UNIUSDT', 'ALICEUSDT', 'OGNUSDT']
+NEW = [s for s in WIDE if s not in ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOGEUSDT")]   # the 32 the collector never recorded
 
 
 def candidates() -> list[str]:
     syms = archive.list_prefixes("data/futures/um/monthly/klines/")
-    return sorted(s for s in syms if s.endswith("USDT") and "_" not in s and s not in EXCLUDE)
+    return sorted(s for s in syms if s.endswith("USDT") and "_" not in s and s.isascii() and s.isalnum() and s not in EXCLUDE)
 
 
 def _daily_1d(sym: str, months: list[str]) -> pd.DataFrame:
     """The symbol's 1d klines over `months`, read straight from the monthly zips (kept under ROOT/klines/<sym>/)."""
-    archive.fetch_monthly("klines", sym, sub="1d", months=months)
+    try:
+        archive.fetch_monthly("klines", sym, sub="1d", months=months)
+    except Exception as e:  # noqa: BLE001 — one symbol's listing failing must not lose the ranking; it shows up as incomplete
+        print(f"  {sym}: {e!r}", flush=True)
     parts = []
     for m in months:
         f = archive.ROOT / "klines" / sym / f"{sym}-1d-{m}.zip"
