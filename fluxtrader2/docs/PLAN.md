@@ -773,6 +773,49 @@ Power:         Written 2026-09-21 for whoever revives it. se 13.0 on 1,578 days 
                MDE ≈ 53: a true +52 about 4 times in 5, a true +25 about 1 in 4. Only the pooled read is worth making.
 
 
+### R9 — bookimb1d: trade against a lopsided ±1 % book for a day (registered 2026-09-22, before the rule saw any real bar; stage 1 read —, stage 2 read —)
+Question:      R7's re-read left one per-pair directional signal that clears the screen: the ±1 % book imbalance at 1d
+               (IC −0.039, family-wise p 0.005, 87.5 % of months the same sign; relative IC −0.032, p_fw 0.015). Does it
+               make money after costs as a fixed rule with no model — and is the money the pair's own, or the market's?
+Rule:          `ft2/rules.py::BookImbalance` = P2's `depth_imb_1` exactly as screened (one definition, `ceiling.depth_frames`,
+               now shared by the screen and the rule): (bid − ask notional within ±1 % of mid) / their sum, from the archive
+               book's last 30 s sample strictly before t. A bid-heavy book precedes a fall, so side = −sign(imb), one unit,
+               288 bars (1 day), one position per pair, executed 1 bar later — only when |imb| is at or above the pair's
+               q_sig 0.90 quantile of |imb| over the 120 days before each 30-day block (refitted by the harness; nothing
+               inside the block is used). Why 0.90 and not a searched value: P2's cost bars (`ic_needed`, #7) were written
+               for "trade the top decile of signals", so the rule trades the top decile. Why 1d and not 4h: 4h missed the
+               family-wise bar (−0.017, p_fw 0.06); at 1d a round trip is 3 % of the typical move (taker 12.3 vs 385 bps).
+               No candle feature enters. Parameters fixed here and not searched: q_sig 0.90, window 120 days, hold 288.
+Contrast:      mean net bps per unit of notional vs zero and vs both nulls; primary execution `taker` (path-independent, as
+               R8); `maker` and `maker_ev` reported. The HEDGED gross (gross minus side × the other pairs' move) is the
+               second reading: it says whether the trade earns against the market or with it. Long and short apart.
+Folds read:    stage 1: F1+F2 — the folds the screen read, so a mechanical gate (costs, fills, the book rule's effect on
+               a 1-day hold, the day-clustered se), NOT evidence. FP and F0 cannot check this rule: the archive book
+               starts 2023-01-01 (DATA.md), 120 days before F1.
+               `ft2 backtest bookimb1d --folds F1 F2 --execs taker maker maker_ev`
+               stage 2: F3 alone, once: `ft2 backtest bookimb1d --folds F3 --registration R9 --execs taker maker maker_ev`
+               — unless stage 1's se says F3 alone cannot tell (Power, below); then the read waits for Vadim's decision on
+               pooling F3+F4, as R8's row in §7 does. No parameter changes between the stages.
+Gate:          stage 1 → stage 2 only if ALL of: taker net > 0 AND the larger p ≤ 0.05 AND hedged gross > 0 (a positive
+               net with hedged ≤ 0 is market timing wearing a book, R8's lesson: parked, not pursued) AND taker net ≥ −5 bps
+               in each of F1 and F2 (a rule that loses a whole 8-month fold is a regime bet). Fail → PARKED with the
+               numbers, no variant tried on F1+F2 (a demeaned or a ±5 % version is a NEW registration, not a tweak).
+               Stage 2: CONFIRMED if the taker interval's lower bound > 0 AND the larger p ≤ 0.05; REFUTED if the upper
+               bound < 0; else NOT DETECTABLE with the MDE.
+Expectation:   Stage 1: gross +20 to +30 (0.039 × 1.755 × 385 ≈ 26 for the top decile of a standardised signal; the
+               imbalance is not normal, so this is loose), taker net +8 to +18, maker +12 to +22 if fills are as P1
+               measured (unknown: the resting order sits on the thin side of a lopsided book). 2–6 trades a day on ~480
+               days (the imbalance persists, so a pair re-enters most days it is extreme), 1,000–3,000 trades, up to 12 open
+               at once. se 15–25, MDE 40–70: the point estimate is likelier than not to be positive and INSIDE the noise —
+               then the gate fails on p and the rule is parked as "real in the screen, not shown in money on F1+F2".
+               Hedged gross positive but below gross (the relative IC is 0.032 against 0.039). Shorts (bid-heavy books)
+               and longs both positive; if one side carries everything, say so, change nothing.
+Power:         written after stage 1 from its se, before any confirmation read: F3 alone (243 days) has about half the days
+               of F1+F2, so se_F3 ≈ se × √2; the read is worth making only if a true effect of stage 1's size is found
+               there at least one time in two.
+Result:        —
+
+
 Template:
 
 ```

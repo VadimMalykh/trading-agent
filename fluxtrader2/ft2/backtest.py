@@ -109,9 +109,17 @@ class Market:
 PRE_START = pd.Timestamp("2019-12-31", tz="UTC")        # the archive's first kline
 
 
-def market(symbols: list[str], end: pd.Timestamp, start: pd.Timestamp = ceiling.START) -> Market:
+def market(symbols: list[str], end: pd.Timestamp, start: pd.Timestamp = ceiling.START, needs: tuple[str, ...] = ()) -> Market:
     P = ceiling.panel(symbols, end, start)
-    return Market(P["close"], P["high"], P["low"], P["dv"])
+    M = Market(P["close"], P["high"], P["low"], P["dv"])
+    for k in needs:
+        M.extra[k] = EXTRAS[k](M.index, list(M.columns), end)
+    return M
+
+
+# Data a rule may ask for beyond the candles (`Strategy.needs`), built on the market's own bar index and cut at `end`
+# exactly as the P2 screen built them, so that a rule trades the feature that was screened. Absent data → NaN.
+EXTRAS = {"depth_imb_1": lambda idx, cols, end: ceiling.depth_frames(idx, cols, end)[0]}
 
 
 @dataclasses.dataclass
@@ -153,6 +161,7 @@ class Strategy:
     hold = 48                    # bars a position is held
     uses_labels = False          # True: `fit` reads y, and the noise floor refits on every shuffle
     max_side = None              # book rule: at most this many positions open at once on one side (None = no cap)
+    needs: tuple[str, ...] = ()  # names in EXTRAS the harness attaches to Market.extra before the walk (book data, …)
 
     def params(self) -> dict:
         return {k: v for k, v in vars(self).items() if not k.startswith("_") and isinstance(v, (int, float, str, bool, tuple, list))}
@@ -395,7 +404,7 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
     fold_names = folds.order(fold_names)
     conf = _guard(fold_names, registration)
     end = folds.bounds(fold_names[-1])[1]
-    M = market(symbols, end, PRE_START if "FP" in fold_names else ceiling.START)      # F1… runs see exactly the market they always saw
+    M = market(symbols, end, PRE_START if "FP" in fold_names else ceiling.START, strategy.needs)      # F1… runs see exactly the market they always saw
     C = load_costs(M.index, M.columns, end, cost_mult)
     y = labels(M, strategy.hold, latency)
     print(f"{strategy.name}: walk-forward over {'+'.join(fold_names)}, {len(M.index):,} bars × {len(M.columns)} pairs…", flush=True)

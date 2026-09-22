@@ -358,6 +358,22 @@ def _ic_xs(F: pd.DataFrame, Y: pd.DataFrame, day: np.ndarray) -> np.ndarray:
     return pd.Series(ic).groupby(day).mean().reindex(range(int(day.max()) + 1)).to_numpy()
 
 
+def depth_frames(idx: pd.DatetimeIndex, cols: list[str], end: pd.Timestamp) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """The archive book's three features, bar × pair, from the last ~30 s sample strictly before each t:
+    depth_imb_1 = (bid − ask notional within ±1 % of mid) / their sum (> 0: bid-heavy), depth_imb_5 the same
+    within ±5 %, depth_lvl_1 = log of the ±1 % notional over its trailing-week mean. One definition, used by
+    the P2 screen and by any rule that trades the feature (rules.py), so the rule trades what was screened."""
+    imb1, imb5, lvl = (pd.DataFrame(np.nan, index=idx, columns=cols) for _ in range(3))
+    for sym in cols:
+        dp = data.load("depth", columns=["ts", "usd_m1", "usd_p1", "usd_m5", "usd_p5"], symbols=[sym])
+        dp = dp[dp["ts"] < end].set_index("ts").resample("5min", label="right", closed="left").last().reindex(idx)
+        imb1[sym] = (dp["usd_m1"] - dp["usd_p1"]) / (dp["usd_m1"] + dp["usd_p1"])
+        imb5[sym] = (dp["usd_m5"] - dp["usd_p5"]) / (dp["usd_m5"] + dp["usd_p5"])
+        d1 = dp["usd_m1"] + dp["usd_p1"]
+        lvl[sym] = np.log(d1 / d1.rolling(2016, min_periods=1000).mean())
+    return imb1, imb5, lvl
+
+
 def features(P: dict, D: dict, symbols: list[str]) -> tuple[dict[str, pd.DataFrame], set[str], list[str]]:
     """Candidate features, all scale-free and known strictly before the decision time.
     Returns (features, the unsigned ones — used as they are for the vol target; the signed ones
@@ -402,15 +418,7 @@ def features(P: dict, D: dict, symbols: list[str]) -> tuple[dict[str, pd.DataFra
         notes.append("metrics absent: oi_chg_*, *_ls_z, taker_ratio_1h skipped")
     # archive depth, ~30 s: the last sample strictly before t
     try:
-        imb1, imb5, lvl = empty(), empty(), empty()
-        for sym in cols:
-            dp = data.load("depth", columns=["ts", "usd_m1", "usd_p1", "usd_m5", "usd_p5"], symbols=[sym])
-            dp = dp[dp["ts"] < END].set_index("ts").resample("5min", label="right", closed="left").last().reindex(idx)
-            imb1[sym] = (dp["usd_m1"] - dp["usd_p1"]) / (dp["usd_m1"] + dp["usd_p1"])
-            imb5[sym] = (dp["usd_m5"] - dp["usd_p5"]) / (dp["usd_m5"] + dp["usd_p5"])
-            d1 = dp["usd_m1"] + dp["usd_p1"]
-            lvl[sym] = np.log(d1 / d1.rolling(2016, min_periods=1000).mean())
-        F["depth_imb_1"], F["depth_imb_5"], F["depth_lvl_1"] = imb1, imb5, lvl
+        F["depth_imb_1"], F["depth_imb_5"], F["depth_lvl_1"] = depth_frames(idx, cols, END)
         unsigned.add("depth_lvl_1")
     except (FileNotFoundError, ValueError):
         notes.append("depth absent: depth_* skipped")

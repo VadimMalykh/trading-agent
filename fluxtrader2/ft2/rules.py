@@ -34,6 +34,11 @@ P5's two hypotheses, found on F1+F2 by taking R1 and R2 apart (registrations R4,
     positive → long every pair, one unit each, 48 bars. No fit, no quantile: both numbers are `market.py`'s money view.
 `rankcont4h` (H2): `rank4h` with the sides swapped — long the pair torn furthest above the others, short
     the one furthest below.
+`bookimb1d` (R7's lead, registration R9): P2's `depth_imb_1` — (bid − ask notional within ±1 % of mid) / their sum,
+    from the archive book's last 30 s sample before t — traded as it was screened. Its 1d IC is NEGATIVE (a bid-heavy
+    book precedes a fall), so: side = −sign(imb), one unit, 288 bars, only when |imb| is in the pair's top decile
+    (q_sig 0.90 — P2's cost bars were written for "trade the top decile") over the `window_days` before the block.
+    No candle feature enters; the harness attaches the book through `needs`.
 """
 from __future__ import annotations
 
@@ -150,4 +155,22 @@ class TrendFall(Strategy):
                               why=f"basket fell ≥{self.fall:g}σ in 4h, {self.trend_days}d trend up")
 
 
-STRATEGIES = {TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
+class BookImbalance(Strategy):
+    name = "bookimb1d"
+    needs = ("depth_imb_1",)
+
+    def __init__(self, q_sig: float = 0.90, window_days: int = 120, hold: int = 288):
+        self.q_sig, self.window_days, self.hold = float(q_sig), int(window_days), int(hold)
+        self._cut = None
+
+    def fit(self, M: Market, y: pd.DataFrame, now: pd.Timestamp) -> None:
+        x = M.extra["depth_imb_1"].loc[now - pd.Timedelta(days=self.window_days):].abs()
+        self._cut = x.quantile(self.q_sig).where(x.notna().sum() >= 0.5 * self.window_days * 288)     # NaN: not enough book yet
+
+    def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        x = M.extra["depth_imb_1"]
+        on = (x.abs() >= self._cut) & M.close.notna()                                               # a NaN cut compares False
+        return decisions_from((-np.sign(x)).where(on, 0.0), a, b, signal=-x, why=f"±1% book imbalance in its top decile (q{self.q_sig:g}), against it")
+
+
+STRATEGIES = {BookImbalance.name: BookImbalance, TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
