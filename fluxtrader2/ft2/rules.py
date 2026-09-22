@@ -39,6 +39,8 @@ P5's two hypotheses, found on F1+F2 by taking R1 and R2 apart (registrations R4,
     book precedes a fall), so: side = −sign(imb), one unit, 288 bars, only when |imb| is in the pair's top decile
     (q_sig 0.90 — P2's cost bars were written for "trade the top decile") over the `window_days` before the block.
     No candle feature enters; the harness attaches the book through `needs`.
+    `side=long` (registration R11): the ask-heavy book as its own question — long only, when −imb is at or above the
+    pair's q_sig quantile of −imb (the top decile of ask-heaviness itself, not of |imb|), everything else unchanged.
 """
 from __future__ import annotations
 
@@ -168,18 +170,25 @@ class BookImbalance(Strategy):
     name = "bookimb1d"
     needs = ("depth_imb_1",)
 
-    def __init__(self, q_sig: float = 0.90, window_days: int = 120, hold: int = 288):
-        self.q_sig, self.window_days, self.hold = float(q_sig), int(window_days), int(hold)
+    def __init__(self, q_sig: float = 0.90, window_days: int = 120, hold: int = 288, side: str = "both"):
+        assert side in ("both", "long")
+        self.q_sig, self.window_days, self.hold, self.side = float(q_sig), int(window_days), int(hold), side
         self._cut = None
 
+    def _size(self, x: pd.DataFrame) -> pd.DataFrame:
+        """What the cut is taken on and compared with: |imb| for both sides, −imb (ask-heaviness) for long only."""
+        return x.abs() if self.side == "both" else -x
+
     def fit(self, M: Market, y: pd.DataFrame, now: pd.Timestamp) -> None:
-        x = M.extra["depth_imb_1"].loc[now - pd.Timedelta(days=self.window_days):].abs()
+        x = self._size(M.extra["depth_imb_1"].loc[now - pd.Timedelta(days=self.window_days):])
         self._cut = x.quantile(self.q_sig).where(x.notna().sum() >= 0.5 * self.window_days * 288)     # NaN: not enough book yet
 
     def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
         x = M.extra["depth_imb_1"]
-        on = (x.abs() >= self._cut) & M.close.notna()                                               # a NaN cut compares False
-        return decisions_from((-np.sign(x)).where(on, 0.0), a, b, signal=-x, why=f"±1% book imbalance in its top decile (q{self.q_sig:g}), against it")
+        on = (self._size(x) >= self._cut) & M.close.notna()                                         # a NaN cut compares False
+        side = (-np.sign(x)) if self.side == "both" else pd.DataFrame(1.0, index=x.index, columns=x.columns)
+        what = "±1% book imbalance in its top decile" if self.side == "both" else "ask-heavy ±1% book in its top decile of −imb"
+        return decisions_from(side.where(on, 0.0), a, b, signal=-x, why=f"{what} (q{self.q_sig:g}), against it")
 
 
 STRATEGIES = {BookImbalance.name: BookImbalance, TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}

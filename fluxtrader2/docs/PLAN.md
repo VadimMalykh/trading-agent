@@ -901,6 +901,38 @@ Result:        **Stage 1, read 2026-09-22 (output/backtest/r10_rankcont4h_k4, _c
                a priced (if rough) cost for every name — the material P5's forecast layer needs for the new goal (§0): a model
                fitted on some pairs and scored on others.**
 
+### R11 — bookimb1d, long only: buy the ask-heavy book (registered 2026-09-22, before the rule saw any real bar in this form; stage 1 read —, stage 2 read —)
+Question:      R9 traded both sides of the ±1 % imbalance and lost; 79 % of its trades were shorts on bid-heavy books, and the
+               rare long side — an ask-heavy book — earned +46.9 gross, +31.8 taker net [−5.4, +69.0] on 930 trades. R9's
+               result named this a new question, not a variant. Is an ask-heavy book, taken as its own signal with its own
+               cut, worth a long position for a day after costs?
+Rule:          `ft2/rules.py::BookImbalance(side="long")` = R9's rule with two changes and nothing else: long only, and the cut
+               is the pair's q_sig 0.90 quantile of −imb (the top decile of ask-heaviness itself) over the 120 days before
+               each 30-day block, instead of the top decile of |imb|. Same feature (`ceiling.depth_frames`), one unit, 288
+               bars, one position per pair, executed 1 bar later. Why the cut changes: R9's pooled cut on |imb| let the
+               bid-heavy side set the bar, so the long side fired only at the far tail (930 of 4,411); a question about the
+               ask-heavy book must set its bar on the ask-heavy books. q_sig 0.90, window 120, hold 288: R9's, not searched.
+Contrast:      mean net bps per unit of notional vs zero and vs both nulls; primary `taker`; `maker` and `maker_ev` reported;
+               hedged gross as the second reading (the trade must earn against the market, not with it).
+Folds read:    stage 1: F1+F2 — the data on which R9's long side already showed +31.8, so this is a MECHANICAL read (does the
+               decile cut, with ~3–5× the trades, keep a positive net outside the noise?), NOT evidence.
+               `ft2 backtest bookimb1d --param side=long --folds F1 F2 --execs taker maker maker_ev --name r11_bookimb1d_long`
+               stage 2: F3 alone, once: `ft2 backtest bookimb1d --param side=long --folds F3 --registration R11 --execs taker maker maker_ev`
+               — the read that counts, unless stage 1's se says F3 alone cannot tell (Power); then it waits, as R8's row in §7.
+Gate:          stage 1 → stage 2 only if ALL of: taker net > 0 AND the larger p ≤ 0.05 AND hedged gross > 0 AND taker net
+               ≥ −5 in each of F1 and F2. Fail → PARKED with the numbers; no third cut, no 4h, no ±5 % version on F1+F2
+               (each would be a new registration). Stage 2: CONFIRMED if the taker interval's lower bound > 0 AND the
+               larger p ≤ 0.05; REFUTED if the upper bound < 0; else NOT DETECTABLE with the MDE.
+Expectation:   The decile of −imb is milder than R9's 930 far-tail longs, so less per trade and more of them: gross +10 to
+               +30, taker net 0 to +18, maker a few bps better if the resting bid on an ask-heavy book fills as P1 measured;
+               3,000–5,000 trades (6–10 a day), se 10–15, MDE 30–40. Likeliest: net positive but inside the noise (p 0.05–0.3),
+               so the gate fails on p and the answer is "consistent with R9's tail, not shown" — exactly what a mechanical
+               read on seen data is worth. If instead p ≤ 0.05 and hedged > 0, F3 decides.
+Power:         written after stage 1 from its se, before any confirmation read: F3 has about half the days of F1+F2, so
+               se_F3 ≈ se × √2; the read is worth making only if a true effect of stage 1's size is found there at least
+               one time in two.
+Result:        —
+
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
 Contrast:      A vs B, per <trade | unit notional>, bps

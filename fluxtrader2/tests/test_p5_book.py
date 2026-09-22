@@ -85,3 +85,24 @@ def test_through_the_harness_the_planted_book_edge_comes_back(tmp_path):
     for part, want in ((planted, EDGE - TAKER_RT), (noise, -TAKER_RT)):
         m, se = part["net_bps"].mean(), part["net_bps"].std() / np.sqrt(len(part))
         assert abs(m - want) < 3 * se + 1.0, (m, want, se)
+
+
+def test_long_only_takes_the_cut_on_ask_heaviness_and_never_shorts():
+    """R11: the cut is the q_sig quantile of −imb itself; a bid-heavy book is never traded, an ask-heavy one in the
+    top decile of ask-heaviness is bought — even when it is milder than the pooled |imb| cut of R9 would demand."""
+    rng = np.random.default_rng(7)
+    idx = pd.date_range("2024-01-01", periods=60 * 288, freq="5min", tz="UTC")
+    close = pd.DataFrame(100 * np.exp(np.cumsum(rng.normal(0, 5.0, (len(idx), 2)), axis=0) / 1e4), index=idx, columns=["A", "B"])
+    imb = pd.DataFrame(rng.uniform(-0.1, 0.5, (len(idx), 2)), index=idx, columns=["A", "B"])   # a skewed, bid-heavy book (R9's 79 % shorts)
+    imb.iloc[-1, 0], imb.iloc[-1, 1] = -0.095, 0.49                                             # A mildly ask-heavy, B very bid-heavy
+    M = bt.Market(close, close, close, close, {"depth_imb_1": imb})
+    now = M.index[-288]
+    both, long_ = BookImbalance(window_days=30), BookImbalance(window_days=30, side="long")
+    for rule in (both, long_):
+        rule.fit(M.until(now), None, now)
+    assert 0.04 < long_._cut["A"] < 0.05 and 0.4 < both._cut["A"] < 0.5           # top decile of −imb ~ (0.04, 0.1); of |imb| ~ (0.44, 0.5)
+    d = long_.decide(M, now, M.index[-1] + bt.BAR)
+    last = d[d["t"] == M.index[-1]]
+    assert (d["side"] == 1).all() and list(last["symbol"]) == ["A"] and last["signal"].iloc[0] == 0.095
+    assert both.decide(M, now, M.index[-1] + bt.BAR).query("t == @M.index[-1]")["symbol"].tolist() == ["B"]   # R9 would short B and not buy A
+    assert long_.params()["side"] == "long"
