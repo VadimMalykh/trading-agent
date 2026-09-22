@@ -74,7 +74,7 @@ def test_through_the_harness_the_planted_book_edge_comes_back(tmp_path):
     _synth(tmp_path)
     _plant_book(tmp_path)
     r = bt.run(bt.get_strategy("bookimb1d", {"window_days": 30, "hold": HOLD}), PAIRS, ["F1"], draws=5)
-    assert r["meta"]["params"] == {"q_sig": 0.9, "window_days": 30, "hold": HOLD}
+    assert r["meta"]["params"] == {"q_sig": 0.9, "window_days": 30, "hold": HOLD, "side": "both"}
     dec = r["decisions"]
     assert (dec["side"] == np.where(dec["signal"] > 0, 1, -1)).all()
     # the flag is on 3 % of bars and the rule takes the top decile by size, so ~7 in 10 trades are ordinary books
