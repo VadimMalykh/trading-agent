@@ -90,6 +90,7 @@ class RidgeBook(Strategy):
         start = max(int(missing[0]) - LOOKBACK, 0)
         D = _derive(M.close.iloc[start:])
         X, S = _cells(dir_features(D), D["sig"]["1w"])
+        X[~np.isfinite(X)] = np.nan                        # a flat window makes σ = 0 and a ratio ±inf: no feature, no forecast
         for p in missing:
             self._pos[idx[p]] = len(self._ts)
             self._ts.append(idx[p])
@@ -116,8 +117,9 @@ class RidgeBook(Strategy):
         if not len(ts):
             return
         X, S = self._rows(ts)                                # (rows × pair × feat), (rows × pair)
-        sig_h = S * np.sqrt(self.hold)
-        z = np.clip(y.loc[ts].to_numpy() / sig_h, -Z_CLIP, Z_CLIP)
+        sig_h = np.where(S > 0, S, np.nan) * np.sqrt(self.hold)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            z = np.clip(y.loc[ts].to_numpy() / sig_h, -Z_CLIP, Z_CLIP)
         grp = self._group(X.shape[1])
         self._sigma_ref = float(np.nanmedian(sig_h))
         for g in range(self.groups):
@@ -144,7 +146,7 @@ class RidgeBook(Strategy):
         if not len(ts):
             return ts, np.zeros((0, len(M.columns))), np.zeros((0, len(M.columns)))
         X, S = self._rows(ts)
-        sig_h = S * np.sqrt(self.hold)
+        sig_h = np.where(S > 0, S, np.nan) * np.sqrt(self.hold)
         zhat = np.full(S.shape, np.nan)
         grp = self._group(X.shape[1])
         for g, m in self._models.items():
@@ -153,7 +155,9 @@ class RidgeBook(Strategy):
             mu, sd, coef = m
             cols = grp == g
             zhat[:, cols] = ((X[:, cols, :] - mu) / sd) @ coef
-        f = zhat * sig_h
+        with np.errstate(invalid="ignore"):
+            f = zhat * sig_h
+        f[~np.isfinite(f)] = np.nan
         f[np.isnan(M.close.loc[ts].to_numpy())] = np.nan
         return ts, f, sig_h
 

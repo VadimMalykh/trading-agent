@@ -112,3 +112,17 @@ def test_no_model_means_no_trade():
     M = bt.Market(flat, flat, flat, flat)
     s.fit(M.until(idx[200]), bt.labels(M, HOLD, 1).iloc[:150], idx[200])
     assert s.decide(M, idx[200], idx[-1]).empty
+
+
+def test_a_flat_stretch_makes_no_feature_and_no_forecast(tmp_path):
+    _synth(tmp_path, days=60)
+    c = pd.read_parquet("data/candles_5m.parquet")
+    flat = (c["symbol"] == "AAUSDT") & (c["open_time"] >= pd.Timestamp("2023-05-01", tz="UTC")) & (c["open_time"] < pd.Timestamp("2023-05-10", tz="UTC"))
+    c.loc[flat, ["close", "high", "low"]] = 100.0                                                 # nine days without a tick: σ_1w = 0
+    c.to_parquet("data/candles_5m.parquet", index=False)
+    s = fc.RidgeBook(hold=HOLD, min_bps=2.0, groups=2, min_pairs=2)
+    r = bt.run(s, PAIRS, ["F1"], draws=2, refit_days=15, execs=("taker",))
+    o = s.oos()
+    assert o["f_bps"].notna().sum() > 1000 and np.isfinite(o["f_bps"].dropna()).all()
+    assert o[(o["symbol"] == "AAUSDT") & (o["t"] < pd.Timestamp("2023-05-10", tz="UTC"))]["f_bps"].isna().all()
+    assert r["results"].query("exec == 'taker' and scope == 'all'")["trades"].iloc[0] > 100
