@@ -62,7 +62,7 @@ import pandas as pd
 
 from . import ceiling, data, folds
 from .ceiling import BAR, MDE_K, NOTIONAL, MAKER_H, hac, day_lags
-from .cost import DAILY, DAILY_PRE, TAPE_START
+from .cost import DAILY, DAILY_PRE, DAILY_WIDE, TAPE_START
 
 OUT = Path("output/backtest")
 READS = OUT / "confirmation_reads.csv"
@@ -141,6 +141,10 @@ def load_costs(index: pd.DatetimeIndex, cols: pd.Index, end: pd.Timestamp, cost_
     if DAILY_PRE.exists():                                     # days before the tape: the candle proxy (`ft2 costpre`), never mixed into tape days
         pre = pd.read_parquet(DAILY_PRE)
         d = pd.concat([pre[pre["day"] < TAPE_START].assign(symbol=lambda x: x["symbol"].astype(str)), d[d["day"] >= TAPE_START]], ignore_index=True)
+    if DAILY_WIDE.exists():                                    # pairs without a tape (the wider universe): the cross-pair candle proxy (`ft2 costwide`)
+        w = pd.read_parquet(DAILY_WIDE)
+        w["symbol"] = w["symbol"].astype(str)
+        d = pd.concat([d, w[~w["symbol"].isin(set(d["symbol"]))]], ignore_index=True)
     d = d[d["day"] < end]
     piv = lambda c: d.pivot(index="day", columns="symbol", values=c).reindex(columns=cols)      # noqa: E731
     sp = piv("spread_cal_bps")
@@ -456,7 +460,9 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
     res.to_parquet(out / "results.parquet", index=False)
     nul.to_parquet(out / "null.parquet", index=False)
     max_open, avg_open = open_positions(dec, M.index, latency)
+    src_ = pd.read_parquet(DAILY_WIDE, columns=["symbol"])["symbol"].astype(str).unique() if DAILY_WIDE.exists() else []
     meta = {"strategy": strategy.name, "params": strategy.params(), "folds": fold_names, "registration": registration, "taker_bps": taker_bps,
+            "pairs_on_proxy_cost": sorted(set(M.columns) & set(src_) - set(pd.read_parquet(DAILY, columns=["symbol"])["symbol"].astype(str).unique())),
             "maker_bps": maker_bps, "cost_mult": cost_mult, "latency_bars": latency, "refit_days": refit_days, "draws": draws, "seed": seed, "notional": NOTIONAL,
             "pairs": list(M.columns), "decisions": len(dec), "accepted": int(dec["accepted"].sum()), "max_open": max_open, "avg_open": avg_open,
             "generated": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC"}
@@ -475,7 +481,8 @@ def report(meta: dict, res: pd.DataFrame, floor: pd.DataFrame) -> str:
           + f" · fees {meta['taker_bps']} taker / {meta['maker_bps']} maker bps per side"
           + (f" · **spread and impact × {meta['cost_mult']:g}** (sensitivity)" if meta.get("cost_mult", 1.0) != 1.0 else "") + f" · executed {meta['latency_bars']} bar(s) after the decision"
           f" · blocks of {meta['refit_days']} days · {meta['decisions']:,} decisions, {meta['accepted']:,} taken (one position per pair)"
-          f" · at most {meta['max_open']} positions open at once, {meta['avg_open']:.2f} on average\n",
+          + (f" · **{len(meta['pairs_on_proxy_cost'])} of {len(meta['pairs'])} pairs priced by the cross-pair candle proxy (`ft2 costwide`, no tape)**" if meta.get("pairs_on_proxy_cost") else "")
+          + f" · at most {meta['max_open']} positions open at once, {meta['avg_open']:.2f} on average\n",
           "\nWords: a basis point (bps) is 0.01 %; *gross* is the move earned before costs, *net* after fees, spread, impact and funding; "
           f"one *unit of notional* is {meta['notional']:,} USDT, so 1 bps net = {meta['notional'] / 1e4:.0f} USDT per trade. *taker* crosses the spread on both legs; "
           f"*maker* rests a limit order at the bar's close for {MAKER_WAIT * 5} minutes on each leg, is filled only if a later bar trades through it, and "

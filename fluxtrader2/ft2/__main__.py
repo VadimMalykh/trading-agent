@@ -22,7 +22,7 @@ def cmd_ingest(args):
     from . import data
     slices = args.slices or [s for s in data.SLICES if (data.RAW / f"{s}.csv.gz").exists()]
     for s in slices:
-        r = getattr(data, ARCHIVE_INGEST[s])(PAIRS) if s in ARCHIVE_INGEST else data.ingest(s)
+        r = getattr(data, ARCHIVE_INGEST[s])(_symbols(args)) if s in ARCHIVE_INGEST else data.ingest(s)
         print(f"{r['slice']:<15} rows_in={r['rows_in']:>11,} dups={r['dups_dropped']:>6,} "
               f"rows_out={r['rows_out']:>11,}  {r['first']} .. {r['last']}", flush=True)
 
@@ -36,9 +36,30 @@ PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "LIN
          "DOGEUSDT", "ZECUSDT", "1000PEPEUSDT", "WLDUSDT", "HYPEUSDT"]
 
 
+def _symbols(args) -> list[str]:
+    """--symbols, or --universe wide (the twelve plus ft2.universe.WIDE, in that order, no duplicates), or the twelve."""
+    if getattr(args, "universe", None) == "wide":
+        from .universe import WIDE
+        if not WIDE:
+            raise SystemExit("ft2/universe.py::WIDE is empty: run `ft2 universe` and freeze its list there first")
+        return list(dict.fromkeys([*PAIRS, *WIDE]))
+    return args.symbols or PAIRS
+
+
 def cmd_archive(args):
     from . import archive
-    archive.main(args.kinds, args.symbols or PAIRS, args.start, args.end)
+    archive.main(args.kinds, _symbols(args), args.start, args.end, monthly=args.monthly)
+
+
+def cmd_universe(args):
+    from . import universe
+    universe.select(args.n)
+
+
+def cmd_costwide(args):
+    from . import cost
+    import pandas as pd
+    print(cost.wide([s for s in _symbols(args) if s not in PAIRS], pd.Timestamp(args.start, tz="UTC")))
 
 
 def cmd_tape(args):
@@ -79,7 +100,7 @@ def _param(s: str):
 
 def cmd_backtest(args):
     from . import backtest
-    r = backtest.run(backtest.get_strategy(args.strategy, dict(args.param or [])), args.symbols or PAIRS, args.folds, args.execs, args.draws,
+    r = backtest.run(backtest.get_strategy(args.strategy, dict(args.param or [])), _symbols(args), args.folds, args.execs, args.draws,
                      args.taker_bps, args.maker_bps, args.latency, args.refit_days, args.registration, args.name, args.seed, args.cost_mult)
     print((r["dir"] / "report.md").read_text())
     print(f"wrote {r['dir']}/")
@@ -92,12 +113,22 @@ def main(argv=None):
     i = sub.add_parser("ingest", help="raw csv.gz -> parquet (all present collector slices, or the named ones; "
                                       "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
+    i.add_argument("--symbols", nargs="*", help="archive slices only: which pairs (default the twelve)")
+    i.add_argument("--universe", choices=["wide"], help="archive slices only: the twelve plus ft2.universe.WIDE")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
     a.add_argument("kinds", nargs="+", help="bookDepth metrics aggTrades fundingRate klines/1m …")
     a.add_argument("--symbols", nargs="*")
     a.add_argument("--start", default="2023-01-01")
     a.add_argument("--end", default=None, help="inclusive; default: two days ago")
+    a.add_argument("--monthly", action="store_true", help="klines/<interval>: the archive's monthly files for the months of [start, end] instead of daily ones")
+    a.add_argument("--universe", choices=["wide"])
+    u = sub.add_parser("universe", help="R10: rank every USDT perpetual the archive lists by median daily quote volume over the four months before F0 → output/universe_wide.md")
+    u.add_argument("--n", type=int, default=40)
+    cw = sub.add_parser("costwide", help="R10: spread + impact for pairs without a tape (one pooled candle proxy fitted on the twelve) → data/cost_daily_wide.parquet, output/cost_wide.md")
+    cw.add_argument("--symbols", nargs="*")
+    cw.add_argument("--universe", choices=["wide"])
+    cw.add_argument("--start", default="2023-01-01")
     t = sub.add_parser("tape", help="P1: stream archive aggTrades into data/tape/<symbol>.parquet (per-minute summary); zips are not kept")
     t.add_argument("--symbols", nargs="*")
     t.add_argument("--start", default="2023-01-01")
@@ -140,9 +171,11 @@ def main(argv=None):
         if a_.dest in ("taker_bps", "maker_bps"):
             b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
     b.add_argument("--symbols", nargs="*")
+    b.add_argument("--universe", choices=["wide"], help="the twelve plus ft2.universe.WIDE (R10)")
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
-            "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest}[args.cmd](args)
+            "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
+            "costwide": cmd_costwide}[args.cmd](args)
 
 
 if __name__ == "__main__":

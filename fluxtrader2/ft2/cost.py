@@ -44,6 +44,8 @@ DAILY = data.PROC / "cost_daily.parquet"
 TABLE = data.PROC / "cost_table.parquet"
 DAILY_PRE = data.PROC / "cost_daily_pre.parquet"      # `prehistory`: the days before the tape (P5's folds FP and F0)
 OUT_PRE_MD = Path("output/cost_pre.md")
+DAILY_WIDE = data.PROC / "cost_daily_wide.parquet"    # `wide`: pairs without a tape (the wider universe, R10), from candles alone
+OUT_WIDE_MD = Path("output/cost_wide.md")
 
 HOLDS = [5, 15, 30]            # minutes a maker order rests before we give up
 TAPE_START = pd.Timestamp("2023-01-01", tz="UTC")
@@ -68,11 +70,25 @@ def regimes(slices: tuple[str, ...] = ("candles_5m",)) -> pd.DataFrame:
         "range_bps": g.apply(lambda x: ((x["high"] - x["low"]) / x["close"]).mean() * 1e4, include_groups=False),
         "dollar_vol": g.apply(lambda x: (x["volume"] * x["close"]).sum(), include_groups=False),
         "px": g["close"].mean(), "bars": g.size(),
+        "tick_bps": g.apply(_tick, include_groups=False),
     }).reset_index()
     d = d[d["bars"] >= 200]                     # a day with < 200 of 288 bars is not a day
     d["regime"] = (d.groupby("symbol", observed=True)["vol_pct"]
                     .transform(lambda v: pd.qcut(v, 3, labels=REGIMES)).astype(str))
     return d
+
+
+def _tick(x: pd.DataFrame) -> float:
+    """The day's price tick in bps of its mean price, read off the candles: the smallest positive gap between the
+    distinct prices the day printed (open/high/low/close of 288 bars, > 1,000 prints). A liquid pair moves by one
+    tick many times a day, so the minimum is the tick itself; it is the floor of any quoted spread."""
+    p = np.unique(np.concatenate([x["high"].to_numpy(), x["low"].to_numpy(), x["close"].to_numpy()]))
+    p = p[np.isfinite(p)]
+    if len(p) < 2:
+        return np.nan
+    dp = np.diff(p)
+    dp = dp[dp > 0]
+    return float(dp.min() / x["close"].mean() * 1e4) if len(dp) else np.nan
 
 
 # ---- 2. spread from the tape, validated against quotes -----------------------------------------
@@ -332,6 +348,91 @@ def prehistory(symbols: list[str]) -> str:
                       pd.DataFrame(rep).round(3).to_markdown(index=False), "\n"])
     OUT_PRE_MD.parent.mkdir(parents=True, exist_ok=True)
     OUT_PRE_MD.write_text(text)
+    return text
+
+
+# ---- 8. pairs without a tape (R10: the wider universe) -------------------------------------------
+WIDE_FEATURES = ["range_bps", "dollar_vol", "tick_bps"]
+WIDE_MIN_DAYS = 100          # a target (spread, impact at N) is fitted only with at least this many uncensored tape days
+
+
+def _pooled_fit(m: pd.DataFrame, target: str) -> np.ndarray:
+    X = np.column_stack([np.ones(len(m))] + [np.log(m[c].to_numpy()) for c in WIDE_FEATURES])
+    b, *_ = np.linalg.lstsq(X, np.log(m[target].to_numpy()), rcond=None)
+    return b
+
+
+def _pooled_pred(b: np.ndarray, f: pd.DataFrame) -> np.ndarray:
+    X = np.column_stack([np.ones(len(f))] + [np.log(f[c].to_numpy()) for c in WIDE_FEATURES])
+    return np.exp(X @ b)
+
+
+def wide(symbols: list[str], start: pd.Timestamp = TAPE_START) -> str:
+    """Spread and impact per pair × day for pairs that have NO tape, ladder or depth — from candles alone,
+    with ONE pooled regression fitted on the twelve measured pairs' tape days in DAILY → DAILY_WIDE.
+
+    log(spread_cal) ~ 1 + log(range) + log(dollar volume) + log(tick) — the tick (in bps of price) is the floor of
+    any quoted spread and the variable that made P1's per-pair intercepts differ; the fitted spread is never
+    below the day's tick. log(imp_N) the same way, on the days N was not censored, for each N in NOTIONALS with
+    enough such days. The error is measured leave-one-pair-out on the twelve (fit on eleven, predict the twelfth,
+    median |pred − actual| / actual and the median ratio) and written to OUT_WIDE_MD: a pair of the wider universe
+    is priced as a pair of the same range, volume and tick would be — an extrapolation where its volume is below
+    every measured pair's (the report says how many days are). No maker fill statistics (the harness's bar-simulated
+    maker needs none; maker_ev is blank). Fees are an input of the harness."""
+    from . import ladder
+    d = pd.read_parquet(DAILY)
+    d["symbol"] = d["symbol"].astype(str)
+    reg = regimes(("candles_5m_archive", "candles_5m"))
+    reg = reg[(reg["range_bps"] > 0) & (reg["dollar_vol"] > 0) & (reg["tick_bps"] > 0)]
+    t = d[(d["spread_src"] == "tape") & (d["spread_cal_bps"] > 0)].merge(reg[["symbol", "day", "tick_bps"]], on=["symbol", "day"], how="inner")
+    t = t[(t["range_bps"] > 0) & (t["dollar_vol"] > 0)]
+    targets = ["spread_cal_bps"] + [f"imp_{n}" for n in ladder.NOTIONALS if (t[f"imp_{n}"] > 0).sum() >= WIDE_MIN_DAYS]
+    rows = []
+    for sym in sorted(t["symbol"].unique()):                    # leave-one-pair-out
+        tr, te = t[t["symbol"] != sym], t[t["symbol"] == sym]
+        row = {"symbol": sym, "days": len(te), "dollar_vol_musd_p50": te["dollar_vol"].median() / 1e6, "tick_bps_p50": te["tick_bps"].median()}
+        for tg in targets:
+            a, b_ = tr[tr[tg] > 0], te[te[tg] > 0]
+            if len(a) < WIDE_MIN_DAYS or len(b_) < 20:
+                continue
+            pred = _pooled_pred(_pooled_fit(a, tg), b_)
+            if tg == "spread_cal_bps":
+                pred = np.maximum(pred, b_["tick_bps"].to_numpy())
+            act = b_[tg].to_numpy()
+            row[f"{tg}_actual_p50"], row[f"{tg}_pred_p50"] = float(np.median(act)), float(np.median(pred))
+            row[f"{tg}_ratio_p50"], row[f"{tg}_mape"] = float(np.median(pred / act)), float(np.median(np.abs(pred - act) / act))
+        rows.append(row)
+    lopo = pd.DataFrame(rows).set_index("symbol")
+    fits = {tg: _pooled_fit(t[t[tg] > 0], tg) for tg in targets}
+    w = reg[reg["symbol"].isin(symbols) & (reg["day"] >= start)].copy()
+    o = pd.DataFrame({"symbol": w["symbol"].to_numpy(), "day": w["day"].to_numpy(), "range_bps": w["range_bps"].to_numpy(), "dollar_vol": w["dollar_vol"].to_numpy(),
+                      "px": w["px"].to_numpy(), "tick_bps": w["tick_bps"].to_numpy(), "spread_src": "proxy_wide"})
+    o["spread_bps"] = np.nan
+    o["spread_cal_bps"] = np.maximum(_pooled_pred(fits["spread_cal_bps"], w), w["tick_bps"].to_numpy())
+    for n in ladder.NOTIONALS:
+        o[f"imp_{n}"] = _pooled_pred(fits[f"imp_{n}"], w) if f"imp_{n}" in fits else np.nan
+    for H in HOLDS:
+        o[f"maker_fill_{H}"] = np.nan
+        o[f"maker_adv_{H}"] = np.nan
+    o.to_parquet(DAILY_WIDE, index=False)
+    lo_vol = float(t["dollar_vol"].quantile(0.01))
+    rep = []
+    for sym, g in o.groupby("symbol"):
+        rep.append({"symbol": sym, "days": len(g), "first": g["day"].min().date(), "last": g["day"].max().date(), "dollar_vol_musd_p50": g["dollar_vol"].median() / 1e6,
+                    "tick_bps_p50": g["tick_bps"].median(), "spread_cal_bps_p50": g["spread_cal_bps"].median(), f"imp_{10_000}_p50": g[f"imp_{10_000}"].median(),
+                    "taker_leg_other_p50": (g["spread_cal_bps"] / 2 + g[f"imp_{10_000}"]).median(), "days_below_fit_volume": int((g["dollar_vol"] < lo_vol).sum())})
+    coef = pd.DataFrame({tg: fits[tg] for tg in targets}, index=["const", *WIDE_FEATURES]).T
+    text = "\n".join([f"# Cost for pairs without a tape (`ft2 costwide`) — one pooled candle proxy, fitted on the twelve measured pairs\n",
+                      f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC\n",
+                      f"\n{len(o):,} pair-days from {start:%Y-%m-%d} for {o['symbol'].nunique()} pairs → `{DAILY_WIDE}`. log(target) ~ 1 + log(range_bps) + log(dollar_vol) + log(tick_bps), "
+                      f"fitted on {len(t):,} tape days of {t['symbol'].nunique()} pairs; spread_cal floored at the day's tick. taker_leg_other = half spread + impact at 10k: what a taker leg pays "
+                      f"on top of the fee. days_below_fit_volume: days whose dollar volume is under the 1st percentile of the fit set ({lo_vol / 1e6:.1f} M USDT) — extrapolated. "
+                      "Reads on these pairs carry a `--cost-mult 2` sensitivity.\n",
+                      "\n## Coefficients\n", coef.round(4).to_markdown(), "\n",
+                      "\n## Leave-one-pair-out error on the twelve (fit on eleven, predict the twelfth; medians over its days)\n", lopo.round(3).to_markdown(), "\n",
+                      "\n## The wider universe as priced\n", pd.DataFrame(rep).round(3).to_markdown(index=False), "\n"])
+    OUT_WIDE_MD.parent.mkdir(parents=True, exist_ok=True)
+    OUT_WIDE_MD.write_text(text)
     return text
 
 

@@ -6,8 +6,11 @@ reasoning is deleted, not appended to. Parked items go in §7 with a revival tri
 
 ## 0. The goal, and the one-sentence strategy
 
-**Goal:** a system that generates profitable trades on the twelve USDⓈ-M perpetual pairs the
-collector records, using only that data.
+**Goal:** a system that generates profitable trades on USDⓈ-M perpetual pairs. The twelve pairs
+the collector records are the data we *start* with, not the target universe: more pairs can be
+downloaded and the set in use can change at any time (Vadim, 2026-09-22). The ultimate shape is a
+**screener that selects which pairs to trade, and a model that trades them although it was
+trained on entirely different pairs** — generalisation across pairs is part of the goal.
 
 **Strategy:** start at the trade end and work backwards. The cost of a trade fixes the
 horizon, the horizon fixes the target, and the target fixes which kind of model can possibly

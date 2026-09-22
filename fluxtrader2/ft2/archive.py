@@ -63,6 +63,21 @@ def list_keys(prefix: str) -> list[str]:
         marker = page[-1]
 
 
+def list_prefixes(prefix: str) -> list[str]:
+    """Every 'directory' directly under prefix (the listing's CommonPrefixes), paginated; e.g. the symbols
+    under data/futures/um/monthly/klines/. Returned as the last path component."""
+    out, marker = [], ""
+    while True:
+        url = f"{LIST}?delimiter=/&prefix={prefix}&marker={marker}"
+        root = ET.fromstring(_get(url, timeout=60))
+        page = [c.find(NS + "Prefix").text for c in root.findall(NS + "CommonPrefixes")]
+        out += [p.rstrip("/").rsplit("/", 1)[1] for p in page]
+        nm = root.find(NS + "NextMarker")
+        if root.find(NS + "IsTruncated").text != "true" or not page:
+            return out
+        marker = nm.text if nm is not None and nm.text else page[-1]
+
+
 def _sha256(p: Path) -> str:
     h = hashlib.sha256()
     with open(p, "rb") as f:
@@ -116,18 +131,33 @@ def fetch_daily(kind: str, symbol: str, start: date, end: date, sub: str = "") -
     return counts
 
 
-def fetch_monthly(kind: str, symbol: str) -> dict:
-    prefix = f"data/futures/um/monthly/{kind}/{symbol}/"
-    counts = {"ok": 0, "skip": 0, "bad": 0, "err": 0}
-    jobs = [(k, ROOT / kind / symbol / k.rsplit("/", 1)[1]) for k in list_keys(prefix)
-            if k.endswith(".zip") and f"{symbol}-{kind}-" in k]
+def fetch_monthly(kind: str, symbol: str, sub: str = "", months: list[str] | None = None) -> dict:
+    """Monthly files of `kind` (fundingRate, klines/<interval> via `sub`); `months` = ['2022-04', …] or all.
+    A monthly kline file lands next to the daily ones under ROOT/klines/<symbol>/ (same name pattern,
+    `<symbol>-<interval>-YYYY-MM.zip`; ingest_klines reads both and drops duplicate bars)."""
+    prefix = f"data/futures/um/monthly/{kind}/{symbol}/{sub + '/' if sub else ''}"
+    counts = {"ok": 0, "skip": 0, "bad": 0, "err": 0, "missing": 0}
+    keys = [k for k in list_keys(prefix) if k.endswith(".zip") and f"{symbol}-{sub or kind}-" in k]
+    if months is not None:
+        want = {f"{symbol}-{sub or kind}-{m}.zip" for m in months}
+        keys = [k for k in keys if k.rsplit("/", 1)[1] in want]
+        counts["missing"] = len(want) - len(keys)
+    jobs = [(k, ROOT / kind / symbol / k.rsplit("/", 1)[1]) for k in keys]
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
         for status in ex.map(lambda j: _fetch(*j), jobs):
             counts[status] += 1
     return counts
 
 
-def main(kinds: list[str], symbols: list[str], start: str, end: str | None) -> None:
+def months_between(s: date, e: date) -> list[str]:
+    out, y, m = [], s.year, s.month
+    while (y, m) <= (e.year, e.month):
+        out.append(f"{y:04d}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def main(kinds: list[str], symbols: list[str], start: str, end: str | None, monthly: bool = False) -> None:
     s = date.fromisoformat(start)
     e = date.fromisoformat(end) if end else date.today() - timedelta(days=2)
     total_err = 0
@@ -135,6 +165,8 @@ def main(kinds: list[str], symbols: list[str], start: str, end: str | None) -> N
         for sym in symbols:
             if kind == "fundingRate":
                 c = fetch_monthly(kind, sym)
+            elif kind.startswith("klines/") and monthly:
+                c = fetch_monthly("klines", sym, sub=kind.split("/", 1)[1], months=months_between(s, e))
             elif kind.startswith("klines/"):
                 c = fetch_daily("klines", sym, s, e, sub=kind.split("/", 1)[1])
             else:

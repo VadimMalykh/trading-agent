@@ -85,29 +85,38 @@ class Reversal(Strategy):
 class RankReversal(Strategy):
     name = "rank4h"
 
-    def __init__(self, q_disp: float = 0.90, window_days: int = 120, hold: int = 48):
-        self.q_disp, self.window_days, self.hold = float(q_disp), int(window_days), int(hold)
+    def __init__(self, q_disp: float = 0.90, window_days: int = 120, hold: int = 48, k: int = 1):
+        self.q_disp, self.window_days, self.hold, self.k = float(q_disp), int(window_days), int(hold), int(k)
         self._cut = np.nan
 
     @staticmethod
-    def features(close: pd.DataFrame) -> pd.DataFrame:
+    def features(close: pd.DataFrame, min_pairs: int = MIN_PAIRS) -> pd.DataFrame:
         lr = np.log(close)
         s1w = (lr.diff() * 1e4).rolling(W["1w"], min_periods=int(W["1w"] * 0.8)).std()
         z = (lr - lr.shift(W["4h"])) * 1e4 / (s1w * np.sqrt(W["4h"]))
-        return z.sub(z.mean(axis=1), axis=0).where(z.notna().sum(axis=1) >= MIN_PAIRS)
+        return z.sub(z.mean(axis=1), axis=0).where(z.notna().sum(axis=1) >= min_pairs)
+
+    @property
+    def min_pairs(self) -> int:
+        return max(MIN_PAIRS, 2 * self.k)          # k a side needs 2k names present; the basket needs MIN_PAIRS regardless
 
     def fit(self, M: Market, y: pd.DataFrame, now: pd.Timestamp) -> None:
         a = now - pd.Timedelta(days=self.window_days)
-        x = self.features(M.close.loc[a - WARMUP:]).loc[a:]
+        x = self.features(M.close.loc[a - WARMUP:], self.min_pairs).loc[a:]
         gap = (x.max(axis=1) - x.min(axis=1)).dropna()
         self._cut = gap.quantile(self.q_disp) if len(gap) >= 0.5 * self.window_days * 288 else np.nan
 
     def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
-        x = self.features(M.close.loc[a - WARMUP:])
+        """k = 1: long the lowest, short the highest, as one unit (both legs or neither). k > 1 (R10, the wider
+        universe): the k lowest against the k highest; the i-th lowest and the i-th highest form one unit, so each
+        unit is dollar-neutral and a pair already in a position blocks its own unit only."""
+        x = self.features(M.close.loc[a - WARMUP:], self.min_pairs)
         on = (x.max(axis=1) - x.min(axis=1)) >= self._cut
-        lo, hi = x.rank(axis=1, method="first") == 1, x.rank(axis=1, method="first", ascending=False) == 1
-        d = decisions_from((lo.astype(float) - hi.astype(float)).where(on, 0.0, axis=0), a, b, signal=-x, why=f"rank: gap≥q{self.q_disp:g}")
-        return d.assign(group=M.index.get_indexer(d["t"]))
+        rl, rh = x.rank(axis=1, method="first"), x.rank(axis=1, method="first", ascending=False)
+        lo, hi = rl <= self.k, rh <= self.k
+        d = decisions_from((lo.astype(float) - hi.astype(float)).where(on, 0.0, axis=0), a, b, signal=-x, why=f"rank: gap≥q{self.q_disp:g}" + (f", {self.k} a side" if self.k > 1 else ""))
+        slot = rl.where(lo, rh).to_numpy()[x.index.get_indexer(d["t"]), x.columns.get_indexer(d["symbol"])]      # 1 … k on both sides
+        return d.assign(group=M.index.get_indexer(d["t"]) * self.k + slot.astype(int) - 1)
 
 
 class RankContinuation(RankReversal):

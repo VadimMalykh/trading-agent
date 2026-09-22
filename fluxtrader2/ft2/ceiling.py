@@ -83,8 +83,13 @@ def panel(symbols: list[str], end: pd.Timestamp = END, start: pd.Timestamp = STA
     both have a bar, the collector's is the one used."""
     cols_ = ["symbol", "open_time", "high", "low", "close", "volume"]
     c = data.load("candles_5m", columns=cols_, symbols=symbols)
-    if start < START:
-        c = pd.concat([data.load("candles_5m_archive", columns=cols_, symbols=symbols), c], ignore_index=True)
+    c["symbol"] = c["symbol"].astype(str)
+    # the archive's klines: under every pair when the pre-history is asked for, and for a pair the collector never
+    # recorded (the wider universe, R10) on every date — the collector's bar wins wherever both have one
+    missing = [s for s in symbols if s not in set(c["symbol"])]
+    if (start < START or missing) and (data.PROC / "candles_5m_archive.parquet").exists():
+        arc = data.load("candles_5m_archive", columns=cols_, symbols=symbols if start < START else missing)
+        c = pd.concat([arc, c], ignore_index=True)
         c["symbol"] = c["symbol"].astype(str)
         c = c.drop_duplicates(["symbol", "open_time"], keep="last")
     c["t"] = c["open_time"] + BAR
