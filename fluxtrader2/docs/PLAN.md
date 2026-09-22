@@ -381,7 +381,7 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 steps 1–4 read, last 2026-09-22: no rule is ready for a confirmation read; the market-timing rule R8 and the book-imbalance rule R9 are both parked by their own stage-1 gates)
+### P5 — Forecast + analytic decision (🟡 steps 1–5 read, last 2026-09-22: no rule is ready for a confirmation read; R8 and R9 parked by their own stage-1 gates, H2 closed on breadth by R10)
 
 **Can it trade profitably? Not shown.** Plain version of where P5 stands (a bps is 0.01 %; on a 10,000 USDT position
 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip; *IC* = the correlation between a signal and the
@@ -421,15 +421,22 @@ move that follows, 0.03–0.05 is what a tradable weak signal looks like here):
   and the rare long side (an ask-heavy book) earned +47 gross / +32 net on 930 trades [−5, +69]. That is a new question
   (§7), not a variant.
 
+- **Step 5 (R10, read 2026-09-22).** H2 on breadth: the 40 USDT perpetuals with the most volume in the four months before F0
+  (`ft2 universe`, chosen before any of their bars was seen; 32 of them new, clean 5m history 2022-04 → 2024-08, cost from
+  one pooled candle proxy `ft2 costwide` whose spread is validated on the twelve and whose impact over-prices thin names),
+  four names a side. **The effect is not there: gross +1.6 bps a leg [hedged −3.5, +7.0] on 9,360 legs**, where twelve names
+  had shown +12.5 — and this read could have seen +7.4. Net −14.6 taker / −7.4 maker. Closed on breadth; the twelve-name
+  version survives only as "maybe, at a lower fee tier, after FP+F0" (§7). The lasting product is the 40-pair dataset.
+
 **Next session (Claude; needs nothing from Vadim):**
 
-1. **The wider universe (§9 #2) for H2.** Fetch 5m klines for the top ~40 perps (same fetcher, `--symbols`), register the
-   rank-continuation rule with 3–5 names a side before reading. Read R5's row in §7 first: the bar is +5 bps a leg net.
-2. **The ask-heavy book as its own question (§7, book row) — only if 1 leaves time:** a NEW registration, long-only,
-   a fixed quantile of −imb, 1d, F1+F2 first; the expectation must be written from R9's long-side numbers, and the read
-   is a mechanical gate on data that has already shown the number, so a confirmation fold is what would count.
-3. **P5's forecast layer, only if 1 or 2 funds it:** ridge on all history (R7: more history helps; the tree never beats it),
-   all 24 features, 4h and 1d, through the harness with the closed-form decision below.
+1. **The ask-heavy book as its own question (§7, book row):** a NEW registration, long-only, a fixed quantile of −imb, 1d,
+   F1+F2 first; the expectation written from R9's long-side numbers; a mechanical gate on data that has already shown the
+   number, so a confirmation fold is what would count.
+2. **P5's forecast layer on the 40-pair universe, pair-held-out:** the goal (§0) is a model trained on other pairs, and R10 left
+   the data for it. Ridge on all history (R7: more history helps; the tree never beats it), the 11 candle features (the 24 need
+   book data the new pairs lack), 4h and 1d, fitted on 30 pairs and scored on the 10 held out (rotating), through the harness
+   with the closed-form decision below. Register the pair split before reading.
 
 **Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
@@ -501,7 +508,7 @@ registered positive on confirmation folds.
 |---|---|---|
 | ~~R1 stage 2 — the confirmation read of `reversal4h`~~ — **CLOSED 2026-09-21** | Needed from Vadim: nothing. The rule's premise (pair-level reversal) was a statistical artefact (R7) and its profit was the market's bounce in a rising market (R3, R4). F3 stays unspent | none; the bounce lives on as R8 |
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21 | **Needed from Vadim: nothing unless you want it read — saying nothing = (a).** On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. (a) *recommended*: leave it parked; the bar was written first. (b) a NEW registration that reads F3+F4+F5 pooled for the unchanged rule — honest (nothing is re-tuned; the failed gate guarded the fold budget, not validity), power 4 in 5 for a true +52, 1 in 4 for +25: `vm.sh run backtest trendfall4h --folds F3 F4 F5 --registration R<n> --execs taker maker` after the block is written | Vadim chooses (b); or F5 grows by ~6 months (more power for the same read); or a measured observable separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule |
-| **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread for it; **its revival is running as R10 (2026-09-22)** | Needed from Vadim: nothing. Gross +12.5 bps a leg, hedged +14.2 [+1.8, +26.5]; net −0.2 taker / +4.9 maker, under the +5 bar. R10 = the same rule with four names a side on the 40-pair universe of `ft2 universe` (§8 R10) | R10's stage 1 read; failing that, a lower fee tier (VIP 1 / BNB discount takes 1–2 bps off a round trip) |
+| **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9)** — PARKED by its own stage-1 gate 2026-09-22 | Needed from Vadim: nothing. The screen's IC (−0.039 at 1d, p_fw 0.005) did not turn into money as a fixed rule: −2.2 bps a trade taker [−25, +21], gross +8, hedged +6.7, 9 trades a day on F1+F2, p 0.05 / flip 0.16. The pooled correlation lives in the slow per-pair level of the imbalance, which a daily short cannot collect at 12 bps a round trip. 79 % of trades were shorts; the long side (ask-heavy book, 930 trades) earned +47 gross / +32 net [−5, +69] | (a) a NEW registration for the long side only (ask-heavy book, fixed quantile of −imb, 1d) — P5 "Next session" #2; (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -841,7 +848,7 @@ Result:        **Stage 1, read 2026-09-22 (commit 69bd804 holds this block as wr
 Template:
 
 ```
-### R10 — rankcont4h on the wider universe, four names a side (registered 2026-09-22, before the rule saw any real bar of the 32 new pairs; stage 1 read —, stage 2 read —)
+### R10 — rankcont4h on the wider universe, four names a side (registered 2026-09-22, before the rule saw any real bar of the 32 new pairs; stage 1 read 2026-09-22: gate FAILED on gross; stage 2 not read)
 Question:      R5 found H2 (a pair torn away from the others keeps going) real before costs — +12.5 bps gross a leg, hedged
                +14.2 [+1.8, +26.5] — and eaten by them on twelve names (net −0.2 taker / +4.9 maker, bar +5). Its own revival
                trigger was "a wider universe where the tails are 3–5 names a side". Is it more than a round trip costs there?
@@ -880,7 +887,19 @@ Expectation:   Gross a leg like R5's (+8 … +15: the tails of 40 at the decile 
                twelve), so taker net ≈ +1 … +8, maker ≈ +3 … +10; R5's long leg carried everything (+20.7 gross vs +4.3),
                expect the same asymmetry. About 8 legs per trigger, 15–30 legs a day, ~10,000 legs on F1+F2; legs of one bar
                are correlated, so se ≈ 3 and MDE ≈ 8. Likeliest: the primary net lands within ±3 of the bar — the read decides.
-Result:        —
+Result:        **Stage 1, read 2026-09-22 (output/backtest/r10_rankcont4h_k4, _cost2): the edge is not there. Gross +1.6 bps a leg,
+               hedged +1.8 [−3.5, +7.0] on 9,360 legs (19.3 a day), MDE 7.4 — R5's +12.5 gross and the expected +8 … +15 are excluded.
+               Taker net −14.6 [−19.8, −9.4]; maker net −7.4 [−12.5, −2.3] (gross −2.7: the resting orders that fill are the ones the move
+               ran through). Costs doubled: −20.9 / −7.9. Both nulls agree (p 0.10–0.29: a loss of exactly the cost, i.e. no skill).
+               → GATE FAILED on its first condition (primary net −7.4 vs +5), FP+F0 NOT read, no tape sample needed: the cost
+               proxy is not what decided it. Per fold F1 gross +5.1, F2 −2.5. R5's asymmetry did not repeat: the long leg (torn
+               upwards) is −6.1 gross here, the short +9.3, where R5 had +20.7 / +4.3 — the twelve-name asymmetry was noise.
+               Per pair: BCH +62 gross on 274 legs is the one outlier; 26 of 40 pairs are within ±20 with intervals over zero.
+               Reading: the "torn-away pair keeps going" effect R5 saw on twelve large names does not exist across forty at the
+               decile, and the read had the power to see it. H2 on the wide universe is CLOSED; on the twelve it stays parked
+               on a fee tier only (§7). What the run leaves behind that is useful: a 40-pair universe with clean 5m history and
+               a priced (if rough) cost for every name — the material P5's forecast layer needs for the new goal (§0): a model
+               fitted on some pairs and scored on others.**
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
