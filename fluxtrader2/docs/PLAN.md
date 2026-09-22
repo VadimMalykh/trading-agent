@@ -381,7 +381,7 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 steps 1–5 read, last 2026-09-22: no rule is ready for a confirmation read; R8 and R9 parked by their own stage-1 gates, H2 closed on breadth by R10)
+### P5 — Forecast + analytic decision (🟡 steps 1–6 read, last 2026-09-22: no rule is ready for a confirmation read; R8, R9, R11 parked by their own stage-1 gates, H2 closed on breadth by R10; next is the forecast layer, pair-held-out)
 
 **Can it trade profitably? Not shown.** Plain version of where P5 stands (a bps is 0.01 %; on a 10,000 USDT position
 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip; *IC* = the correlation between a signal and the
@@ -428,15 +428,25 @@ move that follows, 0.03–0.05 is what a tradable weak signal looks like here):
   had shown +12.5 — and this read could have seen +7.4. Net −14.6 taker / −7.4 maker. Closed on breadth; the twelve-name
   version survives only as "maybe, at a lower fee tier, after FP+F0" (§7). The lasting product is the 40-pair dataset.
 
+- **Step 6 (R11, read 2026-09-22).** The ask-heavy book as its own long-only rule (top decile of ask-heaviness, 1d): **+5.1
+  bps a trade after taker costs [−25, +35], gross +20.7 — but only +2.0 of it against the market** [−4, +8]; flip p 0.12.
+  Gate failed on p; and the hedged number says a pass would have been market exposure, not a book signal. Parked. Fixed rules
+  on the raw imbalance are exhausted (§7 book row keeps only the demeaned screen and "inside the ridge").
+
+**Where P5 stands after six steps:** every fixed rule has been read and none clears its own gate; the two that made money
+(R8 +52, R11 +5 gross +21) made it by being long the market in rising folds. The plan's own deliverable — a forecast plus a
+closed-form decision — has not been built yet, and the restated goal (§0: a model trained on other pairs) makes the 40-pair
+universe from R10 the place to build it.
+
 **Next session (Claude; needs nothing from Vadim):**
 
-1. **The ask-heavy book as its own question (§7, book row):** a NEW registration, long-only, a fixed quantile of −imb, 1d,
-   F1+F2 first; the expectation written from R9's long-side numbers; a mechanical gate on data that has already shown the
-   number, so a confirmation fold is what would count.
-2. **P5's forecast layer on the 40-pair universe, pair-held-out:** the goal (§0) is a model trained on other pairs, and R10 left
-   the data for it. Ridge on all history (R7: more history helps; the tree never beats it), the 11 candle features (the 24 need
-   book data the new pairs lack), 4h and 1d, fitted on 30 pairs and scored on the 10 held out (rotating), through the harness
-   with the closed-form decision below. Register the pair split before reading.
+1. **P5's forecast layer on the 40-pair universe, pair-held-out.** Ridge on all history (R7: more history helps; the tree never
+   beats it), the 11 candle features (the 24 need book data the new pairs lack), 4h and 1d targets, fitted on 30 pairs and scored
+   on the 10 held out (four rotations, so every pair is scored by a model that never saw it), through the harness with the
+   closed-form decision below (trade when the forecast clears cost by a margin, size by forecast over variance, capped;
+   market-neutralised — R8/R11 say any long bias will look like skill in F1). Register the pair split, the margin and the cap
+   before reading. What would count: hedged net > 0 outside both nulls on F1+F2, then F3.
+2. **Only if 1 shows an IC that survives the pair hold-out:** the demeaned imbalance as a ceiling screen on the twelve (§7).
 
 **Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
@@ -510,7 +520,7 @@ registered positive on confirmation folds.
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21 | **Needed from Vadim: nothing unless you want it read — saying nothing = (a).** On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. (a) *recommended*: leave it parked; the bar was written first. (b) a NEW registration that reads F3+F4+F5 pooled for the unchanged rule — honest (nothing is re-tuned; the failed gate guarded the fold budget, not validity), power 4 in 5 for a true +52, 1 in 4 for +25: `vm.sh run backtest trendfall4h --folds F3 F4 F5 --registration R<n> --execs taker maker` after the block is written | Vadim chooses (b); or F5 grows by ~6 months (more power for the same read); or a measured observable separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
-| **±1 % book imbalance as a rule (`bookimb1d`, R9)** — PARKED by its own stage-1 gate 2026-09-22 | Needed from Vadim: nothing. The screen's IC (−0.039 at 1d, p_fw 0.005) did not turn into money as a fixed rule: −2.2 bps a trade taker [−25, +21], gross +8, hedged +6.7, 9 trades a day on F1+F2, p 0.05 / flip 0.16. The pooled correlation lives in the slow per-pair level of the imbalance, which a daily short cannot collect at 12 bps a round trip. 79 % of trades were shorts; the long side (ask-heavy book, 930 trades) earned +47 gross / +32 net [−5, +69] | (a) a NEW registration for the long side only (ask-heavy book, fixed quantile of −imb, 1d) — P5 "Next session" #2; (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) |
+| **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048). No further fixed rule on the raw imbalance |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
 | ~~relative (pair-vs-basket) *reversal* at 4h~~ — **CLOSED 2026-09-21 (R2)** | the rank rule loses −20.6 bps per leg [−31.7, −9.5] in all six quarters; do not re-open as a reversal bet | none. The opposite sign (tail continuation) is a new hypothesis, H2 in P5, not a revival of this row |
@@ -901,7 +911,7 @@ Result:        **Stage 1, read 2026-09-22 (output/backtest/r10_rankcont4h_k4, _c
                a priced (if rough) cost for every name — the material P5's forecast layer needs for the new goal (§0): a model
                fitted on some pairs and scored on others.**
 
-### R11 — bookimb1d, long only: buy the ask-heavy book (registered 2026-09-22, before the rule saw any real bar in this form; stage 1 read —, stage 2 read —)
+### R11 — bookimb1d, long only: buy the ask-heavy book (registered 2026-09-22, before the rule saw any real bar in this form; stage 1 read 2026-09-22: gate FAILED on p, and the gross is the market's; stage 2 not read)
 Question:      R9 traded both sides of the ±1 % imbalance and lost; 79 % of its trades were shorts on bid-heavy books, and the
                rare long side — an ask-heavy book — earned +46.9 gross, +31.8 taker net [−5.4, +69.0] on 930 trades. R9's
                result named this a new question, not a variant. Is an ask-heavy book, taken as its own signal with its own
@@ -931,7 +941,17 @@ Expectation:   The decile of −imb is milder than R9's 930 far-tail longs, so l
 Power:         written after stage 1 from its se, before any confirmation read: F3 has about half the days of F1+F2, so
                se_F3 ≈ se × √2; the read is worth making only if a true effect of stage 1's size is found there at least
                one time in two.
-Result:        —
+Result:        **Stage 1, read 2026-09-22 (output/backtest/r11_bookimb1d_long): taker net +5.1 bps [−24.8, +35.0], se 15.3, MDE 42.7 on
+               4,106 trades (8.5 a day, 5.5 open on average); gross +20.7 — but HEDGED +2.0 [−4.0, +8.1]: the ask-heavy book
+               earns with the market, not against it (R8's lesson, now on a book signal). Shuffle p 0.045, flip p 0.119 → the
+               larger p fails the gate. maker +10.3 [−19.7, +40.2] (96.5 % of legs filled), maker_ev +9.9. F1 +14.8 / F2 −3.9
+               (both above the −5 floor). Funding −3.4 a trade (a long pays it). Per pair PEPE +73 gross / +58 hedged on 338
+               trades and SOL +35 / +31 carry it; eight pairs hedge to within ±10 of zero, WLD −45. → GATE FAILED, PARKED,
+               F3 not read. As expected ("positive, inside the noise"), with one thing the expectation did not say: the hedged
+               gross is a tenth of the gross, so even a confirmation would have confirmed market exposure. Reading: R9's
+               +47-gross long tail was a small, market-carried sample; the ask-heavy book is not a per-pair signal worth a
+               day's long at these costs. The book row in §7 keeps its (b) and (c): a demeaned imbalance as a ceiling screen,
+               and the book inside P5's ridge — where R7 measured the level's value (1d IC 0.067 vs 0.048 without).**
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
