@@ -378,7 +378,7 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 steps 1–3 read 2026-09-21: no rule is ready for a confirmation read; one market-timing rule is parked one step short of it; P2's funded signal turned out to be a statistical artefact)
+### P5 — Forecast + analytic decision (🟡 steps 1–4 read, last 2026-09-22: no rule is ready for a confirmation read; the market-timing rule R8 and the book-imbalance rule R9 are both parked by their own stage-1 gates)
 
 **Can it trade profitably? Not shown.** Plain version of where P5 stands (a bps is 0.01 %; on a 10,000 USDT position
 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip; *IC* = the correlation between a signal and the
@@ -410,16 +410,21 @@ move that follows, 0.03–0.05 is what a tradable weak signal looks like here):
     survives: a fitted 4h forecast with a small real IC (0.030, p 0.025), and a new lead — **±1 % book imbalance
     predicts a pair's next day** (IC −0.039, family-wise p 0.005), with all 24 features beating the candle-only set on all
     history. "More history hurts" reversed too: more history helps.
+- **Step 4 (R9, read 2026-09-22).** R7's lead as a rule (`bookimb1d`: the ±1 % book imbalance in its top decile by size,
+  traded against, held a day, F1+F2): **−2.2 bps a trade after taker costs [−25, +21]**, gross +8 where the screen's IC
+  promised +20 to +30 — the gate failed on its first condition, **parked, no confirmation fold read**. The screen's pooled
+  correlation is carried by the slow level of a pair's imbalance (a book that stays bid-heavy for weeks while the pair
+  drifts), not by something a daily trade collects. What the run showed and did not test: 79 % of its trades were shorts,
+  and the rare long side (an ask-heavy book) earned +47 gross / +32 net on 930 trades [−5, +69]. That is a new question
+  (§7), not a variant.
 
 **Next session (Claude; needs nothing from Vadim):**
 
-1. **The book-imbalance lead at 1d (§7).** It is the only per-pair directional signal that clears the screen after the
-   re-read, it gives twelve bets a bar instead of one (the market), and its size (0.039) is above every 1d bar (0.011–0.018).
-   Register before any run: a fixed rule (short the pairs whose ±1 % book is bid-heavy beyond a quantile, long the
-   ask-heavy; hold 1 day) through the harness on F1+F2, both as-is and hedged; power for F3 written before a read.
-   Data: archive `bookDepth` from 2023-01, already ingested — FP cannot check this one.
-2. **The wider universe (§9 #2) for H2.** Fetch 5m klines for the top ~40 perps (same fetcher, `--symbols`), register the
-   rank-continuation rule with 3–5 names a side before reading.
+1. **The wider universe (§9 #2) for H2.** Fetch 5m klines for the top ~40 perps (same fetcher, `--symbols`), register the
+   rank-continuation rule with 3–5 names a side before reading. Read R5's row in §7 first: the bar is +5 bps a leg net.
+2. **The ask-heavy book as its own question (§7, book row) — only if 1 leaves time:** a NEW registration, long-only,
+   a fixed quantile of −imb, 1d, F1+F2 first; the expectation must be written from R9's long-side numbers, and the read
+   is a mechanical gate on data that has already shown the number, so a confirmation fold is what would count.
 3. **P5's forecast layer, only if 1 or 2 funds it:** ridge on all history (R7: more history helps; the tree never beats it),
    all 24 features, 4h and 1d, through the harness with the closed-form decision below.
 
@@ -495,7 +500,7 @@ registered positive on confirmation folds.
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21 | **Needed from Vadim: nothing unless you want it read — saying nothing = (a).** On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. (a) *recommended*: leave it parked; the bar was written first. (b) a NEW registration that reads F3+F4+F5 pooled for the unchanged rule — honest (nothing is re-tuned; the failed gate guarded the fold budget, not validity), power 4 in 5 for a true +52, 1 in 4 for +25: `vm.sh run backtest trendfall4h --folds F3 F4 F5 --registration R<n> --execs taker maker` after the block is written | Vadim chooses (b); or F5 grows by ~6 months (more power for the same read); or a measured observable separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread for it | Claude does the next step (P5 "Next session" #3). Gross +12.5 bps a leg, hedged +14.2 [+1.8, +26.5]; net −0.2 taker / +4.9 maker, under the +5 bar | the wider universe (§9 #2) with 3–5 names a side, or a lower fee tier (VIP 1 / BNB discount takes 1–2 bps off a round trip) |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
-| **book/tape features as model inputs — a lead since the R7 re-read** | Claude does it after R8 and H2's universe; nothing needed from Vadim. ±1 % book imbalance predicts a pair's next day (IC −0.039, family-wise p 0.005, 88 % of months; 4h −0.017, p 0.06); all 24 features beat the 11 candle ones on all history (4h 0.044 vs 0.030, 1d 0.067 vs 0.048). Found on F1+F2 only — the archive depth starts 2023-01, so FP cannot check it | register a fixed rule or a ridge on the book features at 1d through the harness on F1+F2 (stage 1), power for F3 written before any confirmation read |
+| **±1 % book imbalance as a rule (`bookimb1d`, R9)** — PARKED by its own stage-1 gate 2026-09-22 | Needed from Vadim: nothing. The screen's IC (−0.039 at 1d, p_fw 0.005) did not turn into money as a fixed rule: −2.2 bps a trade taker [−25, +21], gross +8, hedged +6.7, 9 trades a day on F1+F2, p 0.05 / flip 0.16. The pooled correlation lives in the slow per-pair level of the imbalance, which a daily short cannot collect at 12 bps a round trip. 79 % of trades were shorts; the long side (ask-heavy book, 930 trades) earned +47 gross / +32 net [−5, +69] | (a) a NEW registration for the long side only (ask-heavy book, fixed quantile of −imb, 1d) — P5 "Next session" #2; (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
 | ~~relative (pair-vs-basket) *reversal* at 4h~~ — **CLOSED 2026-09-21 (R2)** | the rank rule loses −20.6 bps per leg [−31.7, −9.5] in all six quarters; do not re-open as a reversal bet | none. The opposite sign (tail continuation) is a new hypothesis, H2 in P5, not a revival of this row |
@@ -773,7 +778,7 @@ Power:         Written 2026-09-21 for whoever revives it. se 13.0 on 1,578 days 
                MDE ≈ 53: a true +52 about 4 times in 5, a true +25 about 1 in 4. Only the pooled read is worth making.
 
 
-### R9 — bookimb1d: trade against a lopsided ±1 % book for a day (registered 2026-09-22, before the rule saw any real bar; stage 1 read —, stage 2 read —)
+### R9 — bookimb1d: trade against a lopsided ±1 % book for a day (registered 2026-09-22, before the rule saw any real bar; stage 1 read 2026-09-22: gate FAILED on its first condition; stage 2 not read)
 Question:      R7's re-read left one per-pair directional signal that clears the screen: the ±1 % book imbalance at 1d
                (IC −0.039, family-wise p 0.005, 87.5 % of months the same sign; relative IC −0.032, p_fw 0.015). Does it
                make money after costs as a fixed rule with no model — and is the money the pair's own, or the market's?
@@ -813,7 +818,21 @@ Expectation:   Stage 1: gross +20 to +30 (0.039 × 1.755 × 385 ≈ 26 for the t
 Power:         written after stage 1 from its se, before any confirmation read: F3 alone (243 days) has about half the days
                of F1+F2, so se_F3 ≈ se × √2; the read is worth making only if a true effect of stage 1's size is found
                there at least one time in two.
-Result:        —
+Result:        **Stage 1, read 2026-09-22 (commit 69bd804 holds this block as written before the read; `output/backtest/bookimb1d/report.md`):
+               GATE FAILED on its first condition (taker net > 0) → PARKED, no confirmation fold read, no variant run.**
+               taker net −2.23 bps [−25.15, +20.68], se 11.7, MDE 32.7, gross +8.04, hedged +6.74 [−2.16, +15.63], right 50.0 %;
+               shuffle p 0.050, flip p 0.164. maker +2.40 [−20.53, +25.33] (96 % of legs filled), maker_ev +2.55. 4,411 trades on 485
+               days — 9.1 a day, 176,018 decisions of which 4,427 taken: the imbalance persists, so nearly every pair re-enters the
+               day its position closes; 5.95 positions open on average. F1 −1.5 / F2 −2.9 (taker). Against the expectation: gross
+               +8 where +20 to +30 was written, trades 9 a day where 2–6 were, se 11.7 where 15–25 was. The one thing the run
+               says beyond "not there": **79 % of the trades are shorts** (3,481 bid-heavy books vs 930 ask-heavy — the top decile
+               by size is mostly the bid side), and the two sides differ: longs on ask-heavy books +46.9 gross, +31.8 taker net
+               [−5.4, +69.0] on 930 trades; shorts on bid-heavy books −2.3 gross, −11.3 net. Per pair the sign flips (ZEC +36,
+               WLD +44, LINK +25 vs PEPE −59, AVAX −38). Reading: the screen's pooled IC (−0.039) is carried by the LEVEL of a
+               pair's imbalance over weeks (a persistently bid-heavy book while the pair drifts down), which a rule that shorts
+               that pair every day cannot turn into money at 12 bps a round trip; the tail the rule can trade (an ask-heavy
+               book, rare) looks different but was not registered as its own question. Both are new registrations, not
+               variants of this one (§7).
 
 
 Template:
