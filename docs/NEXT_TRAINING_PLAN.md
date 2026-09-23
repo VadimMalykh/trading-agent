@@ -1018,6 +1018,18 @@ seeds: 1, 2, 3.
    quantity and the serve path would feed the checkpoint something it never saw. (Funding, the
    one archive series already compared, matched the collector 99.94–100 %.)
 
+**Prerequisites 1–4 done 2026-09-23, before launch, no model number read.** Fetch: 18,060
+daily files, 16,391 present, 1,669 absent (all pre-listing except one day each for WLD
+2023-12-16 and ZEC 2023-12-13); 4,718,594 rows, 2 duplicate keys dropped; every pair from
+2022-08-01 or its listing (1000PEPE 2023-05-05, WLD 2023-07-24, HYPE 2025-05-30) to
+2026-09-13 23:55. File `metrics_um_5m_83c85bd7.parquet` (253 MB) →
+`gs://fluxtrader-train-artifacts/archive/`. Identity check over 2026-07-17 21:13 → 09-23
+16:02 (770,979 collector rows): **PASS on all twelve** — median relative difference 0.026 %
+(BTC) to 0.186 % (HYPE), p99 0.36–0.96 %, worst single row 5.9 %; ADA/AVAX/LINK/XRP match
+~8.9k rows against the others' ~15–16k because the collector added them on 2026-08-29.
+Loader union verified in the trainer image: archive rows precede the collector's first row,
+the frame stays monotonic, `since` applies, `sha8=83c85bd7` on every line.
+
 **One snapshot, three identical `Split` lines.** `DUMP_MAX_AGE_MIN=100000` with the pinned
 dump; every X8 log must print X0's line exactly: `Split global_time | val_frac=0.2
 val_offset=0.0 train_frac=0.0 | train=3724724 val=931182 | train [2022-08-19 21:45 UTC →
