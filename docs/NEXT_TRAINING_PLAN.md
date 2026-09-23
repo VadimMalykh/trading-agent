@@ -1052,6 +1052,9 @@ it at 1 with a few gaps — WLD's z = 501 "degenerate spike" in both logs), so i
 to 0 on those pairs in train, val and serve. A presence flag that is always 1 carries nothing
 either way; recorded as the one side effect of the fill, not a deviation. The `hl_range`
 spike warnings are X0's too.
+**s1 DONE 2026-09-23 20:37 UTC** (early stop at epoch 37, checkpoint
+`m2_multi_20260923T160559Z_54a5fff4.pt`; `logs/X8_s1.log`, `eval_preds_20260923T160559Z.parquet`
+fetched; no epoch line read). **s2 = `20260923T204303Z`**, launched 20:43 UTC, same cache hit.
 
 **The statistic** (X1's, unchanged): per run, the plateau-restricted mean of the per-epoch
 cov 0.05 Wilson-LB series on the 240m head (plateau = epochs whose `loss_va` is within 0.02 of
