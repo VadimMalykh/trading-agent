@@ -126,3 +126,19 @@ def test_a_flat_stretch_makes_no_feature_and_no_forecast(tmp_path):
     assert o["f_bps"].notna().sum() > 1000 and np.isfinite(o["f_bps"].dropna()).all()
     assert o[(o["symbol"] == "AAUSDT") & (o["t"] < pd.Timestamp("2023-05-10", tz="UTC"))]["f_bps"].isna().all()
     assert r["results"].query("exec == 'taker' and scope == 'all'")["trades"].iloc[0] > 100
+
+
+def test_in_pair_fits_one_model_for_every_group_and_held_out_fits_one_per_group(tmp_path):
+    _synth(tmp_path, days=60)
+    M = bt.market(PAIRS, pd.Timestamp("2023-05-19", tz="UTC"))
+    y = bt.labels(M, HOLD, bt.LATENCY)
+    a = pd.Timestamp("2023-05-10", tz="UTC")
+    cut = M.index.searchsorted(a) - (bt.LATENCY + HOLD)
+    coefs = {}
+    for holdout in (True, False, "false"):
+        s = fc.RidgeBook(hold=HOLD, groups=2, min_pairs=2, holdout=holdout)
+        s.fit(M.until(a), y.iloc[:cut], a)
+        coefs[holdout] = [m[2] for m in s._models.values()]
+        assert s.params()["holdout"] is s.holdout
+    assert np.allclose(coefs[False][0], coefs[False][1]) and np.allclose(coefs["false"][0], coefs[False][0])
+    assert not np.allclose(coefs[True][0], coefs[True][1])

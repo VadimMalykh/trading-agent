@@ -381,7 +381,7 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 steps 1–6 read; step 7 — the forecast layer, pair-held-out — REGISTERED 2026-09-23 as R12 and running on the work VM, not read; R8, R9, R11 parked by their own stage-1 gates, H2 closed on breadth by R10)
+### P5 — Forecast + analytic decision (🟡 steps 1–7 read, last 2026-09-23: the forecast layer does not survive the pair hold-out (R12, parked); step 8 — in pair, the diagnostic — REGISTERED as R13 and running; R8, R9, R11 parked by their own stage-1 gates, H2 closed on breadth by R10)
 
 **Can it trade profitably? Not shown.** Plain version of where P5 stands (a bps is 0.01 %; on a 10,000 USDT position
 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip; *IC* = the correlation between a signal and the
@@ -438,15 +438,19 @@ move that follows, 0.03–0.05 is what a tradable weak signal looks like here):
 closed-form decision — has not been built yet, and the restated goal (§0: a model trained on other pairs) makes the 40-pair
 universe from R10 the place to build it.
 
-- **Step 7 (R12, registered 2026-09-23, RUNNING — not read).** The forecast layer on the 40-pair universe, pair-held-out: a ridge
-  on the 11 candle features (the 24 need book data the new pairs lack), fitted on 30 pairs and scored on the 10 held out (four
-  rotations, so every pair is scored by a model that never saw it), target = the pair's move against its peers (no market
-  direction), through the harness with the closed-form decision (trade when the forecast clears 15 bps, size by forecast over
-  variance, capped). Two arms, 1d primary and 4h. What would count: hedged net > 0 outside both nulls on F1+F2 AND a held-out
-  IC with t ≥ 2 — then F3. `ft2/forecast.py`; the registration (§8 R12) has the exact commands and the gate. Four jobs were
-  started in parallel on the work VM on 2026-09-23 (`output/logs/r12_*.log`); **next session (Claude): `vm.sh pull`, read
-  `output/backtest/r12_ridgebook_1d/report.md` and `forecast.md` (and the three twins), fill R12's Result, apply the gate.**
-- **Step 8 (only if step 7's held-out IC is real):** the demeaned imbalance as a ceiling screen on the twelve (§7 book row (b)).
+- **Step 7 (R12, read 2026-09-23).** The plan's own deliverable, built and read: a ridge on the 11 candle features, fitted on 30 of
+  the 40 pairs and scored on the 10 it never saw (four rotations), forecasting a pair's next-day move against its peers, traded when
+  the forecast clears 15 bps. **The forecast does not survive the hold-out: IC 0.0075 (t 1.3) on 463,000 out-of-pair cells, against
+  R7's in-pair 0.048; its spread is ~4 bps, so only 3 % of cells clear 15 bps, and those are the wildest names.** Money: 1,648 trades,
+  net −44 [−101, +12], MDE 81 — no power, and the gate failed on the IC, the nulls and F2 anyway. At 4h nothing clears 15 bps at all
+  (49 trades on 485 days; IC 0.001). Parked (§7). Two things this leaves behind: `forecast.md` — every forecasting run now reports its
+  held-out IC, calibration by decile and share of cells clearing the bar — and *hedged net* in every harness report.
+- **Step 8 (R13, registered 2026-09-23, RUNNING — not read).** The one question R12 cannot answer: is the missing IC the hold-out (a
+  pair-specific signal that does not transfer — §0's goal at stake) or the target and universe (R7's 0.048 was the own move on twelve
+  names)? The same pipeline fitted in pair, on the forty and on the twelve; the grid IC is the read, not the P&L. Started on the work VM
+  2026-09-23 (`output/logs/r13_*.log`); **next session (Claude): `vm.sh pull`, read `output/backtest/r13_ridgebook_1d_inpair/forecast.md`
+  and `…_inpair12/forecast.md`, fill R13's Result, apply its gate (a)/(b)/(c), stop the VM.** The 4h `--cost-mult 2` twin of R12 was still
+  running when R12 was read (49 trades; it cannot change the verdict) — record its line when it lands.
 
 **Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
@@ -519,6 +523,7 @@ registered positive on confirmation folds.
 | ~~R1 stage 2 — the confirmation read of `reversal4h`~~ — **CLOSED 2026-09-21** | Needed from Vadim: nothing. The rule's premise (pair-level reversal) was a statistical artefact (R7) and its profit was the market's bounce in a rising market (R3, R4). F3 stays unspent | none; the bounce lives on as R8 |
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21; **Vadim decided (a) on 2026-09-22: leave it parked, do not read F3–F5 for it** | Needed from Vadim: nothing. On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. The confirmation folds stay unspent for this question | only a measured observable that separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule; F5 growing by ~6 months does not by itself re-open the (b) question |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
+| **The candle-feature ridge as a cross-pair forecast (`ridgebook`, R12)** — PARKED by its own stage-1 gate 2026-09-23 | Needed from Vadim: nothing. Held out of pair, the 1d forecast of a pair's move against its peers has IC 0.0075 (t 1.3) on the forty; spread ~4 bps, 3 % of cells clear 15 bps; 1,648 wild trades, net −44 [−101, +12], MDE 81. At 4h nothing clears the bar | R13 (running) says which half is missing; then either a pair-level component (a new registration) or new observations (the book, on the twelve). No threshold / grid / cap variant on F1+F2 |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048). No further fixed rule on the raw imbalance |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -953,7 +958,7 @@ Result:        **Stage 1, read 2026-09-22 (output/backtest/r11_bookimb1d_long): 
                day's long at these costs. The book row in §7 keeps its (b) and (c): a demeaned imbalance as a ceiling screen,
                and the book inside P5's ridge — where R7 measured the level's value (1d IC 0.067 vs 0.048 without).**
 
-### R12 — ridgebook: P5's forecast layer, fitted on 30 pairs and scored on the 10 it never saw (registered 2026-09-23, before the strategy saw any real bar; stage 1 read —, stage 2 read —)
+### R12 — ridgebook: P5's forecast layer, fitted on 30 pairs and scored on the 10 it never saw (registered 2026-09-23, before the strategy saw any real bar; stage 1 read 2026-09-23: gate FAILED on (i), (iii) and (v); stage 2 not read)
 Question:      §0's goal is a model that trades pairs it was not trained on. R7 left one funded directional signal — a ridge
                on the 11 candle features (IC 0.030 at 4h, 0.048 at 1d, walk-forward IN pair, twelve names) — and R10 left a
                40-pair universe with clean 5m history and a priced cost. Does that forecast survive being applied to pairs it
@@ -1009,6 +1014,50 @@ Expectation:   Held-out IC at 1d 0.02–0.04 (R7's in-pair 0.048 less what is pa
                "real out of pair, not tradable at VIP 0 with candle features alone", and the book row's (c) becomes the next
                question. 4h arm: < 3 % of cells clear 15 bps, a few hundred trades, uninformative on money; its IC (0.01–0.03)
                is the number worth keeping.
+Result:        **Stage 1, read 2026-09-23 (commit 620f1c8 holds this block as written before the read; output/backtest/r12_ridgebook_1d,
+               _1d_cost2, _4h, _4h_cost2; forecast.md next to each report): GATE FAILED — the forecast does not survive the pair
+               hold-out, and it rarely clears the cost.** The three numbers, primary arm (1d):
+               (v) held-out IC on the 462,705 grid cells: **0.0075, t 1.26** (F1 0.003, F2 0.013; per group 0.001 / 0.016 / 0.008 / 0.007,
+               the best single group-fold 0.037 at t 2.3, F2 group 1); se ≈ 0.006, so an IC of 0.02 is at the edge of the interval and
+               R7's in-pair 0.048 is far outside. Calibration by forecast decile: flat — decile 10 (mean forecast +11.5 bps) realised −5.6
+               vs peers, decile 1 (−10.1) realised −5.2. Only **3.2 % of cells clear 15 bps** (expected 10–25 %): the forecast's spread is
+               ~4 bps, not 8–15, and the cells that clear it are the wildest names (PEOPLE 15 %, ENS 9 %, WAVES 7 % of their cells; ADA,
+               SANDS, THETA under 0.5 %).
+               (i)–(iv) money, taker as priced: 1,648 trades (3.4 a day), gross −28.1, hedged +3.5 [−29.6, +36.5], **net −44.3 [−101.0,
+               +12.4], hedged net −12.7 [−45.9, +20.5], MDE 81** — the trades sit on the most volatile pair-days, so the money read has
+               no power (an 81-bps MDE against a +5 bar). F1 +0.5, F2 −120.3 (iv fails on F2); shuffle p 0.77, flip p 0.83 (iii fails).
+               Maker −39.0. Costs doubled: −50.8 / −39.4. Long −24.4 (hedged −20.8), short −52.3 (hedged +13.3).
+               4h arm: **0.0 % of cells clear 15 bps** (49 trades on F1+F2 — the forecast's spread at 4h is ~1 bps); IC 0.0012, t 0.32
+               (F1 −0.001, F2 +0.005); calibration flat. Its `--cost-mult 2` twin (49 trades) adds nothing.
+               Against the expectation: the IC came in at a quarter of the low end (0.0075 vs 0.02–0.04) and the forecast's spread at a
+               third, so (v) failed where it was expected to pass; the rest failed as expected but for a reason not foreseen — too few,
+               too wild trades rather than a cost shortfall. Verdict: **PARKED (§7)**. What it does not say: whether the loss is the hold-out
+               (a pair-specific signal, §0's goal at stake) or the change of target and universe (R7's 0.048 was the pair's OWN 1d move on
+               twelve names; this is the move against peers on forty). That is R13's question, registered below.**
+
+### R13 — ridgebook in pair: is R12's missing IC the hold-out, or the target and the universe? (registered 2026-09-23, before the in-pair runs saw any real bar; read —)
+Question:      R12's out-of-pair IC at 1d is 0.0075 (t 1.3) where R7 read 0.048 in pair — but R7 was the pair's OWN move on the twelve
+               collector names, and R12 is the move AGAINST PEERS on forty. Which change lost it? If the same pipeline fitted in pair
+               (every pair's model has seen its own bars) recovers the IC, the candle signal is pair-specific and does not transfer —
+               §0's "trained on other pairs" goal cannot be met with candle features alone. If it does not, there is no candle signal in
+               the 1d move against peers at all, in or out of pair, and R7's number was the market-laden own move.
+Contrast:      `ridgebook --param holdout=false`, everything else R12's (hold 288, grid 12, same features, same residual label, same
+               walk-forward in time; the four "groups" now share one model fitted on all pairs, itself included). Two arms:
+                 A  the forty: `backtest ridgebook --param hold=288 --param holdout=false --universe wide --execs taker maker --draws 20 --name r13_ridgebook_1d_inpair`
+                 B  the twelve collector pairs (R7's universe, this pipeline's target and grid):
+                    `backtest ridgebook --param hold=288 --param holdout=false --execs taker maker --draws 20 --name r13_ridgebook_1d_inpair12`
+               The statistic READ is the grid IC in `forecast.md` (pooled, t clustered by day; per fold and per group) against R12's
+               0.0075 — a diagnostic of the forecast, not a trading read: the P&L rows and the 20-draw nulls are reported and not
+               applied to any gate (the in-pair number is optimistic by construction and is not a candidate rule).
+Folds read:    F1+F2 (exploration; R12's cells).
+Gate:          (a) A ≥ 0.02 with t ≥ 2 → the signal is pair-specific: the candle-only ridge is CLOSED for the cross-pair goal (§7), and
+               the next question is what a pair-level component looks like (a per-pair intercept / level is a NEW registration, not a
+               variant). (b) A < 0.02 and B ≥ 0.03 with t ≥ 2 → the thin names or the residual target lost it: the candle signal lives
+               in the majors' own move; record and close the candle ridge on the wide universe. (c) both < 0.02 → no candle signal in
+               the 1d move against peers anywhere at this power: the candle-only ridge is CLOSED on this target, and the next
+               registration must bring new observations (the book, §7 (b)/(c)) — on the twelve, where the book exists.
+Expectation:   A 0.015–0.03, t 2–4 (an in-pair fit knows each pair's level of the features); B 0.02–0.04. Likeliest (a) or (b) at the
+               boundary: half the gap from R12 to R7 is pair-specificity, half the target.
 Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)

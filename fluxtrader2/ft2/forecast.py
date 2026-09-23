@@ -27,6 +27,8 @@ pair is not one of, turned into trades by a closed-form rule. No learned policy.
                0.25 and capped at `cap` units. The harness weights every mean by size; bps are per unit.
 
 Registered before the read: groups 4, grid 12, min_bps, cap 2, min_pairs 5, hold ∈ {288 (primary), 48}.
+`holdout=false` (R13's diagnostic, not a trading variant): the same pipeline with every pair's model fitted on ALL
+pairs, itself included — the in-pair IC against which R12's out-of-pair IC is compared.
 The strategy also keeps every out-of-sample forecast of the FIRST walk (the real one; the noise floor's
 re-walks are not recorded) so that `forecast_report` can say whether the IC survives the pair hold-out.
 """
@@ -65,8 +67,9 @@ class RidgeBook(Strategy):
     name = "ridgebook"
     uses_labels = True
 
-    def __init__(self, hold: int = 288, min_bps: float = 15.0, cap: float = 2.0, groups: int = 4, grid: int = 12, min_pairs: int = 5):
+    def __init__(self, hold: int = 288, min_bps: float = 15.0, cap: float = 2.0, groups: int = 4, grid: int = 12, min_pairs: int = 5, holdout: bool = True):
         self.hold, self.min_bps, self.cap, self.groups, self.grid, self.min_pairs = int(hold), float(min_bps), float(cap), int(groups), int(grid), int(min_pairs)
+        self.holdout = holdout in (True, 1, "true", "True", "1")      # False (R13): every pair's model is fitted on all pairs, itself included
         self._ts: list[pd.Timestamp] = []                  # cached grid bars, in time order
         self._X: list[np.ndarray] = []                     # per cached bar: (pair × feature)
         self._S: list[np.ndarray] = []                     # per cached bar: σ_1w per pair (bps per 5m bar)
@@ -123,7 +126,7 @@ class RidgeBook(Strategy):
         grp = self._group(X.shape[1])
         self._sigma_ref = float(np.nanmedian(sig_h))
         for g in range(self.groups):
-            tr = grp != g
+            tr = (grp != g) if self.holdout else np.ones(len(grp), dtype=bool)
             zt = z[:, tr]
             have = ~np.isnan(zt)
             n = have.sum(1, keepdims=True)
