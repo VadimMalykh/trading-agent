@@ -1040,6 +1040,19 @@ from the list. A run missing any of these is void, not read.
 
 **Serial order:** X8 s1 → s2 → s3. One `gcp_train.sh` at a time.
 
+*Launch log, no epoch read.* **s1 = `20260923T160559Z`**, launched 2026-09-23 16:15 UTC on an
+L4 (`us-central1-b`), git `54a5fff`, cache hit at 16,666 min (the pinned dump; bucket
+`latest.sql.gz` crc32c-identical to `20260913T050118Z.sql.gz`). Acceptance on the log:
+`Split` line identical to X0's ✓; `Feature groups: legacy -> 19 columns` ✓; twelve
+`Archive OI:` lines, 120,011 (HYPE) to 424,418 rows each, all `sha8=83c85bd7` ✓; **`oi` and
+`oi_chg` are gone from every CONSTANT list** ✓. ⚠️ The count is **11/19 on the long pairs
+and 10/19 on WLD and the global fit**, not 10 everywhere: the eleventh is `has_funding_oi`,
+which the archive fill makes 1 on every train bar of a pair listed before the window (X0 had
+it at 1 with a few gaps — WLD's z = 501 "degenerate spike" in both logs), so it is now forced
+to 0 on those pairs in train, val and serve. A presence flag that is always 1 carries nothing
+either way; recorded as the one side effect of the fill, not a deviation. The `hl_range`
+spike warnings are X0's too.
+
 **The statistic** (X1's, unchanged): per run, the plateau-restricted mean of the per-epoch
 cov 0.05 Wilson-LB series on the 240m head (plateau = epochs whose `loss_va` is within 0.02 of
 the run's minimum); per family, the mean of its three seeds, error bar the between-seed sd.
