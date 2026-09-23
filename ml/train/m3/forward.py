@@ -143,12 +143,18 @@ def check_bars(led: Ledger, bars: pd.DataFrame) -> list[str]:
     return problems
 
 
+REGISTERED_ARMS = (ARM_POLICY, ARM_FLAT)
+
+
 def check(led: Ledger) -> list[str]:
-    """Consistency checks a reading must not proceed past. Returns the problems found."""
+    """Consistency checks a reading must not proceed past. Returns the problems found.
+    Only the two registered arms are checked: the side arms (`explore_cov05` at the cov-0.05
+    cut, the real-money `live` mirror; BACKLOG rows 12-13) share the table, carry their own
+    thresholds and are read by none of R0-R5."""
     problems = []
-    c = led.closed
+    c = led.closed[led.closed["arm"].isin(REGISTERED_ARMS)]
     if c.empty:
-        return ["no closed rows"]
+        return ["no closed rows on the registered arms"]
     bad_p80 = c[~np.isclose(c["ladder_p80"], LADDER_P80)]
     if len(bad_p80):
         problems.append(f"{len(bad_p80)} rows carry a ladder_p80 != {LADDER_P80}")
@@ -409,11 +415,18 @@ def run(path: str, bars_path: str | None = None) -> int:
     p = led.arm(ARM_POLICY)
     n_policy = len(p)
     print(f"FORWARD LEDGER READINGS — M3_5_INTEGRATION §4.3   ({path})")
+    side = led.closed[~led.closed["arm"].isin(REGISTERED_ARMS)]
     print(f"rows {led.n_rows}, closed {len(led.closed)}, open {led.n_open}; "
-          f"policy-arm closed trades {n_policy}")
+          f"policy-arm closed trades {n_policy}"
+          + (f"; side-arm closed rows {len(side)} ({', '.join(sorted(side['arm'].unique()))})"
+             " — not read" if len(side) else ""))
     if n_policy:
         print(f"entry span {p['entry_ts'].min():%Y-%m-%d %H:%M} -> "
               f"{p['entry_ts'].max():%Y-%m-%d %H:%M} UTC, {p['day'].nunique()} entry days")
+    if led.closed["arm"].isin(REGISTERED_ARMS).sum() == 0:
+        print(f"\n⚠️  TEXTURE ONLY: 0 closed trades on the registered arms ({', '.join(REGISTERED_ARMS)}); "
+              f"nothing to check or read. §4.3's first reading is at {READ_AT} closed policy trades.")
+        return 0
     problems = check(led)
     if problems:
         print("\nCONSISTENCY FAILED — do not read the tables below:")
