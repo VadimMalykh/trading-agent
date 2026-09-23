@@ -944,6 +944,164 @@ FEATURE_GROUPS=legacy SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X2 s3
 ~2.5 h and ≈ $1.5 each, ~8 h serial. **Bring back the three logs** (never a summary); the read
 happens in a fresh session with §0.3's awk over the epoch lines, then the gate above.
 
+### 🔵 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23, NOT LAUNCHED
+
+**Written before any number was read. Nothing below this block is to be edited after a log
+comes back; the result block goes above it.**
+
+**The question.** The served model carries `oi` and `oi_chg` in its 19 legacy columns, but the
+collector's `open_interest` table starts 2026-07-18 and X0's train window ends 2025-12-14, so
+both columns are constant zero in train and are forced to zero in train, val **and serve**
+(`NORM_DEGENERATE_MODE=zero`; X0's log: `12/19 features are CONSTANT in the train window ->
+forcing them to 0`). Binance's public archive (`data.binance.vision`, USDⓈ-M `metrics`, one row
+per 5 minutes) carries the same quantity, `sum_open_interest`, from 2020-09 for every pair the
+collector trades. **Does filling these two existing columns over the whole training window
+move the 240m head?**
+
+**Why this is not a re-proposal.** §5's feature row closes *added* columns: own-pair
+re-parameterisations (R1) and the external market block (X1) both memorised. X8 adds no column
+— 19 in, 19 out, `LEGACY_FEATURE_COLS` unchanged, no serve-side feature code touched. It is the
+freeze's own reopening condition, "history deep enough to sit inside the *training* window",
+for the one legacy quantity where the archive and the collector are literally the same series.
+The "≈2027" attached to that condition was the date at which the **collector** would have
+supplied it; the archive supplies it today. (The archive's existence and coverage were measured
+by the fluxtrader2 project on 2026-09-15 — a fact about Binance, not a fluxtrader2 conclusion,
+and nothing else from that project is used.)
+
+**Why one lever, and which.** The archive offers three things: OI (an existing served column;
+no serve change), the long/short and taker ratios (new columns; the collector's
+`long_short_ratios` table since 2026-08-24 would be the serve source) and depth within ±1..5 %
+of mid (new columns; **no live counterpart** — the collector's snapshot holds the top levels
+only, so a serve path needs a collector change first). §0.2: one change per run. **X8 is OI
+only.** The ratio block is written below as **X8b**, with its own gate, and is *run* only on a
+decision taken after X8 is read. Depth bands are not registered here.
+
+**The control — X0, banked, reused.** Same snapshot `dumps/20260913T050118Z.sql.gz`,
+`FEATURE_GROUPS=legacy`, seeds 1/2/3 (`20260913T050118Z`, `20260913T094329Z`,
+`20260914T193920Z`): plateau means 0.5245 / 0.5264 / 0.5266 (plateaus 21 / 31 / 27 epochs),
+all-epoch 0.5254, between-seed sd 0.0011; cov-0.02 gross +10.9 over 3,231 trades. Reusable
+because X8 changes neither the snapshot nor the split: the fill is a side file, not a new dump.
+
+**The recipe — X0 plus exactly one thing.** `ARCHIVE_OI=<bucket path>` set. With it,
+`db.load_open_interest` returns, per pair, the archive rows for every timestamp **before the
+collector's first row for that pair**, followed by the collector's own rows; without it the
+loader is byte-for-byte the current one. Everything else is X0's: 12 pairs, seq 384, 60 epochs,
+horizons 60/240/1440, primary 240, 5m, `PAIR_EMBED_DIM=8`, `EARLY_STOP_PATIENCE=20`,
+`FEATURE_GROUPS=legacy`, `SPLIT_EMBARGO` **off** — X5's row says it turns on "in the next
+registered family", but X8 reuses X0 as its control and a second recipe difference would break
+the pairing; X5 goes on in the first family whose control is retrained (X8b, if run). Three
+seeds: 1, 2, 3.
+
+**Code prerequisite on `main`, built before launch; none of it reads a model number:**
+
+1. `scripts/fetch_archive_metrics.sh` → runs `ml/train/archive_metrics.py` in the
+   `ml_analysis` image (Docker; nothing on the host). Downloads
+   `data/futures/um/daily/metrics/{SYMBOL}/{SYMBOL}-metrics-{YYYY-MM-DD}.zip` from
+   `https://data.binance.vision/` for the twelve pairs, 2022-08-01 → 2026-09-13 (the snapshot's
+   date), verifying each `.CHECKSUM` (sha256), retrying, resumable. Keeps all seven columns
+   (X8b needs the ratios) and writes one parquet `(symbol, ts, open_interest, oi_value,
+   top_ls_count, top_ls_sum, global_ls, taker_ratio)` at 5-minute cadence, ~4.7 M rows, then
+   uploads it as `gs://fluxtrader-train-artifacts/archive/metrics_um_5m_<sha8>.parquet`. The
+   sha is the file's identity and goes into every run's `meta`.
+2. `ml/train/data/db.py::load_open_interest`: the `ARCHIVE_OI` union above, and one log line
+   per pair — `Archive OI: <pair> <n> archive rows <first> -> <last>, collector from <ts>` —
+   plus `meta["archive_oi"] = <sha8>`.
+3. `scripts/gcp_train.sh`: `ARCHIVE_OI` on `FLUX_TRAIN_ENV_KEYS` (§7 "Env knob passthrough")
+   and the parquet copied from the bucket to the train VM next to the dump; on the fold
+   allowlist it is **not** — a fold run with it set needs `ALLOW_RECIPE_DRIFT=1` and its own
+   registration.
+4. 🔴 **Identity acceptance, before the first launch** (`m3 archiveoi --check`, `ml_analysis`
+   image): over the overlap 2026-07-18 → 2026-09-09, join each archive row to the nearest
+   collector `open_interest` row within 5 minutes; per pair, report median and 99th-percentile
+   relative difference and the matched count. **Pass:** median < 0.5 % and p99 < 2 % on every
+   pair. Fail on any pair → X8 is **void before it runs** — the two series are not the same
+   quantity and the serve path would feed the checkpoint something it never saw. (Funding, the
+   one archive series already compared, matched the collector 99.94–100 %.)
+
+**One snapshot, three identical `Split` lines.** `DUMP_MAX_AGE_MIN=100000` with the pinned
+dump; every X8 log must print X0's line exactly: `Split global_time | val_frac=0.2
+val_offset=0.0 train_frac=0.0 | train=3724724 val=931182 | train [2022-08-19 21:45 UTC →
+2025-12-14 09:35 UTC] | val [2025-12-14 09:35 UTC → 2026-09-09 20:05 UTC]`. Also required in
+each log: `Feature groups: legacy -> 19 columns`; twelve `Archive OI:` lines with the same
+sha8; and the norm block now reporting **10/19** constant features — `oi` and `oi_chg` gone
+from the list. A run missing any of these is void, not read.
+
+**Serial order:** X8 s1 → s2 → s3. One `gcp_train.sh` at a time.
+
+**The statistic** (X1's, unchanged): per run, the plateau-restricted mean of the per-epoch
+cov 0.05 Wilson-LB series on the 240m head (plateau = epochs whose `loss_va` is within 0.02 of
+the run's minimum); per family, the mean of its three seeds, error bar the between-seed sd.
+**Fallback, stated now:** if any run's plateau is shorter than 15 epochs, both families are
+read on the all-epoch mean (X0 = 0.5254) and the verdict says so.
+
+**The gate:** X8 − X0 ≥ **+0.008** *and* every X8 seed above the X0 family mean → **MOVED**;
+in (−0.008, +0.008), or ≥ +0.008 with a seed below → **FLAT**; ≤ −0.008 → **WORSE**.
+
+**Secondary reading:** pooled cov-0.02 gross bps/trade on the 240m head against X0's +10.9
+(SE ≈ 5 bps). A MOVED whose cov-0.02 gross is more than 5 bps below X0's is
+**MOVED-BUT-NOT-EARNING** and licenses nothing.
+
+**Recorded expectation: FLAT.** Open interest is a slow positioning variable; its information
+about the next four hours' direction is small, and the X1/X2 pattern is that the LSTM
+memorises whatever it is handed. **The reading that matters beyond the gate is the plateau
+length.** If the three plateaus stay ≥ 15 epochs with a filled column, the memorisation
+mechanism is about *redundant* columns and not about any column, and X8b is worth running. If
+they collapse under 15 (X1: 7 / 7 / 4; X2: 6 / 7 / 3), even a FLAT closes the filled-column
+route and X8b is not run.
+
+**What each verdict licenses — and nothing more:**
+
+* **MOVED:** (i) register the era in `m3/dumps.py` and run the incumbent rule on the X8
+  checkpoints under M3_PROTOCOL §9 (Tier 1, C3); (ii) the walk-forward folds for this recipe
+  under their own pre-registration with `ALLOW_RECIPE_DRIFT=1`, promotion only through W1–W5
+  (WALKFORWARD §3, §5.1), never by this read; (iii) X8b may be launched.
+* **FLAT with plateaus ≥ 15:** a decision for Vadim on X8b (three more runs); nothing served
+  changes.
+* **FLAT with a short plateau, or WORSE:** the filled-column route is closed. §5's reopening
+  condition is then rewritten to say the fill of an existing column does not reopen M2 and only
+  a genuinely new observation with history could — which, on the evidence of X1, is unlikely
+  to survive either. X8b is not run.
+* Nothing licenses a fourth seed, a different fill window, a different OI transform, or
+  re-reading with the ratios "since the data is there".
+
+**Commands** (after the four prerequisites are on `main` and the identity check has passed):
+
+```sh
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240 TRAIN_PAIRS=<12>
+export DUMP_MAX_AGE_MIN=100000                      # the pinned 20260913T050118Z snapshot
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_<sha8>.parquet
+
+FEATURE_GROUPS=legacy SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # X8 s1
+FEATURE_GROUPS=legacy SEED=2 ./scripts/gcp_train.sh --gpu 60 384   # X8 s2  (after s1 is DONE)
+FEATURE_GROUPS=legacy SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X8 s3
+
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh <run_id> > logs/X8_s1.log      # X8_s2, X8_s3 — never --save
+gcloud storage cp gs://fluxtrader-train-artifacts/eval/<run_id>/eval_preds.parquet \
+  ml/train/output/eval_dumps/eval_preds_<run_id>.parquet
+```
+
+~2.5 h and ≈ $1.5 each, ~8 h serial. **Bring back the three logs** (never a summary); the read
+happens in a fresh session with §0.3's awk over the epoch lines, then the gate above.
+
+#### X8b — the flow ratios as a feature group. WRITTEN 2026-09-23, NOT REGISTERED FOR LAUNCH
+
+Run only on the decision X8's read leaves for Vadim; the text is fixed now so that the decision
+cannot shape it. **The change:** `FEATURE_GROUPS=legacy,flow`, a new group `flow` of four
+columns appended after `legacy` — `ls_global` (log of the global long/short account ratio),
+`ls_top` (log of the top-trader long/short position ratio, the `sum` variant), `taker_ratio`
+(log of the taker buy/sell volume ratio), `has_flow` — all as-of-joined to the candle grid with
+`FUNDING_OI_MAX_AGE_MIN`'s 480-minute cap and zero when stale, exactly as `funding`/`oi` are.
+Training source: the same archive parquet; serve source: the collector's `long_short_ratios`
+(top / global / taker families at 5m since 2026-08-24), with the same identity acceptance as
+X8's over 2026-08-24 → 09-09 before launch. Serve-side: `features.py`, `serve.py` and the
+checkpoint guard learn the 23-column layout; `LEGACY_FEATURE_COLS == FEATURE_COLS[:19]` holds.
+**Control:** X8 (so both arms carry `ARCHIVE_OI`); `SPLIT_EMBARGO=1` on **both** arms would need
+X8 re-run — so it stays off here too, and X5 waits for a family that retrains its control from
+scratch. Same statistic, fallback, gate and secondary as X8. **Recorded expectation: WORSE or
+FLAT with short plateaus** — X1 is the precedent for five added external columns. Three runs.
+
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 
 `logs/b3b_gbt_5m_20260911.log`, `logs/b3b_gbt_15m_20260911.log`; reading in
@@ -970,7 +1128,7 @@ laptop's `ml_analysis` container.
 | **Training data volume / pair count** | **Closed (new, 2026-08-22)** | O8 added ADA/AVAX/LINK/XRP for 4.59M samples, +58%, the largest data increase available without new *kinds* of data. Re-aggregated onto the original 8 pairs it is inside the 3-seed family's spread at every coverage (+23.9 / +21.3 / +6.8 vs +19.4 / +22.0 / +8.9), and the pair-mix-corrected plateau mean is ≈0.512 vs 0.5239. Crypto pairs are highly correlated, so 58% more *rows* is far less than 58% more independent observations — the effective-sample gain was small and the measured gain is zero. Do not start a pair-count ladder *as a data experiment*. 🟢 **Amended 2026-08-27; both halves are now closed.** Pair count as *traded universe* is a genuinely different lever from pair count as *training data*, and it was tested on its own: the T-wave ran two more 12-pair seeds and the single-seed "+7.5 net bps/trade" **did not replicate**, then T6 ran the fair comparisons — trade-count-matched, cut-matched, cap-re-tuned — and put the effect within a couple of bps of zero in every one, against a data-resolution limit of ±37 bps. **The traded-universe question is closed as *undecidable on this evaluation period*, not as decided against.** ⚠️ This row read "the incumbent 8-pair universe stands" until 2026-08-29; it no longer does — **the served universe is twelve**, once every added pair carried its own measured crossing cost. What stays closed is the *question*, not the universe. §1.9 and §1.10 in [archive/TRAINING_HISTORY.md](./archive/TRAINING_HISTORY.md), `docs/T6_RESULTS.md` |
 | **Magnitude / cost-shaped training losses (`DIR_MAG_WEIGHT`)** | **Closed (new, 2026-08-23)** | R2 was the second and better-designed attempt at teaching M2 about economics rather than accuracy (N3's selection-time cousin was the first, closed 2026-08-18). It ran correctly — `at_clip` under 1%, `scale` ≈ 0.98, `mean\|r\|` rising with horizon — and it lost gross bps/trade at every coverage while driving brier from 0.250 to 0.316 and flattening `emp_up` to ≈0.48 in all ten bins. The mechanism generalizes past this one knob: **up-weighting large moves teaches the head that "confident and large" is the same axis as "confident and correct", and it is not.** Position sizing by expected move magnitude is M3's job and belongs in the policy, where it can be applied without corrupting the probability M2 exists to emit. §1.9 |
 | **Volatility-normalised training labels (`LABEL_MODE=volnorm`)** | **Closed (new, 2026-09-15) — WORSE** | X2 replaced the fixed ±0.6% flat band with a band in units of each pair's trailing one-day σ (k derived from the fixed label's flat share on the train window, so the class balance was unchanged), while selection and evaluation stayed on the fixed labels. Against a same-snapshot 3-seed control: **−0.0096** all-epoch mean LB (fallback read, every plateau under 15 epochs), every seed below the control, cov-0.02 gross +8.7 vs +10.9. `loss_tr` collapses from epoch 4–9, earlier than any 19-column run. The mechanism is the opposite of the hope: rescaling by a calm day's σ makes noise-sized moves directional, which the model memorises. It is the training-target cousin of the magnitude-loss row above — both try to change *what* M2 learns from calm vs volatile bars, and both lose. Do not try another k rule, vol window or label mode; the voided triple-barrier (`E3-tb`) is not reopened by this either. §2 |
-| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired.** ⚠️ *Amended 2026-09-13, resolved 2026-09-15:* reopened for **one** lever, X0/X1 in §2, under the feature row's own "genuinely external information" clause and on new evidence (B3's O5). **X1 came back WORSE (−0.020, §2) and the freeze is re-sealed.** ⚠️ *Amended again 2026-09-15, resolved the same day:* reopened for **one** further lever, X2 (§2, volatility-normalised training labels), funded by Vadim as the last offline M2 lever with a rationale. **X2 came back WORSE (−0.010, §2) and the freeze is re-sealed.** Eleven levers tested one at a time, one moved. The only reopening condition is §1.7's | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
+| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired.** ⚠️ *Amended 2026-09-13, resolved 2026-09-15:* reopened for **one** lever, X0/X1 in §2, under the feature row's own "genuinely external information" clause and on new evidence (B3's O5). **X1 came back WORSE (−0.020, §2) and the freeze is re-sealed.** ⚠️ *Amended again 2026-09-15, resolved the same day:* reopened for **one** further lever, X2 (§2, volatility-normalised training labels), funded by Vadim as the last offline M2 lever with a rationale. **X2 came back WORSE (−0.010, §2) and the freeze is re-sealed.** Eleven levers tested one at a time, one moved. The only reopening condition is §1.7's. ⚠️ *Amended 2026-09-23:* **that condition is met today for one served column** — Binance's public archive holds open interest at 5 minutes from 2020-09, i.e. inside the whole training window, for the two legacy columns (`oi`, `oi_chg`) that are currently zeroed. Reopened for **one** lever under it: **X8** (§2, registered, not launched), which adds no column. The "≈2027" was the date the *collector* would have supplied that history; it is not the condition | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
 | Full architecture swap (transformer / TCN) | **Closed, and reaffirmed 2026-08-22** | Was gated behind O3; O3 came back negative. The reopening condition written in 2026-08-19 was "if richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit" — Q3 and R1 have now *both* run and the failure looks like the opposite: the model already memorizes the training set the moment it is handed anything easy (`loss_tr` 1.70 → 1.13 in R1), while its validation loss never improves. That is an **input** limit and an SNR floor, not a modelling limit. A higher-capacity family would make it worse, not better. **Do not write a transformer.** 🔴 **Reaffirmed again 2026-08-23: R3a ran the two-run bracket's upward arm and produced exactly this prediction** — `loss_tr` 1.72 → 0.888 with `loss_va` never once reaching the baseline's level, and the worst calibration in the ledger. More capacity of any kind makes this problem worse. There is no remaining capacity question. |
 | Confidence calibration / temperature / focal loss | **Closed** | F4's head is *over*-confident (`[0.60,0.70)` bin mean_pred 0.636 vs empirical 0.547; N3's is 0.609 vs 0.521). Sharpening an over-confident head is the wrong direction. |
 | Raising `GATE_THRESHOLD` as an experiment | **Superseded by C1+C2** | The served gate is 0.58 and eval now reports there. Derive the operating point from the fixed-coverage P&L table, not from another sweep. |
