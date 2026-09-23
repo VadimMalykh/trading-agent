@@ -193,7 +193,7 @@ CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT \
 DIR_MAG_WEIGHT DIR_MAG_WEIGHT_CLIP DIR_MAG_WEIGHT_POWER \
 LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER \
 VN_VOL_WINDOW VN_MIN_SIGMA VN_CALIB_END \
-CANDLE_INTERVAL FEATURE_GROUPS \
+CANDLE_INTERVAL FEATURE_GROUPS ARCHIVE_OI \
 NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD \
 BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN \
 GATE_THRESHOLD SERVE_TARGET_COVERAGE \
@@ -873,6 +873,18 @@ if ! [[ \"\$CANDLES\" =~ ^[0-9]+\$ ]] || [[ \"\$CANDLES\" -lt 1000 ]]; then echo
 if ! [[ \"\$BOOK\" =~ ^[0-9]+\$ ]] || [[ \"\$BOOK\" -lt 100 ]]; then echo \"ERROR: restore failed (book=\$BOOK)\"; exit 1; fi
 
 docker volume create \$MODEL_VOLUME_NAME >/dev/null 2>&1 || true
+
+# X8: ARCHIVE_OI names the archive open-interest parquet. On the launcher it is a gs://
+# path; here it is fetched next to the train code (bind-mounted at /workspace/train) and
+# re-pointed at the container path BEFORE the generic passthrough reads it.
+if [[ -n \"\${ARCHIVE_OI:-}\" ]]; then
+  if [[ \"\$ARCHIVE_OI\" == gs://* ]]; then
+    mkdir -p \$HOME/\$REMOTE_REPO_NAME/ml/train/output/archive
+    gcloud storage cp \"\$ARCHIVE_OI\" \$HOME/\$REMOTE_REPO_NAME/ml/train/output/archive/
+    export ARCHIVE_OI=\"/workspace/train/output/archive/\$(basename \"\$ARCHIVE_OI\")\"
+  fi
+  echo \"=== ARCHIVE_OI (X8) -> \$ARCHIVE_OI ===\"
+fi
 
 # --- GPU vs CPU docker runner ------------------------------------------------
 if [[ \"\$TRAIN_DEVICE\" == \"cuda\" ]]; then

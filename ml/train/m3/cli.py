@@ -1757,6 +1757,8 @@ def main() -> int:
 
     from . import forward as _forward
     _forward.add_parser(sub)
+    from . import archiveoi as _archiveoi
+    _archiveoi.add_parser(sub)
 
     sub.add_parser("bookregime", help="B2: book features as M3 regime observables, "
                    "marginal and conditional on btc_absret_1d (gate §4.2)"

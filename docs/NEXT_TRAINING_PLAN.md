@@ -994,8 +994,8 @@ seeds: 1, 2, 3.
 
 **Code prerequisite on `main`, built before launch; none of it reads a model number:**
 
-1. `scripts/fetch_archive_metrics.sh` → runs `ml/train/archive_metrics.py` in the
-   `ml_analysis` image (Docker; nothing on the host). Downloads
+1. `scripts/fetch_archive_metrics.sh` → runs `m3 archiveoi fetch` (`ml/train/m3/archiveoi.py`)
+   in the `ml_analysis` image (Docker; nothing on the host). Downloads
    `data/futures/um/daily/metrics/{SYMBOL}/{SYMBOL}-metrics-{YYYY-MM-DD}.zip` from
    `https://data.binance.vision/` for the twelve pairs, 2022-08-01 → 2026-09-13 (the snapshot's
    date), verifying each `.CHECKSUM` (sha256), retrying, resumable. Keeps all seven columns
@@ -1010,8 +1010,8 @@ seeds: 1, 2, 3.
    and the parquet copied from the bucket to the train VM next to the dump; on the fold
    allowlist it is **not** — a fold run with it set needs `ALLOW_RECIPE_DRIFT=1` and its own
    registration.
-4. 🔴 **Identity acceptance, before the first launch** (`m3 archiveoi --check`, `ml_analysis`
-   image): over the overlap 2026-07-18 → 2026-09-09, join each archive row to the nearest
+4. 🔴 **Identity acceptance, before the first launch** (`./scripts/archive_oi_check.sh
+   <parquet>` → `m3 archiveoi check`, `ml_analysis` image): over the overlap 2026-07-18 → 2026-09-09, join each archive row to the nearest
    collector `open_interest` row within 5 minutes; per pair, report median and 99th-percentile
    relative difference and the matched count. **Pass:** median < 0.5 % and p99 < 2 % on every
    pair. Fail on any pair → X8 is **void before it runs** — the two series are not the same
@@ -1232,6 +1232,12 @@ silent no-op on the GPU VM (trap §0.5.2/§0.5.7). Note `TRAIN_PRIMARY` / `TRAIN
 `TRAIN_PAIRS` are consumed on the *launcher* and forwarded as CLI flags instead.
 `gcp_gbt.sh` and `gcp_walkforward.sh` have their own, narrower forwarding — check before
 assuming a knob reaches them.
+
+
+`ARCHIVE_OI` (X8) is on the list and is special-cased: on the launcher it is a `gs://` path; the
+remote job copies the file to `ml/train/output/archive/` on the train VM and re-points the
+variable at the container path (`/workspace/train/output/archive/<file>`) before either
+passthrough loop reads it. It is not on the fold allowlist.
 
 ### Cost arithmetic (never needs a re-run)
 

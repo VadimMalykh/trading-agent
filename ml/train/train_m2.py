@@ -595,6 +595,8 @@ def main():
             f"samples within {embargo_bars} bars ({embargo_bars * bar_min} min) of val start"
         )
     meta["split_embargo_bars"] = embargo_bars
+    from data.db import archive_oi_sha
+    meta["archive_oi"] = archive_oi_sha()
     t_tr = bundle.times[tr_idx]
     t_va = bundle.times[va_idx]
     print(

@@ -185,6 +185,36 @@ def load_funding(
     return df
 
 
+# X8 (NEXT_TRAINING_PLAN §2): open-interest HISTORY from Binance's public archive, so the
+# legacy `oi` / `oi_chg` columns are non-constant inside the training window. When
+# ARCHIVE_OI names a parquet (symbol, ts, open_interest, …; built by `m3 archiveoi fetch`),
+# `load_open_interest` returns that file's rows for every timestamp BEFORE the collector's
+# first row for the pair, followed by the collector's own rows. Unset (the default, and
+# always in serving) the loader is exactly what it was. The file's sha8 (in its name) is
+# the run's `meta["archive_oi"]`.
+ARCHIVE_OI = os.environ.get("ARCHIVE_OI", "").strip()
+_archive_oi_cache: Optional[pd.DataFrame] = None
+
+
+def archive_oi_sha() -> Optional[str]:
+    """The sha8 embedded in the ARCHIVE_OI file name (metrics_um_5m_<sha8>.parquet), or None."""
+    if not ARCHIVE_OI:
+        return None
+    stem = os.path.splitext(os.path.basename(ARCHIVE_OI))[0]
+    return stem.rsplit("_", 1)[-1]
+
+
+def _archive_oi() -> pd.DataFrame:
+    global _archive_oi_cache
+    if _archive_oi_cache is None:
+        if not os.path.exists(ARCHIVE_OI):
+            raise FileNotFoundError(f"ARCHIVE_OI={ARCHIVE_OI!r} does not exist in the container")
+        df = pd.read_parquet(ARCHIVE_OI, columns=["symbol", "ts", "open_interest"])
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        _archive_oi_cache = df.sort_values(["symbol", "ts"]).reset_index(drop=True)
+    return _archive_oi_cache
+
+
 def load_open_interest(
     symbol: str,
     since: Optional[str] = None,
@@ -203,7 +233,20 @@ def load_open_interest(
     df = _read_sql(sql, params)
     if not df.empty:
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
-    return df
+    if not ARCHIVE_OI:
+        return df
+    arch = _archive_oi()
+    a = arch[arch["symbol"] == symbol][["ts", "open_interest"]]
+    if since:
+        a = a[a["ts"] >= pd.Timestamp(since, tz="UTC")]
+    if not df.empty:
+        a = a[a["ts"] < df["ts"].iloc[0]]
+    print(f"Archive OI: {symbol} {len(a)} archive rows "
+          f"{'—' if a.empty else a['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} -> "
+          f"{'—' if a.empty else a['ts'].iloc[-1].strftime('%Y-%m-%d %H:%M')}, "
+          f"collector from {'—' if df.empty else df['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} "
+          f"({len(df)} rows), sha8={archive_oi_sha()}")
+    return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
 
 
 def load_whitelist_pairs(fallback: list | None = None) -> list:
