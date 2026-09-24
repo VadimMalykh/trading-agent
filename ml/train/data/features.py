@@ -12,6 +12,7 @@ from config import (
     BOOK_MAX_AGE_MIN,
     TRADES_MAX_AGE_MIN,
     FUNDING_OI_MAX_AGE_MIN,
+    ALIGN_AGE_FIX,
     LABEL_MODE,
     TB_TP_MULT,
     TB_SL_MULT,
@@ -94,12 +95,27 @@ MARKET_CONTEXT_COLS = [
 # Order is fixed by _GROUP_ORDER, never by the order the caller types them, because
 # LEGACY_FEATURE_COLS == FEATURE_COLS[:19] is a serving contract (see the note above
 # LEGACY_FEATURE_COLS) and the C12 columns must keep their positions relative to it.
+# --- X8b (2026-09-24): the flow ratios as a feature group ------------------------
+# Three exchange-published positioning ratios per 5-minute bucket, as-of joined to the
+# candle grid with the funding/OI staleness cap and zeroed where stale, exactly like
+# `funding` and `oi`. Log-transformed so that a ratio of 1 (balanced) is 0 and the two
+# sides are symmetric. Training source: the ARCHIVE_OI parquet before the collector's
+# first row, then the collector (db.load_long_short_ratios); serving: the collector only.
+# Written as X8b in NEXT_TRAINING_PLAN §2 before X8 was read; run only on a decision.
+FLOW_COLS = [
+    "ls_global",     # log(global long/short ACCOUNT ratio)
+    "ls_top",        # log(top-trader long/short ACCOUNT ratio) — the series the collector has
+    "taker_ratio",   # log(taker buy volume / taker sell volume)
+    "has_flow",      # presence mask: 1 where the ratios are fresh, else 0
+]
+
 _FEATURE_GROUPS = {
     "legacy": LEGACY_FEATURE_COLS,
     "multiscale": OWN_PAIR_MULTISCALE_COLS,
     "market": MARKET_CONTEXT_COLS,
+    "flow": FLOW_COLS,
 }
-_GROUP_ORDER = ["legacy", "multiscale", "market"]
+_GROUP_ORDER = ["legacy", "multiscale", "market", "flow"]
 
 
 def resolve_feature_groups(spec: str):
@@ -135,7 +151,7 @@ def resolve_feature_groups(spec: str):
 # canonical order — not whatever subset this process happens to be configured for, or
 # a 30-column checkpoint would be rebuilt from a 25-column list.
 ALL_FEATURE_COLS = (
-    LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS
+    LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS + FLOW_COLS
 )
 
 ACTIVE_FEATURE_GROUPS, FEATURE_COLS = resolve_feature_groups(FEATURE_GROUPS)
@@ -212,13 +228,54 @@ def _align_with_age(src: pd.DataFrame, grid: pd.Index) -> tuple[pd.DataFrame, np
     src_ts = pd.DatetimeIndex(src.index).to_series(index=src.index).reindex(
         grid, method="ffill"
     )
-    src_ts = pd.DatetimeIndex(src_ts)  # NaT-safe; .asi8 → int64 ns (NaT = sentinel)
-    grid_ns = pd.DatetimeIndex(grid).asi8  # UTC ns since epoch
-    src_ns = src_ts.asi8
-    age_min = (grid_ns - src_ns) / 6e10  # ns → minutes
+    src_ts = pd.DatetimeIndex(src_ts)  # NaT-safe; .asi8 → int64 in the index's own unit
+    if ALIGN_AGE_FIX:
+        # Unit-aware: a Timedelta division is exact whatever resolution pandas chose for
+        # the two indexes (ns under pandas 2, us under pandas 3). NaT -> NaN -> +inf below.
+        delta = pd.DatetimeIndex(grid) - src_ts
+        age_min = (delta / pd.Timedelta(minutes=1)).to_numpy(np.float64)
+    else:
+        # LEGACY (default; see config.ALIGN_AGE_FIX): assumes nanoseconds. Under pandas 3
+        # the indexes are microseconds, so this is 1000x too small and the caps never fire.
+        # Kept byte-for-byte so every banked checkpoint is served what it was trained on.
+        grid_ns = pd.DatetimeIndex(grid).asi8
+        src_ns = src_ts.asi8
+        age_min = (grid_ns - src_ns) / 6e10  # ns → minutes
     # Pre-first-row bars have NaT source → force +inf age (genuinely missing).
-    age_min = np.where(np.asarray(src_ts.isna()), np.inf, age_min)
+    age_min = np.where(np.asarray(src_ts.isna()) | ~np.isfinite(age_min), np.inf, age_min)
     return aligned, age_min
+
+
+def flow_features(ratios: pd.DataFrame, grid: pd.Index,
+                  max_age_min: float) -> pd.DataFrame:
+    """X8b: the four `flow` columns on the candle grid.
+
+    `ratios` has columns ts, top_long_short_ratio, global_long_short_ratio,
+    taker_buy_sell_ratio (db.load_long_short_ratios). A non-positive or missing ratio has
+    no logarithm and is treated as absent for that bar; a row older than `max_age_min` is
+    stale. Stale or absent -> 0 and has_flow = 0, the funding/OI convention.
+    """
+    out = pd.DataFrame(index=grid)
+    if ratios is None or ratios.empty:
+        for c in FLOW_COLS:
+            out[c] = 0.0
+        return out
+    src = ratios.set_index("ts").sort_index()
+    aligned, age = _align_with_age(src, grid)
+    stale = _stale_mask(age, max_age_min)
+    pairs = [("ls_global", "global_long_short_ratio"),
+             ("ls_top", "top_long_short_ratio"),
+             ("taker_ratio", "taker_buy_sell_ratio")]
+    fresh_any = np.zeros(len(grid), dtype=bool)
+    for name, col in pairs:
+        v = pd.to_numeric(aligned[col], errors="coerce").to_numpy(np.float64)
+        ok = np.isfinite(v) & (v > 0) & ~stale
+        x = np.zeros(len(grid), dtype=np.float64)
+        x[ok] = np.log(v[ok])
+        out[name] = x
+        fresh_any |= ok
+    out["has_flow"] = fresh_any.astype(np.float32)
+    return out
 
 
 def _stale_mask(age_min: np.ndarray, max_age_min: float) -> np.ndarray:
@@ -374,6 +431,14 @@ def build_feature_frame(
         feat[c] = 0.0
 
     cols = [c for c in (feature_cols or FEATURE_COLS)]
+
+    # X8b: the flow group is loaded only when the requested column set asks for it — a
+    # 19-column checkpoint must not pay a ratio query per predict, and must not change.
+    if any(c in FLOW_COLS for c in cols):
+        ratios = db.load_long_short_ratios(symbol, since=min_time)
+        flow = flow_features(ratios, feat.index, FUNDING_OI_MAX_AGE_MIN)
+        for c in FLOW_COLS:
+            feat[c] = flow[c].to_numpy()
     missing = [c for c in cols if c not in feat.columns]
     if missing:
         raise ValueError(f"build_feature_frame: unknown feature columns {missing}")

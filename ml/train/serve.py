@@ -161,6 +161,12 @@ def load_model():
     ckpt = torch.load(path, map_location=device, weights_only=False)
     meta = ckpt.get("meta", {})
     _state["checkpoint_run_id"] = meta.get("run_id")
+    # The staleness-age arithmetic is part of the recipe (config.ALIGN_AGE_FIX): a checkpoint
+    # trained with the legacy ns arithmetic (every one before 2026-09-24, and any run that
+    # leaves the knob off) must be served with it, whatever this process's env says.
+    import data.features as _features
+    _features.ALIGN_AGE_FIX = bool(meta.get("align_age_fix", False))
+    _state["align_age_fix"] = _features.ALIGN_AGE_FIX
     horizons = meta.get("horizons_minutes") or HORIZONS_MINUTES
     feature_dim = meta.get("feature_dim", FEATURE_DIM)
     hidden = meta.get("hidden_size", 64)
@@ -642,6 +648,10 @@ class Handler(BaseHTTPRequestHandler):
                         # columns constant (pre-2026-08-17 norm bug): they are now
                         # sanitized at load, but the model never learned from them.
                         "norm_degenerate_cols": _state.get("norm_degenerate_cols", 0),
+                        # X8b: the column layout this checkpoint binds (19 legacy, 23 with
+                        # the flow group) and whether its staleness ages are unit-aware.
+                        "n_features": len(_state.get("feature_cols") or []),
+                        "align_age_fix": bool(_state.get("align_age_fix", False)),
                         # The universe, so an operator can see at a glance whether the
                         # whitelist is being narrowed by the checkpoint (T5). Empty
                         # "trained_pairs" means a pre-C12 checkpoint that records none,

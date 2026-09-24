@@ -1062,6 +1062,9 @@ def cmd_folds(args) -> int:
     reason cmd_policy gives: transcribing the incumbent by hand at each call site is how a
     re-score of the incumbent quietly becomes a score of something else.
     """
+    if getattr(args, "contrast", None):
+        return walkforward.contrast_report(WINNER_SPEC, other_era=args.contrast,
+                                           universe=args.universe)
     return walkforward.report(WINNER_SPEC, GRID_WINNER_SPEC, universe=args.universe)
 
 
@@ -1635,6 +1638,11 @@ def main() -> int:
     wf.add_argument("--universe", choices=["8", "12"], default="12",
                     help="12 (default) = every pair present in each fold's dump, the served "
                          "universe §3 is decided on; 8 = dumps.BASE8, a diagnostic")
+    wf.add_argument("--contrast", default=None, metavar="ERA",
+                    help="WALKFORWARD_PROTOCOL §10: instead of §3's verdict, the day-clustered "
+                         "difference of pooled net at taker on the decision folds between the "
+                         "active fold era and ERA (e.g. M3_ERA=walkforward_x8 --contrast "
+                         "walkforward). Refuses until both families are complete")
     wf.set_defaults(fn=cmd_folds)
 
     dsp = sub.add_parser("dryspells", help="WALKFORWARD_PROTOCOL §4.2/§8: restate the retrain "

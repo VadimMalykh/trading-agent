@@ -133,6 +133,18 @@ PUBLISHED_FIXED_COV_WALKFORWARD: dict[str, dict[float, tuple[int, float, float]]
              0.20: (4205, -2.29, 0.511)},
 }
 
+# WALKFORWARD_PROTOCOL §10 — the same twelve folds trained with the X8 recipe (ARCHIVE_OI).
+# Filled exactly like the table above, one entry per run from ITS OWN log's Horizon 240m
+# block, as each run comes back; empty until then, and TEST 3 refuses a registered run that
+# has no reference here.
+PUBLISHED_FIXED_COV_WALKFORWARD_X8: dict[str, dict[float, tuple[int, float, float]]] = {
+}
+
+PUBLISHED_FIXED_COV_FOLDS_BY_ERA = {
+    "walkforward": PUBLISHED_FIXED_COV_WALKFORWARD,
+    "walkforward_x8": PUBLISHED_FIXED_COV_WALKFORWARD_X8,
+}
+
 # NEXT_TRAINING_PLAN §1.3's pooled table (trade-weighted across the three seeds). Published
 # for the prerepair era only; under `repaired` the pooled row is printed without a reference
 # column, because no pooled table was ever published for it.
@@ -307,8 +319,9 @@ def test_fold_reproduction() -> bool:
         return True
 
     ok = True
+    published = PUBLISHED_FIXED_COV_FOLDS_BY_ERA[dumps.ERA]
     for label, run_id in recorded.items():
-        ref = PUBLISHED_FIXED_COV_WALKFORWARD.get(label)
+        ref = published.get(label)
         d = dumps.load(run_id, seed=label, pairs=None)
         h = d.at(240)
         ts = pd.to_datetime(h["ts"], unit="ns", utc=True)
@@ -316,11 +329,12 @@ def test_fold_reproduction() -> bool:
               f"{ts.min():%Y-%m-%d} .. {ts.max():%Y-%m-%d}")
         if not ref:
             print("  🔴 NO REFERENCE TABLE — the run is registered but its logged 240m table")
-            print("     was never transcribed into PUBLISHED_FIXED_COV_WALKFORWARD. A dump")
-            print("     with nothing to check against cannot pass an acceptance test.")
+            print(f"     was never transcribed into this era's PUBLISHED_FIXED_COV table")
+            print("     (validate.PUBLISHED_FIXED_COV_FOLDS_BY_ERA). A dump with nothing to")
+            print("     check against cannot pass an acceptance test.")
             ok = False
             continue
-        span = dumps.WALKFORWARD_SPLITS[dumps.fold_of(label)]
+        span = dumps.FOLD_SPLITS[dumps.fold_of(label)]
         if not span:
             print(f"  🔴 NO SPLIT SPAN recorded for {dumps.fold_of(label)} — the `Split` line is")
             print("     what proves the run received its fold variables; record it first.")
@@ -369,7 +383,7 @@ def main_walkforward() -> int:
 
 
 def main(pairs=None) -> int:
-    if dumps.ERA == "walkforward":
+    if dumps.is_fold_era():
         return main_walkforward()
     ds = dumps.load_baseline(pairs=pairs or dumps.BASE8)
     print(f"era={dumps.ERA}; loaded {len(ds)} dumps: "

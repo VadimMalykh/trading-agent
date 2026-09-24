@@ -67,29 +67,36 @@ COST = metrics.TAKER_COST_BPS    # W1/W2/W4 are all "at taker"
 # --------------------------------------------------------------------------------------
 
 def require_walkforward_era() -> None:
-    if dumps.ERA != "walkforward":
+    if not dumps.is_fold_era():
         raise SystemExit(
-            f"this command reads the fold dumps; run it with M3_ERA=walkforward "
-            f"(era is {dumps.ERA!r})"
+            f"this command reads the fold dumps; run it with M3_ERA=walkforward (the banked "
+            f"family) or M3_ERA=walkforward_x8 (protocol §10) — era is {dumps.ERA!r}"
         )
+
+
+def _registry_lines(era: str) -> list[str]:
+    runs = dumps.RUNS_BY_ERA[era]
+    splits = dumps.FOLD_SPLITS_BY_ERA[era]
+    section = "§5–§6" if era == "walkforward" else "§10"
+    lines = [f"the twelve pre-registered runs of era {era!r} (WALKFORWARD_PROTOCOL {section}):"]
+    for fold in dumps.FOLD_RUN_ORDER:
+        got = []
+        for s in (1, 2, 3):
+            rid = runs[f"{fold}s{s}"]
+            got.append(f"s{s}={rid}" if rid else f"s{s}=—")
+        span = splits[fold]
+        val = f"val [{span[0]} → {span[1]}]" if span else "val span not recorded"
+        lines.append(f"  {fold}  offset={dumps.FOLD_OFFSETS[fold]:.3f}  {'  '.join(got)}   {val}")
+    missing = [k for k, v in runs.items() if not v]
+    lines.append(f"  {12 - len(missing)} of 12 recorded"
+                 + (f"; missing {', '.join(missing)}" if missing else " — complete"))
+    return lines
 
 
 def registry_state() -> str:
     """A block naming every registered run and whether it exists yet — printed by every
     entry point, so no table is ever read without its provenance next to it."""
-    lines = ["the twelve pre-registered runs (WALKFORWARD_PROTOCOL §5–§6):"]
-    for fold in dumps.FOLD_RUN_ORDER:
-        got = []
-        for s in (1, 2, 3):
-            rid = dumps.WALKFORWARD_RUNS[f"{fold}s{s}"]
-            got.append(f"s{s}={rid}" if rid else f"s{s}=—")
-        span = dumps.WALKFORWARD_SPLITS[fold]
-        val = f"val [{span[0]} → {span[1]}]" if span else "val span not recorded"
-        lines.append(f"  {fold}  offset={dumps.FOLD_OFFSETS[fold]:.3f}  {'  '.join(got)}   {val}")
-    missing = dumps.missing_runs()
-    lines.append(f"  {12 - len(missing)} of 12 recorded"
-                 + (f"; missing {', '.join(missing)}" if missing else " — complete"))
-    return "\n".join(lines)
+    return "\n".join(_registry_lines(dumps.ERA))
 
 
 def load_folds(pairs: list[str] | None) -> list[dumps.Dump]:
@@ -1342,4 +1349,127 @@ def rlgate_report(sized_fields: dict, flat_fields: dict) -> int:
     else:
         print("  - No model is fitted. Revival trigger: more independent days — forward paper")
         print("    days, or further folds under a new registration.")
+    return 0
+
+
+# --------------------------------------------------------------------------------------
+# §10 — the same folds under the X8 recipe: the contrast against the banked family
+# --------------------------------------------------------------------------------------
+# WALKFORWARD_PROTOCOL §10, registered 2026-09-24 before any `walkforward_x8` run existed.
+# Certification of the X8 recipe is §3's five criteria, run unchanged on the new era by
+# `report()`. This function is the SECOND reading §10 registers: how the X8 family compares
+# with the banked family on the decision folds, as the day-clustered difference of pooled
+# net at taker (universe.paired_diff_bps — the estimator T6 settled on for a per-trade
+# claim). It reads F2 + F3 only, clips both families to the calendar both eras' val windows
+# cover per fold, and refuses a verdict until both families are complete.
+
+CONTRAST_Z_POWER80 = 2.80   # 1.96 + 0.84: the difference detectable with 80% power at 5%
+
+
+def _span_ts(span: tuple[str, str] | None) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    if not span:
+        return None
+    return pd.Timestamp(span[0], tz="UTC"), pd.Timestamp(span[1], tz="UTC")
+
+
+def _clip_to(trades: pd.DataFrame, lo: pd.Timestamp, hi: pd.Timestamp) -> pd.DataFrame:
+    ts = pd.to_datetime(trades["entry_ts"], unit="ns", utc=True)
+    return trades[(ts >= lo) & (ts <= hi)]
+
+
+def _load_decision_folds(era: str, pairs: list[str] | None) -> list[dumps.Dump]:
+    runs = dumps.RUNS_BY_ERA[era]
+    return [dumps.load(rid, seed=label, pairs=pairs)
+            for label, rid in runs.items() if rid and dumps.fold_of(label) in DECISION_FOLDS]
+
+
+def contrast_report(sized_spec: dict, other_era: str, universe: str = "12") -> int:
+    from . import universe as uni
+
+    require_walkforward_era()
+    if other_era not in dumps.FOLD_ERAS:
+        raise SystemExit(f"--contrast expects a fold era {dumps.FOLD_ERAS}, got {other_era!r}")
+    if other_era == dumps.ERA:
+        raise SystemExit("--contrast needs a DIFFERENT fold era than M3_ERA")
+    this_era = dumps.ERA
+
+    print("=" * 96)
+    print(f"WALK-FORWARD CONTRAST — WALKFORWARD_PROTOCOL.md §10: {this_era} minus {other_era}")
+    print("=" * 96)
+    print("\n".join(_registry_lines(this_era)))
+    print("\n".join(_registry_lines(other_era)))
+
+    missing_a = [k for k, v in dumps.RUNS_BY_ERA[this_era].items() if not v]
+    missing_b = [k for k, v in dumps.RUNS_BY_ERA[other_era].items() if not v]
+    dec = lambda ks: [k for k in ks if dumps.fold_of(k) in DECISION_FOLDS]   # noqa: E731
+    if dec(missing_a) or dec(missing_b):
+        print("\nREFUSED — the contrast reads F2 + F3 of BOTH families and one of them is "
+              f"incomplete on those folds (missing: {this_era} {dec(missing_a) or '—'}; "
+              f"{other_era} {dec(missing_b) or '—'}). §10 is read once, on complete families.")
+        return 1
+
+    pairs = dumps.BASE8 if universe == "8" else None
+    print(f"\nuniverse: {'8 (dumps.BASE8) — DIAGNOSTIC ONLY' if universe == '8' else 'twelve (each dump)'}"
+          f";  cost line: taker {COST:.0f} bps round trip;  intervals day-clustered on the "
+          f"union of both arms' exit days (universe.paired_diff_bps)")
+    spec = backtest.PolicySpec(label="incumbent SIZED", **sized_spec)
+    ds_a = _load_decision_folds(this_era, pairs)
+    ds_b = _load_decision_folds(other_era, pairs)
+    ta = run_policy(ds_a, spec)
+    tb = run_policy(ds_b, spec)
+
+    # Clip each fold to the calendar both eras' val windows cover. The two families were
+    # trained on snapshots taken days apart, so the same offset maps to windows that differ
+    # at the edges; a trade outside the shared span exists in one arm only for a reason that
+    # is not the recipe.
+    print(f"\n{'fold':<6}{'shared val span (both eras)':<44}{'A trades':>9}{'B trades':>9}")
+    ca, cb = [], []
+    for fold in DECISION_FOLDS:
+        sa = _span_ts(dumps.FOLD_SPLITS_BY_ERA[this_era][fold])
+        sb = _span_ts(dumps.FOLD_SPLITS_BY_ERA[other_era][fold])
+        if not sa or not sb:
+            raise SystemExit(f"{fold}: a val span is not recorded for one era — record the "
+                             f"`Split` line in dumps.FOLD_SPLITS_BY_ERA first")
+        lo, hi = max(sa[0], sb[0]), min(sa[1], sb[1])
+        fa = _clip_to(ta[ta["seed"].map(dumps.fold_of) == fold], lo, hi)
+        fb = _clip_to(tb[tb["seed"].map(dumps.fold_of) == fold], lo, hi)
+        ca.append(fa)
+        cb.append(fb)
+        print(f"{fold:<6}{f'{lo:%Y-%m-%d %H:%M} → {hi:%Y-%m-%d %H:%M}':<44}{len(fa):>9,}{len(fb):>9,}")
+    ta_c, tb_c = pd.concat(ca), pd.concat(cb)
+
+    print("\n" + "=" * 96)
+    print(f"A = {this_era}, B = {other_era}; net bps per trade at taker, A − B")
+    print("=" * 96)
+    print(f"{'scope':<10}{'A net':>9}{'B net':>9}{'diff':>9}{'SE':>8}{'95% CI':>22}"
+          f"{'clusters':>10}{'MDE80':>8}")
+    rows = []
+    for name, fa, fb in [(f, x, y) for f, x, y in zip(DECISION_FOLDS, ca, cb)] + \
+                        [("F2+F3", ta_c, tb_c)]:
+        d = uni.paired_diff_bps(fa, fb, COST)
+        na = metrics.clustered_mean_bps(fa, COST)["mean_bps"] if len(fa) else float("nan")
+        nb = metrics.clustered_mean_bps(fb, COST)["mean_bps"] if len(fb) else float("nan")
+        mde = CONTRAST_Z_POWER80 * d["se_bps"]
+        rows.append((name, d, mde))
+        ci = f"[{d['lo95_bps']:+.2f}, {d['hi95_bps']:+.2f}]"
+        print(f"{name:<10}{na:>+9.2f}{nb:>+9.2f}{d['diff_bps']:>+9.2f}{d['se_bps']:>8.2f}"
+              f"{ci:>22}{d['clusters']:>10}{mde:>8.2f}")
+    boot = uni.bootstrap_diff_se(ta_c, tb_c, COST)
+    pooled = rows[-1][1]
+    print(f"\n   day-bootstrap SE of the pooled difference: {boot['se_bps']:.2f} "
+          f"(analytic {pooled['se_bps']:.2f}, {boot['draws']} draws) — the two should agree")
+
+    print("\n" + "=" * 96)
+    lo95, hi95 = pooled["lo95_bps"], pooled["hi95_bps"]
+    if np.isfinite(hi95) and hi95 < 0:
+        v = "WORSE — the X8 family is significantly below the banked family on F2+F3 (veto)"
+    elif np.isfinite(lo95) and lo95 > 0:
+        v = "BETTER — the X8 family is significantly above the banked family on F2+F3"
+    else:
+        v = (f"NOT DETECTABLE — the interval covers zero; a difference under "
+             f"{rows[-1][2]:.1f} bps/trade is invisible at this power")
+    print(f"§10 CONTRAST: {v}")
+    print("=" * 96)
+    print("  - This reading never promotes on its own. §10: promotion needs §3's five criteria")
+    print("    (`m3 folds` on this era) to hold AND this contrast not to be WORSE.")
     return 0

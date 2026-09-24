@@ -233,6 +233,68 @@ def check(parquet: str, collector_csv: str, tol_min: float = 5.0,
 
 
 # ---------------------------------------------------------------------------------------
+# check_flow — X8b's identity acceptance for the three ratio series
+# ---------------------------------------------------------------------------------------
+# The collector's `long_short_ratios` (exchange 5m buckets since 2026-07-26) against the
+# archive's same three series: global long/short ACCOUNT ratio, top-trader long/short ACCOUNT
+# ratio (the collector polls topLongShortAccountRatio — the archive's `count_*` column, not
+# the `sum_*` position ratio) and taker buy/sell volume ratio. Both sides carry the exchange's
+# bucket timestamp, so the match is nearest-within-5-min like `check`, and the pass bar is
+# the same: median relative difference < 0.5 % and p99 < 2 %, per series, per pair.
+
+FLOW_SERIES = {
+    "global_ls": "global_long_short_ratio",
+    "top_ls_count": "top_long_short_ratio",
+    "taker_ratio": "taker_buy_sell_ratio",
+}
+
+
+def check_flow(parquet: str, collector_csv: str, tol_min: float = 5.0,
+               med_max: float = 0.005, p99_max: float = 0.02) -> int:
+    a = pd.read_parquet(parquet)[["symbol", "ts", *FLOW_SERIES]]
+    a["ts"] = pd.to_datetime(a["ts"], utc=True)
+    c = pd.read_csv(collector_csv)
+    c["ts"] = pd.to_datetime(c["ts"], utc=True)
+    c = c.sort_values("ts")
+    lo, hi = c["ts"].min(), c["ts"].max()
+    print(f"archive-vs-collector flow ratios: overlap {lo:%Y-%m-%d %H:%M} -> {hi:%Y-%m-%d %H:%M} UTC, "
+          f"nearest collector row within {tol_min:g} min; PASS = median < {med_max:.1%} and "
+          f"p99 < {p99_max:.0%} on every series of every pair")
+    print(f"{'symbol':<14}{'series':<14}{'archive':>8}{'matched':>9}{'median':>9}{'p99':>9}{'max':>9}  verdict")
+    fails = 0
+    tol = pd.Timedelta(minutes=tol_min)
+    for s in sorted(a["symbol"].unique()):
+        ga = a[(a["symbol"] == s) & (a["ts"] >= lo) & (a["ts"] <= hi)].sort_values("ts")
+        gc = c[c["symbol"] == s]
+        for acol, ccol in FLOW_SERIES.items():
+            gcs = gc[["ts", ccol]].dropna()
+            gas = ga[["ts", acol]].dropna()
+            if gas.empty or gcs.empty:
+                print(f"{s:<14}{acol:<14}{len(gas):>8}{0:>9}{'—':>9}{'—':>9}{'—':>9}  FAIL (no overlap rows)")
+                fails += 1
+                continue
+            m = pd.merge_asof(gas, gcs, on="ts", direction="nearest", tolerance=tol)
+            m = m.dropna(subset=[ccol])
+            m = m[m[ccol] > 0]
+            if len(m) < 100:
+                print(f"{s:<14}{acol:<14}{len(gas):>8}{len(m):>9}{'—':>9}{'—':>9}{'—':>9}  FAIL (< 100 matched)")
+                fails += 1
+                continue
+            rel = (m[acol] - m[ccol]).abs() / m[ccol]
+            med, p99, mx = rel.median(), rel.quantile(0.99), rel.max()
+            ok = med < med_max and p99 < p99_max
+            fails += 0 if ok else 1
+            print(f"{s:<14}{acol:<14}{len(gas):>8}{len(m):>9}{med:>9.4%}{p99:>9.3%}{mx:>9.2%}  {'ok' if ok else 'FAIL'}")
+    if fails:
+        print(f"\nIDENTITY FAILED on {fails} series — X8b is void before it runs "
+              f"(NEXT_TRAINING_PLAN §2 X8b, its identity prerequisite).")
+        return 2
+    print("\nIDENTITY PASS — the archive and the collector carry the same three ratio series; "
+          "X8b may be launched.")
+    return 0
+
+
+# ---------------------------------------------------------------------------------------
 
 def add_parser(sub) -> None:
     ap = sub.add_parser("archiveoi", help="X8: fetch open-interest history from Binance's "
@@ -252,6 +314,12 @@ def add_parser(sub) -> None:
     c.add_argument("--collector", required=True,
                    help="CSV of the collector's open_interest rows (symbol, ts, open_interest); "
                         "scripts/archive_oi_check.sh exports it from fluxtrader-1")
+    cf = s2.add_parser("check-flow", help="X8b: the same acceptance for the three ratio series")
+    cf.add_argument("--parquet", required=True)
+    cf.add_argument("--collector", required=True,
+                    help="CSV of the collector's long_short_ratios rows (symbol, ts, "
+                         "top_long_short_ratio, global_long_short_ratio, taker_buy_sell_ratio); "
+                         "scripts/archive_flow_check.sh exports it from fluxtrader-1")
     ap.set_defaults(fn=_main)
 
 
@@ -261,4 +329,6 @@ def _main(args) -> int:
         fetch(pairs, date.fromisoformat(args.start), date.fromisoformat(args.end),
               args.cache, args.out, args.threads)
         return 0
+    if args.job == "check-flow":
+        return check_flow(args.parquet, args.collector)
     return check(args.parquet, args.collector)

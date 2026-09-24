@@ -1754,3 +1754,193 @@ M3_ERA=walkforward ./scripts/m3.sh -m m3 pathexits --stage confirm --exploration
 ```
 
 **Needed from Vadim: nothing.** Claude runs both stages and records them here.
+
+---
+
+## §10 — REGISTRATION: the X8 recipe on the folds (era `walkforward_x8`) — WRITTEN 2026-09-24, BEFORE ANY RUN
+
+**Funded by Vadim 2026-09-24** ("1. Yes") after X8's one-split read came back MOVED
+(NEXT_TRAINING_PLAN §2 X8: plateau-mean LB 0.5367 vs 0.5258, every seed above, cov-0.02 gross
++18.2 vs +10.9). Written before the first fold of this era was launched; nothing below the
+"Record" heading changes once a log exists.
+
+### 10.0 In plain language
+
+X8 filled two columns the served model already has — open interest and its change — with
+Binance's archive history, and on the one validation split the model got better. One split is
+where every earlier promise in this project was made and later found wanting, so the rule of the
+house (§3, M3_PROTOCOL §9.4) is that nothing is served on a single split. This section retrains
+the *same* X8 recipe on the four walk-forward folds and asks two questions, in this order:
+**does the X8 recipe pass the same five criteria the banked recipe passed** (certification), and
+**how does it compare with the banked family on the two untouched folds** (the contrast). Only
+the first can promote; the second can only veto. The honest expectation for the second is that
+it cannot see a difference of the size X8 showed — it is here so that a *large* loss cannot hide
+behind a pass.
+
+### 10.1 What changes, and what does not
+
+**One change:** `ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet`
+— the archive fill of `oi` / `oi_chg` before the collector's first row, exactly as in X8. The
+fold-drift guard in `gcp_train.sh` refuses this knob on a fold unless `ALLOW_RECIPE_DRIFT=1` is
+given; this section is the registration that licenses it.
+
+**Everything else is §1's fold recipe:** `VAL_FRACTION=0.125`, `TRAIN_FRACTION=0.5`, offsets
+0.000 / 0.125 / 0.250 / 0.375, twelve pairs, 5m, seq 384, 60 epochs, horizons 60/240/1440,
+primary 240, `FEATURE_GROUPS=legacy` (19 columns), `PAIR_EMBED_DIM=8`, `EARLY_STOP_PATIENCE=20`,
+three seeds per fold. **`SPLIT_EMBARGO` off and `ALIGN_AGE_FIX` off** (config.py, both
+default off): the banked family has neither, and a second recipe difference would break the
+contrast — both go on together in the first family whose control is retrained from scratch.
+🔴 *The staleness-age defect found 2026-09-24 (NEXT_TRAINING_PLAN §0.5 trap 11) is therefore
+present in both families of this comparison, as it was in every run since T1; it is a property
+of the environment both arms share, not a difference between them.*
+
+**Snapshot:** the pinned `20260913T050118Z` dump (`DUMP_MAX_AGE_MIN=100000`; the bucket's
+`latest.sql.gz` has been that file since 2026-09-13 and every X8 launch reported `cache hit`).
+The banked folds were trained on dumps taken 2026-09-05 → 08, so the same offset maps to a val
+window a few days later here; §6.0 already documents that drift between seeds of one fold, and
+the contrast clips each fold to the calendar both eras' val windows cover (10.3). Because all
+twelve runs here share one snapshot, **the three seeds of a fold must print identical `Split`
+lines** — a difference means the snapshot moved and that run is void.
+
+### 10.2 The harness — built and committed before the first launch (C3)
+
+* `dumps.py`: era `walkforward_x8` — `WALKFORWARD_X8_RUNS` (twelve `None`s),
+  `WALKFORWARD_X8_SPLITS`, `FOLD_ERAS`, `FOLD_SPLITS_BY_ERA`, `is_fold_era()`; the banked
+  `walkforward` era is untouched and still reproduces §7.1 (`logs/wf_regression_20260924.log`:
+  TEST 3 PASS on all sixty cells, verdict CONFIRMED, W1 +33.23 [+9.28, +57.17]).
+* `validate.py`: `PUBLISHED_FIXED_COV_WALKFORWARD_X8` (empty) under
+  `PUBLISHED_FIXED_COV_FOLDS_BY_ERA`; TEST 3 runs per era. Today:
+  `M3_ERA=walkforward_x8 ./scripts/m3.sh -m m3 validate` → "no fold runs recorded yet — PASS
+  in the only sense available".
+* `walkforward.py`: `report()` (§3, unchanged) accepts both fold eras;
+  `contrast_report()` — §10.3 — behind `m3 folds --contrast <era>`. Both refuse a verdict on an
+  incomplete family (checked 2026-09-24: `folds` exits 1 with "no fold dumps recorded yet",
+  `--contrast walkforward` exits 1 with "REFUSED … incomplete on those folds").
+
+### 10.3 The statistics, fixed now
+
+**A. Certification — §3's five criteria, unchanged, on era `walkforward_x8`:** W1 (clustered
+lower bound of pooled net at taker on F2 + F3), W2 (per-fold upper-bound veto), W3, W4, W5, with
+each fold's own cut and ladder, twelve pairs, taker 14 bps. Readings as §3 states them:
+CONFIRMED / NOT DECIDABLE / W2 VETO / INELIGIBLE.
+
+**B. The contrast — `M3_ERA=walkforward_x8 m3 folds --contrast walkforward`:** the incumbent
+rule's trades on F2 + F3 of *this* family minus the same on the banked family, as the
+day-clustered difference of mean net bps per trade at taker (`universe.paired_diff_bps`, the
+per-trade estimator T6 settled on; the day-bootstrap SE is printed beside it and the two must
+agree), each fold clipped to the calendar span both eras' val windows cover, per fold and
+pooled. Readings: **lower bound > 0 → BETTER; upper bound < 0 → WORSE (veto); otherwise NOT
+DETECTABLE**, printed with the 80%-power MDE (2.80 × SE).
+
+**Forecast, so the reading cannot be argued with afterwards:** the banked W1 interval is ±24 bps
+on 4,258 trades; the difference of two such families has SE ≈ 17 bps, MDE ≈ 48 bps/trade. X8's
+one-split gain was +7 bps gross at cov 0.02. **Expectation: NOT DETECTABLE.** The contrast is a
+veto against a large loss, not a measurement of X8's gain; do not read a NOT DETECTABLE as
+"X8 did not help on the folds".
+
+**F0 and F1** are reported only, as in §3.
+
+### 10.4 What each outcome licenses — and nothing more
+
+* **CONFIRMED on A, and B not WORSE** → **promotion of the X8 recipe's full-window instance**,
+  chosen now, before any fold is read, by the U12 rule (family median by plateau-mean LB):
+  **X8 seed 2, run `20260923T204303Z`, checkpoint `m2_multi_20260923T204303Z_d88f3506.pt`**
+  (plateau means 0.5341 / **0.5366** / 0.5393). Through the U12 runbook (NEXT_TRAINING_PLAN §2
+  U12; BACKLOG row 10): C13 cut and C4 ladder derived from its own val window, `gcp_promote.sh
+  --checkpoint m2_multi_20260923T204303Z_d88f3506.pt` with `ML_GATE_THRESHOLD` at the C13 cut,
+  the constants restated in `policy.ex` / `regime.ex` / `config_test.exs` / `forward.py`,
+  ledgers backed up and cleared, and the forward clock's **fifth start** as its own registered
+  restart. No feature code changes on the served path: `oi` / `oi_chg` are in the 19 columns and
+  the collector supplies them live (the archive stops where the collector starts). The
+  inference image is rebuilt from the current `serve.py`, and `/health` must then show
+  `n_features: 19`, `align_age_fix: false`, `checkpoint_bound: true`.
+* **CONFIRMED on A, B WORSE** → nothing promoted; recorded as a finding about the recipe.
+* **NOT DECIDABLE, W2 VETO or INELIGIBLE on A** → nothing promoted; X8's MOVED stays a
+  one-split result. The only route onward is more folds under a new registration (§3), never a
+  re-read with a different rule.
+* Nothing here licenses a fourth seed, a different snapshot, `SPLIT_EMBARGO` or `ALIGN_AGE_FIX`
+  on one arm, or reading F0 / F1 into any argument.
+
+### 10.5 The run queue — twelve runs, strictly serial, launched by Vadim
+
+Order **F2, F3, F1, F0**, three seeds each, one `gcp_train.sh` at a time; wait for
+`./scripts/gcp_status.sh` to report DONE before the next launch. Logs are named
+`logs/WFX8-<fold>-s<seed>.log`; Claude fetches the eval dumps itself.
+
+```sh
+# ---- the recipe, identical in all twelve runs (§1, §10.1) ----
+export FEATURE_GROUPS=legacy CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export VAL_FRACTION=0.125 TRAIN_FRACTION=0.5
+export DUMP_MAX_AGE_MIN=100000                                  # the pinned 20260913T050118Z snapshot
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet   # the one change
+export ALLOW_RECIPE_DRIFT=1                                     # licensed by this section only
+unset SPLIT_EMBARGO ALIGN_AGE_FIX                               # both stay OFF (§10.1)
+
+# ---- F2 first (decides §3), three seeds, strictly serial ----
+VAL_OFFSET=0.250 SEED=1 ./scripts/gcp_train.sh --gpu 60 384      # -> logs/WFX8-F2-s1.log
+VAL_OFFSET=0.250 SEED=2 ./scripts/gcp_train.sh --gpu 60 384      # -> logs/WFX8-F2-s2.log
+VAL_OFFSET=0.250 SEED=3 ./scripts/gcp_train.sh --gpu 60 384      # -> logs/WFX8-F2-s3.log
+# then F3 (VAL_OFFSET=0.375), F1 (0.125), F0 (0.000): the same three lines each
+#   -> logs/WFX8-F3-s{1,2,3}.log, logs/WFX8-F1-s{1,2,3}.log, logs/WFX8-F0-s{1,2,3}.log
+
+# after each DONE (./scripts/gcp_status.sh):
+./scripts/gcp_logs.sh <run_id> > logs/WFX8-F2-s1.log             # never --save
+```
+
+**The go/no-go before the VM is created** (printed by the launcher, costs nothing): the line
+`recipe differs from the incumbent (T1) in:` followed by exactly one item, `ARCHIVE_OI:
+incumbent=''  this run='gs://…metrics_um_5m_83c85bd7.parquet'`, then `ALLOW_RECIPE_DRIFT=1 —
+fold drift accepted on the launcher's say-so.` Any other item in that list (an
+`ALIGN_AGE_FIX`, a `SPLIT_EMBARGO`, a `FEATURE_GROUPS`) means the environment is wrong —
+stop, fix, relaunch. A `cache miss` line means the snapshot moved — stop before the run
+trains.
+
+### 10.6 Verify every run from its own log BEFORE recording it
+
+§5.1's six checks, unchanged, **plus four**. A run failing any is void — not recorded, its
+checkpoint never promoted.
+
+| # | log line | required value |
+|---|---|---|
+| 1–6 | §5.1 | as there: `Split walkforward_window` with `0.125` / the fold's offset / `0.5`; twelve pairs; `5m`; `legacy` / `8` / `20`; the eval block's `Val samples` span equal to check 1's |
+| 7 | `=== ARCHIVE_OI (X8) -> /workspace/train/output/archive/metrics_um_5m_83c85bd7.parquet ===` | present, that file |
+| 8 | twelve `Archive OI: <pair> … sha8=83c85bd7` lines | twelve, that sha8 (fewer archive rows than X8's per pair is expected — a fold's `since` is later) |
+| 9 | the `CONSTANT in the train window` block | `oi` and `oi_chg` absent from every list (11/19 on the long pairs, 10/19 on WLD and the global fit, as in X8; F3 may differ for the late listings — record what it prints, but `oi` must be gone everywhere) |
+| 10 | `Align age: ALIGN_AGE_FIX=0 (legacy ns arithmetic …)` and no `Embargo:` line with a non-zero count | as stated — both knobs off |
+| 11 | the three seeds of one fold | **identical `Split` lines** (one snapshot) |
+
+**Bring back per run:** the `Split` line; the `resolved knobs` line; the `Fixed-coverage P&L`
+table for the **240m** head; the `SERVED GATE (C13)` line; the run id. Claude records each run
+in `dumps.WALKFORWARD_X8_RUNS` / `WALKFORWARD_X8_SPLITS` and
+`validate.PUBLISHED_FIXED_COV_WALKFORWARD_X8` from the log, fetches
+`gs://fluxtrader-train-artifacts/eval/<run_id>/eval_preds.parquet` into
+`ml/train/output/eval_dumps/`, and — only once all twelve exist — runs, in this order and in a
+fresh session:
+
+```sh
+M3_ERA=walkforward_x8 ./scripts/m3.sh -m m3 validate                       # C3: TEST 3 on all twelve, must PASS
+M3_ERA=walkforward_x8 ./scripts/m3.sh -m m3 folds                          # 10.3 A — §3's verdict on the X8 recipe
+M3_ERA=walkforward_x8 ./scripts/m3.sh -m m3 folds --contrast walkforward   # 10.3 B — the contrast
+```
+
+Nothing from a partial family may be quoted; `m3 folds` prints PROVISIONAL and no verdict until
+the twelfth run is recorded, and `--contrast` refuses outright.
+
+### 10.7 Record (filled in as runs complete; nothing above this line changes)
+
+| run | run id | git | `Split walkforward_window` val span | checks 1–11 | notes |
+|---|---|---|---|---|---|
+| F2 s1 | — | | | | |
+| F2 s2 | — | | | | |
+| F2 s3 | — | | | | |
+| F3 s1 | — | | | | |
+| F3 s2 | — | | | | |
+| F3 s3 | — | | | | |
+| F1 s1 | — | | | | |
+| F1 s2 | — | | | | |
+| F1 s3 | — | | | | |
+| F0 s1 | — | | | | |
+| F0 s2 | — | | | | |
+| F0 s3 | — | | | | |

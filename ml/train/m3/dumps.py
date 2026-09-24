@@ -122,6 +122,39 @@ def fold_of(label: str) -> str:
 
 RUNS_BY_ERA["walkforward"] = WALKFORWARD_RUNS
 
+# --- the fourth era: the same four folds, trained with the X8 recipe -------------------
+# WALKFORWARD_PROTOCOL §10 (registered 2026-09-24, before any of these runs existed). The
+# X8 read (NEXT_TRAINING_PLAN §2) moved the one-split score by filling the two legacy
+# open-interest columns from Binance's archive; §10 asks whether that recipe certifies on the
+# folds under the SAME five criteria, and how it compares with the banked family above on
+# the decision folds. Same twelve labels, same offsets, same `fold_of`; a separate registry
+# so that `M3_ERA=walkforward` keeps reproducing the banked verdict untouched.
+#
+# Filled the same way as WALKFORWARD_RUNS — from each run's own `Split walkforward_window`
+# line — and every `None` is a run that does not exist yet.
+WALKFORWARD_X8_RUNS: dict[str, str | None] = {
+    "F0s1": None, "F0s2": None, "F0s3": None,
+    "F1s1": None, "F1s2": None, "F1s3": None,
+    "F2s1": None, "F2s2": None, "F2s3": None,
+    "F3s1": None, "F3s2": None, "F3s3": None,
+}
+WALKFORWARD_X8_SPLITS: dict[str, tuple[str, str] | None] = {
+    "F0": None, "F1": None, "F2": None, "F3": None,
+}
+RUNS_BY_ERA["walkforward_x8"] = WALKFORWARD_X8_RUNS
+
+# The fold eras share every mechanism (labels, offsets, `fold_of`, per-fold windows, TEST 3);
+# they differ only in which registry and which split table they read.
+FOLD_ERAS = ("walkforward", "walkforward_x8")
+FOLD_SPLITS_BY_ERA: dict[str, dict[str, tuple[str, str] | None]] = {
+    "walkforward": WALKFORWARD_SPLITS,
+    "walkforward_x8": WALKFORWARD_X8_SPLITS,
+}
+
+
+def is_fold_era(era: str | None = None) -> bool:
+    return (era if era is not None else ERA) in FOLD_ERAS
+
 # Default is `prerepair` so that every number this package has ever published reproduces
 # with no environment set. Phase 2 of the retrain plan reads `repaired`.
 ERA = os.environ.get("M3_ERA", "prerepair")
@@ -129,6 +162,10 @@ if ERA not in RUNS_BY_ERA:
     raise SystemExit(f"M3_ERA={ERA!r}; expected one of {sorted(RUNS_BY_ERA)}")
 
 BASELINE_RUNS = RUNS_BY_ERA[ERA]
+
+# The active fold era's split table (None outside the fold eras). `WALKFORWARD_SPLITS` stays
+# as the banked era's table by name; code that serves any fold era reads this one.
+FOLD_SPLITS = FOLD_SPLITS_BY_ERA.get(ERA)
 
 # The calendar span both eras cover, as the intersection of the two eras' own extents
 # (repaired starts later, prerepair ends earlier). Trades outside it exist in one era only,
@@ -161,8 +198,8 @@ WINDOWS = [
     ("w4", "2026-06-01", "2026-10-01"),
 ]
 
-if ERA == "walkforward":
-    # Protocol §2: in this era the *window* is the fold. The four val spans do not overlap
+if is_fold_era():
+    # Protocol §2: in a fold era the *window* is the fold. The four val spans do not overlap
     # in calendar (offsets 0.375/0.250/0.125/0.000 of one time-ordered history), so the same
     # "tag a row by which span its timestamp falls in" machinery labels a row with its fold.
     #
@@ -171,7 +208,7 @@ if ERA == "walkforward":
     # exactly the behaviour a half-filled registry should have. Oldest first, matching the
     # w1..w4 convention that a window list runs forward in time.
     WINDOWS = [(f, lo, hi) for f in ("F3", "F2", "F1", "F0")
-               for lo, hi in [WALKFORWARD_SPLITS[f] or (None, None)] if lo]
+               for lo, hi in [FOLD_SPLITS[f] or (None, None)] if lo]
 
 
 def recorded_runs() -> dict[str, str]:

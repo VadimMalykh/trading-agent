@@ -186,7 +186,7 @@ FLUX_TRAIN_ENV_KEYS="${FLUX_TRAIN_ENV_KEYS:-\
 SEL_NET_WEIGHT SEL_COST_BPS SEL_NET_SCALE SEL_COVERAGE \
 NUM_LAYERS HIDDEN_SIZE DROPOUT LR WEIGHT_DECAY BATCH_SIZE \
 EARLY_STOP_PATIENCE SEED \
-VAL_FRACTION VAL_OFFSET TRAIN_FRACTION SPLIT_EMBARGO \
+VAL_FRACTION VAL_OFFSET TRAIN_FRACTION SPLIT_EMBARGO ALIGN_AGE_FIX \
 PAIR_EMBED_DIM \
 NUM_WORKERS PREFETCH_FACTOR \
 CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT \
@@ -264,6 +264,12 @@ if [[ -z "$EVAL_ONLY_CKPT" ]]; then
   _recipe_cmp FEATURE_GROUPS      "$FLUX_INCUMBENT_FEATURE_GROUPS"      "${FEATURE_GROUPS:-}"
   _recipe_cmp PAIR_EMBED_DIM      "$FLUX_INCUMBENT_PAIR_EMBED_DIM"      "${PAIR_EMBED_DIM:-}"
   _recipe_cmp EARLY_STOP_PATIENCE "$FLUX_INCUMBENT_EARLY_STOP_PATIENCE" "${EARLY_STOP_PATIENCE:-}"
+  # Data-side recipe knobs the incumbent leaves unset/off. Compared here so that a run that
+  # sets one prints the drift in its launcher log (X8's ARCHIVE_OI fill, the 2026-09-24
+  # staleness-age fix) and so that a FOLD with one set is refused unless the drift is
+  # registered and ALLOW_RECIPE_DRIFT=1 is given (WALKFORWARD_PROTOCOL §10).
+  _recipe_cmp ARCHIVE_OI          ""                                    "${ARCHIVE_OI:-}"
+  _recipe_cmp ALIGN_AGE_FIX       "0"                                   "${ALIGN_AGE_FIX:-0}"
 
   # A walk-forward fold is any run that moves the split (WALKFORWARD_PROTOCOL §1).
   # Such a run exists to be compared with the incumbent, so drift is fatal, not a note.

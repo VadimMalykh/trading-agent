@@ -87,6 +87,20 @@ BOOK_MAX_AGE_MIN = float(os.environ.get("BOOK_MAX_AGE_MIN", "5"))
 TRADES_MAX_AGE_MIN = float(os.environ.get("TRADES_MAX_AGE_MIN", "5"))
 FUNDING_OI_MAX_AGE_MIN = float(os.environ.get("FUNDING_OI_MAX_AGE_MIN", "480"))  # 8h
 
+# 🔴 Found 2026-09-24 (X8b's synthetic test): `features._align_with_age` converts the
+# grid-minus-source difference to minutes by dividing `.asi8` by 6e10, i.e. it assumes
+# nanosecond resolution. Every image since T1 runs pandas 3.0.x, where DB-loaded and parsed
+# timestamps are datetime64[us], so the ages it returns are 1000x too small and NONE of the
+# three caps above has ever fired: a source is "stale" only before its first row. Training
+# and serving share the code (VM inference: pandas 3.0.5), so the served model sees what it
+# was trained on. The fix is unit-aware arithmetic, behind this knob and DEFAULT OFF: turning
+# it on changes the has_book / has_trades / has_funding_oi masks and the zeroing of stale
+# rows, i.e. the recipe. It is recorded in the checkpoint meta (`align_age_fix`), bound at
+# serve time from that meta, refused on walk-forward folds unless the drift is registered,
+# and goes ON in the first family whose control is retrained from scratch (with X5's
+# SPLIT_EMBARGO) — BACKLOG "staleness caps never fired". Off = the legacy arithmetic exactly.
+ALIGN_AGE_FIX = os.environ.get("ALIGN_AGE_FIX", "0").strip() == "1"
+
 FLAT_THRESHOLD = float(os.environ.get("FLAT_THRESHOLD", "0.002"))  # 0.2% default
 # Flat band scales roughly with horizon (bps of move to count as directional)
 FLAT_THRESHOLD_PER_HORIZON = {

@@ -249,6 +249,71 @@ def load_open_interest(
     return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
 
 
+# X8b (NEXT_TRAINING_PLAN §2 X8b): the flow ratios — global long/short ACCOUNT ratio, the
+# top-trader long/short ACCOUNT ratio and the taker buy/sell volume ratio — for the `flow`
+# feature group. Serving reads the collector's `long_short_ratios` (5m buckets, exchange
+# timestamps, since 2026-07-26); training additionally takes the same three series from the
+# ARCHIVE_OI parquet (the archive's `count_long_short_ratio`, `count_toptrader_long_short_ratio`
+# and `sum_taker_long_short_vol_ratio` columns, renamed by m3/archiveoi.py) for every timestamp
+# BEFORE the collector's first row, exactly as `load_open_interest` does. The collector's
+# "top" series is the ACCOUNT ratio (endpoint topLongShortAccountRatio), so the archive column
+# paired with it is `top_ls_count`, not `top_ls_sum` (the position ratio, which has no live
+# counterpart). Unset ARCHIVE_OI = the collector only, which is what serving always sees.
+FLOW_COLLECTOR_COLS = ["top_long_short_ratio", "global_long_short_ratio", "taker_buy_sell_ratio"]
+_FLOW_ARCHIVE_TO_COLLECTOR = {
+    "top_ls_count": "top_long_short_ratio",
+    "global_ls": "global_long_short_ratio",
+    "taker_ratio": "taker_buy_sell_ratio",
+}
+_archive_flow_cache: Optional[pd.DataFrame] = None
+
+
+def _archive_flow() -> pd.DataFrame:
+    global _archive_flow_cache
+    if _archive_flow_cache is None:
+        if not os.path.exists(ARCHIVE_OI):
+            raise FileNotFoundError(f"ARCHIVE_OI={ARCHIVE_OI!r} does not exist in the container")
+        df = pd.read_parquet(ARCHIVE_OI, columns=["symbol", "ts", *_FLOW_ARCHIVE_TO_COLLECTOR])
+        df = df.rename(columns=_FLOW_ARCHIVE_TO_COLLECTOR)
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        _archive_flow_cache = df.sort_values(["symbol", "ts"]).reset_index(drop=True)
+    return _archive_flow_cache
+
+
+def load_long_short_ratios(
+    symbol: str,
+    since: Optional[str] = None,
+) -> pd.DataFrame:
+    params: dict = {"symbol": symbol}
+    clauses = ["symbol = :symbol", "period = '5m'"]
+    if since:
+        clauses.append("ts >= :since")
+        params["since"] = since
+    sql = f"""
+        SELECT ts, top_long_short_ratio, global_long_short_ratio, taker_buy_sell_ratio
+        FROM long_short_ratios
+        WHERE {' AND '.join(clauses)}
+        ORDER BY ts ASC
+    """
+    df = _read_sql(sql, params)
+    if not df.empty:
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+    if not ARCHIVE_OI:
+        return df
+    arch = _archive_flow()
+    a = arch[arch["symbol"] == symbol][["ts", *FLOW_COLLECTOR_COLS]]
+    if since:
+        a = a[a["ts"] >= pd.Timestamp(since, tz="UTC")]
+    if not df.empty:
+        a = a[a["ts"] < df["ts"].iloc[0]]
+    print(f"Archive flow: {symbol} {len(a)} archive rows "
+          f"{'—' if a.empty else a['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} -> "
+          f"{'—' if a.empty else a['ts'].iloc[-1].strftime('%Y-%m-%d %H:%M')}, "
+          f"collector from {'—' if df.empty else df['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} "
+          f"({len(df)} rows), sha8={archive_oi_sha()}")
+    return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
+
+
 def load_whitelist_pairs(fallback: list | None = None) -> list:
     """
     Pairs from app_settings (UI whitelist), else symbols that have candles,

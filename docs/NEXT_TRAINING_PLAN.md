@@ -216,6 +216,25 @@ there (§6 C15).
     snapshotted as `dumps/<RUN_ID>.sql.gz`; a digit-for-digit reproduction needs a knob to
     restore a named one, which does not exist yet. Also the general form of trap 7 — `VAL_FRACTION`
     was another config.py knob the GBT launcher did not forward until 2026-09-11.
+11. 🔴 **The staleness caps have never fired (found 2026-09-24).** `features._align_with_age`
+    turns the grid-minus-source difference into minutes by dividing `.asi8` by 6e10 — nanoseconds.
+    Every training image since T1 and the VM's inference image run pandas 3.0.x (3.0.5 / 3.0.6 in
+    the logs), where DB-loaded and parsed timestamps are `datetime64[us]`, so every age is 1000×
+    too small: a bar 8 hours from the last funding row reads as 0.48 minutes. `BOOK_MAX_AGE_MIN`,
+    `TRADES_MAX_AGE_MIN` and `FUNDING_OI_MAX_AGE_MIN` therefore never trip; a source is "stale"
+    only before its first row, and `has_book` / `has_trades` / `has_funding_oi` are 1 from that
+    row onward whatever the gap. Training and serving share the code and the pandas version, so
+    the served model sees exactly what it was trained on — this is a recipe property, not a
+    train/serve skew, and every banked number (folds, X0–X8, U12) carries it uniformly. Exposure
+    on the served path is small: the book/trade columns are forced to zero anyway (CONSTANT in
+    train), so only `funding`, `oi`, `oi_chg` and `has_funding_oi` are live, and the collector
+    rarely gaps. **The fix is built as `ALIGN_AGE_FIX=1`** (config.py; unit-aware Timedelta
+    arithmetic; recorded in the checkpoint `meta`, bound at serve time from that meta, shown on
+    `/health`, forwarded by `gcp_train.sh`, reported as recipe drift and refused on folds without
+    `ALLOW_RECIPE_DRIFT=1`; regression test `ml/train/tests/test_flow_features.py` pins both
+    behaviours). **Default OFF**, and off for X8-F and X8b, which reuse banked controls; it goes
+    ON together with X5's `SPLIT_EMBARGO` in the first family whose control is retrained from
+    scratch. Found by X8b's synthetic alignment test, which asserted minutes and got thousandths.
 
 ### 0.6 🔴 When two arms have different bar counts, rank on `dir_acc`, not Wilson-LB
 
@@ -1008,11 +1027,18 @@ the three X8 checkpoints under M3_PROTOCOL §9 (Tier 1, C3) — U12's precedent 
 `M3_ERA=repaired ./scripts/m3.sh -m m3 universe --runs 20260923T160559Z,20260923T204303Z,20260924T024247Z`
 after `m3 validate`; recall from U12 that one-split Tier 1 could not arbitrate a checkpoint
 swap (the incumbent itself fails it in 98.7% of resamples), so it is texture; (ii) **the
-walk-forward folds for this recipe under their own pre-registration** (`ARCHIVE_OI` set,
-`ALLOW_RECIPE_DRIFT=1`, `SPLIT_EMBARGO` still off so the fold control stays the banked one;
-12 runs, 40–55 h serial, ≈ $18) — promotion only through W1–W5 (WALKFORWARD §3, §5.1), never by
-this read; (iii) X8b (below, three runs ≈ $4.5, control = X8). (ii) and (iii) are spend
-decisions for Vadim; nothing served changes on this read. §5's freeze row carries the entry.
+walk-forward folds for this recipe under their own pre-registration** — **funded by Vadim and
+registered 2026-09-24 as [WALKFORWARD_PROTOCOL §10](./WALKFORWARD_PROTOCOL.md)** (era
+`walkforward_x8`; `ARCHIVE_OI` set, `ALLOW_RECIPE_DRIFT=1`, `SPLIT_EMBARGO` and `ALIGN_AGE_FIX`
+off so the fold control stays the banked one; 12 runs, launched by Vadim) — promotion only
+through §3's W1–W5 plus §10's contrast veto, never by this read; the full-window instance that
+a pass would promote is fixed there as X8 s2; (iii) X8b (below, three runs ≈ $4.5, control =
+X8) — funded 2026-09-24, with one pre-launch question open (its identity acceptance). Nothing
+served changes on this read. §5's freeze row carries the entry. *Tier 1 texture, run 2026-09-24
+(`logs/X8_tier1_20260924.log`, `m3 validate` PASS first):* twelve pairs, sized, 2,504 trades,
+pooled net at taker **+11.61** (U12: +4.95), windows w1 −10.08 / w2 +21.04 / w3 −5.46 / w4
++17.30, **P2 and P3 fail** (two windows negative; worst −10.08 against −5), P1/P4/P5/P6 pass —
+the same shape as U12's failure, and per U12's record one-split Tier 1 arbitrates nothing.
 
 *The registration as written on 2026-09-23 follows, unchanged, as the record of what was fixed
 before the logs were read.*
@@ -1213,6 +1239,77 @@ checkpoint guard learn the 23-column layout; `LEGACY_FEATURE_COLS == FEATURE_COL
 X8 re-run — so it stays off here too, and X5 waits for a family that retrains its control from
 scratch. Same statistic, fallback, gate and secondary as X8. **Recorded expectation: WORSE or
 FLAT with short plateaus** — X1 is the precedent for five added external columns. Three runs.
+
+**Funded by Vadim 2026-09-24 ("2. Yes"). Built the same day, before any X8b number exists —
+three pre-launch amendments, each a fact found while building, none shaped by a result:**
+
+1. **`ls_top` is the top-trader long/short *account* ratio, not the position ratio.** The
+   collector polls `topLongShortAccountRatio` only (`collector.ex`; the position endpoint is not
+   collected), so the archive column with a live counterpart is `count_toptrader_long_short_ratio`
+   (`top_ls_count`), not the `sum_*` position variant the text above named. Adding the position
+   endpoint to the collector would give it no history to accept against. The group is therefore
+   `ls_global` = log(global long/short account ratio), `ls_top` = log(top-trader long/short
+   **account** ratio), `taker_ratio` = log(taker buy/sell volume ratio), `has_flow`.
+2. **The identity acceptance, run 2026-09-24 over the whole collector overlap (2026-07-26 →
+   09-24, ~14,370 exact-timestamp matches per pair; `logs/X8b_identity_flow_20260924.log`,
+   `./scripts/archive_flow_check.sh`): FAIL as written on 5 of 36 series, all at p99.** Medians
+   are 0.007–0.22% on every series; `taker_ratio` matches to p99 0.06–0.19% on all twelve; the
+   two *account* series sit at p99 1.3–1.9% on nine pairs and **2.05–3.14% on DOGE (top), HYPE
+   (both) and ZEC (both)** against the 2% bar carried over from X8. Diagnosis: the mismatched
+   rows are ~0.7–0.9% of buckets, spread over every day and every pair (not a collector outage),
+   and their size equals one bucket's own typical move (HYPE's 5-minute |change| has p99 2.8%) —
+   the account ratios are instantaneous snapshots that the archive and the endpoint take at
+   slightly different instants inside the bucket, whereas the taker ratio is a bucket aggregate
+   and matches exactly. Same feed, same quantity, sampling-instant noise on the tail. **This is a
+   decision for Vadim, asked in BACKLOG row X8b, before launch:** (A) amend the bar for the two
+   account series to p99 < 3% with the median bar unchanged (the recommendation: the discrepancy
+   is one bar's noise on 1% of bars and both train and serve carry it), or (C) keep the bar as
+   written and void X8b. The launch block below assumes (A) and is not to be run on (C).
+3. **Serve-side:** `features.py` gains the `flow` group (appended after `market` in
+   `_GROUP_ORDER`, so `FEATURE_GROUPS=legacy,flow` is 23 columns with `LEGACY_FEATURE_COLS ==
+   FEATURE_COLS[:19]` intact and `ALL_FEATURE_COLS` unchanged in its first 30); `db.load_long_short_ratios`
+   (collector `long_short_ratios`, 5m period; under `ARCHIVE_OI` the archive's three series
+   before the collector's first row, logged as `Archive flow: …`); `serve.py` binds by the
+   checkpoint's `feature_cols` as before and now reports `n_features` on `/health`; the Elixir
+   binding guard checks sha / interval / closed-bars and needs no change. The staleness cap on
+   the ratios is `FUNDING_OI_MAX_AGE_MIN` — which, per §0.5 trap 11, does not fire with
+   `ALIGN_AGE_FIX` off; X8b keeps it off, like its control. Tests: `tests/test_flow_features.py`
+   (groups, alignment under the fix, the legacy pin, empty source) and `tests/test_serve_universe.py`
+   both PASS in the trainer image; an end-to-end `build_feature_frame` with the archive attached
+   is in `logs/x8b_e2e_local_20260924.log`.
+
+**Acceptance, per run (§0.4), in addition to X8's lines:** `Feature groups: legacy,flow -> 23
+columns (…, has_funding_oi, ls_global, ls_top, taker_ratio, has_flow)`; twelve `Archive flow:`
+lines **and** twelve `Archive OI:` lines, all `sha8=83c85bd7`; the `Split` line identical to
+X0/X8's; `Align age: ALIGN_AGE_FIX=0`; **none of the four flow columns in any CONSTANT list**
+(they carry archive history from 2022-08 on every pair; `has_flow` will be constant 1 on the
+long pairs like `has_funding_oi` — record it, it is the same side effect). A run missing any of
+these is void.
+
+**Commands (after Vadim's answer to amendment 2 is (A); serial, one at a time, after X8-F's
+queue or before it — the GPU is the only shared resource):**
+
+```sh
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export DUMP_MAX_AGE_MIN=100000                      # the pinned 20260913T050118Z snapshot — same as X0 and X8
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet
+unset VAL_OFFSET VAL_FRACTION TRAIN_FRACTION ALLOW_RECIPE_DRIFT SPLIT_EMBARGO ALIGN_AGE_FIX   # not a fold
+
+FEATURE_GROUPS=legacy,flow SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # X8b s1
+FEATURE_GROUPS=legacy,flow SEED=2 ./scripts/gcp_train.sh --gpu 60 384   # X8b s2  (after s1 is DONE)
+FEATURE_GROUPS=legacy,flow SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X8b s3
+
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh <run_id> > logs/X8b_s1.log     # X8b_s2, X8b_s3 — never --save
+```
+
+The launcher's go/no-go line: `recipe differs from the incumbent (T1) in:` with exactly two
+items, `FEATURE_GROUPS: incumbent='legacy' this run='legacy,flow'` and `ARCHIVE_OI: …83c85bd7…`.
+**Bring back the three logs**; the read (X8's statistic against X8's plateau means 0.5341 /
+0.5366 / 0.5393, family 0.5367; gate ±0.008; secondary against +18.2 over 2,509) happens in a
+fresh session.
 
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 

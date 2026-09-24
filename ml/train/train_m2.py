@@ -597,6 +597,12 @@ def main():
     meta["split_embargo_bars"] = embargo_bars
     from data.db import archive_oi_sha
     meta["archive_oi"] = archive_oi_sha()
+    from config import ALIGN_AGE_FIX
+    import pandas as _pd
+    meta["align_age_fix"] = bool(ALIGN_AGE_FIX)
+    print(f"Align age: ALIGN_AGE_FIX={'1' if ALIGN_AGE_FIX else '0'} "
+          f"({'unit-aware' if ALIGN_AGE_FIX else 'legacy ns arithmetic — staleness caps do not fire'}; "
+          f"pandas {_pd.__version__})")
     t_tr = bundle.times[tr_idx]
     t_va = bundle.times[va_idx]
     print(
