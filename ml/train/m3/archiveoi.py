@@ -190,9 +190,12 @@ def fetch(pairs: list[str], start: date, end: date, cache: str, out: str,
 # ---------------------------------------------------------------------------------------
 
 def check(parquet: str, collector_csv: str, tol_min: float = 5.0,
-          med_max: float = 0.005, p99_max: float = 0.02) -> int:
+          med_max: float = 0.005, p99_max: float = 0.02, shift_min: float = 0.0) -> int:
     a = pd.read_parquet(parquet)[["symbol", "ts", "open_interest"]]
     a["ts"] = pd.to_datetime(a["ts"], utc=True)
+    if shift_min:
+        a["ts"] = a["ts"] + pd.Timedelta(minutes=shift_min)
+        print(f"archive timestamps shifted by +{shift_min:g} min (db.ARCHIVE_OI_SHIFT_MIN convention)")
     c = pd.read_csv(collector_csv)
     c["ts"] = pd.to_datetime(c["ts"], utc=True)
     c = c.rename(columns={"open_interest": "oi_collector"})[["symbol", "ts", "oi_collector"]]
@@ -242,6 +245,10 @@ def check(parquet: str, collector_csv: str, tol_min: float = 5.0,
 # bucket timestamp, so the match is nearest-within-5-min like `check`, and the pass bar is
 # the same: median relative difference < 0.5 % and p99 < 2 %, per series, per pair.
 
+# Must equal data/db.py's ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN (not imported: this module runs in the
+# torch-free, driver-free ml_analysis image). The loader's test pins the two to each other.
+ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN = 5.0
+
 FLOW_SERIES = {
     "global_ls": "global_long_short_ratio",
     "top_ls_count": "top_long_short_ratio",
@@ -250,9 +257,18 @@ FLOW_SERIES = {
 
 
 def check_flow(parquet: str, collector_csv: str, tol_min: float = 5.0,
-               med_max: float = 0.005, p99_max: float = 0.02) -> int:
+               med_max: float = 0.005, p99_max: float = 0.02, raw: bool = False) -> int:
     a = pd.read_parquet(parquet)[["symbol", "ts", *FLOW_SERIES]]
     a["ts"] = pd.to_datetime(a["ts"], utc=True)
+    if not raw:
+        # Mirror db._archive_flow: the two account series are re-labelled +5 min onto the
+        # collector's (exchange) convention; the taker ratio is not. `--raw` shows the
+        # unshifted comparison, which is the one that FAILED on 2026-09-24 and led here.
+        acct = a[["symbol", "ts", "global_ls", "top_ls_count"]].copy()
+        acct["ts"] = acct["ts"] + pd.Timedelta(minutes=ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN)
+        a = acct.merge(a[["symbol", "ts", "taker_ratio"]], on=["symbol", "ts"], how="outer")
+        print(f"archive account-ratio timestamps shifted by +{ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN:g} min "
+              f"(db._archive_flow convention); taker unshifted")
     c = pd.read_csv(collector_csv)
     c["ts"] = pd.to_datetime(c["ts"], utc=True)
     c = c.sort_values("ts")
@@ -310,11 +326,16 @@ def add_parser(sub) -> None:
                    help="the sha8 is inserted before the extension")
     f.add_argument("--threads", type=int, default=16)
     c = s2.add_parser("check")
+    c.add_argument("--shift-min", type=float, default=0.0,
+                   help="shift the archive's timestamps by this many minutes before matching "
+                        "(5 = the collector's convention; db.ARCHIVE_OI_SHIFT_MIN)")
     c.add_argument("--parquet", required=True)
     c.add_argument("--collector", required=True,
                    help="CSV of the collector's open_interest rows (symbol, ts, open_interest); "
                         "scripts/archive_oi_check.sh exports it from fluxtrader-1")
     cf = s2.add_parser("check-flow", help="X8b: the same acceptance for the three ratio series")
+    cf.add_argument("--raw", action="store_true",
+                    help="compare the archive's account ratios UNshifted (the 2026-09-24 FAIL)")
     cf.add_argument("--parquet", required=True)
     cf.add_argument("--collector", required=True,
                     help="CSV of the collector's long_short_ratios rows (symbol, ts, "
@@ -330,5 +351,5 @@ def _main(args) -> int:
               args.cache, args.out, args.threads)
         return 0
     if args.job == "check-flow":
-        return check_flow(args.parquet, args.collector)
-    return check(args.parquet, args.collector)
+        return check_flow(args.parquet, args.collector, raw=args.raw)
+    return check(args.parquet, args.collector, shift_min=args.shift_min)

@@ -595,8 +595,10 @@ def main():
             f"samples within {embargo_bars} bars ({embargo_bars * bar_min} min) of val start"
         )
     meta["split_embargo_bars"] = embargo_bars
-    from data.db import archive_oi_sha
+    from data.db import archive_oi_sha, ARCHIVE_OI_SHIFT_MIN, ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN
     meta["archive_oi"] = archive_oi_sha()
+    meta["archive_oi_shift_min"] = float(ARCHIVE_OI_SHIFT_MIN)
+    meta["archive_flow_account_shift_min"] = float(ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN)
     from config import ALIGN_AGE_FIX
     import pandas as _pd
     meta["align_age_fix"] = bool(ALIGN_AGE_FIX)

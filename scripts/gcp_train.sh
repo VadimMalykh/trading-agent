@@ -193,7 +193,7 @@ CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT \
 DIR_MAG_WEIGHT DIR_MAG_WEIGHT_CLIP DIR_MAG_WEIGHT_POWER \
 LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER \
 VN_VOL_WINDOW VN_MIN_SIGMA VN_CALIB_END \
-CANDLE_INTERVAL FEATURE_GROUPS ARCHIVE_OI \
+CANDLE_INTERVAL FEATURE_GROUPS ARCHIVE_OI ARCHIVE_OI_SHIFT_MIN \
 NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD \
 BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN \
 GATE_THRESHOLD SERVE_TARGET_COVERAGE \
@@ -269,6 +269,7 @@ if [[ -z "$EVAL_ONLY_CKPT" ]]; then
   # staleness-age fix) and so that a FOLD with one set is refused unless the drift is
   # registered and ALLOW_RECIPE_DRIFT=1 is given (WALKFORWARD_PROTOCOL §10).
   _recipe_cmp ARCHIVE_OI          ""                                    "${ARCHIVE_OI:-}"
+  _recipe_cmp ARCHIVE_OI_SHIFT_MIN "0"                                  "${ARCHIVE_OI_SHIFT_MIN:-0}"
   _recipe_cmp ALIGN_AGE_FIX       "0"                                   "${ALIGN_AGE_FIX:-0}"
 
   # A walk-forward fold is any run that moves the split (WALKFORWARD_PROTOCOL §1).

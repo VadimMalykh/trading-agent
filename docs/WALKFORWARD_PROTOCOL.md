@@ -1779,6 +1779,16 @@ behind a pass.
 
 ### 10.1 What changes, and what does not
 
+🔴 **HOLD, added 2026-09-24 before any launch (no run exists): the archive's bucket labels are
+one bucket early (NEXT_TRAINING_PLAN §0.5 trap 12), so X8 trained on open interest one bar
+fresher than serving provides. Vadim decides (BACKLOG X8-F) whether X8 is first re-run under
+the served convention (`ARCHIVE_OI_SHIFT_MIN=5`) — in which case this era carries the same
+knob, the promotion candidate in 10.4 becomes that re-run's median seed, and 10.5's block
+gains `export ARCHIVE_OI_SHIFT_MIN=5` with a second drift item in the go/no-go line — or the
+family runs exactly as X8 did (knob at 0, as written below) with the one-bar skew documented.
+Nothing else in this section changes on either answer; the decision and its date are recorded
+here when made.**
+
 **One change:** `ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet`
 — the archive fill of `oi` / `oi_chg` before the collector's first row, exactly as in X8. The
 fold-drift guard in `gcp_train.sh` refuses this knob on a fold unless `ALLOW_RECIPE_DRIFT=1` is

@@ -112,8 +112,52 @@ def test_empty():
     print("PASS empty: no ratios -> zeros, has_flow 0")
 
 
+def test_archive_flow_shift(tmp_dir="/tmp"):
+    """db._archive_flow re-labels the two ACCOUNT ratios +5 min (the archive's bucket-start
+    label -> the collector's bucket-end label; verified identical to 0.03 % at p99 on
+    2026-09-24) and leaves the taker ratio alone; db.load_open_interest shifts only under
+    ARCHIVE_OI_SHIFT_MIN. The constant is duplicated in m3/archiveoi.py (which runs without
+    the DB drivers) and the two must stay equal."""
+    import importlib
+    from data import db
+    from m3 import archiveoi
+    assert db.ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN == archiveoi.ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN == 5.0
+    ts = pd.to_datetime(["2026-08-01 00:00", "2026-08-01 00:05"], utc=True)
+    df = pd.DataFrame({"symbol": ["BTCUSDT"] * 2, "ts": ts, "open_interest": [100.0, 101.0],
+                       "top_ls_count": [2.0, 2.1], "global_ls": [1.5, 1.6],
+                       "taker_ratio": [0.9, 1.1]})
+    path = os.path.join(tmp_dir, "archive_shift_test.parquet")
+    df.to_parquet(path)
+    db.ARCHIVE_OI = path
+    db._archive_flow_cache = None
+    db._archive_oi_cache = None
+    flow = db._archive_flow()
+    # account ratios at 00:05 / 00:10; taker at 00:00 / 00:05 -> outer join gives 3 rows
+    assert len(flow) == 3, flow
+    r = flow.set_index("ts")
+    t0, t5, t10 = (pd.Timestamp(x, tz="UTC") for x in ("2026-08-01 00:00", "2026-08-01 00:05", "2026-08-01 00:10"))
+    assert np.isnan(r.loc[t0, "top_long_short_ratio"]) and r.loc[t0, "taker_buy_sell_ratio"] == 0.9
+    assert r.loc[t5, "top_long_short_ratio"] == 2.0 and r.loc[t5, "global_long_short_ratio"] == 1.5 \
+        and r.loc[t5, "taker_buy_sell_ratio"] == 1.1
+    assert r.loc[t10, "top_long_short_ratio"] == 2.1 and np.isnan(r.loc[t10, "taker_buy_sell_ratio"])
+    # open interest: unshifted by default
+    assert db.ARCHIVE_OI_SHIFT_MIN == 0.0
+    oi = db._archive_oi()
+    assert list(oi["ts"]) == list(ts)
+    db.ARCHIVE_OI_SHIFT_MIN = 5.0
+    db._archive_oi_cache = None
+    oi = db._archive_oi()
+    assert list(oi["ts"]) == [t5, t10]
+    db.ARCHIVE_OI_SHIFT_MIN = 0.0
+    db._archive_oi_cache = None
+    db._archive_flow_cache = None
+    os.remove(path)
+    print("PASS archive shift: account ratios +5 min, taker unshifted, OI only under the knob")
+
+
 if __name__ == "__main__":
     test_groups()
+    test_archive_flow_shift()
     test_legacy_ages_are_not_minutes()
     test_alignment()
     test_empty()

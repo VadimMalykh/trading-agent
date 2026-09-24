@@ -195,6 +195,19 @@ def load_funding(
 ARCHIVE_OI = os.environ.get("ARCHIVE_OI", "").strip()
 _archive_oi_cache: Optional[pd.DataFrame] = None
 
+# 🔴 Found 2026-09-24 (X8b's identity check): the archive's `create_time` is the START of the
+# 5-minute bucket, but the row carries the value at the bucket's END. Shifting the archive's
+# account-ratio rows by +5 min makes them identical to the collector's exchange-stamped rows
+# (median 0.011 %, p99 0.02–0.03 %, all twelve pairs); unshifted they disagree by exactly one
+# bucket's move (p99 1.3–3.1 %). Open interest shows the same direction (collector polled at
+# wall-clock time; nearest-match median 0.034 % shifted vs 0.063 % unshifted). The archive
+# flow loader applies the +5 min shift to the two account series unconditionally (verified
+# exact; the taker ratio is a bucket aggregate and aligns as is). For open interest the shift
+# is a knob, ARCHIVE_OI_SHIFT_MIN, default 0 = exactly what X8 trained on; 5 = the collector's
+# convention (what serving sees). Recorded in the checkpoint meta; NEXT_TRAINING_PLAN §2 X8b.
+ARCHIVE_OI_SHIFT_MIN = float(os.environ.get("ARCHIVE_OI_SHIFT_MIN", "0") or 0)
+ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN = 5.0
+
 
 def archive_oi_sha() -> Optional[str]:
     """The sha8 embedded in the ARCHIVE_OI file name (metrics_um_5m_<sha8>.parquet), or None."""
@@ -211,6 +224,8 @@ def _archive_oi() -> pd.DataFrame:
             raise FileNotFoundError(f"ARCHIVE_OI={ARCHIVE_OI!r} does not exist in the container")
         df = pd.read_parquet(ARCHIVE_OI, columns=["symbol", "ts", "open_interest"])
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        if ARCHIVE_OI_SHIFT_MIN:
+            df["ts"] = df["ts"] + pd.Timedelta(minutes=ARCHIVE_OI_SHIFT_MIN)
         _archive_oi_cache = df.sort_values(["symbol", "ts"]).reset_index(drop=True)
     return _archive_oi_cache
 
@@ -245,7 +260,7 @@ def load_open_interest(
           f"{'—' if a.empty else a['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} -> "
           f"{'—' if a.empty else a['ts'].iloc[-1].strftime('%Y-%m-%d %H:%M')}, "
           f"collector from {'—' if df.empty else df['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} "
-          f"({len(df)} rows), sha8={archive_oi_sha()}")
+          f"({len(df)} rows), sha8={archive_oi_sha()}, shift_min={ARCHIVE_OI_SHIFT_MIN:g}")
     return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
 
 
@@ -276,6 +291,13 @@ def _archive_flow() -> pd.DataFrame:
         df = pd.read_parquet(ARCHIVE_OI, columns=["symbol", "ts", *_FLOW_ARCHIVE_TO_COLLECTOR])
         df = df.rename(columns=_FLOW_ARCHIVE_TO_COLLECTOR)
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        # The two account ratios are labelled one bucket early in the archive (see
+        # ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN above); the taker ratio is not. Re-label them onto
+        # the collector's convention so one timestamp means one instant in train and serve.
+        acct = df[["symbol", "ts", "top_long_short_ratio", "global_long_short_ratio"]].copy()
+        acct["ts"] = acct["ts"] + pd.Timedelta(minutes=ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN)
+        taker = df[["symbol", "ts", "taker_buy_sell_ratio"]]
+        df = acct.merge(taker, on=["symbol", "ts"], how="outer")
         _archive_flow_cache = df.sort_values(["symbol", "ts"]).reset_index(drop=True)
     return _archive_flow_cache
 
@@ -310,7 +332,7 @@ def load_long_short_ratios(
           f"{'—' if a.empty else a['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} -> "
           f"{'—' if a.empty else a['ts'].iloc[-1].strftime('%Y-%m-%d %H:%M')}, "
           f"collector from {'—' if df.empty else df['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} "
-          f"({len(df)} rows), sha8={archive_oi_sha()}")
+          f"({len(df)} rows), sha8={archive_oi_sha()}, account_shift_min={ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN:g}")
     return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
 
 

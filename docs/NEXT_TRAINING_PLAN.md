@@ -235,6 +235,23 @@ there (§6 C15).
     behaviours). **Default OFF**, and off for X8-F and X8b, which reuse banked controls; it goes
     ON together with X5's `SPLIT_EMBARGO` in the first family whose control is retrained from
     scratch. Found by X8b's synthetic alignment test, which asserted minutes and got thousandths.
+12. 🔴 **Binance's archive labels a 5-minute bucket by its START and stores the value at its
+    END (found 2026-09-24, X8b's identity check).** The collector stamps the account ratios
+    with the exchange's bucket timestamp (the end) and open interest with its poll time. Unshifted,
+    archive and collector disagreed on the two account ratios by exactly one bucket's move (p99
+    1.3–3.1 %, medians ≈ the series' own 5-minute median change); re-labelled +5 min they are
+    identical (median 0.011 %, p99 0.02–0.03 %, all twelve pairs). The taker ratio, a bucket
+    aggregate, aligns unshifted. Open interest shows the same direction: nearest-match p99
+    0.36–0.96 % unshifted vs 0.08–0.28 % shifted. **Consequence for X8:** its training data
+    carried, at bar T, the open interest of T+5 min — the value at the bar's close — while serving
+    forward-fills the collector's last poll at or before T, the value at the bar's open. One bar
+    of freshness on a slow variable; `oi_chg` is the same series one bar earlier. Not a lookahead
+    past the decision instant (the bar is acted on after it closes), but a train/serve
+    difference. The loader now re-labels the archive's account ratios unconditionally
+    (`db.ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN = 5`, pinned to `m3/archiveoi.py`'s copy by the test) and
+    open interest under `ARCHIVE_OI_SHIFT_MIN` (default 0 = X8 exactly; 5 = the served
+    convention), recorded in the checkpoint meta and reported as launcher drift. Whether X8 is
+    re-run under the served convention before X8-F is a decision for Vadim (BACKLOG X8-F).
 
 ### 0.6 🔴 When two arms have different bar counts, rank on `dir_acc`, not Wilson-LB
 
@@ -1009,13 +1026,18 @@ validation split, not a certification: what it licenses is the fold run that cou
   filled column, against X1's 7 / 7 / 4 and X2's 6 / 7 / 3; `loss_tr` leaves 1.72 at epoch
   25–27 vs X0's 19–22. So the memorisation mechanism is about *redundant or noisy added*
   columns, not about any change to the input — **X8b may be launched** (per the licence list).
-- **Integrity check a positive result deserves (done, passes):** the archive rows are
-  snapshots at their own `create_time`, forward-filled onto the bar's `open_time` by the same
-  `_align_with_age` join the collector's rows use, so every bar sees open interest at least five
-  minutes older than the close its candle features are built from — no lookahead by
-  construction, and serve only ever reads collector rows (the archive stops where the collector
-  starts). Timestamps were matched to the collector's poll times at 0.03–0.19% median value
-  difference in the pre-launch identity check.
+- **Integrity check a positive result deserves (done, passes — with one refinement found
+  later the same day, §0.5 trap 12):** the archive rows are forward-filled onto the bar's
+  `open_time` by the same `_align_with_age` join the collector's rows use, and serve only ever
+  reads collector rows (the archive stops where the collector starts). The archive's
+  `create_time`, however, is the bucket's *start* while its value is the bucket's *end*, so a
+  training bar T saw the open interest of T+5 min — the value at that bar's close, i.e. at the
+  instant the bar is acted on. Not a lookahead past the decision, but one bar fresher than
+  serving provides (the collector's last poll at or before T). The identity check matched
+  values at 0.03–0.19% median unshifted and 3–4× tighter shifted. The read stands as a
+  measurement that OI history helps; the served configuration differs from it by one bar of
+  OI freshness. Resolution is a decision (BACKLOG X8-F): re-run X8 under the served convention
+  (`ARCHIVE_OI_SHIFT_MIN=5`) before the folds, or proceed and document the skew.
 - **Norm flags, per §0.4, none a void:** the hl_range `DEGENERATE SPIKE` lines and WLD's
   `has_funding_oi` spike are X0's own; new are two *heavy-tail* notes on `oi_chg` (HYPE 3 rows,
   ZEC 23 rows beyond ±50, winsorised — a populated tail, not a spike). Class mix at the selected
@@ -1250,21 +1272,23 @@ three pre-launch amendments, each a fact found while building, none shaped by a 
    endpoint to the collector would give it no history to accept against. The group is therefore
    `ls_global` = log(global long/short account ratio), `ls_top` = log(top-trader long/short
    **account** ratio), `taker_ratio` = log(taker buy/sell volume ratio), `has_flow`.
-2. **The identity acceptance, run 2026-09-24 over the whole collector overlap (2026-07-26 →
-   09-24, ~14,370 exact-timestamp matches per pair; `logs/X8b_identity_flow_20260924.log`,
-   `./scripts/archive_flow_check.sh`): FAIL as written on 5 of 36 series, all at p99.** Medians
-   are 0.007–0.22% on every series; `taker_ratio` matches to p99 0.06–0.19% on all twelve; the
-   two *account* series sit at p99 1.3–1.9% on nine pairs and **2.05–3.14% on DOGE (top), HYPE
-   (both) and ZEC (both)** against the 2% bar carried over from X8. Diagnosis: the mismatched
-   rows are ~0.7–0.9% of buckets, spread over every day and every pair (not a collector outage),
-   and their size equals one bucket's own typical move (HYPE's 5-minute |change| has p99 2.8%) —
-   the account ratios are instantaneous snapshots that the archive and the endpoint take at
-   slightly different instants inside the bucket, whereas the taker ratio is a bucket aggregate
-   and matches exactly. Same feed, same quantity, sampling-instant noise on the tail. **This is a
-   decision for Vadim, asked in BACKLOG row X8b, before launch:** (A) amend the bar for the two
-   account series to p99 < 3% with the median bar unchanged (the recommendation: the discrepancy
-   is one bar's noise on 1% of bars and both train and serve carry it), or (C) keep the bar as
-   written and void X8b. The launch block below assumes (A) and is not to be run on (C).
+2. **The identity acceptance — FAILED as first run, then PASSED at the original bar once the
+   archive's timestamps were understood** (`logs/X8b_identity_flow_20260924.log`, both runs;
+   `./scripts/archive_flow_check.sh`). First run, archive timestamps as published: FAIL on 5 of
+   36 series at p99 (DOGE top, HYPE both, ZEC both: 2.05–3.14% against 2%), every median
+   passing, the taker series exact. Vadim chose to amend the bar to 3% ("X8b — (A)"); before
+   applying it the tail was diagnosed and the amendment turned out to be **unnecessary and is
+   withdrawn**: the disagreement equalled each series' own one-bucket move to within 1% at
+   every pair — the signature of a one-bucket label offset, not of noise — and shifting the
+   archive's account-ratio rows by +5 min makes the two sources identical (**median 0.011%,
+   p99 0.02–0.03% on both series, all twelve pairs; PASS at the original 0.5% / 2% bar**). The
+   taker ratio is a bucket aggregate and aligns unshifted (§0.5 trap 12 for the mechanism and
+   its consequence for X8). The loader applies the +5 min re-labelling to the two account series
+   unconditionally, so a timestamp means the same instant in training and serving; nothing about
+   the bar changed. One more archive fact, a note not a blocker: the **top-trader ratio is absent
+   for the first ~136 days (2022-08-01 → ~2022-12-14) on the nine pairs listed then** (39,130 rows
+   each; global and taker present), so `ls_top` is 0 there with `has_flow` still 1 — it will not
+   be CONSTANT, and the run's norm block should be read with that in mind.
 3. **Serve-side:** `features.py` gains the `flow` group (appended after `market` in
    `_GROUP_ORDER`, so `FEATURE_GROUPS=legacy,flow` is 23 columns with `LEGACY_FEATURE_COLS ==
    FEATURE_COLS[:19]` intact and `ALL_FEATURE_COLS` unchanged in its first 30); `db.load_long_short_ratios`
@@ -1275,8 +1299,14 @@ three pre-launch amendments, each a fact found while building, none shaped by a 
    the ratios is `FUNDING_OI_MAX_AGE_MIN` — which, per §0.5 trap 11, does not fire with
    `ALIGN_AGE_FIX` off; X8b keeps it off, like its control. Tests: `tests/test_flow_features.py`
    (groups, alignment under the fix, the legacy pin, empty source) and `tests/test_serve_universe.py`
-   both PASS in the trainer image; an end-to-end `build_feature_frame` with the archive attached
+   both PASS in the trainer image (plus `test_archive_flow_shift`, which pins the +5 min
+   re-labelling and the OI knob); an end-to-end `build_feature_frame` with the archive attached
    is in `logs/x8b_e2e_local_20260924.log`.
+4. **X8b's control depends on the X8 convention decision (BACKLOG X8-F).** If X8 is re-run under
+   the served convention (`ARCHIVE_OI_SHIFT_MIN=5`), X8b carries the same knob and its control
+   is that re-run; if not, X8b runs with the knob at 0 and its control is X8 as banked. Either
+   way both arms of the X8b contrast carry the same OI convention. **Do not launch X8b before
+   that decision is recorded here.**
 
 **Acceptance, per run (§0.4), in addition to X8's lines:** `Feature groups: legacy,flow -> 23
 columns (…, has_funding_oi, ls_global, ls_top, taker_ratio, has_flow)`; twelve `Archive flow:`
@@ -1286,8 +1316,9 @@ X0/X8's; `Align age: ALIGN_AGE_FIX=0`; **none of the four flow columns in any CO
 long pairs like `has_funding_oi` — record it, it is the same side effect). A run missing any of
 these is void.
 
-**Commands (after Vadim's answer to amendment 2 is (A); serial, one at a time, after X8-F's
-queue or before it — the GPU is the only shared resource):**
+**Commands (after the X8 convention decision is recorded in amendment 4; serial, one at a
+time, after X8-F's queue or before it — the GPU is the only shared resource). Add
+`export ARCHIVE_OI_SHIFT_MIN=5` to the block if the decision is the served convention:**
 
 ```sh
 export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
@@ -1306,7 +1337,10 @@ FEATURE_GROUPS=legacy,flow SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X8b s3
 ```
 
 The launcher's go/no-go line: `recipe differs from the incumbent (T1) in:` with exactly two
-items, `FEATURE_GROUPS: incumbent='legacy' this run='legacy,flow'` and `ARCHIVE_OI: …83c85bd7…`.
+items, `FEATURE_GROUPS: incumbent='legacy' this run='legacy,flow'` and `ARCHIVE_OI: …83c85bd7…`
+(three, with `ARCHIVE_OI_SHIFT_MIN: incumbent='0' this run='5'`, under the served convention).
+Acceptance adds: twelve `Archive flow:` lines ending `account_shift_min=5`, and every
+`Archive OI:` line ending `shift_min=<the decided value>`.
 **Bring back the three logs**; the read (X8's statistic against X8's plateau means 0.5341 /
 0.5366 / 0.5393, family 0.5367; gate ±0.008; secondary against +18.2 over 2,509) happens in a
 fresh session.
