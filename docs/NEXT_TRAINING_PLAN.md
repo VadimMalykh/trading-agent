@@ -1036,8 +1036,13 @@ validation split, not a certification: what it licenses is the fold run that cou
   serving provides (the collector's last poll at or before T). The identity check matched
   values at 0.03–0.19% median unshifted and 3–4× tighter shifted. The read stands as a
   measurement that OI history helps; the served configuration differs from it by one bar of
-  OI freshness. Resolution is a decision (BACKLOG X8-F): re-run X8 under the served convention
-  (`ARCHIVE_OI_SHIFT_MIN=5`) before the folds, or proceed and document the skew.
+  OI freshness. **Resolved 2026-09-24, Vadim: option (2) — X8′.** The same three commands as
+  X8 with `ARCHIVE_OI_SHIFT_MIN=5` added (launcher log: two drift items, `ARCHIVE_OI` and
+  `ARCHIVE_OI_SHIFT_MIN`; run log: every `Archive OI:` line ending `shift_min=5`, `git_sha` at
+  or after `198cc4f`; everything else in X8's acceptance unchanged). Read as X8 was read —
+  §0.3's awk against X0's plateau means, X8's gate, X8's secondary — with the expectation now
+  MOVED; result block goes here. X8′'s family-median seed becomes WALKFORWARD §10's promotion
+  candidate; X8 s1–s3 stay banked as the unshifted record. Logs: `logs/X8p_s{1,2,3}.log`.
 - **Norm flags, per §0.4, none a void:** the hl_range `DEGENERATE SPIKE` lines and WLD's
   `has_funding_oi` spike are X0's own; new are two *heavy-tail* notes on `oi_chg` (HYPE 3 rows,
   ZEC 23 rows beyond ±50, winsorised — a populated tail, not a spike). Class mix at the selected
@@ -1302,11 +1307,11 @@ three pre-launch amendments, each a fact found while building, none shaped by a 
    both PASS in the trainer image (plus `test_archive_flow_shift`, which pins the +5 min
    re-labelling and the OI knob); an end-to-end `build_feature_frame` with the archive attached
    is in `logs/x8b_e2e_local_20260924.log`.
-4. **X8b's control depends on the X8 convention decision (BACKLOG X8-F).** If X8 is re-run under
-   the served convention (`ARCHIVE_OI_SHIFT_MIN=5`), X8b carries the same knob and its control
-   is that re-run; if not, X8b runs with the knob at 0 and its control is X8 as banked. Either
-   way both arms of the X8b contrast carry the same OI convention. **Do not launch X8b before
-   that decision is recorded here.**
+4. **X8b's control is X8′ (decided 2026-09-24, Vadim: option (2)).** X8 is re-run under the
+   served convention (`ARCHIVE_OI_SHIFT_MIN=5`, three seeds; registration = X8's, read = X8's
+   statistic against X0, expectation now MOVED) and X8b carries the same knob with X8′ as its
+   control, so both arms of the contrast share one OI convention. **X8b launches after X8′ is
+   read** — its control's plateau means do not exist before that.
 
 **Acceptance, per run (§0.4), in addition to X8's lines:** `Feature groups: legacy,flow -> 23
 columns (…, has_funding_oi, ls_global, ls_top, taker_ratio, has_flow)`; twelve `Archive flow:`
@@ -1316,9 +1321,8 @@ X0/X8's; `Align age: ALIGN_AGE_FIX=0`; **none of the four flow columns in any CO
 long pairs like `has_funding_oi` — record it, it is the same side effect). A run missing any of
 these is void.
 
-**Commands (after the X8 convention decision is recorded in amendment 4; serial, one at a
-time, after X8-F's queue or before it — the GPU is the only shared resource). Add
-`export ARCHIVE_OI_SHIFT_MIN=5` to the block if the decision is the served convention:**
+**Commands (after X8′ is read; serial, one at a time, before or after X8-F's twelve — the
+GPU is the only shared resource):**
 
 ```sh
 export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
@@ -1326,6 +1330,7 @@ export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
 export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
 export DUMP_MAX_AGE_MIN=100000                      # the pinned 20260913T050118Z snapshot — same as X0 and X8
 export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet
+export ARCHIVE_OI_SHIFT_MIN=5                       # the served convention — same as X8′, its control
 unset VAL_OFFSET VAL_FRACTION TRAIN_FRACTION ALLOW_RECIPE_DRIFT SPLIT_EMBARGO ALIGN_AGE_FIX   # not a fold
 
 FEATURE_GROUPS=legacy,flow SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # X8b s1

@@ -1787,7 +1787,12 @@ knob, the promotion candidate in 10.4 becomes that re-run's median seed, and 10.
 gains `export ARCHIVE_OI_SHIFT_MIN=5` with a second drift item in the go/no-go line — or the
 family runs exactly as X8 did (knob at 0, as written below) with the one-bar skew documented.
 Nothing else in this section changes on either answer; the decision and its date are recorded
-here when made.**
+here when made.** 🟢 **DECIDED 2026-09-24, Vadim: (2) — X8 is re-run first under the served
+convention (`ARCHIVE_OI_SHIFT_MIN=5`, three seeds, "X8′"), and this era carries the same knob.**
+10.4's promotion candidate is therefore *X8′'s* family-median seed by plateau-mean LB, named
+when X8′ is read (before any fold of this era is launched). One fold attempt had already been
+launched unshifted before the decision — F2 s1, run `20260924T122208Z`, git `0a83a0e`, stopped
+during its dump restore — **void**, recorded in 10.7; it trained nothing.
 
 **One change:** `ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet`
 — the archive fill of `oi` / `oi_chg` before the collector's first row, exactly as in X8. The
@@ -1885,6 +1890,7 @@ export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,100
 export VAL_FRACTION=0.125 TRAIN_FRACTION=0.5
 export DUMP_MAX_AGE_MIN=100000                                  # the pinned 20260913T050118Z snapshot
 export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet   # the one change
+export ARCHIVE_OI_SHIFT_MIN=5                                  # decision (2): the served convention, as X8′
 export ALLOW_RECIPE_DRIFT=1                                     # licensed by this section only
 unset SPLIT_EMBARGO ALIGN_AGE_FIX                               # both stay OFF (§10.1)
 
@@ -1900,10 +1906,11 @@ VAL_OFFSET=0.250 SEED=3 ./scripts/gcp_train.sh --gpu 60 384      # -> logs/WFX8-
 ```
 
 **The go/no-go before the VM is created** (printed by the launcher, costs nothing): the line
-`recipe differs from the incumbent (T1) in:` followed by exactly one item, `ARCHIVE_OI:
-incumbent=''  this run='gs://…metrics_um_5m_83c85bd7.parquet'`, then `ALLOW_RECIPE_DRIFT=1 —
-fold drift accepted on the launcher's say-so.` Any other item in that list (an
-`ALIGN_AGE_FIX`, a `SPLIT_EMBARGO`, a `FEATURE_GROUPS`) means the environment is wrong —
+`recipe differs from the incumbent (T1) in:` followed by exactly two items, `ARCHIVE_OI:
+incumbent=''  this run='gs://…metrics_um_5m_83c85bd7.parquet'` and `ARCHIVE_OI_SHIFT_MIN:
+incumbent='0'  this run='5'`, then `ALLOW_RECIPE_DRIFT=1 — fold drift accepted on the
+launcher's say-so.` Any other item in that list (an `ALIGN_AGE_FIX`, a `SPLIT_EMBARGO`, a
+`FEATURE_GROUPS`), or the shift item missing, means the environment is wrong —
 stop, fix, relaunch. A `cache miss` line means the snapshot moved — stop before the run
 trains.
 
@@ -1916,7 +1923,7 @@ checkpoint never promoted.
 |---|---|---|
 | 1–6 | §5.1 | as there: `Split walkforward_window` with `0.125` / the fold's offset / `0.5`; twelve pairs; `5m`; `legacy` / `8` / `20`; the eval block's `Val samples` span equal to check 1's |
 | 7 | `=== ARCHIVE_OI (X8) -> /workspace/train/output/archive/metrics_um_5m_83c85bd7.parquet ===` | present, that file |
-| 8 | twelve `Archive OI: <pair> … sha8=83c85bd7` lines | twelve, that sha8 (fewer archive rows than X8's per pair is expected — a fold's `since` is later) |
+| 8 | twelve `Archive OI: <pair> … sha8=83c85bd7, shift_min=5` lines | twelve, that sha8, **`shift_min=5`** on every line (fewer archive rows than X8's per pair is expected — a fold's `since` is later); the launcher log's `git_sha` must be at or after `198cc4f`, the commit that carries the knob — an older clone ignores it silently |
 | 9 | the `CONSTANT in the train window` block | `oi` and `oi_chg` absent from every list (11/19 on the long pairs, 10/19 on WLD and the global fit, as in X8; F3 may differ for the late listings — record what it prints, but `oi` must be gone everywhere) |
 | 10 | `Align age: ALIGN_AGE_FIX=0 (legacy ns arithmetic …)` and no `Embargo:` line with a non-zero count | as stated — both knobs off |
 | 11 | the three seeds of one fold | **identical `Split` lines** (one snapshot) |
@@ -1942,6 +1949,7 @@ the twelfth run is recorded, and `--contrast` refuses outright.
 
 | run | run id | git | `Split walkforward_window` val span | checks 1–11 | notes |
 |---|---|---|---|---|---|
+| F2 s1 | *void:* `20260924T122208Z` | 0a83a0e | — | launched unshifted before decision (2); stopped in dump restore, nothing trained | not part of any statistic |
 | F2 s1 | — | | | | |
 | F2 s2 | — | | | | |
 | F2 s3 | — | | | | |
