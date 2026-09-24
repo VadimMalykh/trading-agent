@@ -944,7 +944,7 @@ FEATURE_GROUPS=legacy SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X2 s3
 ~2.5 h and ≈ $1.5 each, ~8 h serial. **Bring back the three logs** (never a summary); the read
 happens in a fresh session with §0.3's awk over the epoch lines, then the gate above.
 
-### 🔵 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23; s1, s2 DONE, s3 RUNNING (launched 2026-09-24 02:42 UTC), NOTHING READ
+### 🔵 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23; ALL THREE RUNS DONE 2026-09-24, NOTHING READ — the read is the next fresh session's job
 
 **Written before any number was read. Nothing below this block is to be edited after a log
 comes back; the result block goes above it.**
@@ -1062,7 +1062,12 @@ from every CONSTANT list, 11/19 on the long pairs and 10/19 on WLD and the globa
 grep for the pairs/horizons line also matched three checkpoint-save lines carrying epoch
 `sel_score` values; they were not recorded or used, the read still happens in a fresh session.
 **s3 = `20260924T024247Z`**, launched 2026-09-24 02:42 UTC on an L4 (`us-central1-a`), same
-cache hit, same env, `SEED=3`. Acceptance verified on the live log at 03:15 UTC (git `0a83a0e`): identical `Split` line, 19 columns, twelve `Archive OI:` lines sha8 83c85bd7, same CONSTANT lists (11/19 long pairs, 10/19 WLD and global); no epoch line read.
+cache hit, same env, `SEED=3`. Acceptance verified on the live log at 03:15 UTC (git `0a83a0e`): identical `Split` line, 19 columns, twelve `Archive OI:` lines sha8 83c85bd7, same CONSTANT lists (11/19 long pairs, 10/19 WLD and global); no epoch line read. **s3 DONE 2026-09-24 06:51 UTC** (early stop at epoch 34, git `0a83a0e`, checkpoint
+`m2_multi_20260924T024247Z_0a83a0eb.pt`; `logs/X8_s3.log`, `eval_preds_20260924T024247Z.parquet`
+fetched; bucket log re-checked: one identical `Split` line, twelve `Archive OI:` lines).
+**All three logs are on disk: `logs/X8_s1.log`, `logs/X8_s2.log`, `logs/X8_s3.log`; nothing read.**
+Early stops 37 / 36 / 34. **Next, in a fresh session:** §0.3's awk over the epoch lines of the
+three logs and X0's three, then the gate above; the plateau length decides X8b.
 
 **The statistic** (X1's, unchanged): per run, the plateau-restricted mean of the per-epoch
 cov 0.05 Wilson-LB series on the 240m head (plateau = epochs whose `loss_va` is within 0.02 of
