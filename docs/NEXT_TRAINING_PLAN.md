@@ -1062,7 +1062,7 @@ from every CONSTANT list, 11/19 on the long pairs and 10/19 on WLD and the globa
 grep for the pairs/horizons line also matched three checkpoint-save lines carrying epoch
 `sel_score` values; they were not recorded or used, the read still happens in a fresh session.
 **s3 = `20260924T024247Z`**, launched 2026-09-24 02:42 UTC on an L4 (`us-central1-a`), same
-cache hit, same env, `SEED=3`.
+cache hit, same env, `SEED=3`. Acceptance verified on the live log at 03:15 UTC (git `0a83a0e`): identical `Split` line, 19 columns, twelve `Archive OI:` lines sha8 83c85bd7, same CONSTANT lists (11/19 long pairs, 10/19 WLD and global); no epoch line read.
 
 **The statistic** (X1's, unchanged): per run, the plateau-restricted mean of the per-epoch
 cov 0.05 Wilson-LB series on the 240m head (plateau = epochs whose `loss_va` is within 0.02 of
