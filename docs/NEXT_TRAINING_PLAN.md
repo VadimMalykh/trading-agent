@@ -944,7 +944,7 @@ FEATURE_GROUPS=legacy SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X2 s3
 ~2.5 h and ≈ $1.5 each, ~8 h serial. **Bring back the three logs** (never a summary); the read
 happens in a fresh session with §0.3's awk over the epoch lines, then the gate above.
 
-### 🔵 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23, NOT LAUNCHED
+### 🔵 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23; s1, s2 DONE, s3 RUNNING (launched 2026-09-24 02:42 UTC), NOTHING READ
 
 **Written before any number was read. Nothing below this block is to be edited after a log
 comes back; the result block goes above it.**
@@ -1054,7 +1054,15 @@ either way; recorded as the one side effect of the fill, not a deviation. The `h
 spike warnings are X0's too.
 **s1 DONE 2026-09-23 20:37 UTC** (early stop at epoch 37, checkpoint
 `m2_multi_20260923T160559Z_54a5fff4.pt`; `logs/X8_s1.log`, `eval_preds_20260923T160559Z.parquet`
-fetched; no epoch line read). **s2 = `20260923T204303Z`**, launched 20:43 UTC, same cache hit.
+fetched; no epoch line read). **s2 = `20260923T204303Z`**, launched 20:43 UTC, same cache hit. **s2 DONE 2026-09-24 01:02 UTC** (early stop at epoch 36, git
+`d88f350`, checkpoint `m2_multi_20260923T204303Z_d88f3506.pt`; `logs/X8_s2.log`,
+`eval_preds_20260923T204303Z.parquet` fetched). Acceptance on the s2 log identical to s1's:
+same `Split` line, 19 columns, twelve `Archive OI:` lines sha8 83c85bd7, `oi`/`oi_chg` absent
+from every CONSTANT list, 11/19 on the long pairs and 10/19 on WLD and the global fit. ⚠️ One
+grep for the pairs/horizons line also matched three checkpoint-save lines carrying epoch
+`sel_score` values; they were not recorded or used, the read still happens in a fresh session.
+**s3 = `20260924T024247Z`**, launched 2026-09-24 02:42 UTC on an L4 (`us-central1-a`), same
+cache hit, same env, `SEED=3`.
 
 **The statistic** (X1's, unchanged): per run, the plateau-restricted mean of the per-epoch
 cov 0.05 Wilson-LB series on the 240m head (plateau = epochs whose `loss_va` is within 0.02 of
