@@ -2,7 +2,12 @@
 # which is useless on our CPU-only VMs. The +cpu local tag exists ONLY on the
 # PyTorch CPU index (see --extra-index-url in Dockerfile.train), so pip cannot fall
 # back to the CUDA build.
-torch==2.5.1+cpu
+# Pinned WITHOUT the `+cpu` local tag (2026-09-24): the CPU index names the x86_64 wheel
+# `2.5.1+cpu` but the aarch64 one plain `2.5.1`, so the tagged pin can never resolve on an
+# Apple-silicon Docker build. `==2.5.1` matches both (PEP 440: a local tag satisfies an
+# untagged `==`), and Dockerfile.train installs torch from the CPU index FIRST, so x86_64
+# (the VM's serve image) still gets exactly `2.5.1+cpu`. Same version everywhere.
+torch==2.5.1
 numpy>=1.26.0
 pandas>=2.1.0
 psycopg2-binary>=2.9.9

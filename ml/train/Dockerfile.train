@@ -9,6 +9,11 @@ RUN apt-get update -y && \
 COPY requirements.txt .
 # Use the CPU-only PyTorch wheels (no CUDA/NVIDIA deps ~5-7GB). --extra-index-url
 # keeps normal PyPI available for the other packages; the CPU index provides torch.
+# Step 1: torch from the CPU index ONLY (--index-url), so pip cannot pick PyPI's CUDA-bundled
+# wheel on x86_64; the pin in requirements.txt is untagged so aarch64 resolves too (2026-09-24).
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+      "$(grep -E '^torch==' requirements.txt)"
+# Step 2: everything else from PyPI; torch is already satisfied and left alone.
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
 COPY . .
