@@ -119,7 +119,16 @@ def market(symbols: list[str], end: pd.Timestamp, start: pd.Timestamp = ceiling.
 
 # Data a rule may ask for beyond the candles (`Strategy.needs`), built on the market's own bar index and cut at `end`
 # exactly as the P2 screen built them, so that a rule trades the feature that was screened. Absent data → NaN.
-EXTRAS = {"depth_imb_1": lambda idx, cols, end: ceiling.depth_frames(idx, cols, end)[0]}
+def _external(idx: pd.DatetimeIndex, cols: list[str], end: pd.Timestamp) -> pd.DataFrame:
+    """The P2 screen's twelve external features as ONE wide frame, columns (feature, pair) — `Market.until` slices rows."""
+    F, notes = ceiling.external_features(idx, cols, end)
+    for n in notes:
+        print(f"external features: {n}", flush=True)
+    return pd.concat(F, axis=1, names=["feature", "symbol"])
+
+
+EXTRAS = {"depth_imb_1": lambda idx, cols, end: ceiling.depth_frames(idx, cols, end)[0],
+          "external": _external}
 
 
 @dataclasses.dataclass
@@ -473,6 +482,7 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
     if hasattr(strategy, "oos"):                               # a forecasting strategy: the held-out IC read, next to the ledger
         from .forecast import forecast_report
         (out / "forecast.md").write_text(forecast_report(strategy, M, fold_names, latency))
+        strategy.oos().to_parquet(out / "forecast.parquet", index=False)        # every out-of-sample forecast: a later paired read needs the cells
     if conf:                                                   # only once the number exists
         READS.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame({"read_at": meta["generated"], "registration": registration, "fold": conf, "strategy": strategy.name,

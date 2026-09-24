@@ -379,38 +379,45 @@ def depth_frames(idx: pd.DatetimeIndex, cols: list[str], end: pd.Timestamp) -> t
     return imb1, imb5, lvl
 
 
-def features(P: dict, D: dict, symbols: list[str]) -> tuple[dict[str, pd.DataFrame], set[str], list[str]]:
-    """Candidate features, all scale-free and known strictly before the decision time.
-    Returns (features, the unsigned ones — used as they are for the vol target; the signed ones
-    enter it as absolute values —, notes about sources that were absent)."""
-    idx, cols, sig = D["lr"].index, list(D["lr"].columns), D["sig"]
-    F = dir_features(D)
-    unsigned = {"volratio_1h", "volratio_1d"}
+EXTERNAL = ["flow_1h", "flow_1d", "spread_1h", "oi_chg_1h", "oi_chg_1d", "global_ls_z", "top_ls_z", "taker_ratio_1h",
+            "depth_imb_1", "depth_imb_5", "depth_lvl_1", "funding_last"]        # the P2 screen's features from beyond the candles, in its order
+EXTERNAL_UNSIGNED = {"spread_1h", "depth_lvl_1"}
+
+
+def candle_extras(P: dict, D: dict) -> dict[str, pd.DataFrame]:
+    """The P2 screen's two candle features beyond `dir_features`: where the close sits in the day's range, and
+    the last hour's dollar volume over its trailing-week hourly mean (log)."""
     hi, lo = P["high"].rolling(288, min_periods=200).max(), P["low"].rolling(288, min_periods=200).min()
-    F["rangepos_1d"] = (P["close"] - lo) / (hi - lo) - 0.5
-    F["dvol_1h"] = np.log(P["dv"].rolling(12).sum() / (P["dv"].rolling(2016, min_periods=1000).sum() / 168))
-    unsigned.add("dvol_1h")
+    return {"rangepos_1d": (P["close"] - lo) / (hi - lo) - 0.5,
+            "dvol_1h": np.log(P["dv"].rolling(12).sum() / (P["dv"].rolling(2016, min_periods=1000).sum() / 168))}
+
+
+def external_features(idx: pd.DatetimeIndex, cols: list[str], end: pd.Timestamp = END) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    """The P2 screen's twelve features from the tape, the archive metrics, the archive depth and funding (`EXTERNAL`),
+    bar × pair on `idx`, every source cut strictly before `end`, each known strictly before its bar. One definition:
+    the screen (`features`) and P5's ridge (`forecast.RidgeBook(features="all")`, through `backtest.EXTRAS`) both call
+    this, so the ridge is fitted on what was screened. An absent source leaves its features NaN and a note."""
     notes = []
     empty = lambda: pd.DataFrame(np.nan, index=idx, columns=cols)                       # noqa: E731
+    F = {k: empty() for k in EXTERNAL}
     # tape: minute rows [ts, ts+1min) → 5m bins labelled by their right edge (complete at t)
     flow, spr = {w: empty() for w in ("1h", "1d")}, empty()
     try:
         for sym in cols:
             tp = data.load("tape", columns=["ts", "buy_vol", "sell_vol", "volume", "eff_spread_bps"], symbols=[sym])
-            tp = tp[tp["ts"] < END].set_index("ts")
+            tp = tp[tp["ts"] < end].set_index("ts")
             b = tp.resample("5min", label="right", closed="left").agg({"buy_vol": "sum", "sell_vol": "sum", "volume": "sum",
                                                                         "eff_spread_bps": "mean"}).reindex(idx)
             for w in flow:
                 flow[w][sym] = ((b["buy_vol"] - b["sell_vol"]).rolling(W[w]).sum() / b["volume"].rolling(W[w]).sum().replace(0, np.nan))
             spr[sym] = np.log(b["eff_spread_bps"].rolling(12, min_periods=6).mean() / b["eff_spread_bps"].rolling(2016, min_periods=1000).mean())
         F["flow_1h"], F["flow_1d"], F["spread_1h"] = flow["1h"], flow["1d"], spr
-        unsigned.add("spread_1h")
     except (FileNotFoundError, ValueError):
         notes.append("tape absent: flow_*, spread_1h skipped")
     # archive metrics, 5m: the row stamped ts is used from ts + 5 min (strictly before the decision)
     try:
         m = data.load("metrics", symbols=cols)
-        m = m[m["ts"] < END]
+        m = m[m["ts"] < end]
         m["symbol"] = m["symbol"].astype(str)
         wide = lambda c: (m.pivot(index="ts", columns="symbol", values=c).shift(freq=BAR).reindex(index=idx, columns=cols).ffill(limit=3))  # noqa: E731
         oi = np.log(wide("oi").where(lambda x: x > 0))
@@ -423,19 +430,32 @@ def features(P: dict, D: dict, symbols: list[str]) -> tuple[dict[str, pd.DataFra
         notes.append("metrics absent: oi_chg_*, *_ls_z, taker_ratio_1h skipped")
     # archive depth, ~30 s: the last sample strictly before t
     try:
-        F["depth_imb_1"], F["depth_imb_5"], F["depth_lvl_1"] = depth_frames(idx, cols, END)
-        unsigned.add("depth_lvl_1")
+        F["depth_imb_1"], F["depth_imb_5"], F["depth_lvl_1"] = depth_frames(idx, cols, end)
     except (FileNotFoundError, ValueError):
         notes.append("depth absent: depth_* skipped")
     # funding: the last settled rate, usable from the bar after the funding time
     try:
         fu = data.load("funding_archive", symbols=cols)
-        fu = fu[fu["ts"] < END]
+        fu = fu[fu["ts"] < end]
         fu["symbol"] = fu["symbol"].astype(str)
         fw = fu.pivot(index="ts", columns="symbol", values="rate").reindex(columns=cols) * 1e4
         F["funding_last"] = fw.reindex(idx.union(fw.index)).ffill().reindex(idx).shift(1)
     except (FileNotFoundError, ValueError):
         notes.append("funding_archive absent: funding_last skipped")
+    return {k: v.replace([np.inf, -np.inf], np.nan) for k, v in F.items()}, notes
+
+
+def features(P: dict, D: dict, symbols: list[str]) -> tuple[dict[str, pd.DataFrame], set[str], list[str]]:
+    """Candidate features, all scale-free and known strictly before the decision time: `dir_features`, `candle_extras`
+    and `external_features`, cut at END. Returns (features, the unsigned ones — used as they are for the vol target; the
+    signed ones enter it as absolute values —, notes about sources that were absent)."""
+    idx, cols = D["lr"].index, list(D["lr"].columns)
+    F = dir_features(D)
+    unsigned = {"volratio_1h", "volratio_1d", "dvol_1h"}
+    F.update(candle_extras(P, D))
+    ext, notes = external_features(idx, cols, END)
+    F.update(ext)
+    unsigned |= EXTERNAL_UNSIGNED
     F = {k: v.replace([np.inf, -np.inf], np.nan) for k, v in F.items()}
     return F, unsigned, notes
 

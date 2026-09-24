@@ -7,9 +7,16 @@ pair is not one of, turned into trades by a closed-form rule. No learned policy.
                group g = every `groups`-th name starting at g. A pair in group g is scored ONLY by the
                model fitted without group g (four rotations: every pair is scored by a model that never
                saw its bars).
-    features   the 11 candle features of the P2 screen, ONE definition (`ceiling.dir_features`: the
-               vol-scaled trailing returns over 15m/1h/4h/1d/1w, the three relative ones, two vol ratios)
+    features   `candle` (R12–R14): the P2 screen's ten candle features, ONE definition (`ceiling.dir_features`:
+               the vol-scaled trailing returns over 15m/1h/4h/1d/1w, the three relative ones, two vol ratios)
                plus hour of day as sin and cos — 12 columns, standardised with the training mean and sd.
+               `all` (R15): the screen's full set — those ten, `ceiling.candle_extras` (range position, dollar
+               volume) and the twelve `ceiling.EXTERNAL` ones from the tape, the archive metrics, the archive
+               depth and funding (attached by the harness as `Market.extra["external"]`, cut at the run's end,
+               each known strictly before its bar) — 26 columns. A cell with any NaN feature gets no forecast.
+               With `all`, a second ridge on the 12 candle columns is fitted per rotation on the same training
+               bars (its own NaN mask, so it IS the `candle` model) and its forecast is kept as `f_ref_bps`:
+               the paired reference for "do the extra features add to the transfer signal?".
     grid       decisions and training rows on the bars where t is on the hour (`grid` = 12 bars): 24 a
                day per pair. Adjacent 5m bars share their labels almost entirely, so the grid loses
                little and keeps the ledger small.
@@ -38,11 +45,13 @@ import numpy as np
 import pandas as pd
 
 from .backtest import Market, Strategy, decisions_from, labels
-from .ceiling import ALPHAS, BAR, W, Z_CLIP, _ic_pooled, day_lags, dir_features, hac
+from .ceiling import ALPHAS, BAR, EXTERNAL, W, Z_CLIP, _ic_pooled, candle_extras, day_lags, dir_features, hac
 
 LOOKBACK = W["1w"] + 1                  # bars a feature looks back: computing on a tail this long reproduces the full-panel value
 MIN_ROWS = 500                           # training rows a rotation needs before it forecasts
-N_FEAT = 12
+N_CANDLE = 12                            # dir_features (10) + hour sin/cos
+N_ALL = N_CANDLE + 2 + len(EXTERNAL)     # + candle_extras + EXTERNAL
+FEATURE_SETS = {"candle": N_CANDLE, "all": N_ALL}
 
 
 def _derive(close: pd.DataFrame) -> dict:
@@ -53,13 +62,15 @@ def _derive(close: pd.DataFrame) -> dict:
     return {"lr": lr, "r1": r1, "sig": sig}
 
 
-def _cells(F: dict[str, pd.DataFrame], sig1w: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-    """(bar × pair × feature) cells of the 12 features, and (bar × pair) σ_1w in bps per bar."""
-    idx = next(iter(F.values())).index
+def _cells(frames, sig1w: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """(bar × pair × feature) cells of the frames given (a list, or a dict in its order), hour of day (sin, cos) LAST,
+    and (bar × pair) σ_1w in bps per bar."""
+    frames = list(frames.values()) if isinstance(frames, dict) else list(frames)
+    idx = frames[0].index
     hour = idx.hour.to_numpy() * (2 * np.pi / 24)
     n_pairs = sig1w.shape[1]
     hs, hc = (np.repeat(f(hour)[:, None], n_pairs, 1) for f in (np.sin, np.cos))
-    X = np.stack([*(v.to_numpy() for v in F.values()), hs, hc], axis=-1)
+    X = np.stack([*(v.to_numpy() for v in frames), hs, hc], axis=-1)
     return X, sig1w.to_numpy()
 
 
@@ -67,9 +78,16 @@ class RidgeBook(Strategy):
     name = "ridgebook"
     uses_labels = True
 
-    def __init__(self, hold: int = 288, min_bps: float = 15.0, cap: float = 2.0, groups: int = 4, grid: int = 12, min_pairs: int = 5, holdout: bool = True):
+    def __init__(self, hold: int = 288, min_bps: float = 15.0, cap: float = 2.0, groups: int = 4, grid: int = 12, min_pairs: int = 5, holdout: bool = True,
+                 features: str = "candle"):
         self.hold, self.min_bps, self.cap, self.groups, self.grid, self.min_pairs = int(hold), float(min_bps), float(cap), int(groups), int(grid), int(min_pairs)
         self.holdout = holdout in (True, 1, "true", "True", "1")      # False (R13): every pair's model is fitted on all pairs, itself included
+        if features not in FEATURE_SETS:
+            raise ValueError(f"features must be one of {sorted(FEATURE_SETS)}, not {features!r}")
+        self.features = str(features)
+        self.n_feat = FEATURE_SETS[self.features]
+        self._cand = list(range(N_CANDLE - 2)) + [self.n_feat - 2, self.n_feat - 1]   # the `candle` columns inside `all`: dir_features + hour
+        self._ref: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray] | None] = {}    # `all` only: the candle-only model per rotation
         self._ts: list[pd.Timestamp] = []                  # cached grid bars, in time order
         self._X: list[np.ndarray] = []                     # per cached bar: (pair × feature)
         self._S: list[np.ndarray] = []                     # per cached bar: σ_1w per pair (bps per 5m bar)
@@ -79,6 +97,10 @@ class RidgeBook(Strategy):
         self._last_now: pd.Timestamp | None = None
         self._walks = 0
         self._oos: list[pd.DataFrame] = []
+
+    @property
+    def needs(self) -> tuple[str, ...]:
+        return ("external",) if self.features == "all" else ()
 
     # ---- features, cached per grid bar (they look back only, so a prefix of the market gives the same values) ----
     def _grid(self, idx: pd.DatetimeIndex) -> np.ndarray:
@@ -92,7 +114,13 @@ class RidgeBook(Strategy):
             return
         start = max(int(missing[0]) - LOOKBACK, 0)
         D = _derive(M.close.iloc[start:])
-        X, S = _cells(dir_features(D), D["sig"]["1w"])
+        frames = list(dir_features(D).values())
+        if self.features == "all":
+            P = {k: getattr(M, k).iloc[start:] for k in ("close", "high", "low", "dv")}
+            frames += list(candle_extras(P, D).values())
+            E = M.extra["external"].iloc[start:]
+            frames += [E[k].reindex(columns=M.columns) for k in EXTERNAL]
+        X, S = _cells(frames, D["sig"]["1w"])
         X[~np.isfinite(X)] = np.nan                        # a flat window makes σ = 0 and a ratio ±inf: no feature, no forecast
         for p in missing:
             self._pos[idx[p]] = len(self._ts)
@@ -117,6 +145,7 @@ class RidgeBook(Strategy):
         ts = y.index[self._grid(y.index)]
         ts = ts[np.array([t in self._pos for t in ts], dtype=bool)]
         self._models = {g: None for g in range(self.groups)}
+        self._ref = {g: None for g in range(self.groups)}
         if not len(ts):
             return
         X, S = self._rows(ts)                                # (rows × pair × feat), (rows × pair)
@@ -132,40 +161,56 @@ class RidgeBook(Strategy):
             n = have.sum(1, keepdims=True)
             mean = np.where(n >= self.min_pairs, np.nansum(zt, 1, keepdims=True) / np.maximum(n, 1), np.nan)
             zr = (zt - mean).ravel()
-            Xt = X[:, tr, :].reshape(-1, N_FEAT)
-            ok = ~np.isnan(zr) & ~np.isnan(Xt).any(1)
-            if ok.sum() < MIN_ROWS:
-                continue
-            mu, sd = Xt[ok].mean(0), Xt[ok].std(0) + 1e-12
-            m = RidgeCV(alphas=ALPHAS, fit_intercept=False).fit((Xt[ok] - mu) / sd, zr[ok])
-            self._models[g] = (mu, sd, m.coef_)
+            Xt = X[:, tr, :].reshape(-1, self.n_feat)
+            self._models[g] = self._ridge(Xt, zr)
+            if self.features == "all":
+                self._ref[g] = self._ridge(Xt[:, self._cand], zr)     # the candle model on the same bars, its own NaN mask
+
+    @staticmethod
+    def _ridge(Xt: np.ndarray, zr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        from sklearn.linear_model import RidgeCV
+        ok = ~np.isnan(zr) & ~np.isnan(Xt).any(1)
+        if ok.sum() < MIN_ROWS:
+            return None
+        mu, sd = Xt[ok].mean(0), Xt[ok].std(0) + 1e-12
+        m = RidgeCV(alphas=ALPHAS, fit_intercept=False).fit((Xt[ok] - mu) / sd, zr[ok])
+        return mu, sd, m.coef_
 
     # ---- decide: each pair scored by the model that never saw it ---------------------------------------------------------
-    def _forecast(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> tuple[pd.DatetimeIndex, np.ndarray, np.ndarray]:
-        """Grid bars in [a, b): the forecast in bps (NaN = none) and σ_h per pair."""
+    def _forecast(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> tuple[pd.DatetimeIndex, np.ndarray, np.ndarray, np.ndarray]:
+        """Grid bars in [a, b): the forecast in bps (NaN = none), σ_h per pair, and the candle-only reference forecast (`all`; else NaN)."""
         self._ensure(M)
         idx = M.index
         ts = idx[self._grid(idx) & (idx >= a) & (idx < b)]
         if not len(ts):
-            return ts, np.zeros((0, len(M.columns))), np.zeros((0, len(M.columns)))
+            z = np.zeros((0, len(M.columns)))
+            return ts, z, z, z
         X, S = self._rows(ts)
         sig_h = np.where(S > 0, S, np.nan) * np.sqrt(self.hold)
-        zhat = np.full(S.shape, np.nan)
         grp = self._group(X.shape[1])
-        for g, m in self._models.items():
-            if m is None:
-                continue
-            mu, sd, coef = m
-            cols = grp == g
-            zhat[:, cols] = ((X[:, cols, :] - mu) / sd) @ coef
-        with np.errstate(invalid="ignore"):
-            f = zhat * sig_h
-        f[~np.isfinite(f)] = np.nan
-        f[np.isnan(M.close.loc[ts].to_numpy())] = np.nan
-        return ts, f, sig_h
+        gone = np.isnan(M.close.loc[ts].to_numpy())
+
+        def score(models: dict, cols_: list[int] | None) -> np.ndarray:
+            zhat = np.full(S.shape, np.nan)
+            for g, m in models.items():
+                if m is None:
+                    continue
+                mu, sd, coef = m
+                cols = grp == g
+                Xg = X[:, cols, :] if cols_ is None else X[:, cols, :][:, :, cols_]
+                zhat[:, cols] = ((Xg - mu) / sd) @ coef
+            with np.errstate(invalid="ignore"):
+                f = zhat * sig_h
+            f[~np.isfinite(f)] = np.nan
+            f[gone] = np.nan
+            return f
+
+        f = score(self._models, None)
+        f_ref = score(self._ref, self._cand) if self.features == "all" else np.full(S.shape, np.nan)
+        return ts, f, sig_h, f_ref
 
     def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
-        ts, f, sig_h = self._forecast(M, a, b)
+        ts, f, sig_h, f_ref = self._forecast(M, a, b)
         with np.errstate(invalid="ignore", divide="ignore"):
             on = np.abs(f) >= self.min_bps
             size = np.clip((np.abs(f) / self.min_bps) * (self._sigma_ref / sig_h) ** 2, 0.25, self.cap)
@@ -173,13 +218,14 @@ class RidgeBook(Strategy):
         sig = pd.DataFrame(f, index=ts, columns=M.columns)
         if self._walks == 0 and len(ts):
             self._oos.append(pd.DataFrame({"t": np.repeat(ts, f.shape[1]), "symbol": np.tile(np.asarray(M.columns, dtype=str), len(ts)),
-                                           "group": np.tile(self._group(f.shape[1]), len(ts)), "f_bps": f.ravel(), "sigma_h": sig_h.ravel()}))
+                                           "group": np.tile(self._group(f.shape[1]), len(ts)), "f_bps": f.ravel(), "sigma_h": sig_h.ravel(),
+                                           "f_ref_bps": f_ref.ravel()}))
         return decisions_from(side, a, b, signal=sig, why=f"ridge forecast vs peers ≥ {self.min_bps:g} bps, pair held out")
 
     # ---- the forecast read: does the IC survive the pair hold-out? ----------------------------------------------------
     def oos(self) -> pd.DataFrame:
         if not self._oos:
-            return pd.DataFrame(columns=["t", "symbol", "group", "f_bps", "sigma_h"])
+            return pd.DataFrame(columns=["t", "symbol", "group", "f_bps", "sigma_h", "f_ref_bps"])
         return pd.concat(self._oos, ignore_index=True).drop_duplicates(["t", "symbol"], keep="first").sort_values(["t", "symbol"]).reset_index(drop=True)
 
 
@@ -200,18 +246,24 @@ def forecast_report(strategy: RidgeBook, M: Market, fold_names, latency: int) ->
     o["fold"] = ""
     for f in fold_names:
         o.loc[folds.mask(pd.Series(t, index=o.index), f).to_numpy(), "fold"] = f
+    o["zhat_ref"] = o["f_ref_bps"] / o["sigma_h"] if "f_ref_bps" in o else np.nan
     ok = o["f_bps"].notna() & o["z"].notna() & (o["fold"] != "")
+    ref_ok = o["zhat_ref"].notna() & o["z"].notna() & (o["fold"] != "")
+    o_ref = o[ref_ok].copy()                                   # the reference's own cells (a superset: no external feature to be NaN)
     o = o[ok].copy()
     # residual of the realised z against the other pairs present at the bar: the forecast is of the move against peers
     zm = o.groupby("t")["z"].transform("mean")
     o["zres"] = o["z"] - zm
     lags = day_lags(strategy.hold)
 
-    def ic(d: pd.DataFrame) -> dict:
+    def daily_ic(d: pd.DataFrame, col: str = "zhat") -> np.ndarray:
+        day = (pd.DatetimeIndex(d["t"]).floor("D") - t.min().floor("D")).days.to_numpy()
+        return _ic_pooled(d[col].to_numpy(), d["zres"].to_numpy(), day, min_cells=1)
+
+    def ic(d: pd.DataFrame, col: str = "zhat") -> dict:
         if len(d) < 200:
             return {"n": len(d), "ic": np.nan, "t": np.nan, "days": 0}
-        day = (pd.DatetimeIndex(d["t"]).floor("D") - t.min().floor("D")).days.to_numpy()
-        daily = _ic_pooled(d["zhat"].to_numpy(), d["zres"].to_numpy(), day, min_cells=1)
+        daily = daily_ic(d, col)
         m, se, n = hac(daily[~np.isnan(daily)], lags)
         return {"n": len(d), "ic": float(m), "t": float(m / se) if se else np.nan, "days": int(n)}
 
@@ -232,6 +284,24 @@ def forecast_report(strategy: RidgeBook, M: Market, fold_names, latency: int) ->
           "\n## IC per fold and held-out group\n", pd.DataFrame(rows).round(4).to_markdown(index=False), "\n",
           "\n## Per pair\n", pd.DataFrame(per_pair).round(4).to_markdown(index=False), "\n",
           "\n## Calibration: realised move by forecast decile (bps, gross, before costs; latency as the harness)\n", cal.round(2).to_markdown(index=False), "\n"]
+    if len(o_ref) and o_ref["zhat_ref"].notna().any():
+        o_ref["zres"] = o_ref["z"] - o_ref.groupby("t")["z"].transform("mean")
+        common = o[o["zhat_ref"].notna()]
+        rows = [{"scope": "reference, its own cells", **ic(o_ref, "zhat_ref")},
+                {"scope": "reference, common cells", **ic(common, "zhat_ref")},
+                {"scope": f"`{strategy.features}`, common cells", **ic(common, "zhat")}]
+        rows += [{"scope": f"{f} — reference, common", **ic(common[common["fold"] == f], "zhat_ref")} for f in fold_names]
+        rows += [{"scope": f"{f} — `{strategy.features}`, common", **ic(common[common["fold"] == f], "zhat")} for f in fold_names]
+        diff = daily_ic(common, "zhat") - daily_ic(common, "zhat_ref")
+        m, se, n = hac(diff[~np.isnan(diff)], lags)
+        per_pair_ref = [{"symbol": s, "ic_ref": ic(d, "zhat_ref")["ic"], "ic": ic(d, "zhat")["ic"], "share_on_ref": float((d["f_ref_bps"].abs() >= strategy.min_bps).mean()),
+                         "share_on": float((d["f_bps"].abs() >= strategy.min_bps).mean())} for s, d in common.groupby("symbol")]
+        md += ["\n## Paired against the candle-only reference (the `candle` model fitted on the same training bars, scored on the same cells)\n",
+               f"\nThe reference's IC on its own cells reproduces the `candle` run; on the common cells (both forecasts present) the two ICs are paired "
+               f"by day. **Paired difference `{strategy.features}` − reference: {m:+.4f}, t {m / se if se else np.nan:.2f}** over {n} days "
+               f"({len(common):,} common cells of {len(o_ref):,} reference cells).\n",
+               pd.DataFrame(rows).round(4).to_markdown(index=False), "\n", "\n### Per pair, common cells\n",
+               pd.DataFrame(per_pair_ref).round(4).to_markdown(index=False), "\n"]
     return "\n".join(md)
 
 

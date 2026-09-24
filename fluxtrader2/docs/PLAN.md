@@ -381,7 +381,7 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 steps 1–9 read, last 2026-09-24: the candle forecast TRANSFERS between the twelve collector names — R14 held out IC 0.033, t 2.1, net +34 — but is parked by its shuffle null (p 0.085); step 9's confirmation-fold decision is with Vadim; R8, R9, R11 parked by their own stage-1 gates, H2 closed on breadth by R10, the candle ridge closed on the forty)
+### P5 — Forecast + analytic decision (🟡 steps 1–9 read, last 2026-09-24; Vadim chose (B) 2026-09-25: step 10 — the ridge on the full 26-column feature set, held out among the twelve — REGISTERED as R15 and running; the pooled F3+F4 confirmation read REGISTERED as R16, arms fixed by R15's gate; R8, R9, R11 parked by their own stage-1 gates, H2 closed on breadth by R10, the candle ridge closed on the forty)
 
 **Can it trade profitably? Not shown.** Plain version of where P5 stands (a bps is 0.01 %; on a 10,000 USDT position
 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip; *IC* = the correlation between a signal and the
@@ -460,7 +460,19 @@ universe from R10 the place to build it.
   words: the sides are right beyond chance and the signal transfers to the names that have it (young, violent ones — the shape §0 wants),
   but the money per trade sits inside the range a random forecast can produce on these names with this rule. 96 % of the money is in
   four names and most of it in 2023Q4–2024Q2. **Needed from Vadim: the confirmation-fold decision (README status row, options A / B / C).**
-  A yes is a new registration on F3+F4 pooled, written before the read.
+  **Vadim decided (B) on 2026-09-25:** strengthen the candidate first, then spend the pooled F3+F4 read once, on the arm(s) a
+  registration names beforehand.
+- **Step 10 (R15, registered 2026-09-25, RUNNING — not read).** The same held-out ridge with the P2 screen's full feature set — 26
+  columns: the ten candle features, range position and dollar volume, and twelve from beyond the candles (tape flow and spread,
+  open-interest change, long/short positioning, taker ratio, ±1 %/±5 % depth imbalance and depth level, funding) — every one known
+  strictly before its bar, from the archive sources that exist since 2023-01. The run carries R14's candle-only model inside it as a
+  paired reference, so the question "do the extra features add?" is read on the same cells, and the reference must reproduce R14's
+  IC exactly (a validity check). **R16, the confirmation read (F3+F4 pooled, once), is registered at the same time:** R14 is always an
+  arm; R15 joins if its gate says the features add and the book earns; two arms → each is held to p ≤ 0.025. Started on the work VM
+  2026-09-25 (`output/logs/r15_ridgebook_1d_ho12_all.log`). **Next session (Claude): `vm.sh pull`; read
+  `output/backtest/r15_ridgebook_1d_ho12_all/forecast.md` (the reference line first) and `report.md`; fill R15's Result; apply its gate;
+  fix R16's arm list from it (mechanical); launch R16's arm(s) on the VM; pull, fill R16's Result, apply its gate; stop the VM.**
+  **Needed from Vadim: nothing** — (B) covers the R16 launch; say so if you want to see R15 before R16 runs.
 
 **Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
@@ -533,9 +545,9 @@ registered positive on confirmation folds.
 | ~~R1 stage 2 — the confirmation read of `reversal4h`~~ — **CLOSED 2026-09-21** | Needed from Vadim: nothing. The rule's premise (pair-level reversal) was a statistical artefact (R7) and its profit was the market's bounce in a rising market (R3, R4). F3 stays unspent | none; the bounce lives on as R8 |
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21; **Vadim decided (a) on 2026-09-22: leave it parked, do not read F3–F5 for it** | Needed from Vadim: nothing. On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. The confirmation folds stay unspent for this question | only a measured observable that separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule; F5 growing by ~6 months does not by itself re-open the (b) question |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
-| **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14) — PARKED by its stage-1 gate 2026-09-24, the confirmation spend undecided** | Needed from Vadim: **the confirmation-read decision (README status row: A / B / C)**. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | none on the forty. Twelve: **(A)** Vadim funds one pooled F3+F4 read → register it first (contrast, gate, expectation; which arm — R14 held out, or a book-feature ridge if one has been read on F1+F2 by then), then `backtest ridgebook --param hold=288 --folds F3 F4 --registration R<n> --execs taker maker` on the VM; **(B)** book features inside the ridge on the twelve are read first on F1+F2 (row below, (c)) and the single pooled read goes to whichever arm the registration names beforehand; **(C)** paper trading (P7) — costs no fold, ~16 months to the same power |
+| **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14) — PARKED by its stage-1 gate 2026-09-24; Vadim chose (B) 2026-09-25: R15 (full feature set) first, then the pooled F3+F4 read R16 on the arm(s) R15's gate names** | Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | in motion, not parked: R15 running (P5 step 10), R16 registered. R14 is an arm of R16 whatever R15 shows. After R16: a pass funds P7 for that arm; a fail CLOSES the candle-feature book on the twelve with F5 kept |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
-| **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048). No further fixed rule on the raw imbalance |
+| **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **REGISTERED as R15, running 2026-09-25**. No further fixed rule on the raw imbalance |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
 | ~~relative (pair-vs-basket) *reversal* at 4h~~ — **CLOSED 2026-09-21 (R2)** | the rank rule loses −20.6 bps per leg [−31.7, −9.5] in all six quarters; do not re-open as a reversal bet | none. The opposite sign (tail continuation) is a new hypothesis, H2 in P5, not a revival of this row |
@@ -1136,6 +1148,60 @@ Result:        **Read 2026-09-24 (commit 9e75dc5 holds this block as written bef
                is the shape §0 asks for (a screener that picks names of a kind, a model fitted on others), with four names and
                2023Q4–2024Q2 carrying the money. Consequences: parked by (iii), no variant on F1+F2. A confirmation read on F3+F4 pooled
                is a NEW registration (R15 or later), written before the read, if Vadim funds it (P5 step 9); nothing in R14 changes for it.
+
+### R15 — ridgebook on the P2 screen's full feature set, held out among the twelve: do the book, flow and positioning features add to the transfer signal? (registered 2026-09-25, before the run saw any real bar; read —)
+Question:      R14 put the transferring 1d candle signal at IC 0.033 (t 2.1) on the twelve, and the book on it at +34 net, failing only
+               its shuffle null (p 0.085; null p95 +41). P2's screen (R7) read the full 24-feature set at IC 0.067 against the candle
+               set's 0.048 — but on the pair's OWN 1d move, in pair, all history. Does that gain exist on the residual target, out of
+               pair, and does it move the book clear of its null? Vadim's decision (B), 2026-09-25: read this on F1+F2 first, then spend
+               the pooled F3+F4 read once, on the arm(s) R16 names (below) — not on the candle book alone.
+Strategy:      `ridgebook --param features=all`: R14's registration unchanged (hold 288, grid 12, min_bps 15, cap 2, min_pairs 5,
+               holdout on, four groups by position in PAIRS, cost from the tape, taker as priced) with the design widened from 12 to
+               26 columns: `dir_features` (10), `candle_extras` (range position 1d, dollar volume 1h) and the twelve `EXTERNAL` ones —
+               tape flow 1h/1d and effective spread 1h; open-interest change 1h/1d, global and top-trader long/short z, taker ratio 1h
+               (archive metrics, the row stamped ts used from ts + 5 min); ±1 % and ±5 % depth imbalance and the ±1 % depth level
+               (archive book, the last sample strictly before t); the last settled funding — plus hour of day. ONE definition,
+               `ceiling.external_features`: the ridge is fitted on what the screen screened. A cell with any NaN feature gets no
+               forecast (the archive sources start 2023-01, before F1; PEPE and WLD from listing; an outage → ffill ≤ 3 bars, then NaN).
+               Inside the same run a second ridge on the 12 candle columns is fitted per rotation on the same training bars with its own
+               NaN mask — it IS R14's model — and its forecast is kept as `f_ref_bps`: the paired reference.
+               Command (VM): `backtest ridgebook --param hold=288 --param features=all --execs taker maker --name r15_ridgebook_1d_ho12_all`
+               (200 draws). Validity check, read first: `forecast.md`'s "reference, its own cells" IC must reproduce R14's 0.0328 (t 2.08);
+               if it does not, the run is void and the cause is found before any other number is read.
+Contrast:      (a) the money rows and nulls as R14, taker as priced; (b) the held-out IC on the grid, all groups pooled; (c) the PAIRED
+               IC gain over the reference on the common cells (both forecasts present), each day's share of the pooled correlation
+               differenced and t clustered by day (`forecast.md`, "Paired against the candle-only reference").
+Folds read:    F1+F2 (exploration; R14's cells less those without an external feature). No stage 2 of its own: the confirmation read is R16.
+Gate:          (i) net > 0; (ii) hedged net > 0; (iii) the larger null p ≤ 0.05; (iv) net ≥ −5 in each of F1 and F2; (v) held-out IC
+               t ≥ 2; (vi) paired gain over the reference t ≥ 2. R15 JOINS R16 as an arm if (i), (ii), (v) and (vi) pass — the features
+               add to a signal that transfers, and the book on it makes money before and against the market; (iii) and (iv) are
+               reported and decide nothing here (R14 failed (iii) on this sample, and testing exactly that on fresh data is what R16 is
+               for). Any other outcome → R15 is parked with its numbers, no variant on F1+F2, and R16 reads R14 alone.
+Expectation:   Cells lost to NaN < 5 %. Held-out IC 0.035–0.045, t 2–3; paired gain +0.003 … +0.012, t 1–2 — (vi) borderline. 18–24 % of
+               cells clear 15 bps; 2,000–2,500 trades; net +25 … +45; hedged net 0 … +25; shuffle p 0.03–0.15. Likeliest: (v) passes,
+               (vi) fails → R16 reads R14 alone. The screen's +0.019 was in pair on the own move, where a slow per-pair level (R9's
+               finding on `depth_imb_1`) counts in full; out of pair on the residual, most of it should not survive.
+Result:        —
+
+### R16 — the confirmation read of the twelve-name candle book, F3+F4 pooled, once (registered 2026-09-25, before R15 was read; arms fixed by R15's outcome, mechanically; read —)
+Question:      Does the twelve-name held-out book (R14, and R15 if it qualifies) make money after costs on data nobody has looked at?
+               Vadim's decision (B), 2026-09-25: one pooled read, F3+F4, on the arm(s) named here, each arm read once.
+Arms:          A: R14 as registered — `backtest ridgebook --param hold=288 --folds F3 F4 --registration R16 --execs taker maker
+               --name r16_ridgebook_1d_ho12_f34`. B (only if R15 passes (i), (ii), (v), (vi) — no judgment, R15's gate decides):
+               `backtest ridgebook --param hold=288 --param features=all --folds F3 F4 --registration R16 --execs taker maker
+               --name r16_ridgebook_1d_ho12_all_f34`. No parameter differs from the F1+F2 runs. Both arms are run before either is
+               read; the harness logs each confirmation read in `output/backtest/confirmation_reads.csv`.
+Folds read:    F3 (2024-09 → 2025-05) + F4 (2025-05 → 2026-01), pooled, once; the twelve gain HYPE inside F4 (listed 2025-05-30). F5
+               stays unread. Power: at F1+F2's rate (3.9 trades a day) ≈ 1,900 trades an arm, MDE ≈ 40 bps against R14's +34.
+Gate:          per arm, taker as priced: net > 0; hedged net > 0; the larger null p ≤ 0.05 with one arm, ≤ 0.025 with two (Bonferroni
+               over the arms); net ≥ −5 in each of F3 and F4; held-out IC t ≥ 2 on F3+F4. An arm that passes → P7 (paper trading) is
+               FUNDED for that arm, a serving path is the next build, and P5's forecast layer is that arm. Neither passes → the
+               candle-feature book is CLOSED on the twelve (two folds spent, F5 kept); the next registration must bring a new target
+               or new observations, not a variant. "Not distinguishable" with the point estimate inside R14's interval is a FAIL here —
+               the folds are spent either way, and the bar was written knowing the power.
+Expectation:   Arm A: net +10 … +40, hedged net −10 … +20, shuffle p 0.05–0.3; F3 (a strong alt market into 2025-01, then a fall) above F4.
+               Likeliest: not distinguishable → CLOSED. If arm B exists: +5 over arm A on net, same verdict.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
