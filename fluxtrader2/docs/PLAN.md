@@ -522,13 +522,17 @@ serving; if serving needs a change to the model it is a new registration, not an
 
 **Needed from Vadim: one decision — the host (see "Where it runs"). Then nothing until R17's first read.**
 
-**Where it runs.** A serving path needs an always-on host. The collector VM `fluxtrader-1` is always on but has 1 GB of RAM
-shared with fluxtrader1's app and Postgres, and Python 3.14 without the project's wheels; a monthly ridge refit on the full
-5m history does not belong there. The work VM (`fluxtrader2-work`, 16 GB) is stopped when idle by design. **Proposed: a
-dedicated always-on `fluxtrader2-serve`, `e2-small` (2 vCPU shared, 2 GB), 20 GB disk, Debian 12, zone `me-central1-b`,
-≈ 13–15 USD a month**, the same venv as the work VM (`scripts/vm_setup.sh`), no Docker (the cloud exception of §6). If the
-refit does not fit in 2 GB, the refit alone moves to the work VM monthly and only the scorer (numpy, 7 days of closes) stays on
-the small host. Everything installed on it ships with a reinstall runbook (`docs/SERVE.md`, written with the build).
+**Where it runs.** A serving path needs an always-on host, and it is a fluxtrader2 host: **this project takes DATA from
+fluxtrader1's collector and nothing else — no process, timer or file of this project lives on `fluxtrader-1`** (Vadim,
+2026-09-25). The work VM (`fluxtrader2-work`, e2-standard-4, 16 GB, 200 GB) is stopped when idle by design, ≈ 110–130 USD a
+month if left on. Two ways, Vadim's choice: **(a) a dedicated always-on `fluxtrader2-serve`, `e2-small` (2 vCPU shared, 2 GB),
+20 GB disk, Debian 12, zone `me-central1-b`, ≈ 13–15 USD a month** (recommended: serving never pauses for a heavy job or a
+resize, and the work VM keeps its on-demand pattern); **(b) keep `fluxtrader2-work` on, resized to `e2-small` while idle and
+back to `e2-standard-4` for heavy jobs** (about the same money as (a) on top of the disk already paid; one host and one data
+copy, but every resize stops the VM and the hourly run it lands on is missed — a gap the causal check must then excuse).
+Either way: the same venv (`scripts/vm_setup.sh`), no Docker (the cloud exception of §6), and a reinstall runbook
+(`docs/SERVE.md`, written with the build) for everything installed. If the refit does not fit in 2 GB, it moves to the work
+VM monthly and only the scorer (numpy, 7 days of closes) stays on the small host.
 
 **Data in.** 5m klines for the twelve from Binance's public futures REST (`/fapi/v1/klines`, no key) — the same klines the
 collector records (DATA.md candles), so the served closes are the backtest's closes. The history is seeded once from the work
