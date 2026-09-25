@@ -590,8 +590,8 @@ by Vadim; a fail → R14 is parked with its live numbers and the project moves o
 **Steps.** 1 ✅ 2026-09-25 (build): `ft2 serve` (seed, fetch, start, decide, mark, status, check, replay, ledger), `scripts/vm.sh`
 serve verbs (`create-serve`, `serve-seed`, `serve-install`, `serve-run`, `serve-status`, `serve-pull`, `serve-ssh`), the systemd
 timers (`scripts/serve_install.sh`), `docs/SERVE.md`, the replay identity test in `tests/test_p7_serve.py`. 2 (go live): seed ✅,
-backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 2026-09-25 15:57 UTC) — remaining: the first health
-read the next day (Claude). 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
+backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 2026-09-25 15:57 UTC) — the first health read
+✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
