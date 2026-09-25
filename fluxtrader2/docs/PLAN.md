@@ -381,7 +381,7 @@ and to prove the harness, cost model and ledger agree with each other.
 
 Registered as a §8 block before it is run. **Needed from Vadim:** nothing.
 
-### P5 — Forecast + analytic decision (🟡 steps 1–11 read, last 2026-09-25; step 11 = R16, the pooled F3+F4 confirmation read of R14: FAILED on the shuffle null only (p 0.18 against a null whose p95 is +104), every other criterion passed and the F1+F2 numbers reproduced — CLOSED by the gate as written; Vadim decides what closure licenses (P7 override / F5 / new target); R8, R9, R11, R15 parked by their own stage-1 gates, H2 closed on breadth by R10, the candle ridge closed on the forty)
+### P5 — Forecast + analytic decision (🟡 steps 1–11 read, last 2026-09-25; step 11 = R16, the pooled F3+F4 confirmation read of R14: FAILED on the shuffle null only (p 0.18 against a null whose p95 is +104), every other criterion passed and the F1+F2 numbers reproduced — CLOSED by the gate as written; Vadim chose P7 paper trading of R14 by explicit override, 2026-09-25 — P7 is the live phase; R8, R9, R11, R15 parked by their own stage-1 gates, H2 closed on breadth by R10, the candle ridge closed on the forty)
 
 **Can it trade profitably? Not shown.** Plain version of where P5 stands (a bps is 0.01 %; on a 10,000 USDT position
 1 bps = 1 USDT; *taker* = crossing the spread, ~12.5 bps a round trip; *IC* = the correlation between a signal and the
@@ -492,7 +492,7 @@ universe from R10 the place to build it.
   the shuffle null with per-trade money capped) — the last fold, gone after. (3) Accept closure: R14 parked as the best measured
   candidate, the next registration brings a new target or new observations (§9). Claude's recommendation: (1), because it is
   the only option that adds data the folds do not hold and costs nothing irreversible; (2) is a re-test of a criterion, not a
-  strengthened candidate, and F5 is the last untouched fold.
+  strengthened candidate, and F5 is the last untouched fold. **Vadim chose (1) on 2026-09-25 → P7 is funded for R14 (below).**
 
 **Deliverable (unchanged):** a forecast of the forward target's distribution (ridge and a shallow boosted
 tree, ensembled over seeds and training windows) and a **closed-form** decision layer: trade when
@@ -514,12 +514,61 @@ Each of these is parked (§7) with the measurement that would fund it:
 - **Sequence / deep models** — P2 #5 found no interactions (a depth-2 tree never beat ridge);
   revival trigger in §7.
 
-### P7 — Paper trading, then money
+### P7 — Paper trading, then money (🟡 FUNDED 2026-09-25 for R14 by Vadim's override after R16; step 1 = build the serving path, not started)
 
-Needs a serving path (a process that reads the collector's DB, decides, and records). This is
-the only phase that needs an always-on host. Decided when P5 produces a registered positive on
-confirmation folds — or, as of 2026-09-25, by Vadim's explicit override after R16 (P5 step 11, option (1)):
-R14 reproduced its numbers on F3+F4 and failed only a null with no power.
+**What is being served.** R14 exactly: `ridgebook`, candle features, hold 288, grid 12, min_bps 15, cap 2, groups 4, min_pairs 5,
+holdout on, the twelve `PAIRS` in their fixed order (HYPE in group 3), one position per pair, taker. Nothing is tuned for
+serving; if serving needs a change to the model it is a new registration, not an edit.
+
+**Needed from Vadim: one decision — the host (see "Where it runs"). Then nothing until R17's first read.**
+
+**Where it runs.** A serving path needs an always-on host. The collector VM `fluxtrader-1` is always on but has 1 GB of RAM
+shared with fluxtrader1's app and Postgres, and Python 3.14 without the project's wheels; a monthly ridge refit on the full
+5m history does not belong there. The work VM (`fluxtrader2-work`, 16 GB) is stopped when idle by design. **Proposed: a
+dedicated always-on `fluxtrader2-serve`, `e2-small` (2 vCPU shared, 2 GB), 20 GB disk, Debian 12, zone `me-central1-b`,
+≈ 13–15 USD a month**, the same venv as the work VM (`scripts/vm_setup.sh`), no Docker (the cloud exception of §6). If the
+refit does not fit in 2 GB, the refit alone moves to the work VM monthly and only the scorer (numpy, 7 days of closes) stays on
+the small host. Everything installed on it ships with a reinstall runbook (`docs/SERVE.md`, written with the build).
+
+**Data in.** 5m klines for the twelve from Binance's public futures REST (`/fapi/v1/klines`, no key) — the same klines the
+collector records (DATA.md candles), so the served closes are the backtest's closes. The history is seeded once from the work
+VM's `data/candles` parquet (5m, the twelve, 2022-08-18 → the seed date) and the host appends every closed bar after that.
+Live quotes (`/fapi/v1/ticker/bookTicker`: best bid/ask) are recorded for all twelve at every execution time, traded or not,
+so that the live spread is measured, not assumed; the last funding rate (`/fapi/v1/fundingRate`) likewise.
+
+**The clock (the harness's, unchanged).** A decision at t uses the bar that closed at t and is executed at the close one bar
+later (LATENCY 1): at HH:00 + 15 s the host fetches the klines, forecasts on the grid bar HH:00, and writes the decisions;
+at HH:05 + 15 s it records the execution mark for the decisions of HH:00 (the close of the bar ending HH:05, plus the live
+bid/ask), and the exit mark for the decisions of HH:00 the day before (288 bars later). One position per pair: a pair with an
+open position skips the decision, exactly `accept()`.
+
+**The model.** Refitted every 30 days, on all grid rows whose labels ended before the refit time — the harness's block rule,
+continued into live time. Saved as a file (`output/serve/model_<date>.json`: per group μ, σ, coefficients, α; σ_ref), so a
+decision can always be re-scored from the model that made it. Training includes F5's bars once the refit passes 2026-01: that
+is walk-forward, not a read — no number from F5 is looked at, and F5 stays unread for registrations.
+
+**The ledger** (`output/serve/`, append-only CSV, one row per decision × pair, traded or not): `t, symbol, f_bps, sigma_h, side,
+size, skip, model_id, decided_at` — and, filled in by later runs: `entry_t, entry_close, entry_bid, entry_ask, exit_t, exit_close,
+exit_bid, exit_ask, funding_bps`. Decision and fill are separate columns on purpose (Protocol, "Ledger"): pricing can be
+redone without re-deciding. A `health.json` says: last run, last kline time, bars missing, open positions, rows in the ledger,
+model id and age, and any fetch error — so `vm.sh serve-status` reads it in one line.
+
+**Identity checks (the build is not done until these pass).** (1) Replay: the serve code run over F3+F4's grid bars on the
+seed history must reproduce `output/backtest/r16_ridgebook_1d_ho12_f34/forecast.parquet`'s `f_bps` per (t, symbol) to 1e-6 and
+its accepted decisions exactly — the served model IS R14, or nothing goes live. (2) Continuous causal check: every 30 days the
+harness is run over the past month on the appended candle file and its decisions are diffed against the ledger's; any
+difference is a bug in serving (look-ahead, a missed bar, a stale model) and is fixed before the ledger continues. This is
+the check fluxtrader1 learned the hard way (its X8b), done here from day one.
+
+**How it is read — R17 (§8), written before the first live number.** Monthly: health and the causal check only, no money
+number. The money read: at the first month-end when the ledger holds ≥ 600 priced trades AND ≥ 6 months have passed — priced
+by the harness's `price()` with the live spread from the ledger's own quotes; gate in R17. A pass → step 2, real money, sized
+by Vadim; a fail → R14 is parked with its live numbers and the project moves on (§9).
+
+**Steps.** 1 (build, on Vadim's host decision): `ft2 serve` (fetch, decide, mark, refit, health), `scripts/vm.sh` verbs for
+the serve host (`create-serve`, `serve-status`, `serve-pull`), the systemd timer, `docs/SERVE.md` runbook, the replay identity
+test in `tests/`. 2 (go live): seed, replay check, start the timer, first health read the next day. 3 (monthly): health, causal
+check, refit log. 4 (R17's read): as registered. 5 (money): a new registration.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -566,7 +615,7 @@ R14 reproduced its numbers on F3+F4 and failed only a null with no power.
 | ~~R1 stage 2 — the confirmation read of `reversal4h`~~ — **CLOSED 2026-09-21** | Needed from Vadim: nothing. The rule's premise (pair-level reversal) was a statistical artefact (R7) and its profit was the market's bounce in a rising market (R3, R4). F3 stays unspent | none; the bounce lives on as R8 |
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21; **Vadim decided (a) on 2026-09-22: leave it parked, do not read F3–F5 for it** | Needed from Vadim: nothing. On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. The confirmation folds stay unspent for this question | only a measured observable that separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule; F5 growing by ~6 months does not by itself re-open the (b) question |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
-| **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Needed from Vadim: the post-closure decision (P5 step 11: P7 override / F5 re-registration / new target). Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Revival: Vadim's option (1) or (2) in P5 step 11, or a new target / new observations (§9) |
+| **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result). Needed from Vadim: the serve host (P7). Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, once the serving path is built |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -1299,6 +1348,37 @@ Result:        **Read 2026-09-25 (commit e0de4ae holds this block as written bef
                whether F5 (2026-01 → today, ~8 months, unread) is spent on a new registration of the same question with a null that
                has power (the flip null, or the shuffle null with the money capped per trade), or kept; (3) neither — the project
                moves to a new target or new observations (§9), with R14 parked as the best measured candidate.
+               **Vadim decided (1) on 2026-09-25**, after the plain-language explanation of the three options: the gate's verdict
+               stands as written (CLOSED for further backtests of the candle ridge on the twelve; no variant is registered again), and
+               P7 paper trading of R14 AS IS is funded by explicit override on Principle 5 grounds — the failing criterion could not be
+               passed on this sample (null p95 +104 against +33), every other criterion passed, and the F1+F2 numbers reproduced. F5
+               stays unread. The paper-trading read is its own registration, R17, written before any live number is looked at.
+
+### R17 — paper trading of R14 (registered 2026-09-25, before the serving path was built and before any live number was looked at; read —)
+Question:      Does R14, served live and unchanged, make money after costs on data that did not exist when it was chosen — with the
+               spread measured from live quotes rather than modelled? Funded by Vadim's override after R16 (P5 step 11, option (1)).
+Strategy:      R14 as registered (`ridgebook`, candle features, hold 288, grid 12, min_bps 15, cap 2, groups 4, min_pairs 5, holdout
+               on, the twelve `PAIRS`), refitted every 30 days on all rows whose labels ended before the refit, served as P7 describes.
+               The served model must reproduce R16's forecasts in replay (P7 identity check 1) before the ledger starts; a monthly
+               causal check (identity check 2) must show no difference between the harness and the ledger, or the ledger is voided
+               back to the last clean month and the cause fixed (void and re-run, never salvage).
+Contrast:      The ledger priced by the harness's `price()`, taker: fee 5 bps a side as P1 read it (or the tier the account has when
+               money is decided, if lower), half the LIVE spread from the ledger's own bid/ask at the execution mark plus P1's impact
+               at 10,000 USDT, funding from the recorded rates; hedged against the other eleven's close-to-close move as the harness.
+               Nulls: the flip null (the ledger's own trades, each day's sides randomly signed, 2,000 draws) is THE null here — the
+               shuffle null has no power on these names (R16) and is reported only.
+Folds read:    Live time from the first ledger row. Monthly: health and the causal check, no money number is written down. The money
+               read, once: the first month-end at which the ledger holds ≥ 600 priced trades AND ≥ 6 months have passed since the
+               first row. Frozen at that read; a second read is a new registration.
+Gate:          net > 0; hedged net > 0; flip p ≤ 0.05; held-out IC (grid, all pairs pooled) t ≥ 2 on the live window; no month with
+               a failed causal check inside the window. Pass → P7 step 2 (real money) is funded, sizing to Vadim. Fail → R14 parked
+               with its live numbers; the candle ridge on the twelve is finished, and the next registration brings a new target or
+               new observations.
+Expectation:   At F3+F4's rate, 3.6 trades a day → ~650 trades in 6 months (MDE ≈ 75 bps on net; the flip null's sd ≈ 30). Net
+               +10 … +50; hedged net 0 … +40; flip p 0.01–0.2; live half-spread within 1 bps of the tape's calibration (P1) on the
+               eight liquid names, wider on PEPE, WLD, ZEC, HYPE. Likeliest: net positive, flip p borderline, IC t ≈ 1.5 — one more
+               "real but thin"; the read then decides by the gate, not by the reading.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
