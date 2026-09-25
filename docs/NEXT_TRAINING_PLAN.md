@@ -252,6 +252,17 @@ there (§6 C15).
     open interest under `ARCHIVE_OI_SHIFT_MIN` (default 0 = X8 exactly; 5 = the served
     convention), recorded in the checkpoint meta and reported as launcher drift. Whether X8 is
     re-run under the served convention before X8-F is a decision for Vadim (BACKLOG X8-F).
+13. 🟡 **Unpinned pip dependencies change between image builds (found 2026-09-25, X8′ seed 3).**
+    `gcp_train.sh` builds `ml_trainer_gpu` from scratch on every fresh VM, so a release on PyPI
+    between two seeds of one family changes the image under it. SQLAlchemy 2.1.0 shipped between
+    the seed-2 build (2026-09-24 ≈15:30 UTC) and the seed-3 build (2026-09-25 02:30 UTC); 2.1
+    resolves `postgresql://` to the psycopg 3 driver, which the image does not carry, and the run
+    died at `DB table counts` with `No module named 'psycopg'` before loading anything. Fix: both
+    requirement files hold `SQLAlchemy>=2.0.0,<2.1` (resolves to 2.0.54 — the exact version seeds
+    1 and 2 trained under; nothing numeric depends on it). The failed log is kept as
+    `logs/X8p_s3_failed.log`; seed 3 is relaunched unchanged. Go/no-go for any run: the
+    `Successfully installed` line should name the same versions as the family's earlier seeds —
+    a new major of pandas, numpy, torch or SQLAlchemy there is a recipe change, not noise.
 
 ### 0.6 🔴 When two arms have different bar counts, rank on `dir_acc`, not Wilson-LB
 

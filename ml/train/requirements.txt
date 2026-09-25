@@ -11,7 +11,10 @@ torch==2.5.1
 numpy>=1.26.0
 pandas>=2.1.0
 psycopg2-binary>=2.9.9
-SQLAlchemy>=2.0.0
+# SQLAlchemy held below 2.1 (2026-09-25): 2.1.0 makes `postgresql://` resolve to the psycopg 3
+# driver, which is not installed here — X8′ seed 3 failed on "No module named 'psycopg'"
+# the first time an image was built after the 2.1.0 release. 2.0.x keeps psycopg2.
+SQLAlchemy>=2.0.0,<2.1
 scikit-learn>=1.3.0
 lightgbm>=4.1.0  # GBT diagnostic baseline (gbt_baseline.py); not a serve dependency
 requests>=2.31.0
