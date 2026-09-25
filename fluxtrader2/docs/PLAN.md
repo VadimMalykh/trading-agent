@@ -514,13 +514,27 @@ Each of these is parked (§7) with the measurement that would fund it:
 - **Sequence / deep models** — P2 #5 found no interactions (a depth-2 tree never beat ridge);
   revival trigger in §7.
 
-### P7 — Paper trading, then money (🟡 FUNDED 2026-09-25 for R14 by Vadim's override after R16; step 1 = build the serving path, not started)
+### P7 — Paper trading, then money (🟡 FUNDED 2026-09-25 for R14 by Vadim's override after R16; step 1 BUILT 2026-09-25 and identity check 1 PASSED; step 2 go-live waits on two commands from Vadim)
 
 **What is being served.** R14 exactly: `ridgebook`, candle features, hold 288, grid 12, min_bps 15, cap 2, groups 4, min_pairs 5,
 holdout on, the twelve `PAIRS` in their fixed order (HYPE in group 3), one position per pair, taker. Nothing is tuned for
 serving; if serving needs a change to the model it is a new registration, not an edit.
 
-**Needed from Vadim: nothing — the host exists (below); Claude builds step 1 next session. Then nothing until R17's first read.**
+**Needed from Vadim: run the two go-live commands (or allow Claude to): `./fluxtrader2/scripts/vm.sh serve-run start` then
+`./fluxtrader2/scripts/vm.sh serve-install`.** Claude's session of 2026-09-25 was refused permission to install persistent systemd
+timers on the host; everything before that line is done and verified. After them: nothing until R17's first read (Claude reads
+`vm.sh serve-status` the next day and monthly).
+
+**Built 2026-09-25 (step 1, `ft2/serve.py`, `docs/SERVE.md`, `scripts/serve_install.sh`, `vm.sh serve-*`, `tests/test_p7_serve.py`, 9 tests).**
+Identity check 1 PASSED on the work VM (`output/serve/replay/replay.md`): the live path — refit at the harness's block starts,
+model saved to and loaded from JSON, one grid bar at a time on a 2,028-bar tail of the market, the book rule from the ledger —
+over F3+F4's 11,592 grid bars reproduces R16's forecast.parquet on all 139,104 cells (max |Δ f_bps| 1.5e-10, |Δ σ_h| 1.2e-10,
+NaN with NaN) and its 1,753 accepted decisions exactly (t, symbol, side, size). Seed on the host: the collector's 5m candles
+2022-08-18 → 2026-09-14 23:55 (4.68 M rows); Binance REST backfill to now: 3,069 bars per pair, no gap, and the 12-bar overlap
+with the collector's stored bars matches on all twelve — the served closes ARE the backtest's closes. Design points not in the
+prose above: a decision written after its entry bar closed (host down) is recorded with its forecast and skip `late`, never
+traded; a pair without its bar at decision time is `no_bar`; the monthly check explains differences at those rows as downtime
+and fails on any other; the harness refit runs on the 2 GB host (features in 60-day chunks, same values to 1e-13).
 
 **Where it runs.** A serving path needs an always-on host, and it is a fluxtrader2 host: **this project takes DATA from
 fluxtrader1's collector and nothing else — no process, timer or file of this project lives on `fluxtrader-1`** (Vadim,
@@ -570,10 +584,12 @@ number. The money read: at the first month-end when the ledger holds ≥ 600 pri
 by the harness's `price()` with the live spread from the ledger's own quotes; gate in R17. A pass → step 2, real money, sized
 by Vadim; a fail → R14 is parked with its live numbers and the project moves on (§9).
 
-**Steps.** 1 (build, on Vadim's host decision): `ft2 serve` (fetch, decide, mark, refit, health), `scripts/vm.sh` verbs for
-the serve host (`create-serve`, `serve-status`, `serve-pull`), the systemd timer, `docs/SERVE.md` runbook, the replay identity
-test in `tests/`. 2 (go live): seed, replay check, start the timer, first health read the next day. 3 (monthly): health, causal
-check, refit log. 4 (R17's read): as registered. 5 (money): a new registration.
+**Steps.** 1 ✅ 2026-09-25 (build): `ft2 serve` (seed, fetch, start, decide, mark, status, check, replay, ledger), `scripts/vm.sh`
+serve verbs (`create-serve`, `serve-seed`, `serve-install`, `serve-run`, `serve-status`, `serve-pull`, `serve-ssh`), the systemd
+timers (`scripts/serve_install.sh`), `docs/SERVE.md`, the replay identity test in `tests/test_p7_serve.py`. 2 (go live): seed ✅,
+backfill ✅, replay check ✅ — remaining: `serve-run start` + `serve-install` (Vadim, above), first health read the next day
+(Claude). 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
+5 (money): a new registration.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -611,7 +627,7 @@ check, refit log. 4 (R17's read): as registered. 5 (money): a new registration.
 - **Data flow:** `scripts/export.sh` runs *on the work VM* and reads the collector's Postgres
   directly over the VPC (P0 verifies the firewall and falls back to the ssh chain otherwise).
   External archives (§9) download straight to the VM.
-- **Always-on host:** not needed before P7 (paper trading); that decision is P7's.
+- **Always-on host:** `fluxtrader2-serve` (above), built out 2026-09-25: `docs/SERVE.md` is its runbook and reinstall list.
 - **Deliberately not first:** any sequence model or deep network; anything trained on the book
   data alone; any reinforcement learning. Each is a capacity increase on a problem whose ceiling
   is not yet known.
@@ -623,7 +639,7 @@ check, refit log. 4 (R17's read): as registered. 5 (money): a new registration.
 | ~~R1 stage 2 — the confirmation read of `reversal4h`~~ — **CLOSED 2026-09-21** | Needed from Vadim: nothing. The rule's premise (pair-level reversal) was a statistical artefact (R7) and its profit was the market's bounce in a rising market (R3, R4). F3 stays unspent | none; the bounce lives on as R8 |
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21; **Vadim decided (a) on 2026-09-22: leave it parked, do not read F3–F5 for it** | Needed from Vadim: nothing. On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. The confirmation folds stay unspent for this question | only a measured observable that separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule; F5 growing by ~6 months does not by itself re-open the (b) question |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
-| **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, once the serving path is built |
+| **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). Needed from Vadim: the two go-live commands in P7 (`vm.sh serve-run start`, `vm.sh serve-install`). Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17 — serving path built, host seeded, waiting only on go-live (`docs/SERVE.md`) |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |

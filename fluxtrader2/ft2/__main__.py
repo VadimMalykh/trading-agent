@@ -1,6 +1,6 @@
 """Command entry point: `python -m ft2 <subcommand>` (always via scripts/ft2.sh).
 
-Subcommands are added phase by phase (docs/PLAN.md §4). Only `smoke` exists at P-1.
+Subcommands are added phase by phase (docs/PLAN.md §4).
 """
 import argparse
 import sys
@@ -87,6 +87,11 @@ def cmd_ceiling(args):
     print(f"wrote {ceiling.OUT_MD if not args.items else 'output/ceiling*.md'} and {ceiling.OUT_DIR}/")
 
 
+def cmd_serve(args):
+    from . import serve
+    serve.main(args)
+
+
 def _param(s: str):
     k, v = s.split("=", 1)
     for cast in (int, float):
@@ -171,10 +176,16 @@ def main(argv=None):
             b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
     b.add_argument("--symbols", nargs="*")
     b.add_argument("--universe", choices=["wide"], help="ft2.universe.WIDE, the forty of R10, instead of the twelve")
+    sv = sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
+    sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
+    sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
+    sv.add_argument("--dst", default=None, help="seed: where to write (default data/serve/candles_seed.parquet)")
+    sv.add_argument("--folds", nargs="*", default=["F3", "F4"], help="replay: the folds to replay hour by hour")
+    sv.add_argument("--against", default="output/backtest/r16_ridgebook_1d_ho12_f34", help="replay: the harness run to reproduce")
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide}[args.cmd](args)
+            "costwide": cmd_costwide, "serve": cmd_serve}[args.cmd](args)
 
 
 if __name__ == "__main__":

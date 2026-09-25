@@ -16,7 +16,16 @@
 #   ./fluxtrader2/scripts/vm.sh bgsh <name> '<shell…>'   # any command line detached (chained jobs), same log
 #   ./fluxtrader2/scripts/vm.sh ssh [cmd]   # interactive shell or a one-off command
 #
-# Env: FT2_VM (default fluxtrader2-work), GCP_PROJECT (fluxtrader), GCP_ZONE (me-central1-b).
+# The always-on SERVE host (P7, docs/SERVE.md) — `serve-*` verbs always address it, whatever FT2_VM says:
+#   ./fluxtrader2/scripts/vm.sh create-serve    # one-time: e2-small, 20 GB, then setup (venv) — the same image and venv as the work VM
+#   ./fluxtrader2/scripts/vm.sh serve-seed      # copy the seed candles from the work VM's output/serve_seed/ to the host, VM to VM
+#   ./fluxtrader2/scripts/vm.sh serve-install   # push code + install/update the systemd timers (scripts/serve_install.sh)
+#   ./fluxtrader2/scripts/vm.sh serve-run <ft2 serve action>   # e.g. serve-run replay, serve-run start, serve-run check
+#   ./fluxtrader2/scripts/vm.sh serve-status    # health in one line + the timers
+#   ./fluxtrader2/scripts/vm.sh serve-pull      # rsync the host's output/serve/ (ledger, models, health, checks) to local output/serve/
+#   ./fluxtrader2/scripts/vm.sh serve-ssh [cmd] # shell on the host
+#
+# Env: FT2_VM (default fluxtrader2-work), FT2_SERVE_VM (fluxtrader2-serve), GCP_PROJECT (fluxtrader), GCP_ZONE (me-central1-b).
 # Same zone as the collector so the data export is VM-to-VM inside the region.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -24,6 +33,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/google-cloud-sdk/bin:$PATH"
 PROJECT="${GCP_PROJECT:-fluxtrader}"
 ZONE="${GCP_ZONE:-me-central1-b}"
 VM="${FT2_VM:-fluxtrader2-work}"
+SERVE_VM="${FT2_SERVE_VM:-fluxtrader2-serve}"
 MACHINE="${FT2_MACHINE:-e2-standard-4}"     # 4 vCPU / 16 GB is enough for P0–P5; resize later if a job is CPU-bound for hours
 DISK_GB="${FT2_DISK_GB:-200}"               # full-history 1m candles (~2 GB parquet) + public archives (tens of GB)
 REMOTE_DIR="fluxtrader2"                    # ~/fluxtrader2 on the VM
@@ -33,6 +43,7 @@ gssh() { gcloud compute ssh --zone "$ZONE" --project "$PROJECT" "$VM" --quiet --
 ensure_ssh_alias() {
   grep -q "Host $SSH_HOST" ~/.ssh/config 2>/dev/null || gcloud compute config-ssh --project "$PROJECT" --quiet >/dev/null
 }
+use_serve() { VM="$SERVE_VM"; SSH_HOST="$VM.$ZONE.$PROJECT"; }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
@@ -80,5 +91,31 @@ case "$cmd" in
           setsid nohup bash -c '$*' > output/logs/$name.log 2>&1 < /dev/null & echo started \$!" ;;
   ssh)
     if [[ $# -eq 0 ]]; then gcloud compute ssh --zone "$ZONE" --project "$PROJECT" "$VM"; else gssh "$@"; fi ;;
-  *) sed -n '2,20p' "$0"; exit 2 ;;
+  # ---- the serve host (P7) ----
+  create-serve)
+    FT2_VM="$SERVE_VM" FT2_MACHINE="${FT2_MACHINE:-e2-small}" FT2_DISK_GB="${FT2_DISK_GB:-20}" exec "$0" create ;;
+  serve-seed)
+    # the work VM copies its seed straight to the serve host (both in the project; the work VM has the cloud-platform scope)
+    use_serve; gssh "mkdir -p ~/$REMOTE_DIR/data/serve"
+    VM="${FT2_VM:-fluxtrader2-work}"
+    gssh "gcloud compute scp --zone $ZONE --project $PROJECT --quiet ~/$REMOTE_DIR/output/serve_seed/candles_seed.parquet $SERVE_VM:~/$REMOTE_DIR/data/serve/candles_seed.parquet"
+    use_serve; gssh "ls -la ~/$REMOTE_DIR/data/serve/" ;;
+  serve-install)
+    use_serve
+    FT2_VM="$SERVE_VM" "$0" push
+    gssh "bash ~/$REMOTE_DIR/scripts/serve_install.sh" ;;
+  serve-run)
+    use_serve; FT2_VM="$SERVE_VM" "$0" push
+    gssh "cd ~/$REMOTE_DIR && source ~/ft2-venv/bin/activate && PYTHONPATH=. python -m ft2 serve $*" ;;
+  serve-status)
+    use_serve
+    gssh "cd ~/$REMOTE_DIR && source ~/ft2-venv/bin/activate && PYTHONPATH=. python -m ft2 serve status | head -1; systemctl list-timers 'ft2-*' --no-pager | head -5; tail -3 output/serve/runs.log 2>/dev/null" ;;
+  serve-pull)
+    use_serve; ensure_ssh_alias
+    mkdir -p "$ROOT/fluxtrader2/output/serve"
+    rsync -az "$SSH_HOST:$REMOTE_DIR/output/serve/" "$ROOT/fluxtrader2/output/serve/" && echo "pulled output/serve/" >&2 ;;
+  serve-ssh)
+    use_serve
+    if [[ $# -eq 0 ]]; then gcloud compute ssh --zone "$ZONE" --project "$PROJECT" "$VM"; else gssh "$@"; fi ;;
+  *) sed -n '2,32p' "$0"; exit 2 ;;
 esac
