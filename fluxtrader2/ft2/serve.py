@@ -174,19 +174,47 @@ def seed(cfg: Config = Config(), src: Path = Path("data/candles_5m.parquet"), ds
     return {"file": str(dst), "rows": len(c), "pairs": len(per), "first": c["open_time"].min(), "last": c["open_time"].max(), "per_pair": per}
 
 
-def _read(path: Path, since: pd.Timestamp | None) -> pd.DataFrame:
+def _batches(path: Path, columns: list[str], since: pd.Timestamp | None = None, batch_rows: int = 131_072):
+    """The file's rows as small pandas frames, streamed row group by row group (never the whole file in memory — the 2 GB
+    host); with `since`, row groups whose open_time statistics end before it are skipped."""
+    import pyarrow.parquet as pq
     if not path.exists():
-        return pd.DataFrame(columns=CANDLE_COLS)
-    if since is None:
-        return pd.read_parquet(path, columns=CANDLE_COLS)
-    import pyarrow as pa
-    import pyarrow.dataset as ds
-    lo = pa.scalar(int(pd.Timestamp(since).tz_convert("UTC").value), type=pa.timestamp("ns", "UTC"))
-    return ds.dataset(str(path)).to_table(columns=CANDLE_COLS, filter=ds.field("open_time") >= lo).to_pandas()
+        return
+    pf = pq.ParquetFile(str(path))
+    rgs = None
+    if since is not None:
+        lo, j, rgs = int(pd.Timestamp(since).tz_convert("UTC").value), pf.schema_arrow.get_field_index("open_time"), []
+        for i in range(pf.metadata.num_row_groups):
+            try:
+                mx = pd.Timestamp(pf.metadata.row_group(i).column(j).statistics.max)
+                keep = (mx.value if mx.tz is None else mx.tz_convert("UTC").value) >= lo
+            except Exception:                                    # noqa: BLE001 — no usable statistics: read the row group
+                keep = True
+            if keep:
+                rgs.append(i)
+        if not rgs:
+            return
+    for b in pf.iter_batches(batch_size=batch_rows, columns=columns, row_groups=rgs, use_threads=False):
+        d = b.to_pandas()
+        if since is not None:
+            d = d[d["open_time"] >= since]
+        if len(d):
+            yield d
+
+
+def _read(path: Path, since: pd.Timestamp | None, symbol: str | None = None) -> pd.DataFrame:
+    parts = []
+    for d in _batches(path, CANDLE_COLS, since) or ():
+        if symbol is not None:
+            d = d[d["symbol"].astype(str) == symbol]
+        if len(d):
+            parts.append(d)
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=CANDLE_COLS)
 
 
 def load_candles(cfg: Config, since: pd.Timestamp | None = None) -> pd.DataFrame:
-    """Seed + live, long; where both hold a bar the seed's is kept. `since` filters on open_time (row groups are pruned)."""
+    """Seed + live, long; where both hold a bar the seed's is kept. Small windows only (`since`): the full long frame of
+    every row is what the 2 GB host cannot hold — `load_market` builds the wide market without it."""
     parts = [d for d in (_read(cfg.seed, since), _read(cfg.live, since)) if len(d)]
     c = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=CANDLE_COLS)
     c["symbol"] = c["symbol"].astype(str)
@@ -195,16 +223,13 @@ def load_candles(cfg: Config, since: pd.Timestamp | None = None) -> pd.DataFrame
 
 
 def last_bars(cfg: Config) -> pd.Series:
-    """Last stored open_time per pair (NaT if none)."""
-    parts = []
+    """Last stored open_time per pair (NaT if none), streamed."""
+    last: dict[str, pd.Timestamp] = {}
     for p in (cfg.seed, cfg.live):
-        if p.exists():
-            parts.append(pd.read_parquet(p, columns=["symbol", "open_time"]))
-    if not parts:
-        return pd.Series(pd.NaT, index=cfg.pairs, dtype="datetime64[ns, UTC]")
-    c = pd.concat(parts, ignore_index=True)
-    c["symbol"] = c["symbol"].astype(str)
-    return c.groupby("symbol")["open_time"].max().reindex(cfg.pairs)
+        for d in _batches(p, ["symbol", "open_time"]) or ():
+            for sym, mx in d.groupby(d["symbol"].astype(str), sort=False)["open_time"].max().items():
+                last[sym] = max(last.get(sym, mx), mx)
+    return pd.Series({sym: last.get(sym, pd.NaT) for sym in cfg.pairs}, dtype="datetime64[ns, UTC]").reindex(cfg.pairs)
 
 
 def fetch(cfg: Config, now: pd.Timestamp, http=http_get) -> dict:
@@ -240,7 +265,7 @@ def fetch(cfg: Config, now: pd.Timestamp, http=http_get) -> dict:
 
 
 def market(c: pd.DataFrame, pairs: list[str]) -> bt.Market:
-    """`ceiling.panel` on the candle file: decision time t = open_time + 5 min, the full 5-minute range, the pairs as
+    """`ceiling.panel` on a long candle frame: decision time t = open_time + 5 min, the full 5-minute range, the pairs as
     columns in their fixed order (all of them, present or not — the harness's twelve-column market)."""
     c = c.assign(t=c["open_time"] + BAR)
     c = c[c["t"] >= START]
@@ -248,6 +273,40 @@ def market(c: pd.DataFrame, pairs: list[str]) -> bt.Market:
         raise ValueError("no candles")
     idx = pd.date_range(c["t"].min(), c["t"].max(), freq="5min", name="t")
     P = {k: c.pivot(index="t", columns="symbol", values=k).reindex(index=idx, columns=pairs) for k in ("close", "high", "low", "volume")}
+    return bt.Market(P["close"], P["high"], P["low"], P["volume"] * P["close"])
+
+
+def load_market(cfg: Config, since: pd.Timestamp | None = None) -> bt.Market:
+    """The same market as `market(load_candles(cfg, since), cfg.pairs)`, built by scattering streamed row groups straight into
+    preallocated wide arrays over the full 5-minute range: no long frame of every row and no pandas alignment (each of those
+    OOM-killed or nearly filled the 2 GB host on the first refit; peak here ≈ the four wide frames + one batch). Seed wins
+    over live where both hold a bar; leading rows before the first bar are trimmed, as the pivot's range starts at the first t."""
+    hi = last_bars(cfg).max()
+    if pd.isna(hi):
+        raise ValueError("no candles")
+    lo = START if since is None else max(START, pd.Timestamp(since).tz_convert("UTC") + BAR)
+    idx = pd.date_range(lo, hi + BAR, freq="5min", name="t")
+    keys = ("close", "high", "low", "volume")
+    arr = {k: np.full((len(idx), len(cfg.pairs)), np.nan) for k in keys}
+    col = {sym: j for j, sym in enumerate(cfg.pairs)}
+    for path in (cfg.seed, cfg.live):                            # seed first; a live bar fills only a cell the seed left empty
+        for d in _batches(path, CANDLE_COLS, since) or ():
+            j = d["symbol"].astype(str).map(col)
+            ok = j.notna().to_numpy()
+            pos = idx.get_indexer(pd.DatetimeIndex(d["open_time"]) + BAR)
+            ok &= pos >= 0                                        # off-grid or pre-START bars are dropped, as the pivot's reindex drops them
+            if not ok.any():
+                continue
+            pos, jj = pos[ok], j.to_numpy()[ok].astype(int)
+            empty = np.isnan(arr["close"][pos, jj])
+            pos, jj = pos[empty], jj[empty]
+            for k in keys:
+                arr[k][pos, jj] = d[k].to_numpy(dtype=float)[ok][empty]
+    first = int(np.argmax(~np.isnan(arr["close"]).all(1) | ~np.isnan(arr["high"]).all(1)))
+    if np.isnan(arr["close"]).all():
+        raise ValueError("no candles")
+    idx = idx[first:]
+    P = {k: pd.DataFrame(v[first:], index=idx, columns=pd.Index(cfg.pairs, name="symbol")) for k, v in arr.items()}
     return bt.Market(P["close"], P["high"], P["low"], P["volume"] * P["close"])
 
 
@@ -273,10 +332,15 @@ def block_start(t: pd.Timestamp, cfg: Config) -> pd.Timestamp:
 
 def ensure_chunked(s: RidgeBook, M: bt.Market, days: int = 60) -> None:
     """`RidgeBook._ensure` over the market in prefixes of `days`: the same cached features (they look back only, and the
-    two-step test in tests/test_p5_forecast.py holds), at a fraction of the one-shot peak memory (the 2 GB host)."""
+    two-step test in tests/test_p5_forecast.py holds), at a fraction of the one-shot peak memory (the 2 GB host). The rows
+    `_ensure` caches are views into the chunk's full 5-minute feature array, which they keep alive (≈ 600 MB over the
+    history); copying them keeps the 44 MB of grid rows only."""
     ends = list(pd.date_range(M.index[0], M.index[-1], freq=f"{days}D")[1:]) + [M.index[-1] + BAR]
     for e in ends:
+        n = len(s._ts)
         s._ensure(M.until(e))
+        for i in range(n, len(s._ts)):
+            s._X[i], s._S[i] = s._X[i].copy(), s._S[i].copy()
 
 
 def fit(M: bt.Market, ba: pd.Timestamp, cfg: Config) -> RidgeBook:
@@ -538,7 +602,7 @@ def run_decide(cfg: Config = Config(), now: pd.Timestamp | None = None, http=htt
         out, busy, refits, M, cache = [], busy_until(dec, cfg.hold), 0, None, {}
         if len(pending):
             need_full = any(not (cfg.models / f"{model_id(block_start(t, cfg))}.json").exists() for t in pending)
-            M = market(load_candles(cfg, None if need_full else pending[0] - (TAIL + 2) * BAR), cfg.pairs)
+            M = load_market(cfg, None if need_full else pending[0] - (TAIL + 2) * BAR)
         for t in pending:
             ba = block_start(t, cfg)
             if ba not in cache:
@@ -637,7 +701,7 @@ def replay(cfg: Config, fold_names=("F3", "F4"), against: Path | None = Path("ou
     on the tail of the market, the book rule from the ledger — over the folds' blocks, and diff it against a harness run's
     forecast.parquet and decisions.parquet. Returns the ledger it built and the diff; `pass` must be True before go-live."""
     fold_names = folds.order(fold_names)
-    M = market(load_candles(cfg), cfg.pairs)
+    M = load_market(cfg)
     models = models or (cfg.out / "replay" / "models")
     rows, busy, n_bars = [], {}, 0
     t_start = time.time()
@@ -730,7 +794,7 @@ def check(cfg: Config = Config(), now: pd.Timestamp | None = None) -> dict:
     if "ledger_start" not in st or dec.empty:
         raise SystemExit("nothing to check: the ledger has not started")
     t0, t1 = pd.Timestamp(st["ledger_start"]), dec["t"].max()
-    M = market(load_candles(cfg), cfg.pairs)
+    M = load_market(cfg)
     y = bt.labels(M, cfg.hold, LATENCY)
     s = RidgeBook(**cfg.params)
     ensure_chunked(s, M)

@@ -79,9 +79,16 @@ last `serve-pull` before step 7, or the ledger starts over (a restart is a new l
 - **A failed monthly check** (`last_check.pass` false with unexplained differences) is a serving bug: the ledger is void
   back to the last clean month once the cause is fixed (R17: void and re-run, never salvage). Late/no_bar differences are
   explained, not failures.
-- **Memory:** the hourly decide loads only the tail of the market (2,028 bars); a refit loads the full candle file and
-  computes features in 60-day chunks (`ensure_chunked`, ≈ 0.2 GB peak). If the host ever swaps, the refit moves to the
-  work VM monthly (PLAN P7).
+- **Memory (measured on the host 2026-09-25):** the hourly decide loads only a 2,031-bar tail of the market; a refit is
+  the expensive run — 935 MB peak, 13 s (the host has ≈ 1.6 GB available). Three things keep it there, all in
+  `ft2/serve.py`, none in the model: `load_market` scatters streamed parquet row groups straight into the four wide
+  arrays (a long frame of every row with Python-string symbols was 1.5 GB and OOM-killed the very first decide run at
+  16:00:15); `last_bars` streams too; `ensure_chunked` copies the rows `RidgeBook._ensure` caches, which are otherwise
+  views that keep every chunk's full 5-minute feature array alive (≈ 600 MB). The refit's coefficients are bit-identical
+  to the one-shot fit. If a refit is ever OOM-killed again (`journalctl -u ft2-decide`), the model file is simply missing
+  and the decisions of that block are recorded `late` until it exists: fit it on the work VM (`vm.sh run serve …` is not
+  wired for that; `sv.fit`/`sv.save_model` by hand) and copy the JSON into `output/serve/models/`, or move the refit there
+  monthly (PLAN P7).
 - **Stop:** `vm.sh serve-ssh 'sudo systemctl disable --now ft2-decide.timer ft2-mark.timer ft2-check.timer'`; the VM stays
   on for the ledger files until pulled.
 

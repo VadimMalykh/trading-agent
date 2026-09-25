@@ -284,3 +284,18 @@ def test_a_missing_bar_is_no_bar_and_the_model_refits_on_schedule(tmp_path):
     assert pd.Timestamp(doc["data_end"]) < t2
     dec = sv.read_decisions(cfg)
     assert (dec.loc[dec["t"] == t2, "model_id"] == "model_2023-06-02").all()
+
+
+def test_load_market_equals_the_pivoted_long_frame(tmp_path):
+    cfg, ex, t0 = _live(tmp_path, hours=3)
+    A = sv.market(sv.load_candles(cfg), PAIRS)
+    B = sv.load_market(cfg)
+    assert A.index.equals(B.index) and list(A.columns) == list(B.columns) == PAIRS
+    for k in ("close", "high", "low", "dv"):
+        a, b = getattr(A, k).to_numpy(), getattr(B, k).to_numpy()
+        assert (np.isnan(a) == np.isnan(b)).all() and np.array_equal(np.nan_to_num(a), np.nan_to_num(b))
+    since = t0 - 20 * BAR
+    C = sv.load_market(cfg, since)
+    assert C.index[0] == since + BAR and C.index[-1] == B.index[-1] and np.array_equal(C.close.to_numpy(), B.close.loc[C.index].to_numpy())
+    last = sv.last_bars(cfg)
+    assert list(last.index) == PAIRS and (last == B.index[-1] - BAR).all()
