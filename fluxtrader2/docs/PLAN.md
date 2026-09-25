@@ -525,7 +525,7 @@ at 15:57 after Claude's session was refused permission to install persistent tim
 decide run (16:00:15, the first refit) was OOM-killed on the 2 GB host after 44 s — the candle loader built a 4.7 M-row long
 frame and the feature cache held every chunk's full array; both fixed in `ft2/serve.py` the same hour (refit peak 935 MB, 13 s,
 coefficients bit-identical; SERVE.md "Memory"), the block's model pre-fitted, and `start` re-run so the ledger begins at 17:00
-with no `late` row. Claude reads `vm.sh serve-status` the next day and monthly; the money read is R17's, at ≥ 600 priced trades and ≥ 6 months
+with no `late` row. Claude read `vm.sh serve-status` the next day (green, README) and reads it monthly — the first host refit is 2026-09-30 00:00 UTC, the first causal check 2026-10-01 01:30; the money read is R17's, at ≥ 600 priced trades and ≥ 6 months
 (earliest 2026-03-25).
 
 **Built 2026-09-25 (step 1, `ft2/serve.py`, `docs/SERVE.md`, `scripts/serve_install.sh`, `vm.sh serve-*`, `tests/test_p7_serve.py`, 9 tests).**
