@@ -224,8 +224,8 @@ STRATEGIES: dict[str, type[Strategy]] = {"coin": Coin}
 
 
 def get_strategy(name: str, params: dict) -> Strategy:
-    from . import forecast, rules                             # imported here: both import this module
-    return {**STRATEGIES, **rules.STRATEGIES, **forecast.STRATEGIES}[name](**params)
+    from . import forecast, rules, screen                     # imported here: they import this module
+    return {**STRATEGIES, **rules.STRATEGIES, **forecast.STRATEGIES, **screen.STRATEGIES}[name](**params)
 
 
 # ---- walk-forward -------------------------------------------------------------------------------------

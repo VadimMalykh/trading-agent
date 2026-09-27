@@ -39,9 +39,16 @@ PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "LIN
 def _symbols(args) -> list[str]:
     """--symbols, or --universe wide (exactly ft2.universe.WIDE: the forty chosen by volume before F0 — eight of the twelve are in it,
     the other four are not, by the same rule), or the twelve."""
-    if getattr(args, "universe", None) == "wide":
+    u = getattr(args, "universe", None)
+    if u == "wide":
         from .universe import WIDE
         return list(WIDE)
+    if u == "screen":                                         # R18: every name that is a member of some block (never one of the twelve)
+        from .universe import screen_symbols
+        return screen_symbols()
+    if u == "all":                                            # the archive slices are rewritten whole: ingest every name they have ever held
+        from .universe import WIDE, screen_symbols
+        return list(dict.fromkeys([*PAIRS, *WIDE, *screen_symbols()]))
     return args.symbols or PAIRS
 
 
@@ -52,7 +59,15 @@ def cmd_archive(args):
 
 def cmd_universe(args):
     from . import universe
-    universe.select(args.n)
+    if args.screen:
+        return universe.screen_select(args.folds, args.n or universe.SCREEN_K)
+    universe.select(args.n or universe.SELECT_N)
+
+
+def cmd_screen(args):
+    from . import screen
+    print(screen.read(args.run, args.reference, args.draws))
+    print(f"wrote {screen.OUT / args.run}/")
 
 
 def cmd_costwide(args):
@@ -104,7 +119,10 @@ def _param(s: str):
 
 def cmd_backtest(args):
     from . import backtest
-    r = backtest.run(backtest.get_strategy(args.strategy, dict(args.param or [])), _symbols(args), args.folds, args.execs, args.draws,
+    syms = _symbols(args)
+    if args.strategy == "transferbook":                       # the training names first, in their fixed order; then the names to score
+        syms = [*PAIRS, *(s for s in syms if s not in PAIRS)]
+    r = backtest.run(backtest.get_strategy(args.strategy, dict(args.param or [])), syms, args.folds, args.execs, args.draws,
                      args.taker_bps, args.maker_bps, args.latency, args.refit_days, args.registration, args.name, args.seed, args.cost_mult)
     print((r["dir"] / "report.md").read_text())
     print(f"wrote {r['dir']}/")
@@ -118,7 +136,7 @@ def main(argv=None):
                                       "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
     i.add_argument("--symbols", nargs="*", help="archive slices only: which pairs (default the twelve)")
-    i.add_argument("--universe", choices=["wide"], help="archive slices only: ft2.universe.WIDE (R10)")
+    i.add_argument("--universe", choices=["wide", "screen", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
     a.add_argument("kinds", nargs="+", help="bookDepth metrics aggTrades fundingRate klines/1m …")
@@ -126,12 +144,15 @@ def main(argv=None):
     a.add_argument("--start", default="2023-01-01")
     a.add_argument("--end", default=None, help="inclusive; default: two days ago")
     a.add_argument("--monthly", action="store_true", help="klines/<interval>: the archive's monthly files for the months of [start, end] instead of daily ones")
-    a.add_argument("--universe", choices=["wide"])
-    u = sub.add_parser("universe", help="R10: rank every USDT perpetual the archive lists by median daily quote volume over the four months before F0 → output/universe_wide.md")
-    u.add_argument("--n", type=int, default=40)
+    a.add_argument("--universe", choices=["wide", "screen", "all"])
+    u = sub.add_parser("universe", help="R10: rank every USDT perpetual the archive lists by median daily quote volume over the four months before F0 → output/universe_wide.md; "
+                                        "--screen (R18): the members per block and what a screener could rank them by → output/universe_screen.md")
+    u.add_argument("--n", type=int, default=None, help="default 40; with --screen 60 a block")
+    u.add_argument("--screen", action="store_true")
+    u.add_argument("--folds", nargs="*", default=["F1", "F2"], help="--screen: the folds whose blocks get a membership")
     cw = sub.add_parser("costwide", help="R10: spread + impact for pairs without a tape (one pooled candle proxy fitted on the twelve) → data/cost_daily_wide.parquet, output/cost_wide.md")
     cw.add_argument("--symbols", nargs="*")
-    cw.add_argument("--universe", choices=["wide"])
+    cw.add_argument("--universe", choices=["wide", "screen", "all"])
     cw.add_argument("--start", default="2023-01-01")
     t = sub.add_parser("tape", help="P1: stream archive aggTrades into data/tape/<symbol>.parquet (per-minute summary); zips are not kept")
     t.add_argument("--symbols", nargs="*")
@@ -175,7 +196,11 @@ def main(argv=None):
         if a_.dest in ("taker_bps", "maker_bps"):
             b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
     b.add_argument("--symbols", nargs="*")
-    b.add_argument("--universe", choices=["wide"], help="ft2.universe.WIDE, the forty of R10, instead of the twelve")
+    b.add_argument("--universe", choices=["wide", "screen"], help="ft2.universe.WIDE, the forty of R10, or the screener's members (R18), instead of the twelve")
+    sc = sub.add_parser("screen", help="P8 (R18): the screener read of a `transferbook` run → output/screen/<run>/screen.md (see ft2/screen.py)")
+    sc.add_argument("run", help="the run's directory name under output/backtest/")
+    sc.add_argument("--reference", default=None, help="the run whose forecasts the training names must reproduce (default: R13 B's)")
+    sc.add_argument("--draws", type=int, default=200)
     sv = sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
@@ -185,7 +210,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "serve": cmd_serve}[args.cmd](args)
+            "costwide": cmd_costwide, "serve": cmd_serve, "screen": cmd_screen}[args.cmd](args)
 
 
 if __name__ == "__main__":

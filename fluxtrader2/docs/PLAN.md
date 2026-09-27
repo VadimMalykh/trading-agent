@@ -526,7 +526,7 @@ decide run (16:00:15, the first refit) was OOM-killed on the 2 GB host after 44 
 frame and the feature cache held every chunk's full array; both fixed in `ft2/serve.py` the same hour (refit peak 935 MB, 13 s,
 coefficients bit-identical; SERVE.md "Memory"), the block's model pre-fitted, and `start` re-run so the ledger begins at 17:00
 with no `late` row. Claude read `vm.sh serve-status` the next day (green, README) and reads it monthly — the first host refit is 2026-09-30 00:00 UTC, the first causal check 2026-10-01 01:30; the money read is R17's, at ≥ 600 priced trades and ≥ 6 months
-(earliest 2026-03-25).
+(earliest 2027-03-25).
 
 **Built 2026-09-25 (step 1, `ft2/serve.py`, `docs/SERVE.md`, `scripts/serve_install.sh`, `vm.sh serve-*`, `tests/test_p7_serve.py`, 9 tests).**
 Identity check 1 PASSED on the work VM (`output/serve/replay/replay.md`): the live path — refit at the harness's block starts,
@@ -594,6 +594,23 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
+### P8 — The screener (🟡 registered 2026-09-27 as R18; runs in parallel with P7, which needs nothing)
+
+**Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
+P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
+year to the next. Nothing has yet asked whether the names can be told apart beforehand. P7 waits six months for its read;
+this does not depend on it and spends no confirmation fold.
+
+**What is done, in plain words.** Each month the 60 most-traded USDT perpetuals outside the twelve are listed, with four
+things known about each before the month starts: how young it is, how violent, how much its volume has risen ("in play"),
+how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
+youngest third than on the oldest third — by more than a meaningless split of the names would give?
+
+**Needed from Vadim: nothing until the read.** If a screen passes, one decision follows: which unread data the confirmation
+spends (R18's gate). Commands, gate and expectation: §8 R18. Code: `ft2/screen.py`, `ft2/universe.py`, `tests/test_p8_screen.py`.
+
+**Result:** —
+
 ## 5. Decision table (what the P2 readings mean for model choice)
 
 | reading | choice |
@@ -642,7 +659,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 | ~~R1 stage 2 — the confirmation read of `reversal4h`~~ — **CLOSED 2026-09-21** | Needed from Vadim: nothing. The rule's premise (pair-level reversal) was a statistical artefact (R7) and its profit was the market's bounce in a rising market (R3, R4). F3 stays unspent | none; the bounce lives on as R8 |
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21; **Vadim decided (a) on 2026-09-22: leave it parked, do not read F3–F5 for it** | Needed from Vadim: nothing. On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. The confirmation folds stay unspent for this question | only a measured observable that separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule; F5 growing by ~6 months does not by itself re-open the (b) question |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
-| **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2026-03-25) |
+| **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25) |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -1405,6 +1422,67 @@ Expectation:   At F3+F4's rate, 3.6 trades a day → ~650 trades in 6 months (MD
                +10 … +50; hedged net 0 … +40; flip p 0.01–0.2; live half-spread within 1 bps of the tape's calibration (P1) on the
                eight liquid names, wider on PEPE, WLD, ZEC, HYPE. Likeliest: net positive, flip p borderline, IC t ≈ 1.5 — one more
                "real but thin"; the read then decides by the gate, not by the reading.
+Result:        —
+
+### R18 — the screener: the twelve's candle ridge on names it never saw, cut by what is known about a name beforehand (registered 2026-09-27, before the universe was chosen and before any 5m bar of a new name was downloaded; read —)
+Question:      §0 asks for a screener that picks names and a model trained on other names. R14/R16 showed the second half among the
+               twelve: the signal transfers, to SOME names (WLD, SOL, PEPE, AVAX on F1+F2; ZEC, DOGE, PEPE, WLD, ETH on F3+F4), and
+               which names moves. R12/R13 A found nothing on forty names fixed in 2022 — with ridges fitted on those forty. Two
+               questions, one run: (A) does the ridge fitted on the twelve carry information on names it never saw? (B) does
+               something known about a name BEFORE the month — how young, how violent, how much in play, how liquid — say where
+               that information is?
+Universe:      `ft2 universe --screen` (`universe.screen_select`): at the start of each 30-day block of F1+F2 (the harness's own
+               blocks), the 60 USDT perpetuals with the largest median daily quote volume over the 30 days before it, a daily bar on
+               each of those days required, the twelve left out. With each member, from daily bars before the block only:
+               `age_days` (since its first daily bar), `vol_pct` (sd of the daily log returns, 30 days), `play` (30-day median
+               volume over the 180-day one; none for a name with < 90 daily bars), `liq_musd` (the 30-day median volume). Frozen
+               as `ft2/screen_members.csv` and committed BEFORE any 5m kline of a member is fetched.
+Strategy:      `ft2/screen.py::TransferBook` (`transferbook`; the module docstring is the specification): R14's ridge in every
+               respect (12 candle columns, the residual label, grid 12, hold 288, min_bps 15, cap 2, min_pairs 5, RidgeCV, refit
+               every 30-day block on all rows whose labels ended before it), ONE model fitted on the twelve, scoring the block's
+               members. Relative features: against the mean of the twelve, so the model is R13 B's in-pair model to the bit —
+               VALIDITY CHECK, read first: the twelve's forecasts in this run equal `r13_ridgebook_1d_inpair12/forecast.parquet`
+               to 1e-6 bps on every cell, or the run is void and the cause is found before any other number is read.
+Screens:       four, fixed here: `young` (lowest third of age_days), `violent` (highest third of vol_pct), `in_play` (highest
+               third of play), `liquid` (highest third of liq_musd) — thirds of the block's members, re-cut every block.
+Cost:          the members have no tape: `ft2 costwide`'s pooled candle proxy (it over-prices thin names, R10); every money row is
+               read as priced and with spread + impact doubled. Fees VIP 0.
+Contrast:      (A) the IC of the forecast on all members' cells (pooled, against the members present at the bar, t clustered by
+               day). (B) per screen, the IC inside the top third and the spread top − bottom; null: random STATIC thirds (one score
+               per name for the whole sample), four a draw, the largest spread t kept, 200 draws → a family-wise p. (M) the book
+               re-run on the top third's name-blocks (and on all members): taker net, hedged net, flip null (the shuffle null has
+               no power on wild names, R16, and is reported for the all-members book only).
+Commands:      on the work VM, in this order —
+                 `vm.sh run universe --screen` → `vm.sh pull` → copy output/universe_screen_members.csv to ft2/screen_members.csv, commit
+                 `vm.sh bg r18_fetch archive klines/5m fundingRate --universe screen --monthly --start 2022-08-01 --end 2024-08-31`
+                 `vm.sh run ingest klines funding_archive --universe all` and `vm.sh run costwide --universe all` (the archive
+                 slices are rewritten whole: `all` = the twelve + R10's forty + the members; the old names' rows must come back unchanged)
+                 `vm.sh bg r18 backtest transferbook --universe screen --param hold=288 --execs taker maker --name r18_transferbook_1d`
+                 `vm.sh run screen r18_transferbook_1d` → output/screen/r18_transferbook_1d/screen.md
+Folds read:    F1+F2 (exploration). Of the members, R10's 32 were read there by R12 / R13 A as a pooled IC of forty-name fits —
+               never by this model and never by a screen. F3, F4 (read for the twelve only) and F5 are not touched.
+Gate:          validity PASS, then: (A) all-members IC t ≥ 2. (B) the screen with the largest spread t has top-third IC t ≥ 2 AND
+               family-wise p ≤ 0.05. (M) on the book the IC licenses — B's top third if (B) passes, all members if only (A) does —
+               taker as priced: net > 0, hedged net > 0, flip p ≤ 0.05 (costs doubled: reported).
+               (B) and (M) pass → a screener candidate EXISTS on exploration data; it licenses no trade. The next step is a
+               confirmation registration on cells nobody has read (the rule's members on F3+F4, where only the twelve were read, or
+               F5) — which fold is Vadim's decision. (B) passes, (M) fails → the screen finds the information and the book does not
+               pay for it at taker cost on these names; the next registration is about execution on the screened names, not
+               another screen. Only (A) passes → the model transfers without a screen; (M) on all members decides the same way.
+               Neither → CLOSED for these four screens if every top third's IC and the pooled IC have an upper bound (IC + 1.96 se)
+               under 0.02; otherwise NOT DETECTABLE, with the measured MDE, and it stays open (Principle 5).
+               No variant on these cells under this registration. What is not blocked, and how: a different screen family is a new
+               registration on the same exploration cells, and its family-wise bar counts every screen tried so far (a second
+               family of four → p ≤ 0.025).
+Power:         expected se of a spread ≈ 0.012 (R12's pooled se 0.006 on forty names; a third of sixty is twenty) → MDE ≈ 0.034.
+               Among the twelve the contrast between the carriers and the rest was 0.08–0.10 (R14 per name). A contrast of that size
+               would pass almost always; 0.04 about four times in five; 0.02 about one time in four. The read reports the MEASURED
+               MDE, and a miss with the MDE above the effect is "not detectable", not "no effect".
+Expectation:   110–150 names are a member at least once; ≈ 700,000 cells. Validity PASS. (A) IC 0.005–0.02, t 1–2.5. (B) `young` and
+               `violent` point the right way: top-third IC 0.015–0.04, spread +0.01 … +0.03, t 1–2.5, family-wise p 0.05–0.4;
+               `liquid` flat or negative. 25–40 % of the members' cells clear 15 bps; 15–25 trades a day on all members, 6–10 on a
+               top third; all-members net −10 … +10; the best top third net −5 … +25, MDE 25–35. Likeliest: the screens point the
+               right way and do not clear the family bar — NOT DETECTABLE, with a named size.
 Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
