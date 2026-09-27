@@ -82,6 +82,33 @@ serving can be changed to match X8 instead of training being changed to match se
 one-bucket-early labels each have a row below; Tier 1 texture on the X8 checkpoints decided
 nothing (pooled +11.6, P2/P3 fail like U12).
 
+🔵 **HANDOFF, written 2026-09-27 — what happens when Vadim returns with the logs.** Vadim is
+running, serially: X8b's three runs (`logs/X8b_s{1,2,3}.log`), then the twelve fold runs
+(`logs/WFX8-<fold>-s<seed>.log`). **Needed from Vadim: bring back the fifteen logs; nothing
+else.** Claude then does, in a fresh session and in this order:
+
+1. **X8b** — per log, the acceptance lines in NEXT_TRAINING_PLAN §2 X8b (23 columns, twelve
+   `Archive flow:` and twelve `Archive OI: … shift_min=5` lines, X0's `Split` line, no flow
+   column CONSTANT, `OI join: OI_JOIN_AT_CLOSE=0` if the clone is at or after `be9df37`);
+   fetch the three eval dumps; §0.3's plateau awk; read against the control **X8′** (0.5275 /
+   0.5336 / 0.5307, family 0.5306; gate ±0.008; fallback to all-epoch means if any plateau is
+   under 15; secondary against +17.3 gross over 3,114 trades). Recorded expectation: WORSE or
+   FLAT with short plateaus. Result block into NEXT_TRAINING_PLAN §2 X8b; row X8b here.
+2. **The folds** — per log, WALKFORWARD_PROTOCOL §10.6's thirteen checks (the three that are
+   new with decision (b): every `Archive OI:` line ends `shift_min=5`; the line `OI join:
+   OI_JOIN_AT_CLOSE=1 (open interest as of the bar close)` is present; `git_sha` at or after
+   `be9df37`). A run failing any check is void and is re-launched, not read. Record each run in
+   `dumps.WALKFORWARD_X8_RUNS` / `WALKFORWARD_X8_SPLITS` and
+   `validate.PUBLISHED_FIXED_COV_WALKFORWARD_X8`, fetch its eval dump, fill §10.7.
+3. **Only with all twelve recorded:** the three commands at the end of §10.6 (`validate`,
+   `folds`, `folds --contrast walkforward`), then §10.4's reading. Expectation for the
+   contrast: NOT DETECTABLE.
+4. **If CONFIRMED and the contrast is not WORSE:** hand Vadim X8″'s three commands (§10.4);
+   otherwise nothing is promoted and the forward test continues untouched.
+
+The forward paper test, the exploratory arm and the micro-pilot are not touched by any of
+this; a promotion would be the forward clock's fifth start and is its own step.
+
 *Background, 2026-09-10 → 12, each in its owning document:* the forward clock restarted three
 times — wrong bar size (M3_FIDELITY §7.5), forming-bar re-scores (row 8), settle lag (row 9);
 the fee tier was read off the account (taker 5.0 bps, REAL_MONEY_TRACK §5); the real-money
