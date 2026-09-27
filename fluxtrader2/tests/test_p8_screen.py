@@ -160,3 +160,49 @@ def test_the_read_finds_the_planted_screen(tmp_path, monkeypatch):
     res = r["results"].query("exec == 'taker' and scope == 'all'").iloc[0]
     assert all_["trades"] == res["trades"] and abs(all_["net"] - res["net"]) < 1e-9
     assert json.loads((out / "validity.json").read_text())["status"] == "PASS"
+
+
+# ---- R19: the hindsight diagnostic ------------------------------------------------------------------------------------------
+def test_hindsight_volume_reads_the_window_alone_and_counts_a_missing_day_as_zero():
+    from datetime import date
+    d, days = _daily(n_days=260, start="2025-10-01")                                           # 2025-10-01 → 2026-06-17
+    w = (date(2026, 1, 1), date(2026, 3, 31))
+    gone = d[~((d["symbol"] == "EEEUSDT") & (d["day"] >= pd.Timestamp("2026-02-01", tz="UTC")))]      # delisted a third of the way in
+    h = universe.hindsight_volume(gone[["symbol", "day", "quote_volume"]], ["AAAUSDT", "EEEUSDT", "NEVERUSDT"], w).set_index("symbol")
+    assert abs(h.loc["AAAUSDT", "hind_musd"] - 50) < 1 and h.loc["AAAUSDT", "hind_days"] == 90
+    assert h.loc["EEEUSDT", "hind_musd"] == 0 and h.loc["EEEUSDT", "hind_days"] == 31          # a bar on 31 of 90 days: the median day has none
+    assert h.loc["NEVERUSDT", "hind_musd"] == 0 and h.loc["NEVERUSDT", "hind_days"] == 0
+    other = gone.copy()
+    other.loc[(other["day"] < pd.Timestamp(w[0], tz="UTC")) | (other["day"] > pd.Timestamp(w[1], tz="UTC")), "quote_volume"] *= 100.0
+    assert universe.hindsight_volume(other[["symbol", "day", "quote_volume"]], ["AAAUSDT", "EEEUSDT", "NEVERUSDT"], w).set_index("symbol").equals(h)
+
+
+def _hindsight(path, flip=False):
+    """The RIGHT names are the ones still traded later (the planted hindsight screen); two WRONG names are gone."""
+    hi, lo = (WRONG, RIGHT) if flip else (RIGHT, WRONG)
+    pd.DataFrame([*({"symbol": s, "hind_musd": 500.0 - i, "hind_days": 243} for i, s in enumerate(hi)),
+                  *({"symbol": s, "hind_musd": 0.0 if i < 2 else 5.0 + i, "hind_days": 0 if i < 2 else 243} for i, s in enumerate(lo))]).to_csv(path, index=False)
+
+
+def test_the_hindsight_read_finds_the_planted_screen_and_leaves_r18s_read_alone(tmp_path, monkeypatch):
+    ref, r = _run(tmp_path, monkeypatch)
+    _hindsight(tmp_path / "h.csv")
+    m = universe.members(tmp_path / "m.csv", tmp_path / "h.csv")
+    b = m[m["block"] == m["block"].min()].set_index("symbol")
+    assert set(b.index[b["hindsight"] == 2]) <= set(RIGHT) and set(b.index[b["hindsight"] == 0]) <= set(WRONG) and (b.groupby("hindsight").size() == 4).all()
+    assert m[[*universe.CHARACTERISTICS]].equals(universe.members(tmp_path / "m.csv")[[*universe.CHARACTERISTICS]])       # R18's thirds are not moved by it
+    before = screen.read("transfer", reference=str(ref["dir"]), draws=20, members=str(tmp_path / "m.csv"))
+    txt = screen.read("transfer", reference=str(ref["dir"]), draws=20, members=str(tmp_path / "m.csv"), hindsight=tmp_path / "h.csv")
+    assert "**PASS**" in txt and "Best spread: **hindsight**" in txt and "best of 5" in txt and "best of 4" in before
+    out = screen.OUT / ("transfer" + screen.HINDSIGHT_SUFFIX)
+    scr = pd.read_csv(out / "screens.csv").set_index("screen")
+    assert list(scr.index) == ["hindsight"]
+    h = scr.loc["hindsight"]
+    assert h["ic_top"] > 0.05 and h["ic_bottom"] < -0.05 and h["spread_t"] > 3 and h["p_family"] <= 0.1, h
+    assert abs(h["ic_of_means_top"]) < abs(h["ic_top"]) and np.isfinite(h["zres_mean_top"])      # the planted skill is in the variation, not in the means
+    money = pd.read_csv(out / "money.csv").set_index(["book", "exec"])
+    assert {b for b, _ in money.index} == {"all members", "hindsight: top third", "hindsight: bottom third"}
+    assert money.loc[("hindsight: top third", "taker"), "gross"] > 2 > money.loc[("hindsight: bottom third", "taker"), "gross"]
+    assert "split by R18's `young`" in txt
+    screen.read("transfer", reference=str(ref["dir"]), draws=20, members=str(tmp_path / "m.csv"))
+    assert list(pd.read_csv(screen.OUT / "transfer" / "screens.csv")["screen"]) == list(universe.CHARACTERISTICS)

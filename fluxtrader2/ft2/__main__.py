@@ -61,13 +61,16 @@ def cmd_universe(args):
     from . import universe
     if args.screen:
         return universe.screen_select(args.folds, args.n or universe.SCREEN_K)
+    if args.hindsight:
+        return universe.hindsight_select()
     universe.select(args.n or universe.SELECT_N)
 
 
 def cmd_screen(args):
     from . import screen
-    print(screen.read(args.run, args.reference, args.draws))
-    print(f"wrote {screen.OUT / args.run}/")
+    from .universe import HINDSIGHT_CSV
+    print(screen.read(args.run, args.reference, args.draws, hindsight=HINDSIGHT_CSV if args.hindsight else None))
+    print(f"wrote {screen.OUT / (args.run + screen.HINDSIGHT_SUFFIX * args.hindsight)}/")
 
 
 def cmd_costwide(args):
@@ -149,6 +152,7 @@ def main(argv=None):
                                         "--screen (R18): the members per block and what a screener could rank them by → output/universe_screen.md")
     u.add_argument("--n", type=int, default=None, help="default 40; with --screen 60 a block")
     u.add_argument("--screen", action="store_true")
+    u.add_argument("--hindsight", action="store_true", help="R19: each member's median daily quote volume over 2026-01 → 2026-08 → output/universe_hindsight.md")
     u.add_argument("--folds", nargs="*", default=["F1", "F2"], help="--screen: the folds whose blocks get a membership")
     cw = sub.add_parser("costwide", help="R10: spread + impact for pairs without a tape (one pooled candle proxy fitted on the twelve) → data/cost_daily_wide.parquet, output/cost_wide.md")
     cw.add_argument("--symbols", nargs="*")
@@ -201,6 +205,7 @@ def main(argv=None):
     sc.add_argument("run", help="the run's directory name under output/backtest/")
     sc.add_argument("--reference", default=None, help="the run whose forecasts the training names must reproduce (default: R13 B's)")
     sc.add_argument("--draws", type=int, default=200)
+    sc.add_argument("--hindsight", action="store_true", help="R19: read the one hindsight screen (ft2/screen_hindsight.csv) instead of R18's four → output/screen/<run>_hindsight/")
     sv = sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")

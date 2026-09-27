@@ -135,11 +135,11 @@ def characteristics(d: pd.DataFrame, starts: list[pd.Timestamp], exclude: set[st
     return pd.concat(rows, ignore_index=True)
 
 
-def thirds(m: pd.DataFrame) -> pd.DataFrame:
+def thirds(m: pd.DataFrame, chars: dict[str, str] | None = None) -> pd.DataFrame:
     """Per block and screen: 2 = the screen's top third of the block's members (the youngest, the most violent, the most in
     play, the most liquid), 1 the middle, 0 the bottom; −1 where the member has no value. Ties are broken by symbol."""
     m = m.sort_values(["block", "symbol"]).reset_index(drop=True)
-    for name, col in CHARACTERISTICS.items():
+    for name, col in (chars or CHARACTERISTICS).items():
         v = -m[col] if name in HIGH_IS_LOW else m[col]
         rk = v.groupby(m["block"]).rank(method="first")
         n = v.notna().groupby(m["block"]).transform("sum")
@@ -147,10 +147,15 @@ def thirds(m: pd.DataFrame) -> pd.DataFrame:
     return m
 
 
-def members(path: Path | str | None = None) -> pd.DataFrame:
+def members(path: Path | str | None = None, hindsight: Path | str | None = None) -> pd.DataFrame:
+    """The frozen members with their thirds; with `hindsight` (R19), also the thirds of the hindsight screen."""
     m = pd.read_csv(path or MEMBERS_CSV)
     m["block"] = pd.to_datetime(m["block"], utc=True)
-    return thirds(m)
+    m = thirds(m)
+    if hindsight is not None:
+        h = pd.read_csv(hindsight)
+        m = thirds(m.merge(h[["symbol", *HINDSIGHT.values()]], on="symbol", how="left", validate="m:1"), HINDSIGHT)
+    return m
 
 
 def screen_symbols(path: Path | str | None = None) -> list[str]:
@@ -185,3 +190,49 @@ def screen_select(fold_names=("F1", "F2"), k: int = SCREEN_K, exclude: list[str]
     OUT_SCREEN_MD.write_text(txt)
     print(txt)
     return m
+
+
+# ---- the hindsight diagnostic (PLAN P8, registration R19) ------------------------------------------------------------
+# One thing about a name that NO screener could have known: how much it is traded long after the block — its median daily
+# quote volume over HINDSIGHT_WINDOW, a day without a bar counted as zero (delisted, or renamed: the symbol is the name).
+# It is there to be compared with the screens that use no hindsight, never to be traded. Quote volume only: no price of
+# the window is read.
+HINDSIGHT_WINDOW = (date(2026, 1, 1), date(2026, 8, 31))
+HINDSIGHT = {"hindsight": "hind_musd"}                           # screen → column; the top third is the HIGHEST third
+HINDSIGHT_CSV = Path(__file__).with_name("screen_hindsight.csv")  # frozen from OUT_HINDSIGHT_CSV, once, and committed
+OUT_HINDSIGHT_MD = Path("output/universe_hindsight.md")
+OUT_HINDSIGHT_CSV = Path("output/universe_hindsight.csv")
+
+
+def hindsight_volume(d: pd.DataFrame, names: list[str], window: tuple[date, date] = HINDSIGHT_WINDOW) -> pd.DataFrame:
+    """Per name: `hind_musd`, the median daily quote volume over the window in millions of USDT, a missing day counted as
+    zero; `hind_days`, the days of the window with a bar. From daily bars (symbol, day, quote_volume)."""
+    a, b = (pd.Timestamp(x, tz="UTC") for x in window)
+    days = pd.date_range(a, b, freq="D")
+    qv = d[(d["day"] >= a) & (d["day"] <= b)].pivot(index="day", columns="symbol", values="quote_volume").reindex(index=days, columns=names)
+    return pd.DataFrame({"symbol": names, "hind_musd": (qv.fillna(0.0).median() / 1e6).to_numpy(), "hind_days": qv.notna().sum().to_numpy()})
+
+
+def hindsight_select(window: tuple[date, date] = HINDSIGHT_WINDOW) -> pd.DataFrame:
+    names = screen_symbols()
+    months = archive.months_between(*window)
+    print(f"{len(names)} members; reading 1d klines {months[0]} .. {months[-1]}", flush=True)
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        d = pd.concat(list(ex.map(lambda s: _daily_1d(s, months), names)), ignore_index=True)
+    h = hindsight_volume(d[["symbol", "day", "quote_volume"]], names, window)
+    OUT_HINDSIGHT_CSV.parent.mkdir(parents=True, exist_ok=True)
+    h.to_csv(OUT_HINDSIGHT_CSV, index=False, float_format="%.6g")
+    m = thirds(members().merge(h, on="symbol", how="left", validate="m:1"), HINDSIGHT)
+    need = len(pd.date_range(*window, freq="D"))
+    blk = m.groupby("block").agg(members=("symbol", "size"), gone=("hind_musd", lambda x: int((x == 0).sum())), hind_musd_p50=("hind_musd", "median"),
+                                 top_third_min_musd=("hind_musd", lambda x: float(x[m.loc[x.index, "hindsight"] == 2].min()))).reset_index().assign(block=lambda x: x["block"].dt.date)
+    per = h.merge(m.groupby("symbol").agg(blocks=("block", "size"), top_hindsight=("hindsight", lambda x: int((x == 2).sum()))).reset_index(), on="symbol")
+    txt = "\n".join([f"# The hindsight characteristic (`ft2 universe --hindsight`) — each member's median daily quote volume, {window[0]} → {window[1]}\n",
+                     f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {len(names)} names · {int((h['hind_musd'] == 0).sum())} with a median of zero (gone or renamed) · "
+                     f"{int((h['hind_days'] == need).sum())} with a bar on all {need} days\n",
+                     f"\nPer name → `{OUT_HINDSIGHT_CSV}` (frozen into `ft2/screen_hindsight.csv`). Quote volume only; no price of the window is read.\n",
+                     "\n## Per block\n", blk.round(3).to_markdown(index=False), "\n",
+                     "\n## Per name\n", per.sort_values("hind_musd", ascending=False).round(3).to_markdown(index=False), "\n"])
+    OUT_HINDSIGHT_MD.write_text(txt)
+    print(txt)
+    return h
