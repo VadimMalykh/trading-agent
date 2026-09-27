@@ -512,7 +512,7 @@ def power(D: dict) -> pd.DataFrame:
 
 
 # ---- #4 noise floor -------------------------------------------------------------------------------
-def _shuffle_days(idx: pd.DatetimeIndex, group: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+def _shuffle_days(idx: pd.DatetimeIndex, group: np.ndarray, rng: np.random.Generator, bar: pd.Timedelta = BAR) -> np.ndarray:
     """Row indexer for a label null: the label at row i is taken from row src[i]. Whole days trade
     places, time of day kept, only with days of the same `group` (scored / not scored), and whole rows
     move — the market factor every pair shares at one instant, and a label's overlap with its
@@ -522,10 +522,10 @@ def _shuffle_days(idx: pd.DatetimeIndex, group: np.ndarray, rng: np.random.Gener
     inside the trailing-return features' lookback, and the feature would then contain the label.
     (That is why the plan's first idea, shuffling rows WITHIN a day, is not used: a label moved to a
     later bar of its own day always overlaps the features — a 4-draw trial on 2026-09-20 read an IC
-    of +0.09 … +0.18 for the ridge from that leak alone.)"""
+    of +0.09 … +0.18 for the ridge from that leak alone.) `bar`: the spacing of `idx` (R20 reads an hourly grid)."""
     day = (idx.floor("D") - idx[0].floor("D")).days.to_numpy()
-    per_day = int(pd.Timedelta("1D") / BAR)
-    slot = ((idx - idx.floor("D")) // BAR).to_numpy()
+    per_day = int(pd.Timedelta("1D") / bar)
+    slot = ((idx - idx.floor("D")) // bar).to_numpy()
     nd = int(day.max()) + 1
     row_of = np.full((nd, per_day), -1)
     row_of[day, slot] = np.arange(len(idx))

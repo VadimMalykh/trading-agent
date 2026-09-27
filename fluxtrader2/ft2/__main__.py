@@ -73,6 +73,12 @@ def cmd_screen(args):
     print(f"wrote {screen.OUT / (args.run + screen.HINDSIGHT_SUFFIX * args.hindsight)}/")
 
 
+def cmd_audit(args):
+    from . import audit
+    print(audit.run(args.run, args.draws))
+    print(f"wrote {audit.OUT / args.run}/")
+
+
 def cmd_costwide(args):
     from . import cost
     import pandas as pd
@@ -206,6 +212,10 @@ def main(argv=None):
     sc.add_argument("--reference", default=None, help="the run whose forecasts the training names must reproduce (default: R13 B's)")
     sc.add_argument("--draws", type=int, default=200)
     sc.add_argument("--hindsight", action="store_true", help="R19: read the one hindsight screen (ft2/screen_hindsight.csv) instead of R18's four → output/screen/<run>_hindsight/")
+    au = sub.add_parser("audit", help="P8 (R20): what funding, premium, open interest, long/short ratios and taker flow say about a member's next day, on the cells of a "
+                                      "`transferbook` run → output/audit/<run>/audit.md (see ft2/audit.py)")
+    au.add_argument("run", help="the run's directory name under output/backtest/")
+    au.add_argument("--draws", type=int, default=200)
     sv = sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
@@ -215,7 +225,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "serve": cmd_serve, "screen": cmd_screen}[args.cmd](args)
+            "costwide": cmd_costwide, "serve": cmd_serve, "screen": cmd_screen, "audit": cmd_audit}[args.cmd](args)
 
 
 if __name__ == "__main__":
