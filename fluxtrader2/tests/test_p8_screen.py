@@ -81,6 +81,14 @@ def test_members_come_from_the_days_before_the_block_alone():
     assert m["vol_pct"].is_monotonic_increasing is False and (m["vol_pct"] > 0).all()
 
 
+def test_a_halted_pair_gets_no_regime_and_does_not_stop_the_others():
+    from ft2 import cost
+    days = pd.date_range("2023-06-01", periods=30, freq="D", tz="UTC")
+    v = pd.DataFrame({"symbol": ["LIVE"] * 30 + ["HALT"] * 30, "vol_pct": [*np.linspace(1, 5, 30), *([0.0] * 25), *np.linspace(1, 5, 5)]}, index=[*days, *days])
+    r = v.groupby("symbol")["vol_pct"].transform(cost._terciles).astype(str)
+    assert set(r[v["symbol"] == "LIVE"]) == set(cost.REGIMES) and set(r[v["symbol"] == "HALT"]) == {"nan"}
+
+
 def test_thirds_are_cut_inside_the_block_and_young_means_the_lowest_age(tmp_path):
     _members(tmp_path / "m.csv")
     m = universe.members(tmp_path / "m.csv")

@@ -73,9 +73,17 @@ def regimes(slices: tuple[str, ...] = ("candles_5m",)) -> pd.DataFrame:
         "tick_bps": g.apply(_tick, include_groups=False),
     }).reset_index()
     d = d[d["bars"] >= 200]                     # a day with < 200 of 288 bars is not a day
-    d["regime"] = (d.groupby("symbol", observed=True)["vol_pct"]
-                    .transform(lambda v: pd.qcut(v, 3, labels=REGIMES)).astype(str))
+    d["regime"] = d.groupby("symbol", observed=True)["vol_pct"].transform(_terciles).astype(str)
     return d
+
+
+def _terciles(v: pd.Series) -> pd.Series:
+    """lo / mid / hi by the pair's own days. A pair that stood still on most of its days (a halted contract: COCOS, found
+    2026-09-27) has no three distinct thirds and gets no regime — `wide` does not read the regime, P1's tables skip it."""
+    try:
+        return pd.qcut(v, 3, labels=REGIMES).astype(object)
+    except ValueError:
+        return pd.Series(np.nan, index=v.index, dtype=object)
 
 
 def _tick(x: pd.DataFrame) -> float:
