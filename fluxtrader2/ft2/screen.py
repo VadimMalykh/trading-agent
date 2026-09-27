@@ -312,9 +312,9 @@ def read(run: str, reference: str | None = None, draws: int = DRAWS, members: st
         for k, third in ((2, "top"), (0, "bottom"))[:2 if hindsight else 1]:
             money += [{"book": f"{c}: {third} third", **r} for r in book(dec, mem[mem[c] == k], M, C, C2, days, hold, execs, meta["taker_bps"], meta["maker_bps"], latency, draws, seed)]
     money = pd.DataFrame(money)
-    cross = pd.DataFrame([{"cells": n, **_ic(A, u, nd, lags)} for n, u in (
+    cross = pd.DataFrame([{"cells of": n, **_ic(A, u, nd, lags)} for n, u in (
         ("hindsight top ∩ young top", ((o["hindsight"] == 2) & (o["young"] == 2)).to_numpy()), ("hindsight top, not young top", ((o["hindsight"] == 2) & (o["young"] != 2)).to_numpy()),
-        ("young top, not hindsight top", ((o["hindsight"] != 2) & (o["young"] == 2)).to_numpy()))]).rename(columns={"cells": "n"}) if hindsight else None
+        ("young top, not hindsight top", ((o["hindsight"] != 2) & (o["young"] == 2)).to_numpy()))]) if hindsight else None
 
     per_name = pd.DataFrame([{"symbol": s, "blocks": int(d["block"].nunique()), **{k: x for k, x in ic(d, nd, lags).items() if k in ("cells", "ic", "t")},
                               "share_on": float((d["f_bps"].abs() >= p["min_bps"]).mean()), **{f"top_{c}": int(d.loc[d[c] == 2, "block"].nunique()) for c in chars}}

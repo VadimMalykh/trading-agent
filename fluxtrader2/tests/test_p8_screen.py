@@ -203,6 +203,6 @@ def test_the_hindsight_read_finds_the_planted_screen_and_leaves_r18s_read_alone(
     money = pd.read_csv(out / "money.csv").set_index(["book", "exec"])
     assert {b for b, _ in money.index} == {"all members", "hindsight: top third", "hindsight: bottom third"}
     assert money.loc[("hindsight: top third", "taker"), "gross"] > 2 > money.loc[("hindsight: bottom third", "taker"), "gross"]
-    assert "split by R18's `young`" in txt
+    assert "split by R18's `young`" in txt and "hindsight top ∩ young top" in txt and "young top, not hindsight top" in txt
     screen.read("transfer", reference=str(ref["dir"]), draws=20, members=str(tmp_path / "m.csv"))
     assert list(pd.read_csv(screen.OUT / "transfer" / "screens.csv")["screen"]) == list(universe.CHARACTERISTICS)

@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, a hindsight diagnostic, registered 2026-09-27 on Vadim's go, not read)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; next candidate R20, a ceiling audit of new per-name information on the point-in-time universe, proposed, not registered)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,8 +606,7 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: nothing — he said go on R19 (2026-09-27); Claude runs and reads it.** Commands, gates and numbers:
-§8 R18, R19. Code: `ft2/screen.py`, `ft2/universe.py`, `tests/test_p8_screen.py`.
+**Needed from Vadim: one go / no-go — register and run R20 (below)?** Commands, gates and numbers: §8 R18, R19. Code: `ft2/screen.py`, `ft2/universe.py`, `tests/test_p8_screen.py`.
 
 **Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
 month by month by trading volume alone, the model's forecast was right no more often than a coin: correlation with what
@@ -620,9 +619,24 @@ difference between groups (about 0.045), so small ones are not ruled out: "not d
 it was known which young names had grown large. A model that buys young names later known to have grown looks skilled on
 the long side only — and the twelve's money IS on the long side only, while on names picked without hindsight the long side
 loses. This is a hypothesis. The paper test (P7) answers it cleanly, because the list was fixed before every live bar.
-**R19 (registered 2026-09-27, §8):** the same cells, one screen that uses hindsight on purpose (how much the name is
-traded in 2026); if the forecast looks skilled there, part of the twelve's result is the choice of names. No fold, no new
-backtest — a re-cut of R18's run.
+
+**Result (R19, 2026-09-27), in plain words. Is the twelve's result just a lucky choice of names? This test cannot say.**
+The same outside names were re-sorted by something only the future knows — how heavily each is traded in 2026 — and the
+model was checked on the third that "made it". Its forecast there is right barely more often than a coin (correlation
+0.014, with a noise band of ±0.024, against 0.03–0.05 on the twelve): not a signal, and not proof that there is none.
+Traded, that third earns 6 USDT a trade on 10,000 after costs, inside the noise, and loses 10 once the market's own move is
+taken out. Buying still loses there (−23 USDT a trade) — less than on the names that faded (−74), which is the direction
+the suspicion predicted, but on the twelve buying earns +51 … +59, and knowing the future of a name does not reproduce
+that. One hint, which decides nothing: on names that are both young and survivors the correlation is 0.031.
+
+**What next — R20 (proposed, not registered).** Five registrations (R10, R12, R13 A, R18, R19) have now looked for the
+price-bar model's signal outside the twelve and found none. Another way of sorting the same forecast is unlikely to find
+what is not there. The proposal is to measure, on the same point-in-time universe (60 names a month, 188 in all, F1+F2), how
+much each piece of information the model does NOT use says about a name's next day against its peers: funding rate, open
+interest, long/short ratios, taker buy share (the archive's `metrics` and `fundingRate`, free, §9 #6) and the spot–perpetual
+price gap (§9 #3). A ceiling audit in P2's sense: no model, no book, no confirmation fold; two to three days, mostly
+download. Not chosen as the proposal: §9 #6 as screens of the existing forecast (the forecast has nothing to sort), §9 #7
+(one number a day for the whole market: 650 days, only a large effect is visible).
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -1536,7 +1550,7 @@ Result:        **Read 2026-09-27 (commit c332021 holds this block as written bef
                names. New registration (R19), no fold, a day's work; the family bar counts five screens.
                Consequences: R18's four screens stay open as NOT DETECTABLE and are not re-cut; no confirmation fold is asked for.
 
-### R19 — the hindsight diagnostic: R18's cells cut by how much a name is traded in 2026 (registered 2026-09-27, before any 2026 bar of a member was fetched; go by Vadim the same day; read —)
+### R19 — the hindsight diagnostic: R18's cells cut by how much a name is traded in 2026 (registered 2026-09-27, before any 2026 bar of a member was fetched; go by Vadim the same day; read 2026-09-27: NOT DETECTABLE — picking outside names by later volume does not make the forecast look skilled, and does not exclude it at the twelve's size)
 Question:      R18 found that the twelve's model knows nothing about liquid names picked without hindsight, and that the long
                side loses there while it is the only side that earns on the twelve. The twelve were fixed after 2025-05, by
                someone who knew which names had become large. Does the forecast LOOK skilled on outside names when they are
@@ -1558,6 +1572,7 @@ Contrast:      (H) the IC inside the hindsight top third, and the spread top −
 Commands:      on the work VM, in this order —
                  `vm.sh run universe --hindsight` → `vm.sh pull` → copy output/universe_hindsight.csv to ft2/screen_hindsight.csv, commit
                  `vm.sh run screen r18_transferbook_1d --hindsight` → output/screen/r18_transferbook_1d_hindsight/screen.md
+                 (to repeat the read: add `--reference output/backtest/r13_ridgebook_1d_inpair12_rerun` — see Result)
 Folds read:    F1+F2 (exploration), the cells R18 read. No confirmation fold. F5: daily quote volume of the members only.
 Gate:          validity PASS, then, on (H):
                top-third IC t ≥ 2 AND family-wise p ≤ 0.05 → SUPPORTED: the forecast looks skilled where the names are chosen
@@ -1585,7 +1600,42 @@ Expectation:   15–30 % of the 188 names have a 2026 median of zero. The top th
                negative, and the means' product is under a third of any IC found. (D2) top third: long side −20 … +30 against
                −54 on all members, short side 0 … +40 against +41; bottom third: long side worse than −54. Likeliest: NOT
                DETECTABLE on the IC, with the long side's money moving the way the hypothesis says.
-Result:        —
+Result:        **Read 2026-09-27 (commit c01ab5a holds this block as written before any 2026 bar of a member was fetched, 4b95fec the
+               frozen volumes before the read; output/screen/r18_transferbook_1d_hindsight, 200 draws): top-third IC t 1.15,
+               family-wise p 0.90 → neither; the top third's upper bound is 0.038 ≥ 0.03 → by the gate NOT DETECTABLE.**
+               One deviation, in the order of reading: the command as registered leaves out `--reference
+               output/backtest/r13_ridgebook_1d_inpair12_rerun` (R18's reference; the default path holds no forecasts), so
+               the first read printed NO REFERENCE above its numbers. Re-run with the reference: PASS, 125,658 cells, largest
+               |Δ forecast| 5.7e-14 bps, every number identical. The cells are R18's run, which passed the same check before
+               R18 was read; the read stands. The command to repeat it carries `--reference`.
+               The characteristic: 38 of 188 names have a 2026 median of zero (20 %; the archive keeps flat zero-volume bars
+               for a delisted contract, so 180 names have a bar on every day); 6–15 of a block's 60 members are gone. Top of
+               the list: BNB 316 M USDT a day, SUI 171, TAO 115, NEAR 107, ENA 99, BCH 90. 31 names are in a top third.
+               (H) top third **IC +0.0141 (t 1.15)**, middle −0.0220 (t −2.0), bottom +0.0088 (t 0.8); spread top − bottom
+               **+0.0053 (t 0.34), family-wise p 0.90**; random static screens, best of five: 95th percentile t 2.68. Per fold
+               the top third is −0.006 on F1 and +0.031 on F2. Power: spread MDE 0.044; the top third's se is 0.0123, so an IC
+               above 0.038 is excluded there and the twelve's 0.03–0.05 is not.
+               (D1) the names that survived do drift up against the rest (mean residual +0.016 on top, −0.014 at the
+               bottom), but the forecast does not lean (mean −0.001): the product of the means is −0.0008 of the IC — nothing.
+               (D2) taker, top third: 4,566 trades, gross +20.1, net +5.6 [−18.4, +29.7], hedged net −10.4 [−26.4, +5.5],
+               flip p 0.035, long side −23.0, short side +39.2. Bottom third: net −17.4, hedged net −19.6, long −74.0, short
+               +37.5. Hindsight moves the long side by 51 bps and leaves the short side where it was — the direction the
+               hypothesis names — but the long side still LOSES on names known to have survived. The twelve's signature
+               (R14 long +51, short +10; R16 long +59, short −1) is not reproduced by choosing on later volume.
+               (D3) the top third's cells that are also in R18's `young` top third: IC +0.0312 (t 1.59) on 58,848 cells; the
+               rest of the hindsight top third +0.0077 (t 0.5); young without hindsight +0.0051 (t 0.4). The one place the
+               twelve's size appears, under t 2, one of three described cuts: a hint, not a finding.
+               Against the expectation: zero-volume share, top-third IC, bottom third, spread, family-wise p and the means all
+               inside their bands; the top third's long side −23 just under its band (−20 … +30), the short side inside;
+               the middle third at t −2.0 was not foreseen (one third of three, the sign no hypothesis names). The named
+               likeliest verdict is the one that came.
+               Reading: **knowing which outside names are still heavily traded in 2026 does not make the twelve's model look
+               skilled on them. The hypothesis "the twelve's result is the choice of names" is neither supported nor
+               excluded by this cut; what it predicted about the long side's money happened in direction and not in sign.**
+               Consequences: R14's and R16's numbers are not re-labelled. P7 is untouched. This screen is not re-cut (no other
+               window, no volume growth, no young × hindsight screen under this registration). Five screens are now counted
+               on these cells. After R10, R12, R13 A, R18 and R19 the candle ridge has shown nothing on any universe but the
+               twelve: the next registration on outside names should bring new information, not another cut of this forecast.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
