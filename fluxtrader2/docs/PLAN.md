@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 registered 2026-09-27 as R18; runs in parallel with P7, which needs nothing)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; next candidate R19, a hindsight diagnostic, not registered yet)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,10 +606,22 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: nothing until the read.** If a screen passes, one decision follows: which unread data the confirmation
-spends (R18's gate). Commands, gate and expectation: §8 R18. Code: `ft2/screen.py`, `ft2/universe.py`, `tests/test_p8_screen.py`.
+**Needed from Vadim: one go / no-go — register and run R19 (below)?** Commands, gate and numbers: §8 R18. Code:
+`ft2/screen.py`, `ft2/universe.py`, `tests/test_p8_screen.py`.
 
-**Result:** —
+**Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
+month by month by trading volume alone, the model's forecast was right no more often than a coin: correlation with what
+followed 0.0002, where 0.03–0.05 is what it shows on the twelve. None of the four splits found a third of the names where
+it works (best: the youngest third, 0.0115, inside the noise). Traded, the book on those names loses 8 USDT a trade on
+10,000 after costs — a round trip there costs about 23 bps, twice the twelve's. The test could only have seen a large
+difference between groups (about 0.045), so small ones are not ruled out: "not detectable", not "closed".
+
+**What it changes.** It raises a question about the twelve: that list was fixed after 2025-05 (it holds HYPE), by which time
+it was known which young names had grown large. A model that buys young names later known to have grown looks skilled on
+the long side only — and the twelve's money IS on the long side only, while on names picked without hindsight the long side
+loses. This is a hypothesis. The paper test (P7) answers it cleanly, because the list was fixed before every live bar.
+**R19 (proposed, not registered):** the same cells, one screen that uses hindsight on purpose ("is among the most-traded
+names of 2026"); if the signal appears there, part of the twelve's result is the choice of names. No fold, about a day.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -1424,7 +1436,7 @@ Expectation:   At F3+F4's rate, 3.6 trades a day → ~650 trades in 6 months (MD
                "real but thin"; the read then decides by the gate, not by the reading.
 Result:        —
 
-### R18 — the screener: the twelve's candle ridge on names it never saw, cut by what is known about a name beforehand (registered 2026-09-27, before the universe was chosen and before any 5m bar of a new name was downloaded; read —)
+### R18 — the screener: the twelve's candle ridge on names it never saw, cut by what is known about a name beforehand (registered 2026-09-27, before the universe was chosen and before any 5m bar of a new name was downloaded; read 2026-09-27: (A) and (B) FAIL — NOT DETECTABLE, nothing licensed)
 Question:      §0 asks for a screener that picks names and a model trained on other names. R14/R16 showed the second half among the
                twelve: the signal transfers, to SOME names (WLD, SOL, PEPE, AVAX on F1+F2; ZEC, DOGE, PEPE, WLD, ETH on F3+F4), and
                which names moves. R12/R13 A found nothing on forty names fixed in 2022 — with ridges fitted on those forty. Two
@@ -1483,7 +1495,45 @@ Expectation:   110–150 names are a member at least once; ≈ 700,000 cells. Va
                `liquid` flat or negative. 25–40 % of the members' cells clear 15 bps; 15–25 trades a day on all members, 6–10 on a
                top third; all-members net −10 … +10; the best top third net −5 … +25, MDE 25–35. Likeliest: the screens point the
                right way and do not clear the family bar — NOT DETECTABLE, with a named size.
-Result:        —
+Result:        **Read 2026-09-27 (commit c332021 holds this block as written before the universe was chosen, a5e99e0 the frozen
+               members before any 5m bar was fetched; output/backtest/r18_transferbook_1d, output/screen/r18_transferbook_1d,
+               200 draws): (A) FAILS, (B) FAILS → by the gate NOT DETECTABLE for the four screens; nothing is licensed.**
+               Validity first: PASS — 125,658 cells of the twelve, largest |Δ forecast| 5.7e-14 bps. One deviation: R13 B's
+               forecast.parquet did not exist (R13 ran before the harness saved forecasts). R13 B's command was re-run unchanged
+               as `r13_ridgebook_1d_inpair12_rerun` and tied to the original before the read: 20,287 decisions identical, 1,915
+               trades, net +32.96, hedged net +13.13 in both. No other number was read before the PASS.
+               (A) the forecast on names the model never saw, no screen: **IC +0.0002, t 0.03** on 694,501 cells, 188 names, 484
+               days (F1 −0.004, F2 +0.004); se 0.0072, so anything above 0.014 is excluded. On the average liquid name outside the
+               twelve the twelve's model knows nothing.
+               (B) top-third IC / spread top − bottom (t) / family-wise p: `young` +0.0115 (t 1.1) / +0.009 (0.6) / 0.78;
+               `violent` +0.0071 (0.6) / +0.005 (0.3) / 0.86; `in_play` +0.0096 (0.8) / +0.043 (2.45) / 0.070; `liquid` +0.0028
+               (0.3) / +0.003 (0.2) / 0.90. No top third reaches t 2. `in_play`'s spread is its BOTTOM third being wrong (names
+               whose volume is falling against their 180 days: IC −0.0335, t −2.8; F1 −0.052, F2 −0.017), not its top third being
+               right; one third of twelve at |t| 2.8 is what twelve looks produce about once in seventeen. Random static screens,
+               best of four: 95th percentile t 2.55.
+               Power: the measured spread MDE is 0.043–0.049 (expected 0.034), so a spread under ≈ 0.045 could not have been seen;
+               the top thirds' upper bounds are 0.025–0.034, above the 0.02 the gate names for closing → NOT DETECTABLE, not
+               CLOSED. What IS excluded: a contrast the size of the twelve's carriers-against-the-rest (0.08–0.10), and a pooled
+               transfer IC above 0.014.
+               (M) reported, not licensed: all members, taker, 16,306 trades (33.6 a day): gross +8.6, net −7.9 [−29.3, +13.5],
+               hedged net −20.3 [−29.8, −10.8], flip p 0.15, shuffle p 0.33; costs doubled −15.2. Best top third (`young`): net
+               +2.3 [−25.8, +30.3], hedged net −6.1, flip p 0.05, maker net +11.7. In EVERY book the long side loses and the
+               short side earns (all members: long −54, short +41) — the reverse of the twelve (R14 long +51, short +10; R16
+               long +59, short −1).
+               Against the expectation: names 188 (110–150 expected); cells as expected; (A) below its band (0.0002 against
+               0.005–0.02); `young` and `violent` point the right way but under their band, `liquid` flat as expected, `in_play`
+               best was not foreseen; 27–37 % of cells clear 15 bps (as expected); trades 34 a day (15–25 expected); all-members
+               net inside its band; the named likeliest verdict is the one that came.
+               Reading: **what the model learned on the twelve does not carry to liquid names chosen without hindsight, and none
+               of the four things known beforehand finds a group where it does.** That sharpens a question about the twelve
+               themselves, recorded as a hypothesis and not as a finding: the list holds HYPE (listed 2025-05-30), PEPE and WLD, so
+               it was fixed after F1–F4 began — by someone who knew which names had become large. A book that is long young names
+               later known to have grown would show money on the long side only, which is what R14 and R16 showed, and the sign
+               flips on names picked by trailing volume. P7's paper test is not touched by this (the list precedes every live
+               bar) and is the clean answer; a cheaper one is a DIAGNOSTIC screen on these same cells — "is among the most-traded
+               names of 2026" (hindsight on purpose): an IC that appears there says the twelve's signal is partly the choice of
+               names. New registration (R19), no fold, a day's work; the family bar counts five screens.
+               Consequences: R18's four screens stay open as NOT DETECTABLE and are not re-cut; no confirmation fold is asked for.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
