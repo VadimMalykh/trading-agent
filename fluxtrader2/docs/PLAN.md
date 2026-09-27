@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; next candidate R20, a ceiling audit of new per-name information on the point-in-time universe, proposed, not registered)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, registered 2026-09-28 on Vadim's go, not read)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,7 +606,8 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: one go / no-go — register and run R20 (below)?** Commands, gates and numbers: §8 R18, R19. Code: `ft2/screen.py`, `ft2/universe.py`, `tests/test_p8_screen.py`.
+**Needed from Vadim: nothing — he said go on R20 (2026-09-28); Claude runs and reads it.** Commands, gates and numbers:
+§8 R18, R19, R20. Code: `ft2/screen.py`, `ft2/universe.py`, `tests/test_p8_screen.py`.
 
 **Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
 month by month by trading volume alone, the model's forecast was right no more often than a coin: correlation with what
@@ -629,13 +630,14 @@ taken out. Buying still loses there (−23 USDT a trade) — less than on the na
 the suspicion predicted, but on the twelve buying earns +51 … +59, and knowing the future of a name does not reproduce
 that. One hint, which decides nothing: on names that are both young and survivors the correlation is 0.031.
 
-**What next — R20 (proposed, not registered).** Five registrations (R10, R12, R13 A, R18, R19) have now looked for the
+**What next — R20 (registered 2026-09-28, §8).** Five registrations (R10, R12, R13 A, R18, R19) have now looked for the
 price-bar model's signal outside the twelve and found none. Another way of sorting the same forecast is unlikely to find
 what is not there. The proposal is to measure, on the same point-in-time universe (60 names a month, 188 in all, F1+F2), how
 much each piece of information the model does NOT use says about a name's next day against its peers: funding rate, open
 interest, long/short ratios, taker buy share (the archive's `metrics` and `fundingRate`, free, §9 #6) and the spot–perpetual
-price gap (§9 #3). A ceiling audit in P2's sense: no model, no book, no confirmation fold; two to three days, mostly
-download. Not chosen as the proposal: §9 #6 as screens of the existing forecast (the forecast has nothing to sort), §9 #7
+price gap (§9 #3; taken as the exchange's own premium index, which needs no matching of spot symbols). A ceiling audit in
+P2's sense: no model, no book, no confirmation fold. The downloads stay on the work VM as `metrics` and `premium`
+(DATA.md) and serve any later test on these names: model inputs, the positioning screens of §9 #6, a confirmation. Not chosen as the proposal: §9 #6 as screens of the existing forecast (the forecast has nothing to sort), §9 #7
 (one number a day for the whole market: 650 days, only a large effect is visible).
 
 ## 5. Decision table (what the P2 readings mean for model choice)
@@ -1636,6 +1638,67 @@ Result:        **Read 2026-09-27 (commit c01ab5a holds this block as written bef
                window, no volume growth, no young × hindsight screen under this registration). Five screens are now counted
                on these cells. After R10, R12, R13 A, R18 and R19 the candle ridge has shown nothing on any universe but the
                twelve: the next registration on outside names should bring new information, not another cut of this forecast.
+
+### R20 — what the information the model does not use says about a name's next day, on names picked without hindsight (registered 2026-09-28 on Vadim's go, before any metrics or premium file of a member was fetched; read —)
+Question:      Five registrations (R10, R12, R13 A, R18, R19) looked for the candle ridge's signal outside the twelve and found
+               none. Before any model: does funding, the perpetual's premium over spot, open interest, the long/short ratios
+               or the taker flow of a name say which way it moves over the next day AGAINST the other members? A ceiling audit
+               in P2's sense (Principle 2) — no model, no book, no fold spent.
+Cells:         R18's, exactly: the scored cells of `output/backtest/r18_transferbook_1d` (hourly decision bars of F1+F2,
+               embargoed; the block's 60 members, the twelve left out; 694,501 cells, 188 names). Label: R18's — the move from
+               the close one bar after t to the close 288 bars later, over σ_1w·√288, clipped at ±5. VALIDITY CHECK, read
+               first: the audit's own labels equal R18's on every cell to 1e-6 and the cell count is R18's, or the run is
+               void.
+Features:      twelve, fixed here, each from data known strictly before t (a metrics row stamped ts is used from ts + 5 min, a
+               premium bar from its close, a funding rate from the bar after its funding time):
+                 funding_last      the last settled funding rate, per 8 h (rate × 8 / interval), bps
+                 funding_7d        the mean of the settled per-8-h rates of the 7 days before t
+                 premium_1h        the mean premium index (perpetual over the spot index, minus one) of the last 12 bars, bps
+                 premium_1d        … of the last 288 bars
+                 oi_chg_1d         log open interest (contracts) now minus 288 bars ago
+                 oi_chg_1w         … minus 2,016 bars ago
+                 oi_turn           log of open interest (USDT) over the dollar volume of the last 288 bars — "crowded"
+                 global_ls         log of the long/short ratio of all accounts
+                 global_ls_chg_1d  its change over 288 bars
+                 top_ls            log of the long/short ratio of the top traders' positions
+                 top_vs_global     top_ls − global_ls: the large accounts against the crowd
+                 taker_1d          the mean of the log taker buy/sell volume ratio over the last 288 bars
+Statistic:     P2 #3's for the relative bet (`ceiling._ic_xs`): per bar, the Spearman correlation across the members present
+               (≥ 5 with feature and label) of the feature with the label; averaged per day; mean over days, HAC t (2 lags).
+               ONE horizon (1d, the only one whose move clears the cost, P2 #7, R12), ONE bet (relative): a family of twelve.
+Null:          P2 #4's: the labels' whole days trade places (`ceiling._shuffle_days`, no day receives one of the 8 days
+               before it), whole rows move, 200 draws; per draw the largest |t| of the twelve → a family-wise p. A name keeps
+               its own labels, so a link between a name's lasting LEVEL of a feature and its drift over the sample survives
+               in the null and earns no credit: only what varies in time can pass. (A lasting level is a choice of names, and
+               188 names cannot certify one.)
+Described:     R18's forecast by the same statistic on the same cells (the reference row); per feature the share of cells
+               covered, the IC per fold and the share of months with its sign; the IC at which trading the top tenth breaks
+               even on these names at taker cost (P2 #7's formula on the members' priced round trip).
+Commands:      on the work VM, in this order —
+                 `vm.sh bg r20_metrics archive metrics --universe screen --start 2023-04-01 --end 2024-08-31`
+                 `vm.sh bg r20_premium archive premiumIndexKlines/5m --universe screen --monthly --start 2023-04-01 --end 2024-08-31`
+                 `vm.sh run ingest metrics premium --universe all` (metrics is rewritten whole: the twelve's rows must come back unchanged)
+                 `vm.sh bg r20 audit r18_transferbook_1d --draws 200` → output/audit/r18_transferbook_1d/audit.md
+Folds read:    F1+F2 (exploration), the cells R18 and R19 read. No confirmation fold. Every source is cut at the end of F2.
+Gate:          validity PASS, then per feature: CLEARS if |t| ≥ 2 AND family-wise p ≤ 0.05 AND the IC has one sign in F1 and F2.
+               ≥ 1 clears → a candidate exists on exploration data; it licenses no trade. Next registration: the smallest
+               thing that trades it (a rank rule on the feature, or a ridge on the cleared features alone) through the
+               harness on these members, priced — and only if that book clears its own gate, a confirmation on members cut
+               for F3+F4, whose data is fetched then.
+               none clears → per feature CLOSED if |IC| + 1.96 se < 0.02, else NOT DETECTABLE with its MDE. All twelve closed
+               → this information is closed at one day on a volume-ranked universe; what follows (another horizon, another
+               market, or P7 alone) is Vadim's decision. No variant of a feature (other window, other normalisation) is read
+               on these cells under this registration; a new feature family is a new registration and its bar counts these
+               twelve.
+Power:         R18's pooled IC on these cells had se 0.0072; a per-bar Spearman of sixty names has sd ≈ 0.13 and a day's 24
+               bars share their labels, so the expected se of a feature's IC is 0.006–0.010 and its MDE 0.017–0.028. The
+               family bar (the largest of twelve |t| on noise) is expected at 2.8–3.0, i.e. |IC| ≈ 0.02–0.03 to clear.
+Expectation:   validity PASS. Coverage ≥ 95 % of cells for every feature. Signs: funding, premium and global_ls negative
+               (what the crowd pays for and holds does worse), −0.005 … −0.020; oi and taker features inside ±0.010. Two or
+               three features reach |t| 1.5–2.5; the reference row (R18's forecast) within ±0.010. About one chance in three
+               that a feature clears the family bar. Likeliest: nothing clears, most features NOT DETECTABLE, funding or
+               global_ls the nearest.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …

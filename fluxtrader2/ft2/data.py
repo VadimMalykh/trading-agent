@@ -30,6 +30,7 @@ SLICES: dict[str, tuple[str, list[str]]] = {
     "metrics": ("ts", ["symbol", "ts"]),
     "depth": ("ts", ["symbol", "ts"]),              # data/depth/<symbol>.parquet, one file per pair
     "funding_archive": ("ts", ["symbol", "ts"]),
+    "premium": ("open_time", ["symbol", "open_time"]),   # archive premiumIndexKlines, 5m (ingest_premium, R20)
     "tape": ("ts", ["symbol", "ts"]),               # data/tape/<symbol>.parquet, per-minute (ft2 tape, P1)
     "ladder": ("ts", ["symbol", "ts"]),             # data/ladder/<symbol>.parquet, per snapshot (ingest_levels, P1)
 }
@@ -146,6 +147,26 @@ def ingest_klines(symbols: list[str], interval: str = "5m") -> dict:
     df["symbol"] = df["symbol"].astype("category")
     df.to_parquet(dst, index=False)
     return {"slice": dst.stem, "rows_in": n_in, "dups_dropped": n_in - len(df), "rows_out": len(df),
+            "first": df["open_time"].min(), "last": df["open_time"].max(), "file": str(dst)}
+
+
+def ingest_premium(symbols: list[str], interval: str = "5m") -> dict:
+    """archive premiumIndexKlines → data/premium.parquet: (symbol, open_time) → premium, the bar's last premium index — the
+    perpetual's price over the index of spot prices, minus one (a fraction; × 1e4 = bps). > 0: the perpetual is dearer."""
+    parts = []
+    for sym in symbols:
+        df = _read_zips("premiumIndexKlines", sym, pattern=f"{sym}-{interval}-*.zip", header=None, names=KLINE_COLS, dtype=str)
+        if df.empty:
+            continue
+        df = df[df["open_time"].str.isdigit()]
+        parts.append(pd.DataFrame({"symbol": sym, "open_time": pd.to_datetime(df["open_time"].astype("int64"), unit="ms", utc=True),
+                                   "premium": df["close"].astype(float).to_numpy()}))
+    df = pd.concat(parts, ignore_index=True)
+    n_in, dst = len(df), PROC / "premium.parquet"
+    df = df.sort_values(["symbol", "open_time"], kind="mergesort").drop_duplicates(["symbol", "open_time"], keep="last").reset_index(drop=True)
+    df["symbol"] = df["symbol"].astype("category")
+    df.to_parquet(dst, index=False)
+    return {"slice": "premium", "rows_in": n_in, "dups_dropped": n_in - len(df), "rows_out": len(df),
             "first": df["open_time"].min(), "last": df["open_time"].max(), "file": str(dst)}
 
 

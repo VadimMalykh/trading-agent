@@ -15,7 +15,7 @@ def cmd_smoke(_args):
 
 
 ARCHIVE_INGEST = {"metrics": "ingest_metrics", "depth": "ingest_depth", "funding_archive": "ingest_funding_archive",
-                  "levels": "ingest_levels", "klines": "ingest_klines"}   # levels: the collector ladder, windowed export → data/ladder/
+                  "levels": "ingest_levels", "klines": "ingest_klines", "premium": "ingest_premium"}   # levels: the collector ladder, windowed export → data/ladder/
 
 
 def cmd_ingest(args):

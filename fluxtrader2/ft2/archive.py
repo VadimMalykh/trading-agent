@@ -9,6 +9,7 @@ Coverage measured 2026-09-15 for our pairs (USDⓈ-M futures, `data/futures/um/`
   daily/bookTicker  best bid/ask — DISCONTINUED (2023-05 → 2024); the historical spread must
                     come from aggTrades (buy/sell price bounce) or the collector's snapshots
   daily/klines/<sym>/1m                                         2019-12 → today (we hold 2022-08 → from the collector)
+  monthly/premiumIndexKlines/<sym>/5m   the perpetual's price over the spot index, minus one (R20; listed 2026-09-28: 947 symbols)
 
 Files land under data/raw/external/binance/<type>/<symbol>/<file>.zip, unchanged, with their
 CHECKSUM verified (sha256). Fetching is resumable: existing verified files are skipped. Every
@@ -165,10 +166,10 @@ def main(kinds: list[str], symbols: list[str], start: str, end: str | None, mont
         for sym in symbols:
             if kind == "fundingRate":
                 c = fetch_monthly(kind, sym)
-            elif kind.startswith("klines/") and monthly:
-                c = fetch_monthly("klines", sym, sub=kind.split("/", 1)[1], months=months_between(s, e))
-            elif kind.startswith("klines/"):
-                c = fetch_daily("klines", sym, s, e, sub=kind.split("/", 1)[1])
+            elif "lines/" in kind and monthly:                # klines/<interval>, premiumIndexKlines/<interval>, …
+                c = fetch_monthly(kind.split("/", 1)[0], sym, sub=kind.split("/", 1)[1], months=months_between(s, e))
+            elif "lines/" in kind:
+                c = fetch_daily(kind.split("/", 1)[0], sym, s, e, sub=kind.split("/", 1)[1])
             else:
                 c = fetch_daily(kind, sym, s, e)
             total_err += c.get("err", 0) + c.get("bad", 0)
