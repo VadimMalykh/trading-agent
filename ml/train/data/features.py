@@ -13,6 +13,7 @@ from config import (
     TRADES_MAX_AGE_MIN,
     FUNDING_OI_MAX_AGE_MIN,
     ALIGN_AGE_FIX,
+    OI_JOIN_AT_CLOSE,
     LABEL_MODE,
     TB_TP_MULT,
     TB_SL_MULT,
@@ -394,7 +395,25 @@ def build_feature_frame(
     oi = db.load_open_interest(symbol, since=min_time)
     if not oi.empty:
         oi = oi.set_index("ts").sort_index()
-        o_aligned, o_age = _align_with_age(oi, feat.index)
+        oi_grid = feat.index
+        if OI_JOIN_AT_CLOSE:
+            # config.OI_JOIN_AT_CLOSE: the bar sees the last reading at or before its CLOSE.
+            # The archive stores a bucket's closing value under the bucket's START, so it
+            # must arrive here re-labelled (+5 min, its own bucket length) or this join
+            # would reach one bucket past the close.
+            if db.ARCHIVE_OI and float(db.ARCHIVE_OI_SHIFT_MIN) != 5.0:
+                raise ValueError(
+                    "OI_JOIN_AT_CLOSE=1 needs ARCHIVE_OI_SHIFT_MIN=5 when ARCHIVE_OI is set "
+                    f"(got {db.ARCHIVE_OI_SHIFT_MIN:g}): unshifted archive rows joined at "
+                    "the close are a lookahead."
+                )
+            bar_min = BAR_MINUTES_BY_INTERVAL.get(candle_interval)
+            if bar_min is None:  # no silent fallback (cf. bars_for_minutes)
+                raise ValueError(f"OI_JOIN_AT_CLOSE: unknown candle_interval={candle_interval!r}")
+            oi_grid = feat.index + pd.Timedelta(minutes=bar_min)
+        o_aligned, o_age = _align_with_age(oi, oi_grid)
+        if OI_JOIN_AT_CLOSE:
+            o_aligned.index = feat.index  # back on the bar's own label for the assignments
         o_stale = _stale_mask(o_age, FUNDING_OI_MAX_AGE_MIN)
         feat["oi"] = np.log1p(o_aligned["open_interest"].fillna(0.0).astype(float))
         feat["oi_chg"] = o_aligned["open_interest"].pct_change().fillna(0.0)

@@ -605,6 +605,10 @@ def main():
     print(f"Align age: ALIGN_AGE_FIX={'1' if ALIGN_AGE_FIX else '0'} "
           f"({'unit-aware' if ALIGN_AGE_FIX else 'legacy ns arithmetic — staleness caps do not fire'}; "
           f"pandas {_pd.__version__})")
+    from config import OI_JOIN_AT_CLOSE
+    meta["oi_join_at_close"] = bool(OI_JOIN_AT_CLOSE)
+    print(f"OI join: OI_JOIN_AT_CLOSE={'1' if OI_JOIN_AT_CLOSE else '0'} "
+          f"({'open interest as of the bar close' if OI_JOIN_AT_CLOSE else 'open interest as of the bar open — legacy'})")
     t_tr = bundle.times[tr_idx]
     t_va = bundle.times[va_idx]
     print(

@@ -167,6 +167,10 @@ def load_model():
     import data.features as _features
     _features.ALIGN_AGE_FIX = bool(meta.get("align_age_fix", False))
     _state["align_age_fix"] = _features.ALIGN_AGE_FIX
+    # Same for the open-interest join (config.OI_JOIN_AT_CLOSE): at the bar's open for every
+    # checkpoint that does not record otherwise, at its close for one trained that way.
+    _features.OI_JOIN_AT_CLOSE = bool(meta.get("oi_join_at_close", False))
+    _state["oi_join_at_close"] = _features.OI_JOIN_AT_CLOSE
     horizons = meta.get("horizons_minutes") or HORIZONS_MINUTES
     feature_dim = meta.get("feature_dim", FEATURE_DIM)
     hidden = meta.get("hidden_size", 64)
@@ -652,6 +656,7 @@ class Handler(BaseHTTPRequestHandler):
                         # the flow group) and whether its staleness ages are unit-aware.
                         "n_features": len(_state.get("feature_cols") or []),
                         "align_age_fix": bool(_state.get("align_age_fix", False)),
+                        "oi_join_at_close": bool(_state.get("oi_join_at_close", False)),
                         # The universe, so an operator can see at a glance whether the
                         # whitelist is being narrowed by the checkpoint (T5). Empty
                         # "trained_pairs" means a pre-C12 checkpoint that records none,

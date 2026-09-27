@@ -193,7 +193,7 @@ CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT \
 DIR_MAG_WEIGHT DIR_MAG_WEIGHT_CLIP DIR_MAG_WEIGHT_POWER \
 LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER \
 VN_VOL_WINDOW VN_MIN_SIGMA VN_CALIB_END \
-CANDLE_INTERVAL FEATURE_GROUPS ARCHIVE_OI ARCHIVE_OI_SHIFT_MIN \
+CANDLE_INTERVAL FEATURE_GROUPS ARCHIVE_OI ARCHIVE_OI_SHIFT_MIN OI_JOIN_AT_CLOSE \
 NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD \
 BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN \
 GATE_THRESHOLD SERVE_TARGET_COVERAGE \
@@ -271,6 +271,18 @@ if [[ -z "$EVAL_ONLY_CKPT" ]]; then
   _recipe_cmp ARCHIVE_OI          ""                                    "${ARCHIVE_OI:-}"
   _recipe_cmp ARCHIVE_OI_SHIFT_MIN "0"                                  "${ARCHIVE_OI_SHIFT_MIN:-0}"
   _recipe_cmp ALIGN_AGE_FIX       "0"                                   "${ALIGN_AGE_FIX:-0}"
+  _recipe_cmp OI_JOIN_AT_CLOSE    "0"                                   "${OI_JOIN_AT_CLOSE:-0}"
+
+  # OI_JOIN_AT_CLOSE reads the archive one bucket past the close unless the archive rows
+  # are re-labelled (config.py; features.build_feature_frame refuses it too, but only after
+  # the VM exists and the dump is restored). Refuse here, before anything is created.
+  if [[ "${OI_JOIN_AT_CLOSE:-0}" == "1" && -n "${ARCHIVE_OI:-}" && "${ARCHIVE_OI_SHIFT_MIN:-0}" != "5" ]]; then
+    echo ""
+    echo "ERROR: OI_JOIN_AT_CLOSE=1 with ARCHIVE_OI set needs ARCHIVE_OI_SHIFT_MIN=5"
+    echo "       (got '${ARCHIVE_OI_SHIFT_MIN:-0}'): unshifted archive rows joined at the bar's"
+    echo "       close are a lookahead. WALKFORWARD_PROTOCOL.md §10.1."
+    exit 1
+  fi
 
   # A walk-forward fold is any run that moves the split (WALKFORWARD_PROTOCOL §1).
   # Such a run exists to be compared with the incumbent, so drift is fatal, not a note.

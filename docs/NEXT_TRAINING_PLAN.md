@@ -250,8 +250,12 @@ there (§6 C15).
     difference. The loader now re-labels the archive's account ratios unconditionally
     (`db.ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN = 5`, pinned to `m3/archiveoi.py`'s copy by the test) and
     open interest under `ARCHIVE_OI_SHIFT_MIN` (default 0 = X8 exactly; 5 = the served
-    convention), recorded in the checkpoint meta and reported as launcher drift. Whether X8 is
-    re-run under the served convention before X8-F is a decision for Vadim (BACKLOG X8-F).
+    convention), recorded in the checkpoint meta and reported as launcher drift. X8′ measured
+    the difference (2026-09-27: +0.005 with the value at the open against X8's +0.011); it was
+    then closed from the serve side — `OI_JOIN_AT_CLOSE=1` joins open interest at the bar's
+    close, which with the shift at 5 is X8's training data exactly (BACKLOG X8-F). 🔴 The two
+    knobs go together: the close join over an unshifted archive is a lookahead, and both
+    `features.py` and the launcher refuse it.
 13. 🟡 **Unpinned pip dependencies change between image builds (found 2026-09-25, X8′ seed 3).**
     `gcp_train.sh` builds `ml_trainer_gpu` from scratch on every fresh VM, so a release on PyPI
     between two seeds of one family changes the image under it. SQLAlchemy 2.1.0 shipped between
@@ -991,9 +995,90 @@ FEATURE_GROUPS=legacy SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X2 s3
 ~2.5 h and ≈ $1.5 each, ~8 h serial. **Bring back the three logs** (never a summary); the read
 happens in a fresh session with §0.3's awk over the epoch lines, then the gate above.
 
-### 🟢 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23, RUN 2026-09-23→24, READ 2026-09-24: **MOVED** (+0.011 plateau-mean LB, 4σ, every seed above the control; cov-0.02 gross +18.2 vs +10.9)
+### 🟢 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23, RUN 2026-09-23→24, READ 2026-09-24: **MOVED** (+0.011 plateau-mean LB, 4σ, every seed above the control; cov-0.02 gross +18.2 vs +10.9). Re-run under the served convention (X8′), READ 2026-09-27: **FLAT** (+0.005, every seed above the control, under the +0.008 bar)
 
-**Result, read 2026-09-24 in a fresh session** (`logs/X8_s1..3.log` against `logs/X0_s1..3.log`;
+#### X8′ — the same recipe with open interest as serving supplies it today. RUN 2026-09-24→25, READ 2026-09-27: **FLAT**
+
+**Plain reading first.** X8 trained on open interest measured at the *end* of each 5-minute
+bar; the live system feeds the model the value from the *start* of the bar. X8′ retrained the
+same recipe with the start-of-bar value, so that training matches what is served today. The
+score (the conservative share of correct calls on the 5% most confident bars) came out at
+**0.531 — above the control's 0.526 on all three seeds, but only about half of X8's gain
+(0.537), and under the bar written down beforehand (+0.008).** In money terms the served
+top-2% cut still earns like X8: **+17.3 basis points gross per trade** (1 bp = 0.01%; ≈ $0.86
+on the $500 size unit) against the control's +10.9 and X8's +18.2, which after the 14-bps cost
+of entering and leaving (4 bps fee + 3 bps assumed slippage, twice) is **+3.3 net per trade, ≈ $0.16**,
+on about four trades a day across the twelve pairs. **Bottom line: open-interest history helps
+under either convention, but the version that matches today's serving keeps only about half
+the gain and does not clear the registered bar; nothing served changes, and the fold run is on
+the subject of Decision 1 (below; decided (b)).**
+
+| run | run id | recipe check (§0.4) | epochs | all-epoch mean LB | plateau n / mean | selected | cov 0.02 gross bps/trade, 240m (trades) |
+|---|---|---|---:|---|---|---|---:|
+| X8′ s1 | `20260924T125100Z` | ✅ 19 cols, twelve `Archive OI … shift_min=5` sha8 83c85bd7, X0's `Split` line, SQLAlchemy 2.0.54 | 28 | 0.5184 | 19 / **0.5275** | ep 8 (0.5444) | +10.25 (982) |
+| X8′ s2 | `20260924T183749Z` | ✅ same | 38 | 0.5208 | 26 / **0.5336** | ep 18 (0.5555) | +25.82 (1,008) |
+| X8′ s3 | `20260925T150501Z` | ✅ same (git `95ff091`, the SQLAlchemy pin; 2.0.54 as seeds 1–2) | 38 | 0.5249 | 21 / **0.5307** | ep 18 (0.5598) | +15.78 (1,124) |
+
+- **Primary, as registered (no fallback — plateaus 19 / 26 / 21, all ≥ 15):** X8′ **0.5306**
+  (between-seed sd 0.0031) vs X0 **0.5258**. **Contrast X8′ − X0 = +0.0048**, 1.8σ on the
+  registered SE of 0.0026 (2.5σ on the two families' own spread); every X8′ seed above the X0
+  family mean and above X0's best seed (0.5266). Gate: inside (−0.008, +0.008) → **FLAT.**
+- **This FLAT is "smaller than the bar", not "no effect".** The design resolves ≈ 0.007 at 80%
+  power, so a bar of 0.008 is passed only about half the time by a true effect of 0.008. The
+  point estimate is positive on every seed; the lever is not closed by this read.
+- **X8 against X8′ (not a registered contrast — texture):** 0.5367 − 0.5306 = **+0.0061**, 2.6σ
+  on the families' own spread. The only difference between the arms is whether bar T carries
+  the open interest at its close or at its open; the LSTM sees 384 bars, so that is the last
+  bar's OI change and nothing else. Suggestive that the closing value carries information,
+  not proven. On the pure archive part of val at the selected epochs the two are equal
+  (pre-book LB 0.547 / 0.558 / 0.551 vs X8's 0.547 / 0.554 / 0.551).
+- **Secondary — it earns:** pooled cov-0.02 gross **+17.3 bps over 3,114 trades** (X0 +10.9
+  over 3,231; X8 +18.2 over 2,509); per seed +10.3 / +25.8 / +15.8, net at 14 bps −3.8 /
+  +11.8 / +1.8; dir_acc at cov 0.02 0.557 / 0.584 / 0.581 (X0 0.576 / 0.562 / 0.570; X8 0.600
+  / 0.581 / 0.594). At cov 0.05 gross +3.0 / +4.3 / +2.6 — X0's level (+0.7 / +7.9 / +0.3),
+  below X8's (+10.0 / +5.6 / +6.2). Gross falls with coverage on every seed (§0.4).
+- **All-epoch means are below X0's** (0.5214 vs 0.5254) because the runs carry 9–17 degraded
+  epochs after the plateau before patience fires; the registered statistic is the plateau mean.
+- **Norm flags, none a void:** X0's `hl_range` spikes; ZEC's `oi_chg` heavy tail as in X8; one
+  new line, HYPE `has_funding_oi` spike on 1 row (the shift moves HYPE's first archive row one
+  bar later, so its first train bar has no OI; HYPE is 10/19 constant instead of 11/19).
+  `Align age: ALIGN_AGE_FIX=0`, no `Embargo:` line, no `WARNING: at the SERVED gate`. Both
+  sides are above 0.52 LB at cov 0.05 on all three seeds.
+- **Family-median seed (WALKFORWARD §10.1's rule): s3**, run `20260925T150501Z`, checkpoint
+  `m2_multi_20260925T150501Z_95ff091d.pt`. Logs `logs/X8p_s{1,2,3}.log` (seed 3's first
+  attempt `logs/X8p_s3_failed.log`, §0.5 trap 13); eval dumps fetched.
+
+**What the read licenses, by X8's own list:** FLAT with plateaus ≥ 15 → nothing served
+changes; X8b is a decision for Vadim (already funded 2026-09-24 — its block below is
+launchable against X8′ as control). The folds were licensed by X8's MOVED and funded on it;
+whether they now run under X8′'s convention is **Decision 1** below.
+
+**🔴 Decision 1, for Vadim — which open-interest convention the twelve fold runs carry.**
+Found while reading: serving does not *have* to use the start-of-bar value. The collector
+polls open interest every 60 s and the engine decides 120 s after the bar closes, so the
+closing value is already in the database at decision time; `features.py` simply joins every
+side table at the bar's `open_time` and discards the last five minutes. The train/serve
+difference can therefore be closed from either side:
+
+| | (a) start-of-bar OI — as decided 2026-09-24 | (b) end-of-bar OI — serve joins OI at the bar's close |
+|---|---|---|
+| one-split evidence | X8′: +0.0048, FLAT | X8: +0.0108, MOVED (its training data is exactly this convention) |
+| build before launch | none | a default-off knob `OI_JOIN_AT_CLOSE` in `features.py` (OI aligned at `open_time` + one bar; with `ARCHIVE_OI_SHIFT_MIN=5` this reproduces X8's training rows bit-for-bit on the archive era — pinned by a test), recorded in checkpoint meta, bound at serve from meta, on `/health`, launcher passthrough; CPU only, in Docker, Claude builds |
+| fold runs | 12, ≈ $18, §10.5 as written | 12, ≈ $18, §10.5 plus the knob; F2 and F3 (2024-10 → 2025-10) contain archive rows only |
+| promotion candidate | X8′ s3 | X8 s2 (as §10.4 first named) — *amended on the decision: X8″'s median seed* |
+| honest risk | certifying the smaller effect | the convention is chosen after seeing both reads — a two-way fork; the folds are untouched by either read and remain the test |
+
+Claude recommended (b); (c) — run no folds — was the third option. 🟢 **DECIDED 2026-09-27,
+Vadim: (b).** Built and tested the same day (`tests/test_oi_join_at_close.py`, trainer image:
+knob on + shift 5 equals X8's rows bit for bit on the archive era; on collector polls the
+bar reads the last one at or before its close, never later; the unshifted combination is
+refused by `features.py` and by the launcher). One cost the table above did not show: X8's
+checkpoints carry no `oi_join_at_close` in their meta, so **the checkpoint that would be
+served is retrained under the registered recipe — X8″, three full-window runs, ≈ $4.5,
+launched only if the folds come back CONFIRMED** (WALKFORWARD §10.4). Commands and checks:
+WALKFORWARD §10.5–10.6.
+
+**Result of X8, read 2026-09-24 in a fresh session** (`logs/X8_s1..3.log` against `logs/X0_s1..3.log`;
 all six on the identical `Split` line `train=3724724 val=931182 | val [2025-12-14 09:35 →
 2026-09-09 20:05 UTC]`, 19 columns, X0's numbers below reproduced exactly from the logs).
 
@@ -1047,13 +1132,10 @@ validation split, not a certification: what it licenses is the fold run that cou
   serving provides (the collector's last poll at or before T). The identity check matched
   values at 0.03–0.19% median unshifted and 3–4× tighter shifted. The read stands as a
   measurement that OI history helps; the served configuration differs from it by one bar of
-  OI freshness. **Resolved 2026-09-24, Vadim: option (2) — X8′.** The same three commands as
-  X8 with `ARCHIVE_OI_SHIFT_MIN=5` added (launcher log: two drift items, `ARCHIVE_OI` and
-  `ARCHIVE_OI_SHIFT_MIN`; run log: every `Archive OI:` line ending `shift_min=5`, `git_sha` at
-  or after `198cc4f`; everything else in X8's acceptance unchanged). Read as X8 was read —
-  §0.3's awk against X0's plateau means, X8's gate, X8's secondary — with the expectation now
-  MOVED; result block goes here. X8′'s family-median seed becomes WALKFORWARD §10's promotion
-  candidate; X8 s1–s3 stay banked as the unshifted record. Logs: `logs/X8p_s{1,2,3}.log`.
+  OI freshness. **Resolved 2026-09-24, Vadim: option (2) — X8′:** the same three commands as
+  X8 with `ARCHIVE_OI_SHIFT_MIN=5` added, read with X8's statistic, gate and secondary,
+  expectation recorded MOVED. **Read 2026-09-27: FLAT — the X8′ block above.** X8 s1–s3 stay
+  banked as the unshifted record.
 - **Norm flags, per §0.4, none a void:** the hl_range `DEGENERATE SPIKE` lines and WLD's
   `has_funding_oi` spike are X0's own; new are two *heavy-tail* notes on `oi_chg` (HYPE 3 rows,
   ZEC 23 rows beyond ±50, winsorised — a populated tail, not a spike). Class mix at the selected
@@ -1357,9 +1439,11 @@ items, `FEATURE_GROUPS: incumbent='legacy' this run='legacy,flow'` and `ARCHIVE_
 (three, with `ARCHIVE_OI_SHIFT_MIN: incumbent='0' this run='5'`, under the served convention).
 Acceptance adds: twelve `Archive flow:` lines ending `account_shift_min=5`, and every
 `Archive OI:` line ending `shift_min=<the decided value>`.
-**Bring back the three logs**; the read (X8's statistic against X8's plateau means 0.5341 /
-0.5366 / 0.5393, family 0.5367; gate ±0.008; secondary against +18.2 over 2,509) happens in a
-fresh session.
+**Bring back the three logs**; the read (X8's statistic against the control **X8′**, amendment
+4: plateau means 0.5275 / 0.5336 / 0.5307, family **0.5306**; gate ±0.008; secondary against
++17.3 over 3,114) happens in a fresh session. *2026-09-27:* X8′ is read (FLAT, plateaus 19 /
+26 / 21), so this block is launchable as written; it does not depend on Decision 1 (X8′
+block), because both arms of this contrast share one convention.
 
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 
@@ -1496,7 +1580,9 @@ assuming a knob reaches them.
 `ARCHIVE_OI` (X8) is on the list and is special-cased: on the launcher it is a `gs://` path; the
 remote job copies the file to `ml/train/output/archive/` on the train VM and re-points the
 variable at the container path (`/workspace/train/output/archive/<file>`) before either
-passthrough loop reads it. It is not on the fold allowlist.
+passthrough loop reads it. It is not on the fold allowlist. `ARCHIVE_OI_SHIFT_MIN` and
+`OI_JOIN_AT_CLOSE` (2026-09-27) are forwarded too, reported as drift, and also off the fold
+allowlist; the launcher refuses `OI_JOIN_AT_CLOSE=1` over an archive that is not shifted by 5.
 
 ### Cost arithmetic (never needs a re-run)
 

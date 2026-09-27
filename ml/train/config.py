@@ -101,6 +101,21 @@ FUNDING_OI_MAX_AGE_MIN = float(os.environ.get("FUNDING_OI_MAX_AGE_MIN", "480")) 
 # SPLIT_EMBARGO) — BACKLOG "staleness caps never fired". Off = the legacy arithmetic exactly.
 ALIGN_AGE_FIX = os.environ.get("ALIGN_AGE_FIX", "0").strip() == "1"
 
+# 🔴 2026-09-27 (X8′ read, Decision 1 = (b)): every side table is as-of joined at the bar's
+# `open_time`, so bar T carries the open interest known at T — although the bar is acted on
+# only after it closes, when the collector (60 s polls) already holds the value at T + one
+# bar. X8 trained on the archive's unshifted rows, i.e. on the value at the bar's CLOSE, and
+# moved (+0.011); X8′ trained on the value at the OPEN, which is what this join serves, and
+# came back FLAT (+0.005). With this knob ON the open-interest join — and only that join —
+# is taken at `open_time` + one bar. Together with ARCHIVE_OI_SHIFT_MIN=5 (archive rows
+# re-labelled to the instant their value was measured) it reproduces X8's training rows
+# exactly on the archive era, and serving reads the collector's last poll at or before the
+# close. DEFAULT OFF = every banked checkpoint. Recorded in the checkpoint meta
+# (`oi_join_at_close`), bound at serve time from that meta, reported as launcher drift.
+# ON with an archive that is NOT shifted by 5 would read the value at T + two bars — a
+# lookahead — and is refused in features.build_feature_frame. WALKFORWARD_PROTOCOL §10.
+OI_JOIN_AT_CLOSE = os.environ.get("OI_JOIN_AT_CLOSE", "0").strip() == "1"
+
 FLAT_THRESHOLD = float(os.environ.get("FLAT_THRESHOLD", "0.002"))  # 0.2% default
 # Flat band scales roughly with horizon (bps of move to count as directional)
 FLAT_THRESHOLD_PER_HORIZON = {

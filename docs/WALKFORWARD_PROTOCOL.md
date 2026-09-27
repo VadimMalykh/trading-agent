@@ -1794,8 +1794,30 @@ when X8′ is read (before any fold of this era is launched). One fold attempt h
 launched unshifted before the decision — F2 s1, run `20260924T122208Z`, git `0a83a0e`, stopped
 during its dump restore — **void**, recorded in 10.7; it trained nothing.
 
+🔴 **HOLD, 2026-09-27, before any valid launch (no run exists): X8′ is read — FLAT.** Plateau
+means 0.5275 / 0.5336 / **0.5307**, family 0.5306 against X0's 0.5258 (+0.0048; bar +0.008),
+every seed above the control (NEXT_TRAINING_PLAN §2, X8′ block). By the rule above the
+promotion candidate under the shifted convention is the family median, **X8′ seed 3, run
+`20260925T150501Z`, checkpoint `m2_multi_20260925T150501Z_95ff091d.pt`**. This era was funded
+on X8's MOVED, and the read found that the train/serve difference can also be closed from the
+serve side (open interest joined at the bar's close, which the collector already holds at
+decision time). The choice put to Vadim (BACKLOG X8-F, Decision 1): (a) the twelve runs with
+the shift alone, candidate X8′ s3; (b) the twelve runs with a serve-side knob
+`OI_JOIN_AT_CLOSE` as well; (c) no fold run. 🟢 **DECIDED 2026-09-27, Vadim: (b).** This era
+carries **`ARCHIVE_OI_SHIFT_MIN=5` and `OI_JOIN_AT_CLOSE=1`**: archive rows are re-labelled
+to the instant their value was measured, and the open-interest join — only that join — is
+taken at the bar's close (`config.py`; `features.build_feature_frame`). On archive rows this
+is exactly what X8 trained on (`tests/test_oi_join_at_close.py`: bit-identical `oi`,
+`oi_chg`, `has_funding_oi` on every archive-era bar, every other column untouched), and on
+the collector's rows it is the last poll at or before the close, never a later one. F2 and
+F3 (2024-10 → 2025-10) contain archive rows only. The knob is recorded in the checkpoint
+meta (`oi_join_at_close`), bound at serve time from that meta, shown on `/health`, and the
+launcher refuses it with an unshifted archive (a lookahead). 10.4's candidate, 10.5's block
+and 10.6's checks are amended below accordingly; nothing else in this section changes.
+
 **One change:** `ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet`
-— the archive fill of `oi` / `oi_chg` before the collector's first row, exactly as in X8. The
+— the archive fill of `oi` / `oi_chg` before the collector's first row, exactly as in X8
+(expressed, since 2026-09-27, as the shift plus the close join above: the same rows). The
 fold-drift guard in `gcp_train.sh` refuses this knob on a fold unless `ALLOW_RECIPE_DRIFT=1` is
 given; this section is the registration that licenses it.
 
@@ -1858,17 +1880,27 @@ veto against a large loss, not a measurement of X8's gain; do not read a NOT DET
 ### 10.4 What each outcome licenses — and nothing more
 
 * **CONFIRMED on A, and B not WORSE** → **promotion of the X8 recipe's full-window instance**,
-  chosen now, before any fold is read, by the U12 rule (family median by plateau-mean LB):
-  **X8 seed 2, run `20260923T204303Z`, checkpoint `m2_multi_20260923T204303Z_d88f3506.pt`**
-  (plateau means 0.5341 / **0.5366** / 0.5393). Through the U12 runbook (NEXT_TRAINING_PLAN §2
+  chosen by a rule fixed now, before any fold is read — the U12 rule, family median by
+  plateau-mean LB. *As first written (2026-09-24)* that named X8 seed 2, run
+  `20260923T204303Z` (plateau means 0.5341 / **0.5366** / 0.5393). 🔴 *Amended 2026-09-27
+  with decision (b), before any fold exists:* X8's three checkpoints carry no
+  `oi_join_at_close` in their meta, so serving would bind them to the join at the open — the
+  very difference (b) removes — and their cut would be derived on a val window whose last
+  54 days (the collector's rows) were joined at the open. **The promoted instance is
+  therefore the family-median seed of "X8″": three full-window runs of this section's recipe
+  (X8's command block plus `ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1`, seeds 1–3, ≈ $4.5),
+  launched only after a CONFIRMED here, read with X8's statistic against X0.** Its training
+  rows are X8's exactly; only the collector tail of val differs. If X8″ does not read MOVED
+  against X0, nothing is promoted and the two reads go to Vadim. Through the U12 runbook (NEXT_TRAINING_PLAN §2
   U12; BACKLOG row 10): C13 cut and C4 ladder derived from its own val window, `gcp_promote.sh
-  --checkpoint m2_multi_20260923T204303Z_d88f3506.pt` with `ML_GATE_THRESHOLD` at the C13 cut,
+  --checkpoint <that checkpoint>` with `ML_GATE_THRESHOLD` at the C13 cut,
   the constants restated in `policy.ex` / `regime.ex` / `config_test.exs` / `forward.py`,
   ledgers backed up and cleared, and the forward clock's **fifth start** as its own registered
   restart. No feature code changes on the served path: `oi` / `oi_chg` are in the 19 columns and
   the collector supplies them live (the archive stops where the collector starts). The
   inference image is rebuilt from the current `serve.py`, and `/health` must then show
-  `n_features: 19`, `align_age_fix: false`, `checkpoint_bound: true`.
+  `n_features: 19`, `align_age_fix: false`, **`oi_join_at_close: true`**, `checkpoint_bound:
+  true`; the acceptance replay's offline scorer must bind the same knob from the meta.
 * **CONFIRMED on A, B WORSE** → nothing promoted; recorded as a finding about the recipe.
 * **NOT DECIDABLE, W2 VETO or INELIGIBLE on A** → nothing promoted; X8's MOVED stays a
   one-split result. The only route onward is more folds under a new registration (§3), never a
@@ -1890,7 +1922,8 @@ export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,100
 export VAL_FRACTION=0.125 TRAIN_FRACTION=0.5
 export DUMP_MAX_AGE_MIN=100000                                  # the pinned 20260913T050118Z snapshot
 export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet   # the one change
-export ARCHIVE_OI_SHIFT_MIN=5                                  # decision (2): the served convention, as X8′
+export ARCHIVE_OI_SHIFT_MIN=5                                  # archive rows labelled with the instant of their value
+export OI_JOIN_AT_CLOSE=1                                      # decision (b), 2026-09-27: open interest as of the bar's close
 export ALLOW_RECIPE_DRIFT=1                                     # licensed by this section only
 unset SPLIT_EMBARGO ALIGN_AGE_FIX                               # both stay OFF (§10.1)
 
@@ -1906,27 +1939,30 @@ VAL_OFFSET=0.250 SEED=3 ./scripts/gcp_train.sh --gpu 60 384      # -> logs/WFX8-
 ```
 
 **The go/no-go before the VM is created** (printed by the launcher, costs nothing): the line
-`recipe differs from the incumbent (T1) in:` followed by exactly two items, `ARCHIVE_OI:
-incumbent=''  this run='gs://…metrics_um_5m_83c85bd7.parquet'` and `ARCHIVE_OI_SHIFT_MIN:
-incumbent='0'  this run='5'`, then `ALLOW_RECIPE_DRIFT=1 — fold drift accepted on the
-launcher's say-so.` Any other item in that list (an `ALIGN_AGE_FIX`, a `SPLIT_EMBARGO`, a
-`FEATURE_GROUPS`), or the shift item missing, means the environment is wrong —
+`recipe differs from the incumbent (T1) in:` followed by exactly three items, `ARCHIVE_OI:
+incumbent=''  this run='gs://…metrics_um_5m_83c85bd7.parquet'`, `ARCHIVE_OI_SHIFT_MIN:
+incumbent='0'  this run='5'` and `OI_JOIN_AT_CLOSE: incumbent='0'  this run='1'`, then
+`ALLOW_RECIPE_DRIFT=1 — fold drift accepted on the launcher's say-so.` Any other item in that
+list (an `ALIGN_AGE_FIX`, a `SPLIT_EMBARGO`, a `FEATURE_GROUPS`), or either of the last two
+missing, means the environment is wrong —
 stop, fix, relaunch. A `cache miss` line means the snapshot moved — stop before the run
 trains.
 
 ### 10.6 Verify every run from its own log BEFORE recording it
 
-§5.1's six checks, unchanged, **plus four**. A run failing any is void — not recorded, its
+§5.1's six checks, unchanged, **plus six**. A run failing any is void — not recorded, its
 checkpoint never promoted.
 
 | # | log line | required value |
 |---|---|---|
 | 1–6 | §5.1 | as there: `Split walkforward_window` with `0.125` / the fold's offset / `0.5`; twelve pairs; `5m`; `legacy` / `8` / `20`; the eval block's `Val samples` span equal to check 1's |
 | 7 | `=== ARCHIVE_OI (X8) -> /workspace/train/output/archive/metrics_um_5m_83c85bd7.parquet ===` | present, that file |
-| 8 | twelve `Archive OI: <pair> … sha8=83c85bd7, shift_min=5` lines | twelve, that sha8, **`shift_min=5`** on every line (fewer archive rows than X8's per pair is expected — a fold's `since` is later); the launcher log's `git_sha` must be at or after `198cc4f`, the commit that carries the knob — an older clone ignores it silently |
+| 8 | twelve `Archive OI: <pair> … sha8=83c85bd7, shift_min=5` lines | twelve, that sha8, **`shift_min=5`** on every line (fewer archive rows than X8's per pair is expected — a fold's `since` is later) |
 | 9 | the `CONSTANT in the train window` block | `oi` and `oi_chg` absent from every list (11/19 on the long pairs, 10/19 on WLD and the global fit, as in X8; F3 may differ for the late listings — record what it prints, but `oi` must be gone everywhere) |
 | 10 | `Align age: ALIGN_AGE_FIX=0 (legacy ns arithmetic …)` and no `Embargo:` line with a non-zero count | as stated — both knobs off |
 | 11 | the three seeds of one fold | **identical `Split` lines** (one snapshot) |
+| 12 | `OI join: OI_JOIN_AT_CLOSE=1 (open interest as of the bar close)` | present, exactly that — a missing line means the clone predates the knob and the run trained X8′'s recipe |
+| 13 | the launcher log's `git_sha` | at or after the commit that carries `OI_JOIN_AT_CLOSE` (recorded in 10.7 when pushed) — an older clone ignores the knob silently |
 
 **Bring back per run:** the `Split` line; the `resolved knobs` line; the `Fixed-coverage P&L`
 table for the **240m** head; the `SERVED GATE (C13)` line; the run id. Claude records each run
