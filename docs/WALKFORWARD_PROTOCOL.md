@@ -1891,7 +1891,12 @@ veto against a large loss, not a measurement of X8's gain; do not read a NOT DET
   (X8's command block plus `ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1`, seeds 1–3, ≈ $4.5),
   launched only after a CONFIRMED here, read with X8's statistic against X0.** Its training
   rows are X8's exactly; only the collector tail of val differs. If X8″ does not read MOVED
-  against X0, nothing is promoted and the two reads go to Vadim. Through the U12 runbook (NEXT_TRAINING_PLAN §2
+  against X0, nothing is promoted and the two reads go to Vadim. X8″'s commands, serial, logs
+  `logs/X8pp_s{1,2,3}.log`: NEXT_TRAINING_PLAN §2 X8's command block (no fold variables, no
+  `ALLOW_RECIPE_DRIFT`) with `export ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1` added;
+  launcher go/no-go: the same three drift items as 10.5; each log must print X0's `Split`
+  line, twelve `Archive OI: … shift_min=5` lines and `OI join: OI_JOIN_AT_CLOSE=1`.
+  Promotion goes through the U12 runbook (NEXT_TRAINING_PLAN §2
   U12; BACKLOG row 10): C13 cut and C4 ladder derived from its own val window, `gcp_promote.sh
   --checkpoint <that checkpoint>` with `ML_GATE_THRESHOLD` at the C13 cut,
   the constants restated in `policy.ex` / `regime.ex` / `config_test.exs` / `forward.py`,
@@ -1962,7 +1967,7 @@ checkpoint never promoted.
 | 10 | `Align age: ALIGN_AGE_FIX=0 (legacy ns arithmetic …)` and no `Embargo:` line with a non-zero count | as stated — both knobs off |
 | 11 | the three seeds of one fold | **identical `Split` lines** (one snapshot) |
 | 12 | `OI join: OI_JOIN_AT_CLOSE=1 (open interest as of the bar close)` | present, exactly that — a missing line means the clone predates the knob and the run trained X8′'s recipe |
-| 13 | the launcher log's `git_sha` | at or after the commit that carries `OI_JOIN_AT_CLOSE` (recorded in 10.7 when pushed) — an older clone ignores the knob silently |
+| 13 | the launcher log's `git_sha` | at or after **`be9df37`**, the commit that carries `OI_JOIN_AT_CLOSE` (pushed 2026-09-27) — an older clone ignores the knob silently |
 
 **Bring back per run:** the `Split` line; the `resolved knobs` line; the `Fixed-coverage P&L`
 table for the **240m** head; the `SERVED GATE (C13)` line; the run id. Claude records each run
