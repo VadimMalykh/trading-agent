@@ -680,9 +680,9 @@ months, so the result leans in their favour.
 |---|---|---|
 | 1. registration | ✅ committed before the rule was written | §8 R21 |
 | 2. the rule + tests (`ft2/audit.py::OIBook`, `tests/test_p8_audit.py`) | ✅ 81 tests pass; committed before the rule saw a real bar | `./fluxtrader2/scripts/ft2.sh --test` |
-| 3. the run | 🟡 started 2026-09-28 04:27 UTC on `fluxtrader2-work` (VM running) | finished when `vm.sh ssh 'tail -2 ~/fluxtrader2/output/logs/r21.log'` shows `wrote output/backtest/r21_oibook_1d/`; if the log ends in `Killed` or a traceback, or no `python -m ft2 backtest` process is left without `wrote `: fix, then §8 R21 "Commands", first line, again — nothing was read |
-| 4. validity, then the read | ⬜ | `vm.sh run audit r21_oibook_1d --book`, `vm.sh pull`, `output/backtest/r21_oibook_1d/report.md` |
-| 5. the twin with costs doubled | ⬜ | §8 R21 "Commands", third line |
+| 3. the run | ✅ 2026-09-28 04:27 → 05:03 UTC, no error | `output/backtest/r21_oibook_1d/` (pulled) |
+| 4. validity, then the read | ✅ validity PASS (139,212 decisions, 8,234 taken in 4,117 whole units, 0 off the grid, 0 on a non-member). **Read: taker net −17.33 [−28.86, −5.81], maker net −9.59 [−21.16, +1.98], gross +1.56, flip p 0.50 → by the gate CLOSED.** Not yet written into §8 | `output/backtest/r21_oibook_1d/report.md`, `book_check.json` |
+| 5. the twin with costs doubled, and a described check that the book traded what R20 measured | 🟡 running on the work VM (VM running) | log `output/logs/r21_x2.log`; the check: `python - < output/backtest/r21_oibook_1d/describe_score.py` from `~/fluxtrader2` (the script is in the local output folder, not in git) |
 | 6. result into §8 R21, this section, README; `vm.sh stop`; commit | ⬜ | — |
 
 The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md); R21 needs nothing else.
