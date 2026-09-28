@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, registered 2026-09-28, not read)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,8 +606,8 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: one decision — what follows R21: (1), (2) or (3) under "What next" below. Claude recommends (1).**
-Commands, gates and numbers: §8 R18, R19, R20, R21. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
+**Needed from Vadim: nothing now. Claude builds, runs and reads R22 (the longer hold; "What next" below has the steps).**
+Commands, gates and numbers: §8 R18–R22. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `tests/test_p8_screen.py`.
 
 **Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
@@ -678,23 +678,26 @@ trip: even if every cell could be traded it is worth 12 USDT a leg against 19 of
 long/short numbers R20 left unresolved (they are no bigger). After R10, R12, R13 A, R18, R19, R20 and R21, nothing measured
 on names outside the twelve clears its costs at one day.
 
-**What next — one decision for Vadim:**
+**What next — decided. Vadim chose (1) on 2026-09-28: a longer hold, measured before anything is traded (R22).** In plain
+words: on the same names and months, take each of six signals (R20's five unresolved numbers and the price-bar model's
+forecast), and ask whether the names it puts at the top earn more over the next 3 days and the next 7 days than the names
+it puts at the bottom — in money, on average, and by more than the 17.6 USDT per 10,000 a round trip costs there. No model,
+no simulated book, no unread months spent, no download. Its weakness, stated before the read: 485 days hold only 69
+separate weeks, so it can certify only a large effect (about 45 USDT a leg at 3 days, 95 at 7) and cannot rule a small one
+out. The two options not taken stay open: (2) stop looking outside the twelve, P7 runs on alone; (3) new information
+(§9 #8 scheduled per-name events, #7 market-wide flows; each needs a source audit first).
 
-- **(1) — recommended. A longer hold, measured before anything is traded (R22, a ceiling audit, no fold spent, no
-  download).** A round trip costs the same whether a position is held a day or a week, and the numbers that showed
-  something here are slow ones (how crowded a name is changes over weeks, not hours). Nothing in this project has looked
-  beyond one day. The audit: the same names and months, the move over the next 3 days and the next 7 days against the
-  other names, for R20's five unresolved numbers and the price-bar model's forecast; per number, its correlation, the
-  money in the mean by tenth (R21's lesson: the mean, not the rank) and the correlation it needs to pay the round trip.
-  About a day of work. Its weakness, stated now: 485 days hold only 69 separate weeks, so only a large effect can be
-  certified — a small one will read "not detectable".
-- **(2) Stop looking outside the twelve for now.** P7 runs on alone until its read (earliest 2027-03-25); the work VM stays
-  off. Nothing is lost: every dataset stays on the VM's disk.
-- **(3) New information instead of a new horizon:** §9 #8 (scheduled per-name events: token unlocks, listings) or #7
-  (market-wide flows). Each needs a source audit first; #8 is about exactly the young names, and its history is hard to
-  rebuild without hindsight.
+*Where it stands and how to resume* (a restarted session starts here):
 
-The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md) and serve (1) as they are.
+| step | state | command / where |
+|---|---|---|
+| 1. registration | ✅ committed before the code was written | §8 R22 |
+| 2. the code + tests (`ft2/horizon.py`, `tests/test_p8_horizon.py`) | ⬜ | `./fluxtrader2/scripts/ft2.sh --test` |
+| 3. the run on the work VM | ⬜ | `./fluxtrader2/scripts/vm.sh start`, then `vm.sh bg r22 horizon r18_transferbook_1d --holds 864 2016`; finished when `output/logs/r22.log` ends with `wrote ` |
+| 4. validity, then the read | ⬜ | `vm.sh pull` → `output/horizon/r18_transferbook_1d/horizon.md`, `validity.json` |
+| 5. result into §8 R22, this section, README; `vm.sh stop`; commit | ⬜ | — |
+
+The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md); R22 needs nothing else.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -1922,6 +1925,84 @@ Result:        **Read 2026-09-28 (the run 04:27 → 05:03 UTC; commit 97b6020 ho
                later registration on these names: **a single feature's rank IC near 0.03 cannot pay a one-day round
                trip here; the bar for a rule is money in the mean, not the rank.** What follows is Vadim's decision
                (P8 "What next").
+
+### R22 — the longer hold: what R20's five unresolved numbers and the price-bar forecast say about a name's next 3 and 7 days, in money (registered 2026-09-28 on Vadim's go, before the code was written and before any label beyond one day was computed; read —)
+Question:      Everything measured on names outside the twelve was measured at a one-day hold, and nothing clears its costs
+               there (R10, R12, R13 A, R18–R21). A round trip costs the same whether a position is held a day or a week,
+               and the numbers that showed something are slow ones. Held 3 days or 7 days, do the names a signal puts at
+               the top earn more than the names it puts at the bottom — in the MEAN, in bps, by more than the round trip?
+               A ceiling audit (Principle 2): no model, no book, no fold spent, no download.
+Cells:         R18's, exactly (R20's and R21's): the scored cells of `output/backtest/r18_transferbook_1d`, hourly decision
+               bars of F1+F2, embargoed, the block's 60 members, the twelve left out. A cell is read at a hold if its label
+               exists there (the last 3 or 7 days of F2 have none: nothing at or after the end of F2 is read).
+Holds:         two, fixed here: 864 bars (3 days) and 2,016 bars (7 days). One day (288) is computed by the same code as
+               the validity check and the reference row; it was read by R20 and R21 and can clear nothing.
+Label:         what a long position earns before trading costs: the move from the close one bar after t to the close
+               `hold` bars later, MINUS the funding a long pays over those bars (`backtest.load_costs`' cumulative funding,
+               the harness's own), bps. Against the peers: minus the mean over the bar's cells with a label.
+Signals:       six, fixed here, each known strictly before t. R20's five NOT DETECTABLE features by `audit.features`' own
+               code, unchanged: oi_turn, oi_chg_1w, oi_chg_1d, global_ls, top_vs_global. And `forecast`: R18's ẑ (the
+               candle ridge fitted on the twelve, a one-day forecast), read from the run's forecast.parquet, not refitted.
+Statistic:     M, the money in the mean (R21's lesson: the mean, not the rank). Per bar with ≥ 20 cells that have the
+               signal and the label: k = the tenth of them, rounded; the mean label-against-peers of the k highest by
+               the signal minus that of the k lowest, HALVED — bps per leg, what one leg of a top-against-bottom book
+               earns before trading costs. Averaged per day; M = the mean over days. Two-sided: a signal that sorts the
+               wrong way round is a signal.
+Null:          the labels move by a whole number of days, the same for every name and every bar (a circular shift of the
+               scored days; time of day kept, whole rows move). EVERY admissible shift is computed, none drawn: a shift
+               is admissible if no day receives the labels of a day less than 15 days away in either direction (7 days
+               of the longest feature window + 7 of the longest hold + 1), the same shifts for both holds — 456 of them
+               on 485 days. Why not R20's null (whole days trade places): labels of neighbouring days share 2/3 or 6/7 of
+               their window at these holds, and trading days' places would break that overlap and make the null too
+               narrow. A shift keeps it, and keeps each name's own labels, so a lasting link between a name's LEVEL of a
+               signal and its drift survives in the null and earns no credit (R20).
+               Per signal × hold: centre = the mean of M over the shifts, se = their standard deviation (R20 (D1): each
+               number against the centre of its own null). M_c = M − centre, u = M_c / se. Family: the 6 × 2 = 12;
+               per shift the largest |u| of the twelve (each against its own centre and se) → the family-wise p of a
+               real |u|. The HAC se over days (lags = days of the hold + 1) is reported beside the null's and decides
+               nothing.
+Cost:          17.6 bps per leg, fixed here: R21's fees (10.00) + spread and impact (7.55) on its 8,214 taker trades —
+               the top and bottom tenths of these names, which is what such a book trades. Funding is inside the label.
+Validity:      read first, or the run is void: (1) the labels at 288 bars, before funding, equal R18's on every cell to
+               1e-6 and the cell count is R18's (R20's check); (2) the rank IC of the five features at 288 bars, by this
+               code on the vol-standardised label, equals R20's `features.csv` to 1e-9; (3) every scored day holds 24 bars
+               and the number of shifts is the number of days − 29.
+Described:     decides nothing. Per signal × hold: M before centring and the funding's part of it; M per fold; the
+               mean and the median label-against-peers in each of the ten tenths; the top and the bottom tenth apart;
+               the part of M earned AFTER the first day (the label from bar 289 on); R20's rank IC at that hold with
+               its HAC t, and the IC at which the top tenth pays the round trip there. The same for the one-day row,
+               and for R21's score (r(oi_turn) − ½[r(oi_chg_1d) + r(oi_chg_1w)]) at all three holds: reference rows,
+               outside the family, no verdict.
+Commands:      on the work VM —
+                 `vm.sh bg r22 horizon r18_transferbook_1d --holds 864 2016` → output/horizon/r18_transferbook_1d/horizon.md
+Folds read:    F1+F2 (exploration), the cells R18–R21 read. No confirmation fold, no new download.
+Gate:          validity PASS, then per signal × hold, on F1+F2 pooled:
+               CLEARS if |M_c| > 17.6 AND |u| ≥ 2 AND family-wise p ≤ 0.05 AND M has M_c's sign in F1 and in F2 AND the
+               part earned after the first day has M_c's sign. It is a candidate on exploration data and licenses no
+               trade. Next registration, on Vadim's go: the smallest book that trades it at that hold through the
+               harness on these names, priced (R21's pattern); only if that book clears its own gate, a confirmation on
+               members cut for F3+F4.
+               CLOSED if |M_c| + 1.96 se < 17.6: whatever is there cannot pay the round trip — that signal at that hold
+               is closed on a volume-ranked universe.
+               NOT DETECTABLE otherwise, with its MDE (2.8 se).
+               None clears → nothing is licensed; what follows is Vadim's decision (P8 "What next" (2) or (3); or, only
+               if a point estimate |M_c| exceeds the cost with the after-the-first-day part agreeing, a registration
+               that brings NEW cells — more months or more names; never a re-read of these).
+               Whatever the verdict: no variant on these cells under this registration — no other hold, tenth, window,
+               signal, side or weighting.
+Power:         stated before the read, and it is weak. From R21's book (se 5.9 bps a trade at one day): a day's M is about
+               √3 or √7 times wider at these holds and neighbouring days repeat each other for 3 or 7 days, so the expected
+               se is 12–18 bps a leg at 3 days and 25–40 at 7 days. The family bar (the largest of twelve |u|) is expected
+               at 2.8–3.0. To CLEAR a signal needs about |M_c| ≥ 45 bps a leg at 3 days and ≥ 95 at 7 days — two and a
+               half and five times the cost. CLOSED needs an se under 9 and is out of reach if the se comes out as
+               expected: this audit can find a large effect or say "not detectable"; it cannot rule a small one out.
+               485 days hold 69 separate weeks.
+Expectation:   validity PASS; about 1.5 % of the cells lose their label at 7 days. One day, reference: oi_turn's M +6 …
+               +14, the score's +12 (R21 (D3)). 3 days: the open-interest signals' M_c between −5 and +30, 7 days between
+               −30 and +60; the two long/short signals and the forecast inside ±1 se at both holds. The part after the
+               first day smaller than the first day's for the open-interest signals. About one chance in eight that
+               something clears. Likeliest: twelve NOT DETECTABLE.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
