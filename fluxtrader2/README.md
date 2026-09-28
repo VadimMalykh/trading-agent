@@ -16,6 +16,35 @@ otherwise knows nothing about this folder.
 |---|---|---|
 | 2026-09-28 | **fluxtrader2: one thing running, one decision open. Not shown to trade profitably yet.** **(1) P7 — paper trading of R14, LIVE since 2026-09-25 17:00 UTC on `fluxtrader2-serve`.** R14 is a simple model on price-bar features that forecasts a pair's next-day move against the other pairs; on data nobody had looked at (R16) it earned +33 USDT a trade on 10,000 after costs, 3.6 trades a day, and failed one of five criteria — the one that sample could not pass. Vadim funded the paper test by override. Health 2026-09-27 22:05 UTC: green (648 decisions, 14 taken, 0 late, 0 missing bars, 0 mismatches). Claude checks the first refit on the host (2026-09-30 00:00 UTC, `journalctl -u ft2-decide` not OOM-killed) and the first causal check (2026-10-01 01:30 UTC), then `vm.sh serve-status` monthly. The money is read once (R17): at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25. **(2) P8 — the screener: four reads, nothing clears its costs.** R18 and R19 (2026-09-27): on 188 names outside the twelve, picked monthly by volume alone, the twelve's model knows nothing, and neither four splits known beforehand nor a split that uses the future finds a group where it does. **R20 (2026-09-28)** asked instead what information the model does not use says about a name's next day against its peers — twelve numbers, no model. Funding and the gap between the perpetual and the spot price: nothing, closed. Open interest (the total size of positions open in a name): names with large open interest against their volume, and names whose open interest has been falling, did better the next day in both halves of the sample (correlation 0.033, t 3.98) — but the best of twelve meaningless numbers did as well in 6 % of trials against a bar of 5 %, so by the rule nothing passed. Even if real it is small: 0.033 is where trading the strongest tenth just pays its 18 USDT of costs on 10,000. No fold was spent. **R21 (2026-09-28)** then ran those open-interest numbers as a simulated book with costs on the same names — every hour buy the six names at the top of the ranking, sell the six at the bottom, hold a day: **it lost 17 USDT a trade on 10,000 after costs (8,214 trades; 1.6 USDT earned before costs of 19), so by the rule written beforehand it is closed.** The ranking is real but comes from one corner — names in a trading frenzy usually fall behind — and says nothing about which names rise. Nothing measured on names outside the twelve clears its costs at a one-day hold. Work VM stopped. Details: PLAN P7, P8, §8 R17–R21; parked data ideas (ETF flows, US indices, events): PLAN §9. | **fluxtrader2 needs from Vadim: one decision — what follows R21 (PLAN P8 "What next").** (1) *recommended*: measure a longer hold (3 and 7 days) on the same names before trading anything — costs are paid once per trade however long it is held, and nothing here has looked beyond a day; about a day of work, no fold spent, and only a large effect can be certified. (2) stop looking outside the twelve; P7 runs on alone. (3) new information instead (scheduled per-name events, market-wide flows; PLAN §9 #8, #7). Optional, unchanged: a little BNB in the futures wallet turns the fee discount on. Nothing of this project runs on fluxtrader1's VM — it is a data source only. |
 
+### Handoff — where the next session starts (written 2026-09-28; rewritten, not appended to, at each handoff)
+
+Everything up to here is committed and pushed. Nothing is running on the work VM (`fluxtrader2-work`, stopped); the serve
+host (`fluxtrader2-serve`) runs P7 by itself.
+
+**One question is open, and it is Vadim's:** what follows R21 — **(1)** measure a 3-day and a 7-day hold on the same names
+before trading anything (Claude's recommendation), **(2)** stop looking outside the twelve, or **(3)** new information
+(scheduled per-name events, market-wide flows)? The options are spelled out in PLAN P8 "What next".
+
+In this order:
+
+1. **Claude, on or after 2026-09-30 00:00 UTC — P7's first refit.** `./fluxtrader2/scripts/vm.sh serve-status` (the model's
+   name moves on from `model_2026-08-31`, `err None`), then
+   `./fluxtrader2/scripts/vm.sh serve-ssh 'journalctl -u ft2-decide --since "2026-09-29 23:00" --no-pager | tail -30'` —
+   no `Killed`, no out-of-memory line. A problem → `docs/SERVE.md`.
+2. **Claude, on or after 2026-10-01 01:30 UTC — P7's first causal check.** `vm.sh serve-status`: the line's `check` field is
+   no longer `None` and reports no mismatch. After that, `serve-status` once a month.
+3. **When Vadim answers the open question.** On "(1)": write the registration as §8 R22 *before* any code or number
+   (template at the end of §8; R20's block is the model for a ceiling audit, and R20 (D1) and R21 say what it must carry:
+   each feature against the centre of its own shuffles, and the money in the mean by tenth, not only the rank), commit,
+   then build, test (`./fluxtrader2/scripts/ft2.sh --test`, 81 pass today), commit, run on the work VM, read, commit. On
+   "(2)": nothing to do but steps 1 and 2. On "(3)": a source audit comes first (PLAN §9 #7, #8).
+4. **Housekeeping, any time the work VM is up:** `data/metrics_before_r20.parquet` (238 MB) did its job — the twelve's rows
+   were compared and are identical — and can be deleted.
+
+Two things learned the hard way this session: `vm.sh bg …` piped into `grep` does not return until the job ends (the job
+itself is detached and safe) — watch a job by its log's `wrote ` line; and a run's described checks live in
+`scripts/r20_*.py` and `scripts/r21_*.py`, not in the ignored `output/` folder.
+
 ## The boundary with the first project
 
 - **Data only.** Raw tables exported from the VM (candles, book snapshots, ladder, tape, funding,

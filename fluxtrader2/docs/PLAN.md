@@ -1780,8 +1780,8 @@ Result:        **Read 2026-09-28 (the audit ran 2026-09-27 22:00 → 22:18 UTC; 
                The family bar: on shuffled labels the best of the twelve reaches |t| 2.94 on average and **4.00 one time in
                twenty** (2.8–3.0 expected). oi_turn's 3.98 sits on it: 11 of 200 draws did as well.
                Described, decides nothing — computed after the read from the saved draws and cells, so none of it can clear
-               a feature (the scripts are kept beside the report: `describe_null.py`, `describe_reference.py`,
-               `check_inputs.py`; each runs on the work VM as `python - < script` from `~/fluxtrader2`):
+               a feature (`scripts/r20_describe_null.py`, `scripts/r20_describe_reference.py`; the inputs' check is
+               `scripts/r20_check_inputs.py`; each file's first lines say how to run it on the work VM):
                (D1) where the bar of 4.0 comes from. The registered null keeps each name's own labels, so a lasting link
                between a name's LEVEL of a feature and its drift survives the shuffle — as registered. The registered p,
                however, measures |t| from zero, and two features are not centred at zero under that null: global_ls
@@ -1893,8 +1893,8 @@ Result:        **Read 2026-09-28 (the run 04:27 → 05:03 UTC; commit 97b6020 ho
                [−42.6, −21.4]; short gross +18.9, hedged +13.9, net +2.4 [−36.7, +41.4], hedged net −2.6 [−21.0, +15.7].
                Names: the net summed over trades is −142,373 bps on 185 names, 86 of them positive; five best +40,920
                (HIGH, MASK, JASMY, WIF, EOS), five worst −65,742 (FET, 1000BONK, RUNE, ID, 1000SHIB).
-               Described, decides nothing — computed after the read (`describe_score.py` and its output
-               `describe_score.txt`, beside the run):
+               Described, decides nothing — computed after the read (`scripts/r21_describe_score.py`; its output is
+               kept as `describe_score.txt` beside the run):
                (D1) the book traded what R20 measured. On the book's own 691,153 cells, by R20's statistic: oi_turn
                +0.0328 (t 4.0), oi_chg_1w −0.0191 (t −3.5), oi_chg_1d −0.0157 (t −3.2) — R20's numbers — and the score
                itself **+0.0343 (t 5.2)**. The rule is not broken; the correlation is there.
