@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21 proposed, not registered)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, registered 2026-09-28 on Vadim's go, not read)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,8 +606,8 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: one decision — what follows R20: (a), (b) or (c) under "What next" below. Claude recommends (a).**
-Commands, gates and numbers: §8 R18, R19, R20. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
+**Needed from Vadim: nothing — he said go on R21 (2026-09-28); Claude builds, runs and reads it ("What next" below has
+the steps and their state).** Commands, gates and numbers: §8 R18, R19, R20, R21. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `tests/test_p8_screen.py`.
 
 **Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
@@ -656,21 +656,36 @@ instead of by average, the twelve's model is WRONG on outside names more often t
 most there usually does worse than its peers and is rescued on average by a few large winners. It fits R18's money (buying
 lost, selling earned) and is described, not tested.
 
-**What next — R21, proposed, not registered. One decision for Vadim:**
+**What next — R21 (registered 2026-09-28 on Vadim's go, §8; not read).** Of three options — (a) a simulated book on the
+same names, (b) straight to names and months nobody has read, (c) stop looking outside the twelve — Vadim chose (a).
 
-- **(a) — recommended. Run the open-interest numbers as a simulated book, with costs, on the same names.** The smallest book that
-  uses them (rank the names by the three open-interest numbers, buy the top, sell the bottom, hold a day) through the
-  harness on R18's 188 names, F1+F2, with costs. It is a *kill test*: the numbers were picked after being seen on these very
-  cells, so a profit there proves nothing and only licenses step (b); a loss — on the data that chose them — closes open
-  interest at one day without spending anything. It is also the only way to learn whether a rank correlation on these names
-  turns into money at all. About a day; the data is on the work VM; no fold is spent.
-- **(b) Go straight to names and months nobody has read:** the point-in-time members of F3+F4 (2024-09 → 2026-01), the five
-  unresolved numbers, each measured against the centre of its own shuffles. Clean, and it costs a download (bars, funding
-  and metrics of the new members, a few hours) and spends the outside names' F3+F4 on this question.
-- **(c) Stop looking outside the twelve for now;** P7 runs on alone until its read (earliest 2027-03-25), and §9's other
-  data (#7 market-wide flows, #8 scheduled events) waits for its own proposal.
+*What R21 does, in plain words.* Every hour, the block's 60 names are ranked by one score made of the three open-interest
+numbers (large open interest against volume counts for a name, rising open interest against it). The book buys the six at
+the top and sells the six at the bottom, the same amount of each, holds for a day, and pays the costs a real order would
+pay. No model, nothing fitted. It is a *kill test*: the three numbers were picked after being seen on these very names and
+months, so the result leans in their favour.
 
-The downloads stay on the work VM as `metrics` and `premium` (DATA.md) and serve any of these.
+*What each outcome means* (written before the run):
+- **a profit that beats the nulls** → it proves nothing yet; it licenses one thing, option (b): a test on the point-in-time
+  members of F3+F4 (2024-09 → 2026-01), which costs a download and spends those months for this question — Vadim's decision
+  then;
+- **a clear loss** (the whole interval below zero, as a taker and as a maker) → open interest as a book at one day is closed;
+- **anything in between** → not funded: no fold is spent on it, and the three numbers stay candidates for a model's inputs.
+  This is the likeliest outcome: the expected profit before costs (about 20 USDT a trade on 10,000) is about the size of
+  the costs (18–23), and the test cannot see an edge under about 20.
+
+*Where it stands and how to resume* (a restarted session starts here):
+
+| step | state | command / where |
+|---|---|---|
+| 1. registration | ✅ committed before the rule was written | §8 R21 |
+| 2. the rule + tests (`ft2/audit.py::OIBook`, `tests/test_p8_audit.py`) | ⬜ | `./fluxtrader2/scripts/ft2.sh --test` must pass, then commit |
+| 3. the run | ⬜ | `vm.sh start`, then §8 R21 "Commands", first line; log `output/logs/r21.log` ends with `wrote ` |
+| 4. validity, then the read | ⬜ | `vm.sh run audit r21_oibook_1d --book`, `vm.sh pull`, `output/backtest/r21_oibook_1d/report.md` |
+| 5. the twin with costs doubled | ⬜ | §8 R21 "Commands", third line |
+| 6. result into §8 R21, this section, README; `vm.sh stop`; commit | ⬜ | — |
+
+The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md); R21 needs nothing else.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -1796,8 +1811,63 @@ Result:        **Read 2026-09-28 (the audit ran 2026-09-27 22:00 → 22:18 UTC; 
                Consequences: nothing is licensed. No variant of any of the twelve is read on these cells under this
                registration. The five NOT DETECTABLE stay open; the seven CLOSED are closed at one day on a volume-ranked
                universe only. Counted on these cells so far: R18's four screens, R19's one, these twelve features. Any
-               later null of this kind reports each feature against the centre of its own shuffles (D1). R21 is proposed
-               in P8 and NOT registered: it needs Vadim's go.
+               later null of this kind reports each feature against the centre of its own shuffles (D1). What follows
+               is R21 (Vadim's go, 2026-09-28).
+
+### R21 — oibook: the open-interest numbers as a priced book on the names that chose them — a kill test (registered 2026-09-28 on Vadim's go, before the rule was written and before it saw any bar; read —)
+Question:      R20 left three open-interest features NOT DETECTABLE and nearest the bar (oi_turn +0.033, oi_chg_1w −0.019,
+               oi_chg_1d −0.016; none cleared). Ranked by them, do the members earn money after costs — on the very cells
+               that pointed at these three? The features were picked after being seen here, so the estimate leans upward: a
+               profit proves nothing and licenses only a confirmation on unread names and months; a clear loss closes
+               the book without spending anything. It is also the first answer to R20 (D2): does a RANK correlation on
+               these names turn into money at all?
+Universe:      R18's members (`ft2/screen_members.csv`, frozen; the block's 60, the twelve left out), F1+F2, the harness's
+               30-day blocks. Hourly decision bars (grid 12), executed one bar later, held 288 bars — R18's and R20's cells.
+Rule:          `ft2/audit.py::OIBook` (`oibook`), no fit, no label, no number taken from the data. At a decision bar t,
+               among the block's members that have a close and all three features (at least 12 of them):
+                 r(x)  = the rank of x among them, as a share
+                 s     = r(oi_turn) − ½ · [ r(oi_chg_1d) + r(oi_chg_1w) ]      (the level and the change weigh the same;
+                         the signs are R20's)
+               long the k = 6 names with the highest s, short the 6 with the lowest, one unit each (no sizing); the i-th
+               highest and the i-th lowest are ONE unit of the book (both legs or neither), so the book is dollar-neutral
+               at every bar. k = 6 is a tenth of sixty: P2 #7's "top tenth", the cost bar R20 (D3) quoted. The three
+               features are `audit.features`' own code, unchanged (a metrics row stamped ts is used from ts + 5 min).
+               One position per pair, latency, fills, costs and nulls are the harness's.
+Cost:          R18's: the members have no tape, `ft2 costwide`'s pooled candle proxy (it over-prices thin names, R10).
+               Every money row is read as priced and, in a twin run, with spread + impact doubled. Fees VIP 0.
+Validity:      read first (`ft2 audit <run> --book`): every decision sits on the hourly grid and on a member of its
+               block; every accepted unit has one long and one short leg; accepted longs = accepted shorts. Any failure →
+               the run is void and the cause is found before a money number is read.
+Commands:      on the work VM, in this order (the twin after the first has finished: one job at a time) —
+                 `vm.sh bg r21 backtest oibook --universe screen --param hold=288 k=6 --execs taker maker --name r21_oibook_1d`
+                 `vm.sh run audit r21_oibook_1d --book`
+                 `vm.sh bg r21_x2 backtest oibook --universe screen --param hold=288 k=6 --execs taker --cost-mult 2 --draws 1 --name r21_oibook_1d_x2`
+               → output/backtest/r21_oibook_1d/report.md (the twin's nulls are not read)
+Folds read:    F1+F2 (exploration), the cells R18, R19 and R20 read. No confirmation fold, no new download.
+Gate:          validity PASS, then on the taker book as priced, F1+F2 pooled:
+               CANDIDATE if net > 0 AND hedged net > 0 AND flip p ≤ 0.05 AND gross > 0 in F1 and in F2. It licenses no
+               trade and one next step: a confirmation registration on the members cut point-in-time for F3+F4, whose
+               bars, funding and metrics are fetched then — spending those months for this question is Vadim's decision.
+               CLOSED if the upper end of the net interval is below zero AND the maker net is ≤ 0: open interest as a
+               rank book at one day on a volume-ranked universe is closed, on the data that was most favourable to it.
+               Otherwise NOT FUNDED: no fold is spent on this book; the three features stay what R20 left them (NOT
+               DETECTABLE, candidates for a model's inputs); revived by a lower cost on these names (a maker path that is
+               measured, a fee tier) or by a registration that brings new cells.
+               Whatever the verdict: no variant on these cells under this registration — no other k, weights, hold,
+               grid, feature or side. The shuffle null is reported and does not decide (the rule reads no label; R16
+               showed what that null is worth on wild names).
+Described:     long and short apart; per fold; the maker book; the twin with costs doubled; trades a day and positions
+               open; the share of the net that the five best names carry.
+Power:         R18's all-members book (16,306 trades) had a hedged-net se of 4.8 bps and a net se of 10.9. This book is
+               dollar-neutral, so its net behaves like a hedged net; at 12–14 trades a day (6,000–7,000 trades) the
+               expected se is 7–9 bps and the MDE 20–25. A true edge under about 20 bps a trade after costs cannot be
+               certified here, and the interval will be about ±16 wide: CLOSED needs a net below about −16.
+Expectation:   validity PASS. 12–16 trades a day, 10–12 positions open on average. Gross +8 … +22 a trade (R20's sizes
+               promise about +20 at the top tenth; R9 collected a third of what its screen promised), costs 18–23 as a
+               taker → net −14 … +4, hedged net within 3 of it; maker net −8 … +10; flip p 0.05–0.5; costs doubled 6–12
+               lower. The short side earns more than the long side, as in every book on these names (R18, R19). About
+               one chance in five CANDIDATE, one in five CLOSED. Likeliest: NOT FUNDED, net slightly below zero.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
