@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, registered 2026-09-28 on Vadim's go, not read)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,8 +606,8 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: nothing — he said go on R21 (2026-09-28); Claude builds, runs and reads it ("What next" below has
-the steps and their state).** Commands, gates and numbers: §8 R18, R19, R20, R21. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
+**Needed from Vadim: one decision — what follows R21: (1), (2) or (3) under "What next" below. Claude recommends (1).**
+Commands, gates and numbers: §8 R18, R19, R20, R21. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `tests/test_p8_screen.py`.
 
 **Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
@@ -656,36 +656,45 @@ instead of by average, the twelve's model is WRONG on outside names more often t
 most there usually does worse than its peers and is rescued on average by a few large winners. It fits R18's money (buying
 lost, selling earned) and is described, not tested.
 
-**What next — R21 (registered 2026-09-28 on Vadim's go, §8; not read).** Of three options — (a) a simulated book on the
-same names, (b) straight to names and months nobody has read, (c) stop looking outside the twelve — Vadim chose (a).
+**Result (R21, 2026-09-28), in plain words. Do the open-interest numbers make money? No — closed.** Of three options after
+R20, Vadim chose the simulated book. Every hour the block's 60 names were ranked by one score made of the three
+open-interest numbers; the book bought the six at the top and sold the six at the bottom, the same amount of each, held
+for a day and paid what a real order pays. 8,214 trades over 485 days. **It lost 17 USDT a trade on 10,000 after costs
+(between 6 and 29 with 95 % confidence) — about 290 USDT a day on 110,000 deployed.** Before costs it earned 1.6 USDT a
+trade, where R20's correlations had promised about 20; trading the same names with random sides did as well. Resting
+orders instead of crossing the spread lose less (10 USDT a trade) and still lose. This was the data most favourable to
+the idea — the numbers were picked on these very names and months — so by the rule written beforehand it is closed, and no
+unread months are spent on it.
 
-*What R21 does, in plain words.* Every hour, the block's 60 names are ranked by one score made of the three open-interest
-numbers (large open interest against volume counts for a name, rising open interest against it). The book buys the six at
-the top and sells the six at the bottom, the same amount of each, holds for a day, and pays the costs a real order would
-pay. No model, nothing fitted. It is a *kill test*: the three numbers were picked after being seen on these very names and
-months, so the result leans in their favour.
+*Why the correlation did not become money.* The correlation is real: the check reproduced R20's numbers on the book's own
+cells. But it comes from one corner. The tenth of names with the lowest score — small open interest against a lot of
+trading, open interest rising: names in a frenzy — usually fall behind the others the next day (74 USDT behind in the
+typical case, 25 on average). Among the other nine tenths the score sorts nothing, and the names the book bought did no
+better than the rest. And the frenzied names it sold are the most violent ones: usually they fall behind, sometimes one
+of them doubles, and the average is much smaller than the typical case.
 
-*What each outcome means* (written before the run):
-- **a profit that beats the nulls** → it proves nothing yet; it licenses one thing, option (b): a test on the point-in-time
-  members of F3+F4 (2024-09 → 2026-01), which costs a download and spends those months for this question — Vadim's decision
-  then;
-- **a clear loss** (the whole interval below zero, as a taker and as a maker) → open interest as a book at one day is closed;
-- **anything in between** → not funded: no fold is spent on it, and the three numbers stay candidates for a model's inputs.
-  This is the likeliest outcome: the expected profit before costs (about 20 USDT a trade on 10,000) is about the size of
-  the costs (18–23), and the test cannot see an edge under about 20.
+*What this teaches beyond open interest.* On these names a weak "sorting" signal of this size cannot pay a one-day round
+trip: even if every cell could be traded it is worth 12 USDT a leg against 19 of costs. That also bounds the two
+long/short numbers R20 left unresolved (they are no bigger). After R10, R12, R13 A, R18, R19, R20 and R21, nothing measured
+on names outside the twelve clears its costs at one day.
 
-*Where it stands and how to resume* (a restarted session starts here):
+**What next — one decision for Vadim:**
 
-| step | state | command / where |
-|---|---|---|
-| 1. registration | ✅ committed before the rule was written | §8 R21 |
-| 2. the rule + tests (`ft2/audit.py::OIBook`, `tests/test_p8_audit.py`) | ✅ 81 tests pass; committed before the rule saw a real bar | `./fluxtrader2/scripts/ft2.sh --test` |
-| 3. the run | ✅ 2026-09-28 04:27 → 05:03 UTC, no error | `output/backtest/r21_oibook_1d/` (pulled) |
-| 4. validity, then the read | ✅ validity PASS (139,212 decisions, 8,234 taken in 4,117 whole units, 0 off the grid, 0 on a non-member). **Read: taker net −17.33 [−28.86, −5.81], maker net −9.59 [−21.16, +1.98], gross +1.56, flip p 0.50 → by the gate CLOSED.** Not yet written into §8 | `output/backtest/r21_oibook_1d/report.md`, `book_check.json` |
-| 5. the twin with costs doubled, and a described check that the book traded what R20 measured | 🟡 running on the work VM (VM running) | log `output/logs/r21_x2.log`; the check: `python - < output/backtest/r21_oibook_1d/describe_score.py` from `~/fluxtrader2` (the script is in the local output folder, not in git) |
-| 6. result into §8 R21, this section, README; `vm.sh stop`; commit | ⬜ | — |
+- **(1) — recommended. A longer hold, measured before anything is traded (R22, a ceiling audit, no fold spent, no
+  download).** A round trip costs the same whether a position is held a day or a week, and the numbers that showed
+  something here are slow ones (how crowded a name is changes over weeks, not hours). Nothing in this project has looked
+  beyond one day. The audit: the same names and months, the move over the next 3 days and the next 7 days against the
+  other names, for R20's five unresolved numbers and the price-bar model's forecast; per number, its correlation, the
+  money in the mean by tenth (R21's lesson: the mean, not the rank) and the correlation it needs to pay the round trip.
+  About a day of work. Its weakness, stated now: 485 days hold only 69 separate weeks, so only a large effect can be
+  certified — a small one will read "not detectable".
+- **(2) Stop looking outside the twelve for now.** P7 runs on alone until its read (earliest 2027-03-25); the work VM stays
+  off. Nothing is lost: every dataset stays on the VM's disk.
+- **(3) New information instead of a new horizon:** §9 #8 (scheduled per-name events: token unlocks, listings) or #7
+  (market-wide flows). Each needs a source audit first; #8 is about exactly the young names, and its history is hard to
+  rebuild without hindsight.
 
-The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md); R21 needs nothing else.
+The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md) and serve (1) as they are.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -736,6 +745,7 @@ The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md); R
 | **The market's bounce, conditional on the trend (`trendfall4h`, R8; supersedes H1 / `panic4h`, R4)** — PARKED by its own stage-1 gate 2026-09-21; **Vadim decided (a) on 2026-09-22: leave it parked, do not read F3–F5 for it** | Needed from Vadim: nothing. On 4.3 seen years the rule earns +52 bps a trade after costs [+26, +77] (p 0.005), but 2022 came in at −5.9 against a bar of −5 written beforehand, and three half-years lose 18–92. The confirmation folds stay unspent for this question | only a measured observable that separates the losing half-years (2022-H1, 2023-H1) — a new ceiling registration, not a variant of this rule; F5 growing by ~6 months does not by itself re-open the (b) question |
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25) |
+| **Open interest as a rank book (`oibook`, R21)** — **CLOSED 2026-09-28** | Needed from Vadim: nothing. On R18's 188 names, F1+F2, the data that chose the three features: taker net −17.3 [−28.9, −5.8], maker −9.6 [−21.2, +2.0], gross +1.6, flip p 0.50. The score's rank IC is +0.034 (t 5.2) and all of it is the two lowest tenths (the most violent names) falling behind; top minus bottom is +12 bps a leg in the mean on all cells, under the cost | none for the book: no other k, weights, hold or side on these cells. The features stay candidates for a model's inputs (R20: NOT DETECTABLE). A longer horizon is a new question (P8 "What next" (1)), not a revival |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -1814,7 +1824,7 @@ Result:        **Read 2026-09-28 (the audit ran 2026-09-27 22:00 → 22:18 UTC; 
                later null of this kind reports each feature against the centre of its own shuffles (D1). What follows
                is R21 (Vadim's go, 2026-09-28).
 
-### R21 — oibook: the open-interest numbers as a priced book on the names that chose them — a kill test (registered 2026-09-28 on Vadim's go, before the rule was written and before it saw any bar; read —)
+### R21 — oibook: the open-interest numbers as a priced book on the names that chose them — a kill test (registered 2026-09-28 on Vadim's go, before the rule was written and before it saw any bar; read 2026-09-28: CLOSED — taker net −17.3 [−28.9, −5.8], maker net −9.6; the rank correlation is there and is worth +1.6 bps a trade before costs)
 Question:      R20 left three open-interest features NOT DETECTABLE and nearest the bar (oi_turn +0.033, oi_chg_1w −0.019,
                oi_chg_1d −0.016; none cleared). Ranked by them, do the members earn money after costs — on the very cells
                that pointed at these three? The features were picked after being seen here, so the estimate leans upward: a
@@ -1867,7 +1877,51 @@ Expectation:   validity PASS. 12–16 trades a day, 10–12 positions open on av
                taker → net −14 … +4, hedged net within 3 of it; maker net −8 … +10; flip p 0.05–0.5; costs doubled 6–12
                lower. The short side earns more than the long side, as in every book on these names (R18, R19). About
                one chance in five CANDIDATE, one in five CLOSED. Likeliest: NOT FUNDED, net slightly below zero.
-Result:        —
+Result:        **Read 2026-09-28 (the run 04:27 → 05:03 UTC; commit 97b6020 holds this block as written before the rule was
+               written, c873f53 the rule and its tests before it saw a real bar; output/backtest/r21_oibook_1d, 200 draws):
+               the upper end of the taker net interval is below zero and the maker net is ≤ 0 → by the gate CLOSED.**
+               Validity first: PASS — 139,212 decisions, none off the hourly grid, none on a non-member; 8,234 taken in
+               4,117 whole units, 4,117 longs and 4,117 shorts, 185 names traded. No deviation from the commands.
+               Taker, as priced: 8,214 trades (16.9 a day; 20 unpriceable), at most 28 positions open and 11.05 on
+               average, right on 52.1 %. Gross **+1.56**, hedged +1.57 [−9.99, +13.14]; fees 10.00, spread and impact
+               7.55, funding −1.34 → **net −17.33 [−28.86, −5.81]**, MDE 16.5, hedged net −17.32 [−28.92, −5.72]; flip
+               null −17.18 ± 4.93, **flip p 0.50**; shuffle p 0.54. F1: gross −1.9, net −22.4 [−37.2, −7.6]; F2: gross
+               +5.0, net −12.3 [−29.9, +5.4] — gross is not positive in both folds either.
+               Maker: gross −3.43 (the unfilled legs are the ones that ran), fees 4.31, other 0.51, fill share 0.95 →
+               **net −9.59 [−21.16, +1.98]**, flip p 0.51. Costs doubled (twin, taker): net −24.88 [−36.42, −13.35].
+               Long and short apart (taker): long gross −15.8, hedged −10.8, net −37.0 [−65.5, −8.5], hedged net −32.0
+               [−42.6, −21.4]; short gross +18.9, hedged +13.9, net +2.4 [−36.7, +41.4], hedged net −2.6 [−21.0, +15.7].
+               Names: the net summed over trades is −142,373 bps on 185 names, 86 of them positive; five best +40,920
+               (HIGH, MASK, JASMY, WIF, EOS), five worst −65,742 (FET, 1000BONK, RUNE, ID, 1000SHIB).
+               Described, decides nothing — computed after the read (`describe_score.py` and its output
+               `describe_score.txt`, beside the run):
+               (D1) the book traded what R20 measured. On the book's own 691,153 cells, by R20's statistic: oi_turn
+               +0.0328 (t 4.0), oi_chg_1w −0.0191 (t −3.5), oi_chg_1d −0.0157 (t −3.2) — R20's numbers — and the score
+               itself **+0.0343 (t 5.2)**. The rule is not broken; the correlation is there.
+               (D2) where it lives. The move over the next day against the other cells, by the score's tenth inside the
+               bar (mean / median, bps): bottom tenth −24.8 / −73.6, second −10.0 / −55.1, third to tenth between −0.5
+               and +11.1 in the mean with no order, medians −33 → −20. The top tenth — what the book buys — is −0.5 /
+               −20.3. All of the rank correlation is the two lowest tenths doing worse; nothing separates the other
+               eight. Those lowest tenths are the most violent names (median one-day σ 622 bps against 422 at the top).
+               (D3) rank against money. Top tenth minus bottom tenth, per leg, on all cells: **+12.2 in the mean, +26.6
+               in the median**; on the trades taken: mean +1.56, median +18.5. The typical trade is right and a few
+               large moves of the shorted violent names take it back — R20 (D2) in money.
+               Against the expectation: validity, positions open (11.05), costs (18.9 with funding), the doubled costs
+               (7.5 lower) and "the short side earns more than the long" as expected. Trades a day 16.9 (12–16
+               expected). Gross +1.56 where +8 … +22 was expected — below the band; net −17.3 below its band (−14 … +4);
+               maker −9.6 just below its band; flip p 0.50 at the far end of 0.05–0.5. The se came out at 5.9, tighter
+               than the 7–9 expected, which is why the interval excludes zero. CLOSED was given one chance in five.
+               Reading: **the open-interest numbers do sort the names — the correlation R20 saw is real on these cells —
+               and sorting by them earns nothing: +1.6 bps a trade before costs of 19. A rank correlation of 0.034 on
+               these names is worth at most 12 bps a leg even if every cell could be traded, because it says "the most
+               frenzied tenth usually falls behind" and says nothing about which names rise.**
+               Consequences: open interest as a rank book at one day on a volume-ranked universe is CLOSED, on the data
+               most favourable to it; no confirmation fold is asked for and F3+F4 of the outside names stay unread. Not
+               re-cut: no other k, weights, hold, grid or side on these cells (a short-only or exclusion rule built on
+               (D2) would be one). The three features stay what R20 left them as inputs. What this read adds for every
+               later registration on these names: **a single feature's rank IC near 0.03 cannot pay a one-day round
+               trip here; the bar for a rule is money in the mean, not the rank.** What follows is Vadim's decision
+               (P8 "What next").
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
