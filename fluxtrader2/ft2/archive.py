@@ -3,7 +3,8 @@
 Coverage measured 2026-09-15 for our pairs (USDⓈ-M futures, `data/futures/um/`):
   daily/bookDepth   cumulative depth (qty, notional) within ±1..±5 % of mid, every 30 s
                     (NOT best bid/ask — no spread in it)      2023-01-01 → today   ~0.5 MB/day/pair
-  daily/metrics     5m open interest, long/short, taker ratios  2020-09 → today      ~10 KB/day/pair
+  daily/metrics     5m open interest, long/short, taker ratios  2021-12-01 → today   ~10 KB/day/pair
+                    (BTCUSDT alone from 2020-09-01; listed 2026-09-29 on 46 names — the "2020-09" first written here was BTC's)
   daily/aggTrades   the full tape                               2019-12 → today      ~5 MB/day (BTC)
   monthly/fundingRate                                           2020-01 → today      tiny
   daily/bookTicker  best bid/ask — DISCONTINUED (2023-05 → 2024); the historical spread must

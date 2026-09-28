@@ -130,6 +130,11 @@ Open interest (contracts and USDT), top-trader long/short ratios (by accounts an
 global long/short ratio, taker buy/sell volume ratio, one row per 5 minutes. Replaces the
 collector's two-month `oi` and `lsr` tables for anything historical.
 
+**Where it begins (listed 2026-09-29, file names only, 46 names — the twelve's nine old ones and
+37 others): 2021-12-01 for every name listed before that day, from the listing day for a later
+one; BTCUSDT alone goes back to 2020-09-01.** The exchange's own API keeps 30 days. So no open
+interest, long/short or taker ratio exists for a name outside BTC before 2021-12-01.
+
 ### depth (archive `bookDepth`, ~30 s) — `data/depth/<symbol>.parquet`: `(symbol, ts) → qty_m5..qty_m1, qty_m02, qty_p02, qty_p1..qty_p5, usd_*` (same 12 levels)
 
 **What it is:** the cumulative quantity (`qty_*`, base units) and USDT notional (`usd_*`)

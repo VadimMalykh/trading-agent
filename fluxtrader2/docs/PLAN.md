@@ -606,7 +606,8 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: one decision — what follows R22: (A), (B) or (C) under "What next" below. Claude recommends (A).**
+**Needed from Vadim: one decision — what follows R22: (A1), (A2), (B) or (C) under "What next" below (rewritten
+2026-09-29: the option chosen that day rested on a wrong date). Claude recommends (A1).**
 Commands, gates and numbers: §8 R18–R22. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `ft2/horizon.py`, `tests/test_p8_*.py`.
 
@@ -705,26 +706,34 @@ belong to the names, not to the timing: they change sign between the two halves 
 *Why it could not decide.* 485 days hold 69 separate weeks; the noise came out wider than expected for the slow signals
 (51 USDT at seven days for open interest over volume, where 25–40 was expected). The sample ran out, not the idea.
 
-**What next — one decision for Vadim:**
+**What next — one decision for Vadim (rewritten 2026-09-29).** On 2026-09-29 Vadim chose (A) as it was offered on
+2026-09-28: the 7-day question on the unread months "2020-09 → 2023-04, twice the present sample". Before the
+registration was written the archive's listing was checked (file names only, no file fetched, no number read), and
+**that option's premise was wrong: open interest exists from 2021-12-01 for every name except BTC** (DATA.md
+"metrics"). The unread months that have open interest are 2021-12 → 2023-04: about 500 days, **71 weeks — the size of
+R22's sample, not twice it.** Nothing of R23 is registered, downloaded or built. The options as they stand:
 
-- **(A) — recommended. The same 7-day question on months nobody has read (R23, a ceiling audit on NEW cells; no
-  confirmation fold spent).** The months before F1 — open interest exists in the archive from 2020-09, so 2020-09 →
-  2023-04, about 960 days or 137 weeks, twice the present sample — with the universe picked month by month by volume as
-  R18 did, for the open-interest numbers only (they need no fitted model), same statistic, same cost. These signals were
-  chosen on F1+F2; on new months the estimate is honest. Expected noise at seven days about ±19: an effect as large as
-  measured here (41) would read a little over 2 times its noise, at the edge of a bar of about 2.5 for four things tried;
-  a true effect half that size would again read "not detectable". So: about one chance in three of a clear yes or a
-  clear no. Needs downloads to the work VM (5m bars, open interest and funding of the members) and one to two days of
-  work. Other weaknesses, stated now: there were fewer perpetuals in 2020–21, so fewer than 60 members in the early
-  months, and 2021–22 was a different market. What it licenses if it clears: a priced book (R21's pattern), not a trade.
-- **(B) Stop looking outside the twelve for now** (option (2) of the list R21 left; (C) is its (3))**.** P7 runs on alone until its read (earliest 2027-03-25); the work VM stays
-  off. Nothing is lost: every dataset stays on the VM's disk.
+- **(A1) — recommended. Two stages, the confirmation folds protected by a stop (R23).** Stage 1: the 7-day question on
+  2021-12 → 2023-04 (71 weeks), universe picked month by month by volume as R18 did, ONE number registered — R21's
+  open-interest score at 7 days, direction fixed beforehand (names the score ranks low fall behind) — same statistic,
+  same cost of 17.6. Expected noise about ±27–35, so alone it clears only an effect of 55–70 where R22 measured 41:
+  **between one chance in ten and one in three of a clear yes, and no clear no is possible.** What stage 1 does decide
+  is whether to go on: if the number comes back under the cost (three chances in four if nothing is there, one in five
+  if the effect is as R22 measured), the question is parked and no fold is spent. If it comes back above the cost,
+  stage 2 — the same number on the outside names of F3+F4 (2024-09 → 2026-01, 69 weeks, never read for outside names)
+  — is offered to Vadim as a separate go, and the verdict is read on both stages pooled (140 weeks, the power (A) was
+  meant to have). Needs downloads to the work VM and one to two days of work per stage. Weaknesses, stated now: 2022
+  was a falling market; fewer names early on.
+- **(A2) Both samples at once:** 2021-12 → 2023-04 and F3+F4's outside names in one read (140 weeks). The best power in
+  one step — about an even chance of a clear yes if the effect is as measured — but F3+F4 is spent for this question
+  whatever stage 1 would have said, and a later priced book would have only F5 (37 weeks) left to confirm on.
+- **(B) Stop looking outside the twelve for now.** P7 runs on alone until its read (earliest 2027-03-25); the work VM
+  stays off. Nothing is lost: every dataset stays on the VM's disk.
 - **(C) New information instead:** §9 #8 (scheduled per-name events: token unlocks, listings) or #7 (market-wide flows).
-  Each needs a source audit first.
+  Each needs a source audit first. An open-interest history before 2021-12 from a paid vendor would be one such audit.
 
 Not offered, because the rules forbid it on these cells: a short-only book on the frenzied tenth, another hold, another
-cut. Each would be chosen after seeing this read; (A) is the path that makes them admissible — on months that have not
-been read.
+cut on F1+F2. Each would be chosen after seeing R22's read; new cells are the path that makes them admissible.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -776,7 +785,7 @@ been read.
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25) |
 | **Open interest as a rank book (`oibook`, R21)** — **CLOSED 2026-09-28** | Needed from Vadim: nothing. On R18's 188 names, F1+F2, the data that chose the three features: taker net −17.3 [−28.9, −5.8], maker −9.6 [−21.2, +2.0], gross +1.6, flip p 0.50. The score's rank IC is +0.034 (t 5.2) and all of it is the two lowest tenths (the most violent names) falling behind; top minus bottom is +12 bps a leg in the mean on all cells, under the cost | none for the book: no other k, weights, hold or side on these cells. The features stay candidates for a model's inputs (R20: NOT DETECTABLE). A longer horizon is a new question (P8 "What next" (1)), not a revival |
-| **A longer hold on names outside the twelve (R22)** — read 2026-09-28: **NOT DETECTABLE, twelve of twelve** | Needed from Vadim: the decision in P8 "What next". At 3 and 7 days R20's five unresolved features and R18's forecast, top tenth against bottom tenth in the mean: nothing clears, nothing is closed. The open-interest score leans the right way and grows with the hold (+11, +25, +59 bps a leg at 1, 3, 7 days; cost 17.6) at 1.3–1.5 times its noise; all of it is the lowest tenth falling behind | new cells only: the months before F1 (2020-09 → 2023-04) on a point-in-time universe, a new registration (P8 "What next" (A)); never another cut of F1+F2's cells |
+| **A longer hold on names outside the twelve (R22)** — read 2026-09-28: **NOT DETECTABLE, twelve of twelve** | Needed from Vadim: the decision in P8 "What next". At 3 and 7 days R20's five unresolved features and R18's forecast, top tenth against bottom tenth in the mean: nothing clears, nothing is closed. The open-interest score leans the right way and grows with the hold (+11, +25, +59 bps a leg at 1, 3, 7 days; cost 17.6) at 1.3–1.5 times its noise; all of it is the lowest tenth falling behind | new cells only, by a new registration (P8 "What next" (A1) / (A2)): the months before F1 that have open interest (2021-12 → 2023-04, 71 weeks — not 2020-09, corrected 2026-09-29) and, on Vadim's go, the outside names of F3+F4; never another cut of F1+F2's cells |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -2113,7 +2122,7 @@ built here in P2 and needs no download.
 
 | # | data | source | what it unlocks | phase |
 |---|---|---|---|---|
-| 1 | **Historical book depth, tape and flow for the same twelve pairs** | Binance's public archive (`data.binance.vision`, USDⓈ-M futures; free, no key). **Coverage measured 2026-09-15:** depth within ±1..5 % of mid (`bookDepth`, 30 s) **2023-01-01 → today** for every pair (from listing for the younger ones), ~0.5 MB/day/pair; 5m open interest + long/short + taker ratios (`metrics`) 2020-09 → today; the full tape (`aggTrades`) 2019-12 → today, **~136 GB zipped for our pairs from 2023-01** (BTC 14–27 MB/day); funding monthly since 2020. Best bid/ask (`bookTicker`) was discontinued in 2024 and **`bookDepth` does not replace it** (no touch prices in it) — the historical spread is estimated from the tape's bid–ask bounce. 1m klines back to 2019-12 (2.7 years more than the collector holds). | The single biggest gap in our data was that book, tape and flow existed for two months while candles existed for four years. This closes it back to 2023-01: P1's cost model is measured over 3.7 years instead of proxied, and book/flow features (§7) become testable in a powered walk-forward over F1–F5. **Done in P0b** (`bookDepth`, `metrics`, `fundingRate` ingested; DATA.md); the tape is streamed to a per-minute summary in P1 (`ft2 tape`, not kept raw). | P0b ✅ → P1, P2 |
+| 1 | **Historical book depth, tape and flow for the same twelve pairs** | Binance's public archive (`data.binance.vision`, USDⓈ-M futures; free, no key). **Coverage measured 2026-09-15:** depth within ±1..5 % of mid (`bookDepth`, 30 s) **2023-01-01 → today** for every pair (from listing for the younger ones), ~0.5 MB/day/pair; 5m open interest + long/short + taker ratios (`metrics`) 2021-12-01 → today (BTCUSDT alone from 2020-09-01; corrected 2026-09-29 from the archive's listing); the full tape (`aggTrades`) 2019-12 → today, **~136 GB zipped for our pairs from 2023-01** (BTC 14–27 MB/day); funding monthly since 2020. Best bid/ask (`bookTicker`) was discontinued in 2024 and **`bookDepth` does not replace it** (no touch prices in it) — the historical spread is estimated from the tape's bid–ask bounce. 1m klines back to 2019-12 (2.7 years more than the collector holds). | The single biggest gap in our data was that book, tape and flow existed for two months while candles existed for four years. This closes it back to 2023-01: P1's cost model is measured over 3.7 years instead of proxied, and book/flow features (§7) become testable in a powered walk-forward over F1–F5. **Done in P0b** (`bookDepth`, `metrics`, `fundingRate` ingested; DATA.md); the tape is streamed to a per-minute summary in P1 (`ft2 tape`, not kept raw). | P0b ✅ → P1, P2 |
 | 2 | **Candles for a wider universe** (the top ~30–50 USDⓈ-M perps by volume, 5m and 1h) | same archive | Breadth: the plan's edge comes from many semi-independent bets, and a cross-sectional strategy on twelve names is thin. More names also gives a cleaner "market" factor. The collector need not record them for research; only for trading later. **Done 2026-09-22 for R10:** `ft2 universe` chose 40 (`ft2/universe.py::WIDE`, ranking in output/universe_wide.md), monthly 5m klines 2022-04 → 2024-08 and funding for the 32 the collector lacks are in `candles_5m_archive` / `funding_archive` (DATA.md); their cost is `ft2 costwide`'s pooled candle proxy. | R10 (P5 step 5) |
 | 3 | **Spot klines for the same symbols** | same archive (spot) | Basis (perp minus spot) and its changes, a known carry/flow signal; also a cleaner index for the market factor. **Read as the exchange's premium index in R20 (2026-09-28), 188 names, per name against its peers at one day: CLOSED** (IC +0.000 and +0.006, upper bounds 0.008 and 0.017). Spot klines themselves were not fetched | R20 ✅ (premium index); spot klines parked |
 | 4 | **Same pairs on a second venue** (Bybit / OKX perps, 1m klines) | their public archives | Cross-venue lead-lag at short horizons; only relevant if P2 funds a sub-15m horizon | parked |
