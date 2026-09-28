@@ -206,3 +206,13 @@ def test_the_hindsight_read_finds_the_planted_screen_and_leaves_r18s_read_alone(
     assert "split by R18's `young`" in txt and "hindsight top ∩ young top" in txt and "young top, not hindsight top" in txt
     screen.read("transfer", reference=str(ref["dir"]), draws=20, members=str(tmp_path / "m.csv"))
     assert list(pd.read_csv(screen.OUT / "transfer" / "screens.csv")["screen"]) == list(universe.CHARACTERISTICS)
+
+
+def test_the_blocks_before_f1_are_fixed_by_the_calendar_and_end_before_f1():
+    """R23: seventeen 30-day blocks from 2021-12-10; the last scored day's 7-day label ends before F1's first instant."""
+    s = universe.pre_starts()
+    assert len(s) == 17 and s[0] == pd.Timestamp("2021-12-10", tz="UTC") and s[-1] == pd.Timestamp("2023-04-04", tz="UTC")
+    assert set(np.diff(pd.DatetimeIndex(s)) / pd.Timedelta(days=1)) == {30.0}
+    last_bar = pd.Timestamp(universe.PRE_DAYS[1], tz="UTC") + pd.Timedelta(hours=23)
+    assert last_bar + pd.Timedelta("5min") * (1 + 2016) < universe.PRE_END == bt.folds.bounds("F1", embargoed=False)[0]
+    assert (pd.Timestamp(universe.PRE_DAYS[1]) - pd.Timestamp(universe.PRE_DAYS[0])).days + 1 == 500

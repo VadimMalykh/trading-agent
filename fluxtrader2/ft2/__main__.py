@@ -46,9 +46,13 @@ def _symbols(args) -> list[str]:
     if u == "screen":                                         # R18: every name that is a member of some block (never one of the twelve)
         from .universe import screen_symbols
         return screen_symbols()
+    if u == "pre":                                            # R23: the members of the blocks before F1
+        from .universe import PRE_MEMBERS_CSV, screen_symbols
+        return screen_symbols(PRE_MEMBERS_CSV)
     if u == "all":                                            # the archive slices are rewritten whole: ingest every name they have ever held
-        from .universe import WIDE, screen_symbols
-        return list(dict.fromkeys([*PAIRS, *WIDE, *screen_symbols()]))
+        from .universe import PRE_MEMBERS_CSV, WIDE, screen_symbols
+        pre = screen_symbols(PRE_MEMBERS_CSV) if PRE_MEMBERS_CSV.exists() else []
+        return list(dict.fromkeys([*PAIRS, *WIDE, *screen_symbols(), *pre]))
     return args.symbols or PAIRS
 
 
@@ -60,7 +64,7 @@ def cmd_archive(args):
 def cmd_universe(args):
     from . import universe
     if args.screen:
-        return universe.screen_select(args.folds, args.n or universe.SCREEN_K)
+        return universe.screen_select(args.folds, args.n or universe.SCREEN_K, pre=args.pre)
     if args.hindsight:
         return universe.hindsight_select()
     universe.select(args.n or universe.SELECT_N)
@@ -154,7 +158,7 @@ def main(argv=None):
                                       "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
     i.add_argument("--symbols", nargs="*", help="archive slices only: which pairs (default the twelve)")
-    i.add_argument("--universe", choices=["wide", "screen", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
+    i.add_argument("--universe", choices=["wide", "screen", "pre", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
     a.add_argument("kinds", nargs="+", help="bookDepth metrics aggTrades fundingRate klines/1m …")
@@ -162,16 +166,17 @@ def main(argv=None):
     a.add_argument("--start", default="2023-01-01")
     a.add_argument("--end", default=None, help="inclusive; default: two days ago")
     a.add_argument("--monthly", action="store_true", help="klines/<interval>: the archive's monthly files for the months of [start, end] instead of daily ones")
-    a.add_argument("--universe", choices=["wide", "screen", "all"])
+    a.add_argument("--universe", choices=["wide", "screen", "pre", "all"])
     u = sub.add_parser("universe", help="R10: rank every USDT perpetual the archive lists by median daily quote volume over the four months before F0 → output/universe_wide.md; "
                                         "--screen (R18): the members per block and what a screener could rank them by → output/universe_screen.md")
     u.add_argument("--n", type=int, default=None, help="default 40; with --screen 60 a block")
     u.add_argument("--screen", action="store_true")
+    u.add_argument("--pre", action="store_true", help="--screen only (R23): the 30-day blocks of 2021-12-10 → 2023-04-23 instead of the folds' → output/universe_screen_pre.md")
     u.add_argument("--hindsight", action="store_true", help="R19: each member's median daily quote volume over 2026-01 → 2026-08 → output/universe_hindsight.md")
     u.add_argument("--folds", nargs="*", default=["F1", "F2"], help="--screen: the folds whose blocks get a membership")
     cw = sub.add_parser("costwide", help="R10: spread + impact for pairs without a tape (one pooled candle proxy fitted on the twelve) → data/cost_daily_wide.parquet, output/cost_wide.md")
     cw.add_argument("--symbols", nargs="*")
-    cw.add_argument("--universe", choices=["wide", "screen", "all"])
+    cw.add_argument("--universe", choices=["wide", "screen", "pre", "all"])
     cw.add_argument("--start", default="2023-01-01")
     t = sub.add_parser("tape", help="P1: stream archive aggTrades into data/tape/<symbol>.parquet (per-minute summary); zips are not kept")
     t.add_argument("--symbols", nargs="*")

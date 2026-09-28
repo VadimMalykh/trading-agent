@@ -163,11 +163,32 @@ def screen_symbols(path: Path | str | None = None) -> list[str]:
     return sorted(set(members(path)["symbol"]))
 
 
-def screen_select(fold_names=("F1", "F2"), k: int = SCREEN_K, exclude: list[str] | None = None) -> pd.DataFrame:
+# The months before F1 (registration R23): the same rule on the 30-day blocks of R23's scored days, which the calendar
+# fixes — the archive's open interest begins 2021-12-01, the last 7-day label must end before F1 begins (PRE_END).
+PRE_DAYS = (date(2021, 12, 10), date(2023, 4, 23))               # the first and the last scored day
+PRE_END = pd.Timestamp("2023-05-01", tz="UTC")                   # F1's first instant: nothing at or after it is read
+PRE_MEMBERS_CSV = Path(__file__).with_name("screen_members_pre.csv")     # frozen from OUT_PRE_CSV, once, and committed
+OUT_PRE_MD = Path("output/universe_screen_pre.md")
+OUT_PRE_CSV = Path("output/universe_screen_pre_members.csv")
+
+
+def pre_starts() -> list[pd.Timestamp]:
+    """The block starts of R23's scored days: every 30 days from the first one."""
+    from .backtest import REFIT_DAYS
+    a, b = (pd.Timestamp(d, tz="UTC") for d in PRE_DAYS)
+    return list(pd.date_range(a, b, freq=pd.Timedelta(days=REFIT_DAYS)))
+
+
+def screen_select(fold_names=("F1", "F2"), k: int = SCREEN_K, exclude: list[str] | None = None, pre: bool = False) -> pd.DataFrame:
     from . import folds
     from .__main__ import PAIRS
     from .backtest import REFIT_DAYS, blocks
-    starts = [a for f in fold_names for a, _ in blocks(f, pd.Timestamp(folds.FOLDS[f][1], tz="UTC"), REFIT_DAYS)]
+    global OUT_SCREEN_CSV, OUT_SCREEN_MD
+    if pre:
+        starts, fold_names = pre_starts(), (f"{PRE_DAYS[0]} → {PRE_DAYS[1]}",)
+        OUT_SCREEN_CSV, OUT_SCREEN_MD = OUT_PRE_CSV, OUT_PRE_MD
+    else:
+        starts = [a for f in fold_names for a, _ in blocks(f, pd.Timestamp(folds.FOLDS[f][1], tz="UTC"), REFIT_DAYS)]
     months = archive.months_between(SCREEN_FROM, (max(starts) - pd.Timedelta(days=1)).date())
     syms = candidates()
     print(f"{len(syms)} USDT perpetuals listed by the archive; reading 1d klines {months[0]} .. {months[-1]}", flush=True)
@@ -185,7 +206,7 @@ def screen_select(fold_names=("F1", "F2"), k: int = SCREEN_K, exclude: list[str]
     txt = "\n".join([f"# The screener's universe (`ft2 universe --screen`) — per block, the top {k} USDT perpetuals by median daily quote volume over the {SCREEN_DAYS} days before it\n",
                      f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {len(syms)} candidates · folds {'+'.join(fold_names)} · {len(starts)} blocks · "
                      f"{t['symbol'].nunique()} names are a member at least once · left out (the training names): {', '.join(sorted(exclude if exclude is not None else PAIRS))}\n",
-                     f"\nMembers and characteristics → `{OUT_SCREEN_CSV}` (frozen into `ft2/screen_members.csv`). Daily bars before the block start only.\n",
+                     f"\nMembers and characteristics → `{OUT_SCREEN_CSV}` (frozen into `ft2/{(PRE_MEMBERS_CSV if pre else MEMBERS_CSV).name}`). Daily bars before the block start only.\n",
                      "\n## Per block\n", blk.round(3).to_markdown(index=False), "\n", "\n## Per name\n", per.round(3).to_markdown(index=False), "\n"])
     OUT_SCREEN_MD.write_text(txt)
     print(txt)
