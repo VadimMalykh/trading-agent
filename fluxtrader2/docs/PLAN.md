@@ -680,7 +680,7 @@ months, so the result leans in their favour.
 |---|---|---|
 | 1. registration | ✅ committed before the rule was written | §8 R21 |
 | 2. the rule + tests (`ft2/audit.py::OIBook`, `tests/test_p8_audit.py`) | ✅ 81 tests pass; committed before the rule saw a real bar | `./fluxtrader2/scripts/ft2.sh --test` |
-| 3. the run | ⬜ | `vm.sh start`, then §8 R21 "Commands", first line; log `output/logs/r21.log` ends with `wrote ` |
+| 3. the run | 🟡 started 2026-09-28 04:27 UTC on `fluxtrader2-work` (VM running) | finished when `vm.sh ssh 'tail -2 ~/fluxtrader2/output/logs/r21.log'` shows `wrote output/backtest/r21_oibook_1d/`; if the log ends in `Killed` or a traceback, or no `python -m ft2 backtest` process is left without `wrote `: fix, then §8 R21 "Commands", first line, again — nothing was read |
 | 4. validity, then the read | ⬜ | `vm.sh run audit r21_oibook_1d --book`, `vm.sh pull`, `output/backtest/r21_oibook_1d/report.md` |
 | 5. the twin with costs doubled | ⬜ | §8 R21 "Commands", third line |
 | 6. result into §8 R21, this section, README; `vm.sh stop`; commit | ⬜ | — |
