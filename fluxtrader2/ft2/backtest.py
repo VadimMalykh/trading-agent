@@ -113,7 +113,7 @@ def market(symbols: list[str], end: pd.Timestamp, start: pd.Timestamp = ceiling.
     P = ceiling.panel(symbols, end, start)
     M = Market(P["close"], P["high"], P["low"], P["dv"])
     for k in needs:
-        M.extra[k] = EXTRAS[k](M.index, list(M.columns), end)
+        M.extra[k] = EXTRAS[k](M.index, list(M.columns), end) if k in EXTRAS else EXTRAS_M[k](M, end)
     return M
 
 
@@ -127,8 +127,18 @@ def _external(idx: pd.DatetimeIndex, cols: list[str], end: pd.Timestamp) -> pd.D
     return pd.concat(F, axis=1, names=["feature", "symbol"])
 
 
+def _oi(M: Market, end: pd.Timestamp) -> pd.DataFrame:
+    """R20's open-interest features (`audit.OI`) by the audit's own code, ONE wide frame, columns (feature, pair)."""
+    from . import audit                                       # imported here: it imports this module
+    F, notes = audit.features(M.index, list(M.columns), M.dv, end, only=audit.OI)
+    for n in notes:
+        print(f"open-interest features: {n}", flush=True)
+    return pd.concat(F, axis=1, names=["feature", "symbol"])
+
+
 EXTRAS = {"depth_imb_1": lambda idx, cols, end: ceiling.depth_frames(idx, cols, end)[0],
           "external": _external}
+EXTRAS_M = {"oi": _oi}       # builders that need the market itself (its dollar volume), not only its index
 
 
 @dataclasses.dataclass
@@ -174,7 +184,7 @@ class Strategy:
     hold = 48                    # bars a position is held
     uses_labels = False          # True: `fit` reads y, and the noise floor refits on every shuffle
     max_side = None              # book rule: at most this many positions open at once on one side (None = no cap)
-    needs: tuple[str, ...] = ()  # names in EXTRAS the harness attaches to Market.extra before the walk (book data, …)
+    needs: tuple[str, ...] = ()  # names in EXTRAS / EXTRAS_M the harness attaches to Market.extra before the walk (book data, …)
 
     def params(self) -> dict:
         return {k: v for k, v in vars(self).items() if not k.startswith("_") and isinstance(v, (int, float, str, bool, tuple, list))}
@@ -224,8 +234,8 @@ STRATEGIES: dict[str, type[Strategy]] = {"coin": Coin}
 
 
 def get_strategy(name: str, params: dict) -> Strategy:
-    from . import forecast, rules, screen                     # imported here: they import this module
-    return {**STRATEGIES, **rules.STRATEGIES, **forecast.STRATEGIES, **screen.STRATEGIES}[name](**params)
+    from . import audit, forecast, rules, screen              # imported here: they import this module
+    return {**STRATEGIES, **rules.STRATEGIES, **forecast.STRATEGIES, **screen.STRATEGIES, **audit.STRATEGIES}[name](**params)
 
 
 # ---- walk-forward -------------------------------------------------------------------------------------

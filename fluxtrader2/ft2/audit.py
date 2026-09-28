@@ -16,6 +16,9 @@ statistic  `ceiling._ic_xs`: per bar the Spearman correlation, across the member
 null       `ceiling._shuffle_days` on the hourly grid: the labels' whole days trade places, whole rows move. A name keeps
            its own labels, so a link between a name's lasting level of a feature and its drift survives in the null and
            earns no credit. Per draw the largest |t| of the family → the family-wise p.
+
+`oibook` (a strategy, registration R21; `ft2 backtest oibook --universe screen`) trades the three open-interest features
+the audit left nearest its bar, as one rank score, through the harness. `ft2 audit <run> --book` is its validity check.
 """
 from __future__ import annotations
 
@@ -27,12 +30,13 @@ import pandas as pd
 
 from . import backtest as bt
 from . import data, folds, screen, universe
-from .ceiling import BAR, MDE_K, Z_CLIP, Z_TOP, _ic_xs, _shuffle_days, day_lags, hac
+from .ceiling import BAR, MDE_K, MIN_PAIRS, Z_CLIP, Z_TOP, _ic_xs, _shuffle_days, day_lags, hac
 from .forecast import _derive
 
 OUT = Path("output/audit")
 FEATURES = ["funding_last", "funding_7d", "premium_1h", "premium_1d", "oi_chg_1d", "oi_chg_1w", "oi_turn", "global_ls", "global_ls_chg_1d", "top_ls",
             "top_vs_global", "taker_1d"]
+OI = ["oi_chg_1d", "oi_chg_1w", "oi_turn"]      # what `oibook` trades (R21): the three R20 left nearest the bar
 DRAWS = 200
 Z_TOL = 1e-6                       # the audit's labels against the run's
 GRID = pd.Timedelta("1h")          # the run's decision bars (grid 12)
@@ -41,46 +45,130 @@ WARMUP = pd.Timedelta(days=9)      # bars loaded before the first cell: the long
 T_BAR, P_BAR, IC_CLOSED = 2.0, 0.05, 0.02
 
 
-def features(idx: pd.DatetimeIndex, cols: list[str], dv: pd.DataFrame, end: pd.Timestamp) -> tuple[dict[str, pd.DataFrame], list[str]]:
+def features(idx: pd.DatetimeIndex, cols: list[str], dv: pd.DataFrame, end: pd.Timestamp, only: list[str] | None = None) -> tuple[dict[str, pd.DataFrame], list[str]]:
     """`FEATURES` on the 5m decision times `idx` × `cols`; `dv` is the bars' dollar volume on the same index. An absent
-    source leaves its features NaN and a note."""
+    source leaves its features NaN and a note. `only`: build these and no others (the same code, the same numbers — a
+    rule that trades three of them does not load the sources of the other nine)."""
+    keys = [k for k in FEATURES if only is None or k in only]
+    want = lambda *ks: any(k in keys for k in ks)                                       # noqa: E731
     empty = lambda: pd.DataFrame(np.nan, index=idx, columns=cols)                       # noqa: E731
-    F, notes = {k: empty() for k in FEATURES}, []
+    F, notes = {k: empty() for k in keys}, []
+
+    def put(**kv):
+        F.update({k: v for k, v in kv.items() if k in F})
     pos = lambda x: np.log(x.where(x > 0))                                              # noqa: E731
     a = idx[0] - pd.Timedelta(days=1)
     try:                                                     # funding: per 8 h, bps; usable from the bar after the funding time
-        fu = data.load("funding_archive", symbols=cols)
-        fu = fu[(fu["ts"] < end) & (fu["ts"] >= a - pd.Timedelta(days=8))]
-        fw = (fu.assign(symbol=fu["symbol"].astype(str), r=fu["rate"] * 8.0 / fu["interval_h"] * 1e4).pivot(index="ts", columns="symbol", values="r").reindex(columns=cols))
-        on = lambda x: x.reindex(idx.union(x.index)).ffill().reindex(idx).shift(1)      # noqa: E731
-        F["funding_last"], F["funding_7d"] = on(fw), on(fw.rolling("7D", min_periods=1).mean())
+        if want("funding_last", "funding_7d"):
+            fu = data.load("funding_archive", symbols=cols)
+            fu = fu[(fu["ts"] < end) & (fu["ts"] >= a - pd.Timedelta(days=8))]
+            fw = (fu.assign(symbol=fu["symbol"].astype(str), r=fu["rate"] * 8.0 / fu["interval_h"] * 1e4).pivot(index="ts", columns="symbol", values="r").reindex(columns=cols))
+            on = lambda x: x.reindex(idx.union(x.index)).ffill().reindex(idx).shift(1)      # noqa: E731
+            put(funding_last=on(fw), funding_7d=on(fw.rolling("7D", min_periods=1).mean()))
     except (FileNotFoundError, ValueError, KeyError):
         notes.append("funding_archive absent: funding_* skipped")
     try:                                                     # premium index: the bar that closed at t
-        pr = data.load("premium", symbols=cols)
-        pr = pr[(pr["open_time"] + BAR <= end) & (pr["open_time"] >= a)]
-        pw = pr.assign(symbol=pr["symbol"].astype(str), t=pr["open_time"] + BAR, p=pr["premium"] * 1e4).pivot(index="t", columns="symbol", values="p").reindex(index=idx, columns=cols)
-        F["premium_1h"], F["premium_1d"] = pw.rolling(H1, min_periods=int(H1 * 0.8)).mean(), pw.rolling(D1, min_periods=int(D1 * 0.8)).mean()
+        if want("premium_1h", "premium_1d"):
+            pr = data.load("premium", symbols=cols)
+            pr = pr[(pr["open_time"] + BAR <= end) & (pr["open_time"] >= a)]
+            pw = pr.assign(symbol=pr["symbol"].astype(str), t=pr["open_time"] + BAR, p=pr["premium"] * 1e4).pivot(index="t", columns="symbol", values="p").reindex(index=idx, columns=cols)
+            put(premium_1h=pw.rolling(H1, min_periods=int(H1 * 0.8)).mean(), premium_1d=pw.rolling(D1, min_periods=int(D1 * 0.8)).mean())
     except (FileNotFoundError, ValueError, KeyError):
         notes.append("premium absent: premium_* skipped")
     try:                                                     # metrics, 5m: the row stamped ts is used from ts + 5 min
-        m = data.load("metrics", columns=["symbol", "ts", "oi", "oi_value", "top_ls_sum", "global_ls", "taker_ratio"], symbols=cols)
-        m = m[(m["ts"] < end) & (m["ts"] >= a)]
-        m["symbol"] = m["symbol"].astype(str)
-        wide = lambda c: m.pivot(index="ts", columns="symbol", values=c).shift(freq=BAR).reindex(index=idx, columns=cols).ffill(limit=3)      # noqa: E731
-        oi = pos(wide("oi"))
-        F["oi_chg_1d"], F["oi_chg_1w"] = oi.diff(D1), oi.diff(W1)
-        F["oi_turn"] = pos(wide("oi_value")) - pos(dv.rolling(D1, min_periods=int(D1 * 0.8)).sum())
-        g, tp = pos(wide("global_ls")), pos(wide("top_ls_sum"))
-        F["global_ls"], F["global_ls_chg_1d"], F["top_ls"], F["top_vs_global"] = g, g.diff(D1), tp, tp - g
-        F["taker_1d"] = pos(wide("taker_ratio")).rolling(D1, min_periods=int(D1 * 0.8)).mean()
+        if want(*FEATURES[4:]):
+            m = data.load("metrics", columns=["symbol", "ts", "oi", "oi_value", "top_ls_sum", "global_ls", "taker_ratio"], symbols=cols)
+            m = m[(m["ts"] < end) & (m["ts"] >= a)]
+            m["symbol"] = m["symbol"].astype(str)
+            wide = lambda c: m.pivot(index="ts", columns="symbol", values=c).shift(freq=BAR).reindex(index=idx, columns=cols).ffill(limit=3)      # noqa: E731
+            if want("oi_chg_1d", "oi_chg_1w"):
+                oi = pos(wide("oi"))
+                put(oi_chg_1d=oi.diff(D1), oi_chg_1w=oi.diff(W1))
+            if want("oi_turn"):
+                put(oi_turn=pos(wide("oi_value")) - pos(dv.rolling(D1, min_periods=int(D1 * 0.8)).sum()))
+            if want("global_ls", "global_ls_chg_1d", "top_ls", "top_vs_global"):
+                g, tp = pos(wide("global_ls")), pos(wide("top_ls_sum"))
+                put(global_ls=g, global_ls_chg_1d=g.diff(D1), top_ls=tp, top_vs_global=tp - g)
+            if want("taker_1d"):
+                put(taker_1d=pos(wide("taker_ratio")).rolling(D1, min_periods=int(D1 * 0.8)).mean())
     except (FileNotFoundError, ValueError, KeyError):
         notes.append("metrics absent: oi_*, *_ls*, top_vs_global, taker_1d skipped")
-    return {k: F[k].replace([np.inf, -np.inf], np.nan) for k in FEATURES}, notes
+    return {k: F[k].replace([np.inf, -np.inf], np.nan) for k in keys}, notes
 
 
 def _day(ts: pd.DatetimeIndex) -> np.ndarray:
     return (ts.floor("D") - ts[0].floor("D")).days.to_numpy()
+
+
+# ---- R21: the open-interest features as a book ------------------------------------------------------------------------------
+def member_mask(mem: pd.DataFrame, cols: np.ndarray, ts: pd.DatetimeIndex) -> np.ndarray:
+    """bar × pair: is the pair a member of the block the bar falls in (the latest block start at or before it)?"""
+    starts = pd.DatetimeIndex(sorted(mem["block"].unique()))
+    table = np.zeros((len(starts) + 1, len(cols)), dtype=bool)                   # the last row: before the first block, nobody
+    b, j = starts.get_indexer(mem["block"]), pd.Index(cols).get_indexer(mem["symbol"])
+    table[b[j >= 0], j[j >= 0]] = True
+    return table[starts.searchsorted(ts, side="right") - 1]
+
+
+class OIBook(bt.Strategy):
+    """`oibook` (registration R21): R20's three open-interest features as one rank score, traded dollar-neutral.
+    At an hourly decision bar, among the block's members with a close and all three features (≥ max(MIN_PAIRS, 2k)):
+        s = r(oi_turn) − ½·[r(oi_chg_1d) + r(oi_chg_1w)],   r = the rank among them, as a share
+    long the k highest, short the k lowest, one unit each; the i-th highest and the i-th lowest are one unit of the book
+    (both legs or neither). No fit, no label. The features are `features`' own, attached by the harness (`needs`)."""
+    name = "oibook"
+    needs = ("oi",)
+
+    def __init__(self, hold: int = 288, k: int = 6, grid: int = 12, members: str = ""):
+        self.hold, self.k, self.grid = int(hold), int(k), int(grid)
+        self.members = str(members)                              # "" = universe.MEMBERS_CSV
+        self._mem: pd.DataFrame | None = None
+
+    def score(self, M: bt.Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        if self._mem is None:
+            self._mem = universe.members(self.members or None)
+        X, idx = M.extra["oi"], M.index
+        grid = (idx.minute == 0) & (idx.second == 0) if self.grid == 12 else (np.arange(len(idx)) % self.grid == 0)
+        ts = idx[grid & (idx >= a) & (idx < b)]
+        cols = list(M.columns)
+        f = {k: X[k].reindex(index=ts, columns=cols) for k in OI}
+        ok = M.close.loc[ts].notna() & member_mask(self._mem, np.asarray(cols, dtype=str), ts)
+        for x in f.values():
+            ok &= x.notna()
+        r = {k: x.where(ok).rank(axis=1, pct=True) for k, x in f.items()}
+        s = r["oi_turn"] - 0.5 * (r["oi_chg_1d"] + r["oi_chg_1w"])
+        return s.where(ok.sum(axis=1) >= max(MIN_PAIRS, 2 * self.k), axis=0)
+
+    def decide(self, M: bt.Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        s = self.score(M, a, b)
+        rl, rh = s.rank(axis=1, method="first"), s.rank(axis=1, method="first", ascending=False)
+        lo, hi = rl <= self.k, rh <= self.k
+        d = bt.decisions_from(hi.astype(float) - lo.astype(float), a, b, signal=s,
+                              why=f"open interest: rank of oi_turn − ½(oi_chg_1d + oi_chg_1w) among the block's members, {self.k} a side")
+        slot = rh.where(hi, rl).to_numpy()[s.index.get_indexer(d["t"]), s.columns.get_indexer(d["symbol"])]      # 1 … k on both sides
+        return d.assign(group=M.index.get_indexer(d["t"]) * self.k + slot.astype(int) - 1)
+
+
+STRATEGIES = {OIBook.name: OIBook}
+
+
+def book_check(run: str, members: str | None = None) -> dict:
+    """R21's validity, read before any money: the decisions of a run sit on the hourly grid and on members of their
+    block, and the accepted book is made of whole units — one long and one short leg each."""
+    run_dir = bt.OUT / run
+    meta = json.loads((run_dir / "meta.json").read_text())
+    d = pd.read_parquet(run_dir / "decisions.parquet")
+    mem = universe.members(members or meta["params"].get("members") or None)
+    t, cols = pd.DatetimeIndex(d["t"]), np.asarray(sorted(set(d["symbol"]) | set(mem["symbol"])), dtype=str)
+    is_mem = member_mask(mem, cols, t)[np.arange(len(d)), pd.Index(cols).get_indexer(d["symbol"])] if len(d) else np.zeros(0, dtype=bool)
+    acc = d[d["accepted"]]
+    u = acc.groupby("group")["side"].agg(["size", "sum"])
+    v = {"decisions": len(d), "accepted": len(acc), "off_grid": int(((t.minute != 0) | (t.second != 0)).sum()), "not_a_member": int((~is_mem).sum()),
+         "units": len(u), "broken_units": int(((u["size"] != 2) | (u["sum"] != 0)).sum()), "accepted_long": int((acc["side"] > 0).sum()),
+         "accepted_short": int((acc["side"] < 0).sum()), "names_traded": int(acc["symbol"].nunique())}
+    v["status"] = "PASS" if len(acc) and not (v["off_grid"] or v["not_a_member"] or v["broken_units"]) and v["accepted_long"] == v["accepted_short"] else "FAIL"
+    (run_dir / "book_check.json").write_text(json.dumps(v, indent=1))
+    return v
 
 
 def _draws(name: str, f: pd.DataFrame, Z: np.ndarray, lags: int, draws: int, seed: int) -> tuple[pd.DataFrame, np.ndarray]:

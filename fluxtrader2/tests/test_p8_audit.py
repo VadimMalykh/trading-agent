@@ -1,5 +1,7 @@
 """P8 — the ceiling audit on the point-in-time universe (`ft2/audit.py`, registration R20): a feature at t reads nothing
-stamped at or after t; the audit's labels are the run's; the read finds a planted feature and only that one."""
+stamped at or after t; the audit's labels are the run's; the read finds a planted feature and only that one.
+`oibook` (registration R21): it trades the audit's own open-interest features, members only, in whole dollar-neutral
+units, and earns what was planted; its validity check fails a book that is not."""
 import json
 
 import numpy as np
@@ -10,7 +12,7 @@ from ft2 import backtest as bt
 from ft2 import screen
 from ft2.ceiling import BAR, _shuffle_days
 
-from test_p8_screen import HOLD, RIGHT, TRAIN, WRONG, _members, _synth
+from test_p8_screen import BLOCKS, HOLD, OUTSIDE, RIGHT, TRAIN, WRONG, _members, _synth
 
 NAMES = [*RIGHT, *WRONG]
 
@@ -107,3 +109,75 @@ def test_the_audit_finds_the_planted_feature_and_its_labels_are_the_runs(tmp_pat
     assert v["reference_ic"] < 0.02 and v["ic_needed"] > 0                                                # half the members follow the ridge, half go against it
     d = pd.read_parquet(out / "draws.parquet")
     assert d["draw"].max() == 30 and d[d["draw"] > 0].groupby("draw")["t"].apply(lambda t: t.abs().max()).quantile(0.95) < top["t"]
+
+
+# ---- R21: oibook ------------------------------------------------------------------------------------------------------------
+def _plant_oi(strength: float = 1.0, seed: int = 11):
+    """`_sources`' metrics with the open interest planted: `oi_value` over the day's dollar volume leans the way the name is
+    about to move against the others over the next HOLD bars; `oi` itself (the two change features) stays a random walk."""
+    c = pd.read_parquet("data/candles_5m.parquet")
+    c = c[c["symbol"].isin(NAMES)]
+    px = c.assign(t=c["open_time"] + BAR).pivot(index="t", columns="symbol", values="close")[NAMES]
+    lr = np.log(px)
+    fwd = (lr.shift(-(HOLD + 1)) - lr.shift(-1)) * 1e4
+    lean = (fwd.sub(fwd.mean(axis=1), axis=0) / fwd.stack().std()).fillna(0.0)
+    dv = (c["close"] * c["volume"]).groupby(c["symbol"]).mean()
+    rng = np.random.default_rng(seed)
+    m = pd.read_parquet("data/metrics.parquet")
+    for sym in NAMES:
+        m.loc[(m["symbol"] == sym).to_numpy(), "oi_value"] = dv[sym] * 288 * np.exp(strength * lean[sym].to_numpy() + rng.normal(0, 0.3, len(px)))
+    m.to_parquet("data/metrics.parquet", index=False)
+
+
+def test_only_builds_the_same_numbers_and_the_harness_attaches_them(tmp_path, monkeypatch):
+    _market(tmp_path, monkeypatch)
+    end = pd.Timestamp("2023-06-03", tz="UTC")
+    M = bt.market(NAMES, end, start=pd.Timestamp("2023-03-20", tz="UTC"), needs=("oi",))
+    F, _ = audit.features(M.index, NAMES, M.dv, end)
+    G, notes = audit.features(M.index, NAMES, M.dv, end, only=audit.OI)
+    assert not notes and list(G) == audit.OI and all(G[k].equals(F[k]) for k in audit.OI)
+    X = M.extra["oi"]
+    assert list(X.columns.get_level_values(0).unique()) == audit.OI and all(X[k].equals(F[k]) for k in audit.OI)
+    cut = M.until(pd.Timestamp("2023-05-10", tz="UTC"))
+    assert cut.extra["oi"].index.equals(cut.close.index)
+
+
+def test_oibook_trades_members_in_whole_units_and_earns_what_was_planted(tmp_path, monkeypatch):
+    _market(tmp_path, monkeypatch)
+    _plant_oi()
+    m = pd.read_csv(tmp_path / "m.csv")
+    m[~((m["symbol"] == "A0USDT") & (m["block"] != BLOCKS[1]))].to_csv(tmp_path / "m.csv", index=False)      # A0: a member of the second block only
+    s = audit.OIBook(hold=HOLD, k=2, members=str(tmp_path / "m.csv"))
+    r = bt.run(s, [*NAMES, OUTSIDE], ["F1"], draws=20, refit_days=15, execs=("taker",), name="oibook")
+    dec = r["decisions"]
+    t = pd.DatetimeIndex(dec["t"])
+    assert len(dec) > 1500 and set(dec["symbol"]) <= set(NAMES) and (t.minute == 0).all() and t.min() >= pd.Timestamp(BLOCKS[0], tz="UTC")
+    a0 = dec.loc[dec["symbol"] == "A0USDT", "t"]
+    assert len(a0) > 10 and a0.min() >= pd.Timestamp(BLOCKS[1], tz="UTC") and a0.max() < pd.Timestamp(BLOCKS[2], tz="UTC")
+    per_bar = dec.groupby("t")["side"].agg(["size", "sum"])
+    assert (per_bar["size"] == 4).all() and (per_bar["sum"] == 0).all()                                   # two a side at every decision bar
+    v = audit.book_check("oibook", members=str(tmp_path / "m.csv"))
+    assert v["status"] == "PASS" and v["accepted"] > 1000 and v["accepted_long"] == v["accepted_short"] and v["units"] * 2 == v["accepted"], v
+    res = r["results"].query("exec == 'taker'").set_index("scope")
+    assert res.loc["all", "gross"] > 10 and res.loc["all", "hedged"] > 10 and res.loc["all", "net"] > 0, res.loc["all"]
+    assert res.loc["long", "hedged"] > 5 and res.loc["short", "hedged"] > 5
+    assert r["floor"].set_index("exec").loc["taker", "flip_p"] <= 0.05
+    # the score is a rank among the members present: the same decisions whatever the other columns of the panel hold
+    s2 = audit.OIBook(hold=HOLD, k=2, members=str(tmp_path / "m.csv"))
+    r2 = bt.run(s2, NAMES, ["F1"], draws=1, refit_days=15, execs=("taker",), name="oibook_members_only")
+    k = ["t", "symbol", "side", "accepted"]
+    assert r2["decisions"][k].equals(dec[k])
+    # a book that is not whole fails its check
+    d = pd.read_parquet(r["dir"] / "decisions.parquet")
+    d.loc[d.index[d["accepted"]][0], "side"] *= -1
+    d.to_parquet(r["dir"] / "decisions.parquet", index=False)
+    assert audit.book_check("oibook", members=str(tmp_path / "m.csv"))["status"] == "FAIL"
+
+
+def test_oibook_without_a_signal_pays_its_costs(tmp_path, monkeypatch):
+    _market(tmp_path, monkeypatch)                                                                        # the open interest is noise
+    s = audit.OIBook(hold=HOLD, k=2, members=str(tmp_path / "m.csv"))
+    r = bt.run(s, NAMES, ["F1"], draws=20, refit_days=15, execs=("taker",), name="oibook_noise")
+    a = r["results"].query("exec == 'taker'").set_index("scope").loc["all"]
+    assert abs(a["gross"]) < 3 * a["net_se"] and a["net"] < 0 and abs(a["net"] + 12.0) < 3 * a["net_se"], a   # 2 × (5 fee + 0.5 spread + 0.5 impact)
+    assert r["floor"].set_index("exec").loc["taker", "flip_p"] > 0.05

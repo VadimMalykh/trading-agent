@@ -75,6 +75,9 @@ def cmd_screen(args):
 
 def cmd_audit(args):
     from . import audit
+    if args.book:                                             # R21: the validity of an `oibook` run, read before its money
+        v = audit.book_check(args.run)
+        return print(f"book check {v['status']}: {v}")
     print(audit.run(args.run, args.draws))
     print(f"wrote {audit.OUT / args.run}/")
 
@@ -216,7 +219,8 @@ def main(argv=None):
                                       "`transferbook` run → output/audit/<run>/audit.md (see ft2/audit.py)")
     au.add_argument("run", help="the run's directory name under output/backtest/")
     au.add_argument("--draws", type=int, default=200)
-    sv = sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
+    au.add_argument("--book", action="store_true", help="R21: check an `oibook` run's decisions (hourly grid, members only, whole dollar-neutral units) → <run>/book_check.json")
+    sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
     sv.add_argument("--dst", default=None, help="seed: where to write (default data/serve/candles_seed.parquet)")
