@@ -693,7 +693,7 @@ out. The two options not taken stay open: (2) stop looking outside the twelve, P
 |---|---|---|
 | 1. registration | ✅ committed before the code was written | §8 R22 |
 | 2. the code + tests (`ft2/horizon.py`, `tests/test_p8_horizon.py`; `audit.frame` is R20's set-up, shared) | ✅ 85 tests pass; committed before any label beyond one day was computed on a real bar | `./fluxtrader2/scripts/ft2.sh --test` |
-| 3. the run on the work VM | ⬜ | `./fluxtrader2/scripts/vm.sh start`, then `vm.sh bg r22 horizon r18_transferbook_1d --holds 864 2016`; finished when `output/logs/r22.log` ends with `wrote ` |
+| 3. the run on the work VM | 🟡 STARTED 2026-09-28 07:25 UTC, as registered (`vm.sh bg r22 horizon r18_transferbook_1d --holds 864 2016`); the work VM is running | finished when `vm.sh ssh 'tail -2 ~/fluxtrader2/output/logs/r22.log'` shows `wrote `; expected within the hour. If the process is gone and the log has no `wrote ` line: read the log's traceback, fix, re-run the same command (nothing of R22 has been read) |
 | 4. validity, then the read | ⬜ | `vm.sh pull` → `output/horizon/r18_transferbook_1d/horizon.md`, `validity.json` |
 | 5. result into §8 R22, this section, README; `vm.sh stop`; commit | ⬜ | — |
 
