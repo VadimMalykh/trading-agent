@@ -608,7 +608,7 @@ youngest third than on the oldest third — by more than a meaningless split of 
 
 **Needed from Vadim: nothing now. Claude builds, runs and reads R22 (the longer hold; "What next" below has the steps).**
 Commands, gates and numbers: §8 R18–R22. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
-`tests/test_p8_screen.py`.
+`ft2/horizon.py`, `tests/test_p8_*.py`.
 
 **Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
 month by month by trading volume alone, the model's forecast was right no more often than a coin: correlation with what
@@ -692,7 +692,7 @@ out. The two options not taken stay open: (2) stop looking outside the twelve, P
 | step | state | command / where |
 |---|---|---|
 | 1. registration | ✅ committed before the code was written | §8 R22 |
-| 2. the code + tests (`ft2/horizon.py`, `tests/test_p8_horizon.py`) | ⬜ | `./fluxtrader2/scripts/ft2.sh --test` |
+| 2. the code + tests (`ft2/horizon.py`, `tests/test_p8_horizon.py`; `audit.frame` is R20's set-up, shared) | ✅ 85 tests pass; committed before any label beyond one day was computed on a real bar | `./fluxtrader2/scripts/ft2.sh --test` |
 | 3. the run on the work VM | ⬜ | `./fluxtrader2/scripts/vm.sh start`, then `vm.sh bg r22 horizon r18_transferbook_1d --holds 864 2016`; finished when `output/logs/r22.log` ends with `wrote ` |
 | 4. validity, then the read | ⬜ | `vm.sh pull` → `output/horizon/r18_transferbook_1d/horizon.md`, `validity.json` |
 | 5. result into §8 R22, this section, README; `vm.sh stop`; commit | ⬜ | — |

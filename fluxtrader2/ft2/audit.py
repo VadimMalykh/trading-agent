@@ -189,8 +189,9 @@ def verdict(r: dict) -> str:
     return "CLOSED" if abs(r["ic"]) + 1.96 * r["se"] < IC_CLOSED else "NOT DETECTABLE"
 
 
-def run(run: str, draws: int = DRAWS, members: str | None = None, seed: int = 0, jobs: int = 4) -> str:
-    from joblib import Parallel, delayed
+def frame(run: str, members: str | None = None) -> dict:
+    """The scored cells of a `transferbook` run on their hourly grid, the labels rebuilt here from the candles, and the
+    validity of that: the labels are the run's on every cell. R20's set-up; R22 (`horizon.py`) reads the same cells."""
     run_dir = bt.OUT / run
     meta = json.loads((run_dir / "meta.json").read_text())
     p, fold_names = meta["params"], meta["folds"]
@@ -203,14 +204,14 @@ def run(run: str, draws: int = DRAWS, members: str | None = None, seed: int = 0,
     o = screen.cells(run_dir, M, hold, latency, fold_names, mem)
     names = sorted(o["symbol"].unique())
     idx = M.index[M.index >= pd.DatetimeIndex(o["t"]).min() - WARMUP]
-    sig_h = _derive(M.close.loc[idx, names])["sig"]["1w"] * np.sqrt(hold)
+    sig = _derive(M.close.loc[idx, names])["sig"]["1w"]
+    sig_h = sig * np.sqrt(hold)
     z = (bt.labels(M, hold, latency).loc[idx, names] / sig_h.where(sig_h > 0)).clip(-Z_CLIP, Z_CLIP)
     t5 = pd.Series(idx, index=idx)
     scored = np.zeros(len(idx), dtype=bool)
     for f in fold_names:
         scored |= folds.mask(t5, f).to_numpy()
     grid = idx[scored & (idx.minute == 0) & (idx.second == 0)]
-    lags, day = day_lags(hold), _day(grid)
 
     # validity: the labels rebuilt here are the run's, on the run's cells
     zi = z.to_numpy()[idx.get_indexer(o["t"]), pd.Index(names).get_indexer(o["symbol"])]
@@ -219,6 +220,16 @@ def run(run: str, draws: int = DRAWS, members: str | None = None, seed: int = 0,
     v = {"status": "PASS" if on_grid and np.isfinite(dz).all() and dz.max() <= Z_TOL else "FAIL", "cells": len(o), "names": len(names),
          "cells_off_grid": int((~pd.DatetimeIndex(o["t"]).isin(grid)).sum()), "cells_without_label": int((~np.isfinite(dz)).sum()), "max_abs_dz": float(np.nanmax(dz))}
     cell = o.assign(one=1.0).pivot(index="t", columns="symbol", values="one").reindex(index=grid, columns=names).notna()
+    return {"run_dir": run_dir, "meta": meta, "fold_names": fold_names, "hold": hold, "latency": latency, "end": end, "M": M, "o": o, "names": names, "idx": idx,
+            "sig": sig, "z": z, "grid": grid, "cell": cell, "validity": v}
+
+
+def run(run: str, draws: int = DRAWS, members: str | None = None, seed: int = 0, jobs: int = 4) -> str:
+    from joblib import Parallel, delayed
+    A = frame(run, members)
+    run_dir, fold_names, hold, latency, end, M, o, names, idx, z, grid, cell, v = (A[k] for k in (
+        "run_dir", "fold_names", "hold", "latency", "end", "M", "o", "names", "idx", "z", "grid", "cell", "validity"))
+    lags, day = day_lags(hold), _day(grid)
     Z = z.loc[grid].to_numpy()
 
     F, notes = features(idx, names, M.dv.loc[idx, names], end)
