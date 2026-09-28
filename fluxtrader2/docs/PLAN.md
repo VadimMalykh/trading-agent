@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, registered 2026-09-28, not read)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,7 +606,7 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: nothing now. Claude builds, runs and reads R22 (the longer hold; "What next" below has the steps).**
+**Needed from Vadim: one decision — what follows R22: (A), (B) or (C) under "What next" below. Claude recommends (A).**
 Commands, gates and numbers: §8 R18–R22. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `ft2/horizon.py`, `tests/test_p8_*.py`.
 
@@ -678,26 +678,53 @@ trip: even if every cell could be traded it is worth 12 USDT a leg against 19 of
 long/short numbers R20 left unresolved (they are no bigger). After R10, R12, R13 A, R18, R19, R20 and R21, nothing measured
 on names outside the twelve clears its costs at one day.
 
-**What next — decided. Vadim chose (1) on 2026-09-28: a longer hold, measured before anything is traded (R22).** In plain
-words: on the same names and months, take each of six signals (R20's five unresolved numbers and the price-bar model's
-forecast), and ask whether the names it puts at the top earn more over the next 3 days and the next 7 days than the names
-it puts at the bottom — in money, on average, and by more than the 17.6 USDT per 10,000 a round trip costs there. No model,
-no simulated book, no unread months spent, no download. Its weakness, stated before the read: 485 days hold only 69
-separate weeks, so it can certify only a large effect (about 45 USDT a leg at 3 days, 95 at 7) and cannot rule a small one
-out. The two options not taken stay open: (2) stop looking outside the twelve, P7 runs on alone; (3) new information
-(§9 #8 scheduled per-name events, #7 market-wide flows; each needs a source audit first).
+**Result (R22, 2026-09-28), in plain words. Does holding longer make anything pay? Not shown — and this sample cannot say
+no either.** After R21 Vadim chose to measure a longer hold before trading anything. Every hour, for each of six signals
+(R20's five unresolved numbers and the price-bar model's forecast), the tenth of names the signal ranks highest was set
+against the tenth it ranks lowest: how much more did the first group earn than the second over the next 3 days and the
+next 7 days, per 10,000 USDT in each position, funding paid, before trading costs? The bar is the 17.6 USDT a round trip
+costs on these names. Twelve readings: none passed, none was ruled out.
 
-*Where it stands and how to resume* (a restarted session starts here):
+The open-interest numbers lean the right way, and more so the longer the hold: R21's score earns 11 USDT at one day, 25 at
+three days and 59 at seven; open interest over volume alone 12, 27 and 55. A round trip costs the same 17.6 at every hold,
+so on paper the week pays it three times over. But it cannot be told from chance: when the same book is given the price
+moves of OTHER weeks — which breaks any real link and keeps everything else — it does as well one time in ten (the
+score) to one time in three (open interest over volume alone). In numbers: the part of the score's 59 that belongs to
+the timing is 41 USDT with a noise of ±27 — one and a half times its noise, where about three and a half were needed
+with twelve things tried at once.
 
-| step | state | command / where |
-|---|---|---|
-| 1. registration | ✅ committed before the code was written | §8 R22 |
-| 2. the code + tests (`ft2/horizon.py`, `tests/test_p8_horizon.py`; `audit.frame` is R20's set-up, shared) | ✅ 85 tests pass; committed before any label beyond one day was computed on a real bar | `./fluxtrader2/scripts/ft2.sh --test` |
-| 3. the run on the work VM | 🟡 STARTED 2026-09-28 07:25 UTC, as registered (`vm.sh bg r22 horizon r18_transferbook_1d --holds 864 2016`); the work VM is running | finished when `vm.sh ssh 'tail -2 ~/fluxtrader2/output/logs/r22.log'` shows `wrote `; expected within the hour. If the process is gone and the log has no `wrote ` line: read the log's traceback, fix, re-run the same command (nothing of R22 has been read) |
-| 4. validity, then the read | ⬜ | `vm.sh pull` → `output/horizon/r18_transferbook_1d/horizon.md`, `validity.json` |
-| 5. result into §8 R22, this section, README; `vm.sh stop`; commit | ⬜ | — |
+*Where the money would be.* As in R21, all of it is the lowest tenth — names in a trading frenzy — and they keep falling
+behind for the whole week: 25 USDT behind their peers after one day, 50 after three, 94 after seven, on average; the
+typical one much more (260 after seven days), and a few explode upward. The highest tenth does nothing (−1, +4, +18). So
+what is there, if it is there, is a bet AGAINST frenzied names, not a way to pick names that rise.
 
-The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md); R22 needs nothing else.
+*Two more things it showed.* The price-bar model's forecast is wrong at a week on outside names: what it likes most
+falls 73 USDT behind over seven days (not certified either; the nearest of the twelve). And the two long/short numbers
+belong to the names, not to the timing: they change sign between the two halves of the sample.
+
+*Why it could not decide.* 485 days hold 69 separate weeks; the noise came out wider than expected for the slow signals
+(51 USDT at seven days for open interest over volume, where 25–40 was expected). The sample ran out, not the idea.
+
+**What next — one decision for Vadim:**
+
+- **(A) — recommended. The same 7-day question on months nobody has read (R23, a ceiling audit on NEW cells; no
+  confirmation fold spent).** The months before F1 — open interest exists in the archive from 2020-09, so 2020-09 →
+  2023-04, about 960 days or 137 weeks, twice the present sample — with the universe picked month by month by volume as
+  R18 did, for the open-interest numbers only (they need no fitted model), same statistic, same cost. These signals were
+  chosen on F1+F2; on new months the estimate is honest. Expected noise at seven days about ±19: an effect as large as
+  measured here (41) would read a little over 2 times its noise, at the edge of a bar of about 2.5 for four things tried;
+  a true effect half that size would again read "not detectable". So: about one chance in three of a clear yes or a
+  clear no. Needs downloads to the work VM (5m bars, open interest and funding of the members) and one to two days of
+  work. Other weaknesses, stated now: there were fewer perpetuals in 2020–21, so fewer than 60 members in the early
+  months, and 2021–22 was a different market. What it licenses if it clears: a priced book (R21's pattern), not a trade.
+- **(B) Stop looking outside the twelve for now** (option (2) of the list R21 left; (C) is its (3))**.** P7 runs on alone until its read (earliest 2027-03-25); the work VM stays
+  off. Nothing is lost: every dataset stays on the VM's disk.
+- **(C) New information instead:** §9 #8 (scheduled per-name events: token unlocks, listings) or #7 (market-wide flows).
+  Each needs a source audit first.
+
+Not offered, because the rules forbid it on these cells: a short-only book on the frenzied tenth, another hold, another
+cut. Each would be chosen after seeing this read; (A) is the path that makes them admissible — on months that have not
+been read.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -749,6 +776,7 @@ The downloads of R20 stay on the work VM as `metrics` and `premium` (DATA.md); R
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25) |
 | **Open interest as a rank book (`oibook`, R21)** — **CLOSED 2026-09-28** | Needed from Vadim: nothing. On R18's 188 names, F1+F2, the data that chose the three features: taker net −17.3 [−28.9, −5.8], maker −9.6 [−21.2, +2.0], gross +1.6, flip p 0.50. The score's rank IC is +0.034 (t 5.2) and all of it is the two lowest tenths (the most violent names) falling behind; top minus bottom is +12 bps a leg in the mean on all cells, under the cost | none for the book: no other k, weights, hold or side on these cells. The features stay candidates for a model's inputs (R20: NOT DETECTABLE). A longer horizon is a new question (P8 "What next" (1)), not a revival |
+| **A longer hold on names outside the twelve (R22)** — read 2026-09-28: **NOT DETECTABLE, twelve of twelve** | Needed from Vadim: the decision in P8 "What next". At 3 and 7 days R20's five unresolved features and R18's forecast, top tenth against bottom tenth in the mean: nothing clears, nothing is closed. The open-interest score leans the right way and grows with the hold (+11, +25, +59 bps a leg at 1, 3, 7 days; cost 17.6) at 1.3–1.5 times its noise; all of it is the lowest tenth falling behind | new cells only: the months before F1 (2020-09 → 2023-04) on a point-in-time universe, a new registration (P8 "What next" (A)); never another cut of F1+F2's cells |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -1926,7 +1954,7 @@ Result:        **Read 2026-09-28 (the run 04:27 → 05:03 UTC; commit 97b6020 ho
                trip here; the bar for a rule is money in the mean, not the rank.** What follows is Vadim's decision
                (P8 "What next").
 
-### R22 — the longer hold: what R20's five unresolved numbers and the price-bar forecast say about a name's next 3 and 7 days, in money (registered 2026-09-28 on Vadim's go, before the code was written and before any label beyond one day was computed; read —)
+### R22 — the longer hold: what R20's five unresolved numbers and the price-bar forecast say about a name's next 3 and 7 days, in money (registered 2026-09-28 on Vadim's go, before the code was written and before any label beyond one day was computed; read 2026-09-28: 0 of 12 clear — twelve NOT DETECTABLE; the open-interest numbers lean the right way and grow with the hold (the score +11, +25, +59 bps a leg at 1, 3, 7 days) at 1.3–1.5 times their noise)
 Question:      Everything measured on names outside the twelve was measured at a one-day hold, and nothing clears its costs
                there (R10, R12, R13 A, R18–R21). A round trip costs the same whether a position is held a day or a week,
                and the numbers that showed something are slow ones. Held 3 days or 7 days, do the names a signal puts at
@@ -2002,7 +2030,72 @@ Expectation:   validity PASS; about 1.5 % of the cells lose their label at 7 day
                −30 and +60; the two long/short signals and the forecast inside ±1 se at both holds. The part after the
                first day smaller than the first day's for the open-interest signals. About one chance in eight that
                something clears. Likeliest: twelve NOT DETECTABLE.
-Result:        —
+Result:        **Read 2026-09-28 (the run 07:25 → 07:44 UTC; commit 4c122f1 holds this block as written before the code, 85032fb
+               the code and its tests before any label beyond one day was computed on a real bar;
+               output/horizon/r18_transferbook_1d, 456 shifts): 0 of 12 clear the gate — twelve NOT DETECTABLE, none
+               CLOSED; nothing is licensed.**
+               Validity first: PASS — 694,501 cells of 188 names, largest |Δ label| 7.3e-13, none off the grid, none without
+               a label; R20's five ICs reproduced to 8.7e-17; 485 whole days, 456 shifts. No deviation from the command.
+               Cells with a label: 99.4–99.6 % at 3 days, 98.6–98.8 % at 7.
+               Per signal × hold — M · centre · M_c · se · u · family-wise p · after the first day · F1, F2 (bps a leg):
+                 oi_turn        3d  +26.6 · +10.2 · +16.4 ·  21.7 · +0.76 · 0.93 · +15.0 ·  +23.3,  +29.8
+                 oi_turn        7d  +54.8 · +21.1 · +33.7 ·  51.0 · +0.66 · 0.96 · +43.5 ·  +37.5,  +72.7
+                 oi_chg_1w      3d   −8.3 ·  −4.4 ·  −3.9 ·  23.5 · −0.17 · 1.0  ·  −9.5 ·   −8.4,   −8.3
+                 oi_chg_1w      7d  −56.2 · −11.9 · −44.3 ·  55.2 · −0.80 · 0.91 · −56.9 ·  −67.4,  −44.6
+                 oi_chg_1d      3d  −11.6 ·  −1.3 · −10.2 ·  10.2 · −1.00 · 0.74 ·  −5.9 ·   +3.1,  −26.5
+                 oi_chg_1d      7d   −4.1 ·  −3.7 ·  −0.4 ·  19.4 · −0.02 · 1.0  ·  +1.6 ·   +5.4,  −13.9
+                 global_ls      3d  −23.0 · −29.9 ·  +7.0 ·  43.0 · +0.16 · 1.0  · −12.7 ·  −65.1,  +19.9
+                 global_ls      7d  −11.0 · −71.5 · +60.5 · 104.4 · +0.58 · 0.98 ·  −1.1 ·  −95.8,  +76.6
+                 top_vs_global  3d   +5.0 · +25.0 · −20.1 ·  34.8 · −0.58 · 0.98 ·  +1.1 ·  +58.3,  −49.2
+                 top_vs_global  7d  −29.4 · +60.7 · −90.1 ·  84.0 · −1.07 · 0.64 · −33.3 ·  +64.1, −126.0
+                 forecast       3d   −6.1 ·  −0.9 ·  −5.3 ·  10.0 · −0.53 · 0.99 ·  −8.3 ·   +5.5,  −17.9
+                 forecast       7d  −32.0 ·  −2.9 · −29.1 ·  17.9 · −1.62 · 0.23 · −33.4 ·  −11.7,  −52.9
+               The family bar: over the shifts the largest |u| of the twelve is 1.46 on average and 3.38 one time in
+               twenty (2.8–3.0 expected). The largest real |u| is 1.62 (the forecast at 7 days, the wrong way round).
+               Reference rows, outside the family (M · M_c · se · u · single p): one day — oi_turn +11.8 · +8.3 · 7.5 ·
+               1.11 · 0.16; oi_chg_1w +0.8; oi_chg_1d −5.9; global_ls −10.2 (centre −10.0); top_vs_global +3.8;
+               forecast +2.3. R21's score — 1d +11.1 · +8.3 · 5.2 · 1.60 · 0.12; 3d +25.0 · +17.0 · 13.4 · 1.28 · 0.19;
+               7d +58.9 · +41.4 · 26.9 · 1.54 · 0.10; both folds positive at every hold (7d: +46.1, +72.2), after the
+               first day +14.5 (3d) and +48.3 (7d).
+               Described, decides nothing (the report's tables; `tenths.csv`, `signals.csv`, `shifts.parquet`):
+               (D1) where the open-interest money is: the LOWEST tenth, as in R21 (D2), and it keeps falling behind for the
+               whole week. The label against the bar's peers, mean / median, for oi_turn's lowest tenth: −25 / −92 at one
+               day, −50 / −173 at three, −94 / −260 at seven; its highest tenth −1, +4, +18 in the mean. The score's
+               lowest tenth −22, −41, −77; its highest −1, +7, +40. Tenths three to nine carry no order at any hold.
+               (D2) the forecast is wrong at a week. What the twelve's model likes most on outside names falls behind:
+               its highest tenth −6.7 / −64.8 at one day, −25.6 / −117 at three, −72.9 / −205 at seven; its lowest tenth
+               −11, −13, −9 in the mean. Rank IC −0.031 at both holds (HAC t −4.1, −3.8) — R20 (D2) at a longer hold.
+               (D3) the two long/short signals are the names', not the timing's: the centre is larger than M_c at three
+               days and of its size at seven, and M changes sign between the folds (global_ls 7d: −96 in F1, +77 in F2).
+               (D4) the two standard errors. The null's se is above the HAC se over days wherever the signal is slow:
+               oi_turn 21.7 against 19.0 (3d) and 51.0 against 35.1 (7d); global_ls 43.0 against 17.6 and 104 against 39;
+               for the fast ones they agree (oi_chg_1d 10.2 / 9.4, forecast 10.0 / 10.3). By the HAC se and measured
+               from zero the score at 7 days reads t 2.1 and oi_turn 1.6: not certifiable by either yardstick, for
+               signals that were chosen on these cells.
+               (D5) funding's part of M: −5.4 and −8.5 bps a leg for oi_turn (3d, 7d), −2.7 and −3.2 for the score, up
+               to −18 for global_ls at 7 days: the book's sides pay funding on balance, and it is inside every M above.
+               (D6) rank IC at the hold and what the top tenth needs there (0.018 at 3d, 0.012 at 7d; the mean move
+               against the peers is 434 and 667 bps): oi_turn +0.019 (t 1.4), +0.015 (0.7); oi_chg_1w −0.023 (−2.7),
+               −0.036 (−3.0); oi_chg_1d −0.016 (−2.7), −0.012 (−1.7); the score +0.023 (2.1), +0.024 (1.6).
+               Against the expectation: validity, the share of cells lost and the one-day reference rows as expected; M_c
+               of the open-interest signals inside their bands at both holds. The se came out WIDER than expected for
+               the slow signals (oi_turn 21.7 and 51.0 against 12–18 and 25–40; the long/short two 35–104) and as
+               expected or tighter for the fast ones; the family bar 3.38, not 2.8–3.0. "Inside ±1 se" held for
+               global_ls and failed narrowly for top_vs_global (−1.07) and for the forecast (−1.62). "The part after
+               the first day smaller than the first day's" was WRONG: for oi_turn it is +15.0 and +43.5 against +11.8 —
+               what is there keeps accruing after the first day. "Twelve NOT DETECTABLE" came true.
+               Reading: **a longer hold certifies nothing on these cells, and rules nothing out. The open-interest
+               numbers lean the way R20 saw and grow about in step with the hold — the score earns 11, 25 and 59 bps
+               a leg at one, three and seven days against a round trip of 17.6 — but the same book given the moves of
+               other weeks does as well one time in ten (the score) to one time in three (oi_turn alone), and all of
+               it is a SHORT of the most frenzied tenth; nothing here picks names that rise. The sample, not the
+               signal, is what ran out: 485 days are 69 weeks.**
+               Consequences: nothing is licensed and no book is built on these cells. The clause for new cells applies
+               (|M_c| above the cost with the part after the first day agreeing and one sign in both folds): oi_turn
+               at 7 days, oi_chg_1w at 7 days, the score at 7 days (reference), and the forecast at 7 days with the
+               opposite sign. No variant is read on these cells — no other hold, tenth, window, side or weighting (a
+               short-only rule on (D1) would be one). Counted on these cells so far: R18's four screens, R19's one,
+               R20's twelve features, R21's book, these twelve. What follows is Vadim's decision (P8 "What next").
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
