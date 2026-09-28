@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, registered 2026-09-28 on Vadim's go, not read)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21 proposed, not registered)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,8 +606,9 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: nothing — he said go on R20 (2026-09-28); Claude runs and reads it.** Commands, gates and numbers:
-§8 R18, R19, R20. Code: `ft2/screen.py`, `ft2/universe.py`, `tests/test_p8_screen.py`.
+**Needed from Vadim: one decision — what follows R20: (a), (b) or (c) under "What next" below. Claude recommends (a).**
+Commands, gates and numbers: §8 R18, R19, R20. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
+`tests/test_p8_screen.py`.
 
 **Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
 month by month by trading volume alone, the model's forecast was right no more often than a coin: correlation with what
@@ -630,15 +631,46 @@ taken out. Buying still loses there (−23 USDT a trade) — less than on the na
 the suspicion predicted, but on the twelve buying earns +51 … +59, and knowing the future of a name does not reproduce
 that. One hint, which decides nothing: on names that are both young and survivors the correlation is 0.031.
 
-**What next — R20 (registered 2026-09-28, §8).** Five registrations (R10, R12, R13 A, R18, R19) have now looked for the
-price-bar model's signal outside the twelve and found none. Another way of sorting the same forecast is unlikely to find
-what is not there. The proposal is to measure, on the same point-in-time universe (60 names a month, 188 in all, F1+F2), how
-much each piece of information the model does NOT use says about a name's next day against its peers: funding rate, open
-interest, long/short ratios, taker buy share (the archive's `metrics` and `fundingRate`, free, §9 #6) and the spot–perpetual
-price gap (§9 #3; taken as the exchange's own premium index, which needs no matching of spot symbols). A ceiling audit in
-P2's sense: no model, no book, no confirmation fold. The downloads stay on the work VM as `metrics` and `premium`
-(DATA.md) and serve any later test on these names: model inputs, the positioning screens of §9 #6, a confirmation. Not chosen as the proposal: §9 #6 as screens of the existing forecast (the forecast has nothing to sort), §9 #7
-(one number a day for the whole market: 650 days, only a large effect is visible).
+**Result (R20, 2026-09-28), in plain words. Does the information the model does not use say which names will do better
+tomorrow? Not shown — two kinds of it say nothing, one says something this test could not certify.** After five
+registrations found nothing of the price-bar model's signal outside the twelve, R20 asked a question that needs no model: on
+the same 188 names, take one number known about each name beforehand and check whether the names that score high on it do
+better than the others over the next day. Twelve such numbers were tried, from four kinds of information. *Funding* (what
+holders of a position pay each other every 8 hours) and the *premium* (how far the perpetual trades above the spot price):
+nothing — closed. The *long/short ratios* (how many accounts are long against short) and the *taker flow* (who is buying at
+market): nothing certain; three closed, two unresolved. *Open interest* (the total size of the positions open in a name) is
+where something appeared: names whose open interest is large against their daily volume, and names whose open interest has
+been falling, did better than their peers the next day, in both halves of the sample. The strongest of them scores a
+correlation of 0.033 (t 3.98). It missed the bar: when twelve things are tried at once, the best of twelve on meaningless
+data scored as well in 6 % of the trials, and the bar written beforehand was 5 %. So by the rule nothing passed and nothing
+may be traded on it.
+
+Two things to know about that result. **The size is small even if it is real:** a trade on these names costs about 18 USDT on
+10,000 (a round trip, crossing the spread), and a correlation of 0.033 is exactly where trading the strongest tenth of
+signals breaks even — before it earns anything. **And the bar was higher than planned** (4.0 where about 3 was expected),
+because two of the twelve numbers carry a lasting fact about names (where the crowd is always long, the name drifted down
+over the whole sample) that lifts the score of meaningless trials; that was found after the read and changes no verdict.
+
+One more thing the audit showed, about R18: measured by rank (does the name the model likes more usually do better?)
+instead of by average, the twelve's model is WRONG on outside names more often than right (−0.032, t −5.2). What it likes
+most there usually does worse than its peers and is rescued on average by a few large winners. It fits R18's money (buying
+lost, selling earned) and is described, not tested.
+
+**What next — R21, proposed, not registered. One decision for Vadim:**
+
+- **(a) — recommended. Run the open-interest numbers as a simulated book, with costs, on the same names.** The smallest book that
+  uses them (rank the names by the three open-interest numbers, buy the top, sell the bottom, hold a day) through the
+  harness on R18's 188 names, F1+F2, with costs. It is a *kill test*: the numbers were picked after being seen on these very
+  cells, so a profit there proves nothing and only licenses step (b); a loss — on the data that chose them — closes open
+  interest at one day without spending anything. It is also the only way to learn whether a rank correlation on these names
+  turns into money at all. About a day; the data is on the work VM; no fold is spent.
+- **(b) Go straight to names and months nobody has read:** the point-in-time members of F3+F4 (2024-09 → 2026-01), the five
+  unresolved numbers, each measured against the centre of its own shuffles. Clean, and it costs a download (bars, funding
+  and metrics of the new members, a few hours) and spends the outside names' F3+F4 on this question.
+- **(c) Stop looking outside the twelve for now;** P7 runs on alone until its read (earliest 2027-03-25), and §9's other
+  data (#7 market-wide flows, #8 scheduled events) waits for its own proposal.
+
+The downloads stay on the work VM as `metrics` and `premium` (DATA.md) and serve any of these.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -1639,7 +1671,7 @@ Result:        **Read 2026-09-27 (commit c01ab5a holds this block as written bef
                on these cells. After R10, R12, R13 A, R18 and R19 the candle ridge has shown nothing on any universe but the
                twelve: the next registration on outside names should bring new information, not another cut of this forecast.
 
-### R20 — what the information the model does not use says about a name's next day, on names picked without hindsight (registered 2026-09-28 on Vadim's go, before any metrics or premium file of a member was fetched; read —)
+### R20 — what the information the model does not use says about a name's next day, on names picked without hindsight (registered 2026-09-28 on Vadim's go, before any metrics or premium file of a member was fetched; read 2026-09-28: 0 of 12 clear — seven CLOSED, five NOT DETECTABLE; open interest over volume the nearest, t 3.98, family-wise p 0.060 against 0.05)
 Question:      Five registrations (R10, R12, R13 A, R18, R19) looked for the candle ridge's signal outside the twelve and found
                none. Before any model: does funding, the perpetual's premium over spot, open interest, the long/short ratios
                or the taker flow of a name say which way it moves over the next day AGAINST the other members? A ceiling audit
@@ -1698,7 +1730,74 @@ Expectation:   validity PASS. Coverage ≥ 95 % of cells for every feature. Sign
                three features reach |t| 1.5–2.5; the reference row (R18's forecast) within ±0.010. About one chance in three
                that a feature clears the family bar. Likeliest: nothing clears, most features NOT DETECTABLE, funding or
                global_ls the nearest.
-Result:        —
+Result:        **Read 2026-09-28 (the audit ran 2026-09-27 22:00 → 22:18 UTC; commit 4073321 holds this block as written before any
+               metrics or premium file of a member was fetched, 91d26f6 the code before the read;
+               output/audit/r18_transferbook_1d, 200 draws): 0 of 12 clear the gate — seven CLOSED, five NOT DETECTABLE;
+               nothing is licensed.**
+               Validity first: PASS — 694,501 cells of 188 names, largest |Δ label| 7.3e-13, no cell off the hourly grid, none
+               without a label. Inputs, checked before the run and without touching a label: both fetches 188 of 188 names,
+               0 errors; the twelve's 4,322,018 metrics rows identical to the file kept from before the ingest
+               (`data/metrics_before_r20.parquet`); every member has rows in metrics, premium and funding. No deviation
+               from the commands. Coverage 99.7–100 % of cells for every feature, 484 days.
+               Per feature — IC (t) · F1, F2 · family-wise p · upper bound (|IC| + 1.96 se):
+                 oi_turn           +0.0326 (+3.98) · +0.043, +0.022 · 0.060 · 0.049   NOT DETECTABLE (MDE 0.023)
+                 oi_chg_1w         −0.0191 (−3.49) · −0.028, −0.010 · 0.19  · 0.030   NOT DETECTABLE (MDE 0.015)
+                 oi_chg_1d         −0.0158 (−3.17) · −0.013, −0.018 · 0.36  · 0.026   NOT DETECTABLE (MDE 0.014)
+                 global_ls         +0.0114 (+1.28) · +0.006, +0.017 · 1.0   · 0.029   NOT DETECTABLE (MDE 0.025)
+                 top_vs_global     −0.0063 (−0.82) · +0.002, −0.014 · 1.0   · 0.021   NOT DETECTABLE (MDE 0.022)
+                 global_ls_chg_1d  +0.0100 (+1.99) · +0.004, +0.016 · 0.96  · 0.01997 CLOSED (under 0.02 by 0.00003)
+                 funding_last      +0.0069 (+1.35) · +0.012, +0.002 · 1.0   · 0.017   CLOSED
+                 premium_1d        +0.0064 (+1.14) · +0.014, −0.001 · 1.0   · 0.017   CLOSED
+                 funding_7d        +0.0029 (+0.45) · +0.008, −0.003 · 1.0   · 0.016   CLOSED
+                 top_ls            +0.0011 (+0.17) · +0.007, −0.005 · 1.0   · 0.014   CLOSED
+                 taker_1d          −0.0020 (−0.38) · +0.006, −0.010 · 1.0   · 0.013   CLOSED
+                 premium_1h        +0.0004 (+0.09) · +0.000, +0.001 · 1.0   · 0.008   CLOSED
+               The family bar: on shuffled labels the best of the twelve reaches |t| 2.94 on average and **4.00 one time in
+               twenty** (2.8–3.0 expected). oi_turn's 3.98 sits on it: 11 of 200 draws did as well.
+               Described, decides nothing — computed after the read from the saved draws and cells, so none of it can clear
+               a feature (the scripts are kept beside the report: `describe_null.py`, `describe_reference.py`,
+               `check_inputs.py`; each runs on the work VM as `python - < script` from `~/fluxtrader2`):
+               (D1) where the bar of 4.0 comes from. The registered null keeps each name's own labels, so a lasting link
+               between a name's LEVEL of a feature and its drift survives the shuffle — as registered. The registered p,
+               however, measures |t| from zero, and two features are not centred at zero under that null: global_ls
+               (shuffled t −2.65 on average, sd 0.74) and top_vs_global (+2.61, sd 0.78) — names where the crowd is
+               lastingly long drifted down against the rest over F1+F2. These two hold the family's largest |t| in 161 of
+               200 draws and in ALL 11 draws that reached oi_turn's 3.98. Two consequences: the bar every feature had to
+               clear was set by two features' name-level link, not by noise in time; and for those two the registered p
+               cannot see what it was meant to see — their real t (+1.28, −0.82) lies in the far tail of their OWN shuffles
+               (single-feature p 0.97 and 0.99 mean "less extreme than almost every shuffle"). Measured from the centre
+               of its own shuffles: global_ls +0.027 in IC (5.3 sd), top_vs_global −0.021 (4.4 sd), oi_turn +0.025 (3.0 sd;
+               +0.007 of its +0.033 is level), oi_chg_1w −0.017 (3.1 sd), oi_chg_1d −0.015 (2.8 sd), funding_last +0.010
+               (2.4 sd); the other six inside 1.8 sd. A weakness of the registered p found at the read, not a defect of
+               the run: the verdicts above are the gate's and stand.
+               (D2) the reference row: R18's forecast by this statistic reads **IC −0.0320 (t −5.18)** where ±0.010 was
+               expected and R18's own statistic read +0.0002. Both instruments are right (four correlations on the same
+               694,501 cells: pooled Pearson +0.0002, t 0.03 — R18's number to the digit; per-bar Pearson −0.006, t −0.9;
+               pooled ranks −0.031, t −5.1; per-bar Spearman −0.032, t −5.2). The difference is rank against mean: in the
+               forecast's top tenth the MEDIAN move against the peers is −0.126 σ and the mean −0.011 σ (deciles 2–7:
+               median −0.05, mean −0.01 … +0.01). What the twelve's model likes most on outside names usually does worse
+               than its peers and is rescued in the mean by a few large winners — R18's book in other words (long −54,
+               short +41). No null was drawn for this row.
+               (D3) what a signal needs here: a taker round trip cost 18.0 bps on the run's trades, the mean move against
+               the other members is 245 bps, so trading the top tenth of a signal breaks even at an IC of about 0.033 —
+               oi_turn's size exactly, twice the open-interest changes'. And by (D2) a rank IC on these names need not
+               turn into money at all: only a priced book says.
+               Against the expectation: validity, coverage and the se (0.004–0.009 against 0.006–0.010) as expected.
+               Signs: funding, premium and global_ls were expected NEGATIVE and came positive, all small; the open-interest
+               features were expected inside ±0.010 and are the three largest; taker inside its band. Three features
+               beyond |t| 3 where two or three at 1.5–2.5 were expected. The family bar 4.0, not 2.8–3.0 (D1). The
+               reference row far outside its band (D2). "Nothing clears, most NOT DETECTABLE" came half true: nothing
+               clears, seven of twelve are CLOSED; the nearest is oi_turn, not funding or global_ls.
+               Reading: **funding and the perpetual's premium over spot say nothing about which name does better than its
+               peers over the next day — closed at this horizon on this universe, with the taker flow, the top traders'
+               ratio and the crowd's one-day change. Open interest says something this read could not certify: names
+               whose open interest is large against their volume, and names whose open interest has been falling, did
+               better than their peers the next day, in both folds, at sizes between half of break-even and break-even.**
+               Consequences: nothing is licensed. No variant of any of the twelve is read on these cells under this
+               registration. The five NOT DETECTABLE stay open; the seven CLOSED are closed at one day on a volume-ranked
+               universe only. Counted on these cells so far: R18's four screens, R19's one, these twelve features. Any
+               later null of this kind reports each feature against the centre of its own shuffles (D1). R21 is proposed
+               in P8 and NOT registered: it needs Vadim's go.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
@@ -1718,10 +1817,10 @@ built here in P2 and needs no download.
 |---|---|---|---|---|
 | 1 | **Historical book depth, tape and flow for the same twelve pairs** | Binance's public archive (`data.binance.vision`, USDⓈ-M futures; free, no key). **Coverage measured 2026-09-15:** depth within ±1..5 % of mid (`bookDepth`, 30 s) **2023-01-01 → today** for every pair (from listing for the younger ones), ~0.5 MB/day/pair; 5m open interest + long/short + taker ratios (`metrics`) 2020-09 → today; the full tape (`aggTrades`) 2019-12 → today, **~136 GB zipped for our pairs from 2023-01** (BTC 14–27 MB/day); funding monthly since 2020. Best bid/ask (`bookTicker`) was discontinued in 2024 and **`bookDepth` does not replace it** (no touch prices in it) — the historical spread is estimated from the tape's bid–ask bounce. 1m klines back to 2019-12 (2.7 years more than the collector holds). | The single biggest gap in our data was that book, tape and flow existed for two months while candles existed for four years. This closes it back to 2023-01: P1's cost model is measured over 3.7 years instead of proxied, and book/flow features (§7) become testable in a powered walk-forward over F1–F5. **Done in P0b** (`bookDepth`, `metrics`, `fundingRate` ingested; DATA.md); the tape is streamed to a per-minute summary in P1 (`ft2 tape`, not kept raw). | P0b ✅ → P1, P2 |
 | 2 | **Candles for a wider universe** (the top ~30–50 USDⓈ-M perps by volume, 5m and 1h) | same archive | Breadth: the plan's edge comes from many semi-independent bets, and a cross-sectional strategy on twelve names is thin. More names also gives a cleaner "market" factor. The collector need not record them for research; only for trading later. **Done 2026-09-22 for R10:** `ft2 universe` chose 40 (`ft2/universe.py::WIDE`, ranking in output/universe_wide.md), monthly 5m klines 2022-04 → 2024-08 and funding for the 32 the collector lacks are in `candles_5m_archive` / `funding_archive` (DATA.md); their cost is `ft2 costwide`'s pooled candle proxy. | R10 (P5 step 5) |
-| 3 | **Spot klines for the same symbols** | same archive (spot) | Basis (perp minus spot) and its changes, a known carry/flow signal; also a cleaner index for the market factor | P2 |
+| 3 | **Spot klines for the same symbols** | same archive (spot) | Basis (perp minus spot) and its changes, a known carry/flow signal; also a cleaner index for the market factor. **Read as the exchange's premium index in R20 (2026-09-28), 188 names, per name against its peers at one day: CLOSED** (IC +0.000 and +0.006, upper bounds 0.008 and 0.017). Spot klines themselves were not fetched | R20 ✅ (premium index); spot klines parked |
 | 4 | **Same pairs on a second venue** (Bybit / OKX perps, 1m klines) | their public archives | Cross-venue lead-lag at short horizons; only relevant if P2 funds a sub-15m horizon | parked |
 | 5 | On-chain, news, sentiment | various | Low prior at these horizons, high engineering cost; not now | parked |
-| 6 | **Open interest, funding and positioning as SCREENER characteristics** (Vadim's question 2026-09-27: "new features?") | the archive's `metrics` and `fundingRate`, every symbol, free | R15 found they add nothing as model inputs on the twelve. Not tested: as things a screener ranks names by (open interest over volume = crowded, funding at an extreme). Per name, so it has breadth | parked — a second screen family after R18 (its family-wise bar counts R18's four) |
+| 6 | **Open interest, funding and positioning as SCREENER characteristics** (Vadim's question 2026-09-27: "new features?") | the archive's `metrics` and `fundingRate`, every symbol, free | R15 found they add nothing as model inputs on the twelve. Not tested: as things a screener ranks names by (open interest over volume = crowded, funding at an extreme). Per name, so it has breadth. **Read directly against the next day's move in R20 (2026-09-28): funding closed; open interest over volume and open-interest change NOT DETECTABLE and the nearest (IC +0.033, −0.019, −0.016)**; `metrics` for the 188 members is on the work VM | R20 ✅ as a ceiling audit; as screens of a forecast still parked (the forecast has nothing to sort, R18) |
 | 7 | **Market-wide daily series: spot-ETF net flows (BTC from 2024-01-11, ETH from 2024-07-23), stablecoin supply, Deribit implied volatility (DVOL), macro dates (FOMC, CPI)** (Vadim, 2026-09-27) | Farside tables (scrape), DefiLlama, Deribit API, a calendar; all free | One number a day for the whole market: ≈ 650 days of ETF history, so only an IC ≥ 0.1 is detectable, and it is a market-direction input where our surviving signal is pair-vs-peers. Best uses: (a) BTC/ETH against the alts the day after a large flow; (b) a regime switch or a size multiplier. Known-at time matters: a day's flow is published after the US close, usable from ≈ 03:00 UTC the next day. **US stock indices (S&P 500, Nasdaq; Vadim, 2026-09-27)** belong to this family with two differences: index futures trade almost round the clock on weekdays, so the series is intraday and covers all folds, and it is closed at weekends (a regime of its own). Still one number for the whole market: to reach pair-vs-peers it enters as EACH NAME'S trailing sensitivity to the index × the index's recent move, which is per name and has breadth — the same construction applies to the ETF flows. Source to audit: free minute history of the index ETFs or futures, and a live feed the serve host can read | parked — one ceiling screen for the family (P2 style, F2–F4 days), when R18 is read |
 | 8 | **Scheduled per-name events: token unlocks, listings and delistings, exchange "monitoring" tags** | DefiLlama unlocks, Binance announcements | Known in advance, per name, and about exactly the young names R14's money sits in. Risk: the history of announcements is hard to reconstruct without hindsight | parked — after #3 and #6; needs a source audit first |
 
