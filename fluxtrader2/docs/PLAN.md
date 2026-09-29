@@ -778,8 +778,8 @@ decision. Registration: §8 R25.
 | 1 | registration R25, committed before anything else | ✅ 2026-09-29 |
 | 2 | build: `--universe f34`, `audit --pool --confirm --name`, the two check scripts take a tag; tests; committed | ✅ 2026-09-29: 95 pass. `OIBook` is not touched; `archive fundingRate --monthly` now fetches only the months asked for (nothing of F5) |
 | 3 | work VM resized to 32 GB; the universe of F3+F4's blocks, frozen as `ft2/screen_members_f34.csv`, committed | ✅ 2026-09-29 12:15 UTC: 17 blocks 2024-09-03 → 2025-12-29, 60 members in every block, 216 names, none of the twelve; 94 are R18 members too, 119 are new to the slices. The work VM is an `e2-standard-8` now (was `e2-standard-4`; stopped when idle as before) |
-| 4 | copies of the slices and the cost file; downloads `r25_klines`, `r25_metrics` (done = `archive fetch done`) | 🔵 started 2026-09-29 (logs `output/logs/r25_klines.log`, `r25_metrics.log`; errors → re-run the same command) |
-| 5 | ingest, input check; `costwide`, cost check; R24's fills re-priced (validity (2), (3)) | — |
+| 4 | copies of the slices and the cost file; downloads `r25_klines`, `r25_metrics` (done = `archive fetch done`) | ✅ 2026-09-29 14:24 UTC: 216 of 216 names in both, 83,381 new files, 0 errors, 0 bad checksums; no file dated 2026 for an outside name. Copies: `data/*_before_r25.parquet` |
+| 5 | ingest, input check; `costwide`, cost check; R24's fills re-priced (validity (2), (3)) | 🔵 started 2026-09-29 14:30 UTC as one chain (`output/logs/r25_prep.log`); done = `output/backtest/r25_recheck_r24/validity.json` exists; then read `output/horizon/r25_inputs.json`, `output/backtest/r25_costwide_check.json` and that file — all three must say PASS before the run |
 | 6 | the run `r25` (log `output/logs/r25.log`; done = its `wrote ` line), the book check, the read `r25_read` | — |
 | 7 | the read: validity first, then the gate; Result into §8 R25, README, §7; work VM stopped | — |
 
