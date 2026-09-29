@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, REGISTERED 2026-09-29 on Vadim's "(A1)": nothing fetched, built or read yet)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, no book priced yet, F3+F4 untouched)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,8 +606,8 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: nothing now. Vadim chose (A1) on 2026-09-29; Claude runs R23 stage 1 (the step table under
-"What next" below) and brings back the read. A decision comes back to Vadim only if stage 1 reads GO ON.**
+**Needed from Vadim: one decision — go or no go on the next registration, a priced book of the open-interest score
+at a 7-day hold ("What next" below). Claude recommends go.**
 Commands, gates and numbers: §8 R18–R23. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `ft2/horizon.py`, `tests/test_p8_*.py`.
 
@@ -706,31 +706,49 @@ belong to the names, not to the timing: they change sign between the two halves 
 *Why it could not decide.* 485 days hold 69 separate weeks; the noise came out wider than expected for the slow signals
 (51 USDT at seven days for open interest over volume, where 25–40 was expected). The sample ran out, not the idea.
 
-**What next — decided 2026-09-29: (A1), R23 in two stages. Needed from Vadim: nothing until stage 1 is read.**
+**Result (R23, 2026-09-29), in plain words. Did the one leaning number come back on data that had not been searched?
+Yes.** R22 had left one number leaning — the open-interest score held a week — found on the data that was searched. It
+was tested once on 71 weeks nobody had read (2021-12 → 2023-04; open interest does not exist earlier), on the 60
+most-traded names outside the twelve, re-picked every 30 days. The score ranks names by their *open interest*, the total
+size of the positions open in a name: low = a name in a trading frenzy (a lot of trading against the positions held,
+open interest rising), high = the opposite.
 
-*In plain words.* R22 left one number leaning: a bet against names in a trading frenzy, held a week. It was found on
-the data that was searched, so it has to show up again on data that was not. Of the older months only 2021-12 →
-2023-04 have open interest (the archive begins 2021-12-01 for every name but BTC; the "2020-09" first offered was
-BTC's date) — 71 weeks, the size of R22's sample. Stage 1 reads the one number there. If it comes back under the
-trading cost of 17.6 USDT per 10,000, the idea is parked and the later months kept for confirmation (F3+F4) stay
-unread. If it comes back above, Vadim is asked whether to read F3+F4's outside names too, and the verdict is taken on
-both together (140 weeks). Stage 1 alone says a clear yes one time in ten to one in four; even a yes licenses a
-simulated book with costs, not a trade. Registration: §8 R23.
+A position of 10,000 USDT in each of the highest-ranked tenth, against one in each of the lowest-ranked tenth, earned
+**67 USDT per position over the week before trading costs**, funding paid; a round trip costs about 17.6. Of the 67,
+14 belong to the names rather than to the timing; the remaining 53 are 2.4 times their noise, and none of 471
+re-timed versions of the same book did as well. The first half of the sample earned 106, the second 28. Without the
+two collapse months of 2022 (May, November) it is 43.
+
+*What is different from R22.* There, only the most frenzied tenth mattered. Here the whole ranking is in order: the
+lowest tenth falls 86 behind its peers over the week, the highest four tenths each gain about 40–45.
+
+*What it does not say.* **Can it trade profitably? Not shown yet.** This is a measurement before costs, not a book. What
+trading these names cost in 2022 is not known; the second half alone is near the cost; and R21 showed that a real
+ranking can still lose money once it is traded (at a one-day hold). Nothing here is licensed to trade.
 
 | step | what | state |
 |---|---|---|
-| 1 | registration R23, committed before anything else | ✅ 2026-09-29 |
-| 2 | the universe of the 17 blocks: `vm.sh run universe --screen --pre`, frozen as `ft2/screen_members_pre.csv`, committed | ✅ 2026-09-29: 141 names, 60 in every block, none of the twelve, 103 of them also members of R18 |
-| 3 | downloads to the work VM: `r23_klines`, `r23_metrics` (logs `output/logs/r23_*.log`; done = the line `archive fetch done`, errors → re-run the same command) | ✅ 2026-09-29 01:50 UTC: 141 of 141 names in both, 0 errors, 0 bad checksums (files absent from the archive: days before a listing) |
-| 4 | build: the cells from members and candles (`horizon --pre`), `--universe pre`, tests (`ft2.sh --test`), committed before the run | ✅ 2026-09-29: `horizon.run_pre`, `scripts/r23_check_r22.py`, `tests/test_p8_pre.py`; 91 pass |
-| 5 | R22's output set aside, ingest, R22 re-run and compared (validity (2)) | ✅ 2026-09-29 02:31 UTC: R22 came back — 21 rows, 694,501 cells, largest difference 0.0 on m, centre, se (`output/horizon/r22_check.json` PASS); `scripts/r23_check_inputs.py` PASS: every row the three slices held before is in them after, unchanged (metrics 26.9M → 43.8M rows, klines 33.6M → 43.8M, funding 1.12M → 1.30M); all 141 members have rows in each on R23's days. The slices as they were: `data/*_before_r23.parquet` on the work VM |
-| 6 | the run: `vm.sh bg r23 horizon --pre --holds 2016`; done = the log's `wrote ` line | 🔵 STARTED 2026-09-29 03:01 UTC on the work VM, as registered. Log `output/logs/r23.log`: done = its last line `wrote output/horizon/pre/`; `validity FAIL` = void, nothing computed; no python process and no `wrote` line = it died (`sudo dmesg \| grep -i killed`), start the same command again. Then `vm.sh pull` |
-| 7 | the read: validity first, then the gate; Result written into §8 R23, README, §7; work VM stopped | — |
+| 1 | registration R23, committed before anything else | ✅ 2026-09-29 (d80bd0e) |
+| 2 | the universe of the 17 blocks, frozen as `ft2/screen_members_pre.csv` | ✅ 141 names, 60 in every block, none of the twelve (e7a7b45) |
+| 3 | downloads to the work VM | ✅ 01:50 UTC: 141 of 141 names, 0 errors, 0 bad checksums |
+| 4 | build and tests, committed before the run | ✅ `horizon.run_pre`, `tests/test_p8_pre.py`; 92 pass (28b2c61, 85923e8) |
+| 5 | R22 re-run after the ingest and compared; input check | ✅ 02:31 UTC: largest difference 0.0; every old row unchanged |
+| 6 | the run, as registered | ✅ 03:01 → 03:11 UTC |
+| 7 | the read | ✅ validity PASS, then the gate: CLEARS. Stage 2 not run; work VM stopped |
 
-Not chosen: (A2) both samples in one read (F3+F4 spent whatever stage 1 says); (B) stop looking outside the twelve;
-(C) new information (§9 #8, #7; an open-interest history before 2021-12 from a paid vendor would be one such audit).
-(B) and (C) are what remains if stage 1 reads PARKED. Forbidden on F1+F2's cells, as before: a short-only book on
-the frenzied tenth, another hold, another cut.
+**What next — one decision for Vadim: go or no go on R24.**
+
+- **Go — recommended. R24: the smallest book that trades the score at a 7-day hold, through the harness, with costs**
+  (R21's pattern; what R23's gate names as the next step). To be fixed in its registration before any number: the
+  cells (F1+F2's and these months' outside names — both have now been read for this score, so the book is an
+  exploration read, not a confirmation), the cost model (the candle proxy over-prices thin names, R10; doubled costs
+  reported), the number of names a side, and a gate on net money after costs. Only if that book clears is a
+  confirmation asked for, on the outside names of F3+F4 — untouched so far. One to two days of work; downloads only
+  if the cost proxy needs them.
+- **No go:** the score stays a candidate on record (§7), the work VM stays off, P7 runs on alone.
+
+Forbidden as before on cells already read: choosing the hold, the tenth, the side or the weighting after looking. R24
+fixes them beforehand, once.
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -782,7 +800,7 @@ the frenzied tenth, another hold, another cut.
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25) |
 | **Open interest as a rank book (`oibook`, R21)** — **CLOSED 2026-09-28** | Needed from Vadim: nothing. On R18's 188 names, F1+F2, the data that chose the three features: taker net −17.3 [−28.9, −5.8], maker −9.6 [−21.2, +2.0], gross +1.6, flip p 0.50. The score's rank IC is +0.034 (t 5.2) and all of it is the two lowest tenths (the most violent names) falling behind; top minus bottom is +12 bps a leg in the mean on all cells, under the cost | none for the book: no other k, weights, hold or side on these cells. The features stay candidates for a model's inputs (R20: NOT DETECTABLE). A longer horizon is a new question (P8 "What next" (1)), not a revival |
-| **A longer hold on names outside the twelve (R22)** — read 2026-09-28: **NOT DETECTABLE, twelve of twelve** | Needed from Vadim: nothing — (A1) chosen 2026-09-29, R23 stage 1 is Claude's to run (P8 "What next", step table). At 3 and 7 days R20's five unresolved features and R18's forecast, top tenth against bottom tenth in the mean: nothing clears, nothing is closed. The open-interest score leans the right way and grows with the hold (+11, +25, +59 bps a leg at 1, 3, 7 days; cost 17.6) at 1.3–1.5 times its noise; all of it is the lowest tenth falling behind | new cells only: **R23 (registered 2026-09-29)** — stage 1 on 2021-12 → 2023-04 (71 weeks), stage 2 on the outside names of F3+F4 only after a GO ON and Vadim's go; never another cut of F1+F2's cells |
+| **The open-interest score at a 7-day hold, names outside the twelve (R22, R23)** — R22 read 2026-09-28: NOT DETECTABLE on the cells that chose it; **R23 read 2026-09-29: CLEARS on 71 unread weeks** | Needed from Vadim: go or no go on R24, a priced book (P8 "What next"). R23, 2021-12-10 → 2023-04-23, 141 names, top tenth against bottom tenth in the mean, per leg, funding paid: M +66.7, centre +14.1, M_c +52.6 [+10.3, +95.0], se 21.6, u 2.43, one-sided p 0.002; halves +105.5 and +27.9; +43.4 without 2022-05 and 2022-11; cost 17.6. A candidate: no book priced, the cost of 2022 unknown | R24 on Vadim's go: the smallest priced book at a 7-day hold; a confirmation on F3+F4's outside names only if that book clears. Never another hold, tenth, side or weighting chosen after the read |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -2103,7 +2121,7 @@ Result:        **Read 2026-09-28 (the run 07:25 → 07:44 UTC; commit 4c122f1 ho
                short-only rule on (D1) would be one). Counted on these cells so far: R18's four screens, R19's one,
                R20's twelve features, R21's book, these twelve. What follows is Vadim's decision (P8 "What next").
 
-### R23 — the open-interest score at a 7-day hold on months nobody has read: stage 1 of two, the confirmation folds behind a stop (registered 2026-09-29 on Vadim's "(A1)", before the universe of those months was chosen, before any 5m bar or metrics file of them was fetched and before the code was written; read —)
+### R23 — the open-interest score at a 7-day hold on months nobody has read: stage 1 of two, the confirmation folds behind a stop (registered 2026-09-29 on Vadim's "(A1)", before the universe of those months was chosen, before any 5m bar or metrics file of them was fetched and before the code was written; read 2026-09-29: CLEARS — M +66.7 bps a leg, centre +14.1, M_c +52.6, se 21.6, u 2.43, one-sided p 0.002, both halves and the part after the first day positive; stage 2 is not run, F3+F4 untouched)
 Question:      R22 left one number leaning: on F1+F2 the names R21's open-interest score ranks highest earned, over the
                next 7 days, 59 bps a leg more than the names it ranks lowest (41 of it the timing's, 1.5 times its
                noise) against a round trip of 17.6 — on the cells that chose the score. On cells that did not choose
@@ -2206,7 +2224,64 @@ Expectation:   validity PASS; 110–150 names are a member at least once; about 
                25–35, u between −1.0 and +1.8; the bottom tenth, not the top, carries whatever is there, as in R22.
                One day, reference: M +3 … +15. 2022-05 and 2022-11 left out: M lower by up to a third. Verdict:
                GO ON and PARKED about equally likely (four chances in ten each), CLEARS one to two in ten.
-Result:        —
+Result:        **Read 2026-09-29 (the run 03:01 → 03:11 UTC on the work VM; commit d80bd0e holds this block as written before
+               the universe was chosen, e7a7b45 the frozen members before any 5m or metrics file was fetched, 28b2c61
+               the code and its tests before any label of these months was computed; output/horizon/pre, 471 shifts):
+               the score at 7 days CLEARS the gate. A candidate on cells that did not choose it; it licenses no
+               trade. Stage 2 is not run; F3, F4, F5 are untouched.**
+               Validity first: PASS. (1) both fetches 141 of 141 names, 0 errors, 0 bad checksums (62,125 new files).
+               (2) R22 came back: re-run after the ingest by the unchanged `run`, 21 rows, 694,501 cells, largest
+               difference 0.0 on m, centre, se (`output/horizon/r22_check.json`); and `scripts/r23_check_inputs.py`:
+               every row the three slices held before the ingest is in them after it, unchanged. (3) 717,222 cells of
+               141 names on 500 whole days; 0 cells of a non-member, 0 of the twelve, 0 at or after the end; 471
+               shifts. (4) the score is there on 98.5 % of the cells. Two deviations, neither touching a number of
+               R23: the ingest was changed before it ran to hold the symbol as a category (commit 85923e8, tested; (2) is
+               the check on real data), and the first version of the input check was killed for memory and re-written
+               name by name. The read is logged (`output/backtest/confirmation_reads.csv`: R23, FP and F0).
+               The family — M · centre · M_c · se · u · one-sided p · H1, H2 · after the first day (bps a leg):
+                 oi_score  7d  +66.7 · +14.1 · +52.6 · 21.6 · +2.43 · 0.002 · +105.5, +27.9 · +56.1     CLEARS
+               (704,453 cells with the score and a label; interval of M_c [+10.3, +95.0]; MDE 60.5; none of the 471
+               shifted books reached +66.7 — the largest +57.1, one in twenty +47.7.)
+               Reference rows, outside the family, no verdict (M · M_c · se · u):
+                 oi_score   1d +23.3 · +20.7 ·  4.9 · +4.21      3d +46.4 · +39.2 · 11.5 · +3.40
+                 oi_turn    1d +27.4 · +23.2 ·  6.1 · +3.82      3d +65.9 · +54.4 · 15.1 · +3.59      7d +86.8 · +65.2 · 32.5 · +2.00
+                 oi_chg_1w  1d −21.1 · −20.7 ·  6.0 · −3.48      3d −42.7 · −41.0 · 14.8 · −2.76      7d −53.2 · −47.7 · 31.3 · −1.52
+                 oi_chg_1d  1d −14.7 · −14.8 ·  4.1 · −3.59      3d  −4.6 ·  −4.8 ·  7.6 · −0.63      7d  −9.5 ·  −9.4 · 10.8 · −0.87
+               Every one has the sign R20 and R22 saw on F1+F2.
+               Described, decides nothing (the report's tables; `signals.csv`, `tenths.csv`, `blocks.csv`):
+               (D1) the two halves are far apart: M +105.5 in 2021-12-10 → 2022-08-16 and +27.9 in 2022-08-17 →
+               2023-04-23. With a centre of about 14 the second half alone sits near the cost, not clearly above it.
+               (D2) the two collapses of 2022: with the calendar months 2022-05 and 2022-11 left out M is +43.4 —
+               35 % lower, so they carry a third of it and the rest is not theirs. LUNA and LUNA2/1000LUNC are
+               members (the archive keeps names that were later delisted); FTT never ranked among the 60.
+               (D3) where the money is: on BOTH ends here, and in order. The label against the bar's peers by the
+               score's tenth, lowest to highest, mean: −86, −62, −24, −15, −2, +12, +40, +39, +45, +45; median: −220,
+               −177, −128, −119, −101, −87, −54, −35, −25, −16. In R22 only the lowest tenth carried it and tenths three
+               to nine had no order.
+               (D4) the two standard errors: the null's 21.6, the HAC se over days 26.6. By the HAC se M_c reads 1.97
+               times its noise and M from zero 2.5.
+               (D5) funding's part of M −3.5; rank IC at the hold +0.044 (HAC t 3.2; the top tenth pays the round
+               trip at 0.013; the mean move against the peers is 607 bps); a shift keeps 94.7 % of the cells; 58–60
+               members with a bar in every block, 55–60 with the score.
+               Against the expectation: validity, the names (141), the cells and the coverage as expected; the centre
+               inside its band. M (+66.7 against −15 … +60), M_c (+52.6 against −25 … +50) and u (2.43 against −1.0 …
+               +1.8) ABOVE their bands; the se NARROWER than expected (21.6 against 25–35). "The bottom tenth, not
+               the top, carries whatever is there" was WRONG (D3). The one-day reference above its band (+23.3
+               against +3 … +15). "2022-05 and 2022-11 left out: lower by up to a third": 35 %. The verdict CLEARS
+               had been given one to two chances in ten.
+               Reading: **on 71 weeks that did not choose it, the open-interest score did at a 7-day hold what it did
+               on the cells that chose it (+59 there, +67 here; after centring +41 and +53): the names it ranks
+               high earned more over the next week than the names it ranks low, by about three times the round trip
+               of 17.6, in both halves and beyond what any of 471 re-timed books reached. What this does NOT say:
+               that it pays after costs — the cost of trading these names in 2022 is not known, the second half is
+               near the cost, no book has been priced, and R21's book lost money at one day on a ranking that was
+               also real.**
+               Consequences: the score at a 7-day hold is a candidate; it licenses no trade. Stage 2 is not run and
+               the pooled rule is not used. Next, on Vadim's go: a registration for the smallest book that trades the
+               score at a 7-day hold through the harness, priced (R21's pattern) — its cells, its cost model and its
+               gate are that registration's; F3+F4 stay whole for its confirmation. No variant is read on these
+               cells under this registration — no other hold, tenth, window, signal, side or weighting; the
+               reference rows license nothing.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
