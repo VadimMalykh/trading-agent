@@ -88,7 +88,12 @@ def cmd_audit(args):
 
 def cmd_horizon(args):
     from . import horizon
-    print(horizon.run(args.run, args.holds))
+    if args.pre:                                              # R23: the months before F1, cells from the frozen members
+        print(horizon.run_pre(args.holds or horizon.PRE_HOLDS))
+        return print(f"wrote {horizon.OUT / horizon.PRE}/")
+    if not args.run:
+        raise SystemExit("horizon: name the run, or --pre")
+    print(horizon.run(args.run, args.holds or horizon.HOLDS))
     print(f"wrote {horizon.OUT / args.run}/")
 
 
@@ -233,8 +238,9 @@ def main(argv=None):
     au.add_argument("--book", action="store_true", help="R21: check an `oibook` run's decisions (hourly grid, members only, whole dollar-neutral units) → <run>/book_check.json")
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
                                         "`transferbook` run → output/horizon/<run>/horizon.md (see ft2/horizon.py)")
-    hz.add_argument("run", help="the run's directory name under output/backtest/")
-    hz.add_argument("--holds", nargs="*", type=int, default=[864, 2016], help="in 5m bars")
+    hz.add_argument("run", nargs="?", help="the run's directory name under output/backtest/")
+    hz.add_argument("--holds", nargs="*", type=int, default=None, help="in 5m bars (default 864 2016; with --pre 2016)")
+    hz.add_argument("--pre", action="store_true", help="R23: the open-interest score on the months before F1 (ft2/screen_members_pre.csv) → output/horizon/pre/horizon.md")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
