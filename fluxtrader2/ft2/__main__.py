@@ -79,6 +79,9 @@ def cmd_screen(args):
 
 def cmd_audit(args):
     from . import audit
+    if args.pool:                                             # R24: several `oibook` runs read as one book
+        print(audit.pool([args.run, *args.more]))
+        return print(f"wrote {audit.bt.OUT / 'r24_pool'}/")
     if args.book:                                             # R21: the validity of an `oibook` run, read before its money
         v = audit.book_check(args.run)
         return print(f"book check {v['status']}: {v}")
@@ -225,7 +228,7 @@ def main(argv=None):
         if a_.dest in ("taker_bps", "maker_bps"):
             b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
     b.add_argument("--symbols", nargs="*")
-    b.add_argument("--universe", choices=["wide", "screen"], help="ft2.universe.WIDE, the forty of R10, or the screener's members (R18), instead of the twelve")
+    b.add_argument("--universe", choices=["wide", "screen", "pre"], help="ft2.universe.WIDE, the forty of R10, or the screener's members (R18), instead of the twelve")
     sc = sub.add_parser("screen", help="P8 (R18): the screener read of a `transferbook` run → output/screen/<run>/screen.md (see ft2/screen.py)")
     sc.add_argument("run", help="the run's directory name under output/backtest/")
     sc.add_argument("--reference", default=None, help="the run whose forecasts the training names must reproduce (default: R13 B's)")
@@ -234,6 +237,8 @@ def main(argv=None):
     au = sub.add_parser("audit", help="P8 (R20): what funding, premium, open interest, long/short ratios and taker flow say about a member's next day, on the cells of a "
                                       "`transferbook` run → output/audit/<run>/audit.md (see ft2/audit.py)")
     au.add_argument("run", help="the run's directory name under output/backtest/")
+    au.add_argument("more", nargs="*", help="--pool: the other runs")
+    au.add_argument("--pool", action="store_true", help="R24: read the named `oibook` runs as one book → output/backtest/r24_pool/pool.md")
     au.add_argument("--draws", type=int, default=200)
     au.add_argument("--book", action="store_true", help="R21: check an `oibook` run's decisions (hourly grid, members only, whole dollar-neutral units) → <run>/book_check.json")
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "

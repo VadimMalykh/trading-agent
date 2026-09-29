@@ -172,3 +172,54 @@ def test_the_lean_ingest_writes_what_the_string_ingest_wrote(tmp_path, monkeypat
     with pytest.raises(ValueError, match="not among the pairs"):
         data.ingest_metrics(["ZZUSDT", "BBUSDT"] + ["1000BUSDT"]) if (tmp_path / "data/raw/external/binance/metrics/1000AUSDT").rename(
             tmp_path / "data/raw/external/binance/metrics/1000BUSDT") else None
+
+
+# ---- R24: two `oibook` runs read as one book --------------------------------------------------------------------------------
+def test_the_pooled_gate():
+    from ft2 import audit
+    r = {"net": 20.0, "net_hi": 50.0, "hedged_net": 18.0, "flip_p": 0.03, "gross_positive_in_each": True, "maker_net": 25.0}
+    assert audit.pool_verdict(r) == "CANDIDATE"
+    for k, x in (("net", -1.0), ("hedged_net", -1.0), ("flip_p", 0.06), ("gross_positive_in_each", False)):
+        assert audit.pool_verdict({**r, k: x}) == "NOT FUNDED", k
+    assert audit.pool_verdict({**r, "net": -30.0, "net_hi": -5.0, "maker_net": -2.0}) == "CLOSED"
+    assert audit.pool_verdict({**r, "net": -30.0, "net_hi": -5.0, "maker_net": 2.0}) == "NOT FUNDED"
+    n = [pd.DataFrame({"kind": "flip", "draw": [1, 2, 3], "exec": "taker", "trades": [100, 100, 100], "net": [10.0, -20.0, 0.0]}),
+         pd.DataFrame({"kind": "flip", "draw": [1, 2, 3], "exec": "taker", "trades": [300, 300, 300], "net": [-10.0, 20.0, 4.0]})]
+    p = audit._pooled_p(n, "taker", "flip", 6.0)
+    assert p["draws"] == 3 and np.isclose(p["mean"], (-5.0 + 10.0 + 3.0) / 3) and p["p"] == (1 + 1) / 4
+
+
+def test_two_runs_are_read_as_one_book_and_costs_are_doubled_by_repricing(tmp_path, monkeypatch):
+    from ft2 import audit
+    from ft2 import backtest as bt
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    _synth(days=120)
+    _members(tmp_path / "m.csv")
+    _sources(planted="taker_ratio")
+    _plant_score(hold=LONG)
+    runs = []
+    for name, syms in (("a", NAMES), ("b", [*NAMES, OUTSIDE])):
+        bt.run(audit.OIBook(hold=LONG, k=2, members=str(tmp_path / "m.csv")), syms, ["F1"], draws=20, refit_days=15, execs=("taker", "maker"), name=name)
+        runs.append(name)
+    with pytest.raises(SystemExit, match="validity FAIL"):                           # no book check yet
+        audit.pool(runs, name="pool")
+    for r in runs:
+        assert audit.book_check(r)["status"] == "PASS"
+    txt = audit.pool(runs, name="pool")
+    out = bt.OUT / "pool"
+    v, g = json.loads((out / "validity.json").read_text()), json.loads((out / "gate.json").read_text())
+    assert v["status"] == "PASS" and all(x["reprice_max_abs_diff"] < 1e-9 and x["exits_at_or_after_end"] == 0 for x in v["runs"]) and "**PASS**" in txt
+    tab = pd.read_csv(out / "pool.csv").set_index(["exec", "scope"])
+    one = pd.read_parquet(bt.OUT / "a" / "results.parquet").query("exec == 'taker' and scope == 'all'").iloc[0]
+    a, pooled, x2 = tab.loc[("taker", "a")], tab.loc[("taker", "pooled")], tab.loc[("taker, costs doubled", "pooled")]
+    assert a["trades"] == one["trades"] and np.isclose(a["net"], one["net"]) and np.isclose(a["gross"], one["gross"])      # a run alone is the harness's own read
+    assert pooled["trades"] == 2 * a["trades"] and np.isclose(pooled["net"], a["net"]) and np.isclose(pooled["gross"], x2["gross"])   # the same book twice
+    assert np.isclose(pooled["other_cost"], 2.0) and np.isclose(x2["other_cost"], 4.0) and np.isclose(pooled["net"] - x2["net"], 2.0)   # 2 × (0.5 spread + 0.5 impact)
+    assert g["gross"] > 10 and g["net"] > 0 and g["flip_p"] <= 0.05 and g["gross_positive_in_each"] and g["verdict"] == "CANDIDATE", g
+    assert tab.loc[("taker", "long"), "trades"] == tab.loc[("taker", "short"), "trades"] and ("maker", "pooled") in tab.index
+    # a run made with other costs, or of another hold, is not pooled
+    m = json.loads((bt.OUT / "b" / "meta.json").read_text())
+    (bt.OUT / "b" / "meta.json").write_text(json.dumps({**m, "cost_mult": 2.0}))
+    with pytest.raises(SystemExit, match="validity FAIL"):
+        audit.pool(runs, name="pool2")

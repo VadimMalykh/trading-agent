@@ -298,3 +298,117 @@ def run(run: str, draws: int = DRAWS, members: str | None = None, seed: int = 0,
     (out / "validity.json").write_text(json.dumps({**v, "reference_ic": m_ref, "reference_t": m_ref / se_ref, "cost_bps": cost, "move_bps": move, "ic_needed": need,
                                                    "null_max_t_p95": float(mx.quantile(0.95))}, indent=1))
     return "\n".join(md)
+
+
+# ---- R24: several `oibook` runs read as one book ------------------------------------------------------------------------------
+POOL_SKIP = ("2022-05", "2022-11")      # described: the pooled net without the trades decided in these calendar months
+POOL_SPLIT = {"FP": pd.Timestamp("2022-08-17", tz="UTC")}     # described: a run that reads the pre-history is shown in R23's two halves
+POOL_TOP, REPRICE_TOL = 5, 1e-9
+
+
+def pool_verdict(r: dict) -> str:
+    """R24's gate, on the taker book as priced, the samples pooled."""
+    if r["net"] > 0 and r["hedged_net"] > 0 and r["flip_p"] <= P_BAR and r["gross_positive_in_each"]:
+        return "CANDIDATE"
+    return "CLOSED" if r["net_hi"] < 0 and r["maker_net"] <= 0 else "NOT FUNDED"
+
+
+def _pooled_p(nulls: list[pd.DataFrame], exec_: str, kind: str, real: float) -> dict:
+    """The null pooled draw by draw: each run's draw weighted by its trades."""
+    x = pd.concat([n[(n["exec"] == exec_) & (n["kind"] == kind)] for n in nulls], ignore_index=True).dropna(subset=["net"])
+    g = x.assign(w=x["net"] * x["trades"]).groupby("draw").agg(w=("w", "sum"), n=("trades", "sum"), runs=("net", "size"))
+    d = (g["w"] / g["n"])[g["runs"] == len(nulls)]
+    return {"draws": len(d), "mean": float(d.mean()), "sd": float(d.std()), "p95": float(d.quantile(0.95)), "p": (1 + int((d >= real).sum())) / (len(d) + 1)}
+
+
+def pool(runs: list[str], name: str = "r24_pool") -> str:
+    """The fills of several `oibook` runs as ONE book (registration R24): the harness's statistics on the pooled fills,
+    the flip null pooled draw by draw, costs doubled by re-pricing each run's own decisions. Validity first."""
+    from . import ceiling
+    out = bt.OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    F, nulls, days, val, holds = {"taker": [], "maker": [], "taker_x2": []}, [], [], [], set()
+    for run in runs:
+        rd = bt.OUT / run
+        meta = json.loads((rd / "meta.json").read_text())
+        chk = json.loads((rd / "book_check.json").read_text()) if (rd / "book_check.json").exists() else {"status": "NOT RUN"}
+        fold_names, p = meta["folds"], meta["params"]
+        end = folds.bounds(fold_names[-1])[1]
+        M = bt.market(meta["pairs"], end, bt.PRE_START if "FP" in fold_names else ceiling.START)
+        dec = pd.read_parquet(rd / "decisions.parquet")
+        mem = universe.members(p.get("members") or None)
+        first = pd.Timestamp(mem["block"].min())
+        same = lambda a, b: float(np.nanmax(np.abs(a.to_numpy() - b.to_numpy()))) if len(a) == len(b) and (a.isna() == b.isna().to_numpy()).all() else np.inf      # noqa: E731
+        f1 = pd.read_parquet(rd / "fills_taker.parquet")
+        re1 = bt.price(dec, M, bt.load_costs(M.index, M.columns, end, 1.0), "taker", meta["taker_bps"], meta["maker_bps"], meta["latency_bars"])
+        f2 = bt.price(dec, M, bt.load_costs(M.index, M.columns, end, 2.0), "taker", meta["taker_bps"], meta["maker_bps"], meta["latency_bars"])
+        priced = f1.dropna(subset=["net_bps"])
+        v = {"run": run, "folds": "+".join(fold_names), "hold": int(p["hold"]), "k": int(p["k"]), "book_check": chk["status"], "decisions": len(dec), "accepted": int(dec["accepted"].sum()),
+             "first_decision": str(dec["t"].min()), "decisions_before_the_first_block": int((dec["t"] < first).sum()), "priced": len(priced),
+             "unpriced": int(len(f1) - len(priced)), "last_exit": str(priced["exit_t"].max()), "exits_at_or_after_end": int((priced["exit_t"] >= end).sum()),
+             "reprice_max_abs_diff": same(f1["net_bps"], re1["net_bps"]), "cost_mult": float(meta["cost_mult"])}
+        v["status"] = "PASS" if chk["status"] == "PASS" and not (v["decisions_before_the_first_block"] or v["exits_at_or_after_end"]) and v["priced"] > 0 \
+            and v["reprice_max_abs_diff"] <= REPRICE_TOL and v["cost_mult"] == 1.0 else "FAIL"
+        val.append(v)
+        holds.add(int(p["hold"]))
+        lab = lambda f: f.assign(run=run, part=np.where(pd.DatetimeIndex(f["t"]) < POOL_SPLIT["FP"], run + " H1", run + " H2") if "FP" in fold_names else run)      # noqa: E731
+        F["taker"].append(lab(f1)), F["maker"].append(lab(pd.read_parquet(rd / "fills_maker.parquet"))), F["taker_x2"].append(lab(f2))
+        nulls.append(pd.read_parquet(rd / "null.parquet"))
+        days.append(bt.scored_days(fold_names, M.index[-1]))
+        del M
+    ok = all(v["status"] == "PASS" for v in val) and len(holds) == 1 and len({(v["hold"], v["k"]) for v in val}) == 1
+    (out / "validity.json").write_text(json.dumps({"status": "PASS" if ok else "FAIL", "runs": val}, indent=1))
+    if not ok:
+        raise SystemExit(f"validity FAIL, no money number was read: {val}")
+    hold = holds.pop()
+    days = days[0].append(days[1:]).unique().sort_values() if len(days) > 1 else days[0]
+    F = {k: pd.concat(v, ignore_index=True) for k, v in F.items()}
+    t = F["taker"]
+    month = pd.DatetimeIndex(t["t"]).tz_localize(None).to_period("M").astype(str)
+    rows = [{"exec": "taker", "scope": "pooled", **bt.summarize(t, days, hold)}, {"exec": "maker", "scope": "pooled", **bt.summarize(F["maker"], days, hold)},
+            {"exec": "taker, costs doubled", "scope": "pooled", **bt.summarize(F["taker_x2"], days, hold)},
+            {"exec": "taker", "scope": f"pooled without {', '.join(POOL_SKIP)}", **bt.summarize(t[~np.isin(month, list(POOL_SKIP))], days, hold)}]
+    rows += [{"exec": "taker", "scope": r, **bt.summarize(t[t["run"] == r], days, hold)} for r in runs]
+    rows += [{"exec": "taker", "scope": r, **bt.summarize(t[t["part"] == r], days, hold)} for r in sorted(set(t["part"]) - set(runs))]
+    rows += [{"exec": "taker", "scope": k, **bt.summarize(t[t["side"] == s], days, hold)} for k, s in bt.SIDES.items()]
+    rows += [{"exec": "taker, costs doubled", "scope": r, **bt.summarize(F["taker_x2"][F["taker_x2"]["run"] == r], days, hold)} for r in runs]
+    rows += [{"exec": "maker", "scope": r, **bt.summarize(F["maker"][F["maker"]["run"] == r], days, hold)} for r in runs]
+    tab = pd.DataFrame(rows)
+    a = tab.iloc[0]
+    flip, shuf = (_pooled_p(nulls, "taker", k, float(a["net"])) for k in ("flip", "shuffle"))
+    flip_m = _pooled_p(nulls, "maker", "flip", float(tab.iloc[1]["net"]))
+    gross_each = {r: float(tab[(tab["exec"] == "taker") & (tab["scope"] == r)]["gross"].iloc[0]) for r in runs}
+    g = {"net": float(a["net"]), "net_lo": float(a["net_lo"]), "net_hi": float(a["net_hi"]), "net_mde": float(a["net_mde"]), "hedged_net": float(a["hedged_net"]),
+         "gross": float(a["gross"]), "flip_p": flip["p"], "gross_positive_in_each": bool(all(x > 0 for x in gross_each.values())), "maker_net": float(tab.iloc[1]["net"])}
+    g["verdict"] = pool_verdict(g)
+    pr = t.dropna(subset=["net_bps"])
+    by = pr.groupby("symbol")["net_bps"].sum().sort_values()
+    op = pd.DataFrame([{"run": v["run"], "trades": v["priced"], "unpriced": v["unpriced"], **dict(zip(("max_open", "avg_open"), (json.loads((bt.OUT / v["run"] / "meta.json").read_text())[k]
+                                                                                                                         for k in ("max_open", "avg_open"))))} for v in val])
+    show = lambda df, k=2: df.round(k).to_markdown(index=False)                         # noqa: E731
+    cols = ["exec", "scope", "trades", "unpriced", "trades_per_day", "hit", "gross", "hedged", "fee", "other_cost", "funding", "net", "net_lo", "net_hi", "net_mde", "hedged_net",
+            "hedged_net_lo", "hedged_net_hi"]
+    md = [f"# The open-interest score as a priced book at a {hold}-bar hold (R24) — {', '.join(f'`{r}`' for r in runs)} pooled (`ft2 audit --pool`)\n",
+          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {len(pr):,} priced trades on {pr['symbol'].nunique()} names, {len(days)} days in the folds read\n",
+          "\nWords: a *trade* is one position in one name, opened an hour after the ranking was read and closed 7 days later; the book always opens a bought and a sold name "
+          "together. *gross*: what a trade earned before costs, in bps (0.01 %) of the position — 1 bps is 1 USDT on 10,000. *hedged*: the same against the move of the other "
+          "names. *fee*: the exchange's fee for getting in and out. *other cost*: spread and price impact, estimated from the candles (these names have no recorded tape). "
+          "*funding*: what the position paid (−) or received (+) while open. *net* = gross − fee − other cost + funding, with its interval; *MDE*: the smallest net this "
+          "sample could have shown. *flip p*: the share of books that kept every trade but chose the direction of each day by a coin and did at least as well — 0.05 or "
+          "less is the bar. *maker*: the same trades entered with resting orders instead of crossing the spread.\n",
+          "\n## Validity\n", f"\n**{'PASS' if ok else 'FAIL'}**\n", show(pd.DataFrame(val), 12), "\n",
+          "\n## The gate — the taker book as priced, the samples pooled\n",
+          f"\n**{g['verdict']}**: net {g['net']:+.2f} [{g['net_lo']:+.2f}, {g['net_hi']:+.2f}] (MDE {g['net_mde']:.1f}), hedged net {g['hedged_net']:+.2f}, gross {g['gross']:+.2f}; "
+          f"flip null {flip['mean']:+.2f} ± {flip['sd']:.2f}, one in twenty {flip['p95']:+.2f}, **flip p {flip['p']:.3f}** ({flip['draws']} draws); gross per sample: "
+          f"{', '.join(f'{k} {x:+.2f}' for k, x in gross_each.items())}; maker net {g['maker_net']:+.2f} (flip p {flip_m['p']:.3f}). Shuffle null (reported, does not decide): "
+          f"{shuf['mean']:+.2f} ± {shuf['sd']:.2f}, p {shuf['p']:.3f}.\n",
+          "\nGate: CANDIDATE if net > 0, hedged net > 0, flip p ≤ 0.05 and gross > 0 in each sample; CLOSED if the net interval's upper end < 0 and the maker net ≤ 0; else NOT FUNDED.\n",
+          "\n## The rows\n", show(tab[cols]), "\n",
+          "\n## Positions\n", show(op), "\n",
+          "\n## Names\n", f"\nThe net summed over trades is {by.sum():+,.0f} bps on {len(by)} names, {int((by > 0).sum())} of them positive; the {POOL_TOP} best "
+          f"{by.tail(POOL_TOP).sum():+,.0f} ({', '.join(x.replace('USDT', '') for x in by.tail(POOL_TOP).index[::-1])}), the {POOL_TOP} worst {by.head(POOL_TOP).sum():+,.0f} "
+          f"({', '.join(x.replace('USDT', '') for x in by.head(POOL_TOP).index)}).\n"]
+    (out / "pool.md").write_text("\n".join(md))
+    tab.to_csv(out / "pool.csv", index=False)
+    (out / "gate.json").write_text(json.dumps({**g, "flip": flip, "flip_maker": flip_m, "shuffle": shuf, "gross_each": gross_each}, indent=1))
+    return "\n".join(md)
