@@ -594,7 +594,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, F3+F4 untouched; R24, the score as a priced book at a 7-day hold on both samples read for it, read 2026-09-29: CANDIDATE by the gate — +17 bps a trade after costs on 5,054 trades, flip p 0.025, but one times its noise and all of it the short side)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, F3+F4 untouched; R24, the score as a priced book at a 7-day hold on both samples read for it, read 2026-09-29: CANDIDATE by the gate — +17 bps a trade after costs on 5,054 trades, flip p 0.025, but one times its noise and all of it the short side; R25, the confirmation read of that book on the outside names of F3+F4, REGISTERED 2026-09-29 on Vadim's decisions: no member chosen, nothing fetched or run yet)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -606,9 +606,9 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: one decision — whether to spend F3+F4 on the confirmation of R24's book ("What next" below).
-Claude recommends yes.**
-Commands, gates and numbers: §8 R18–R24. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
+**Needed from Vadim: nothing now. Vadim decided on 2026-09-29: confirm on F3+F4 only, the full book as it is. Claude
+runs R25 (the step table under "What next" below) and brings back the read.**
+Commands, gates and numbers: §8 R18–R25. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `ft2/horizon.py`, `tests/test_p8_*.py`.
 
 **Result (R18, 2026-09-27), in plain words. Can the screener pick names yet? No.** On 188 names outside the twelve, chosen
@@ -763,21 +763,25 @@ USDT open — roughly 0.2 % a week on the money deployed.
 | 4–6 | run PRE, run F12, their book checks, the pooled read | ✅ 06:45 → 07:58 UTC, one job after the other |
 | 7 | the read | ✅ validity PASS, then the gate: CANDIDATE. Work VM stopped |
 
-**What next — one decision for Vadim: spend F3+F4 on the confirmation?**
+**What next — decided 2026-09-29: R25, the confirmation on F3+F4. Needed from Vadim: nothing until it is read.**
 
-- **Yes — recommended. R25: the same book, unchanged, on the outside names of F3+F4** (2024-09 → 2026-01, 69 weeks
-  nobody has read for outside names), members picked month by month as before. Needs downloads (bars, funding, open
-  interest, costs for those names) and one to two days. Stated now: the test is about even odds even if the effect is
-  real (one sample's noise is about 24 against an effect of 17), so a miss would not prove there is nothing. F5
-  (2026-01 → 2026-09, 37 weeks) stays in reserve.
-- **Yes, with F5 as well** (106 weeks): better odds, about three in five if the effect is real — and no unread month is
-  left for names outside the twelve afterwards, only what accrues from now on.
-- **No:** the book stays a candidate on record (§7); F3–F5 stay whole; P7 runs on alone.
+*In plain words.* The same book, with nothing changed, is run once on 69 weeks nobody has read for names outside the
+twelve (2024-09 → 2026-01). Vadim's two decisions: F3+F4 only — F5 (2026-01 → 2026-09) stays unread in reserve — and
+the number that decides is the full book's, every cost paid (the "sold side against the market" figure does not pay
+for its hedge; it is reported and decides nothing). The bar: money left after costs, and beyond what the same trades
+earn with each day's direction left to a coin. The odds are about even even if the effect is real, so a miss means
+"not confirmed", not "nothing there". A pass licenses no money — the next step would be paper trading, on Vadim's
+decision. Registration: §8 R25.
 
-One design question belongs to that registration and would be put to Vadim with it: whether the confirmed book is R24's
-as it is, or the short side alone against the market (what (D2) suggests). On F1+F2 and the early months that choice is
-forbidden — it was seen there; on months nobody has read it is a hypothesis like any other, provided it is written
-down before they are fetched.
+| step | what | state |
+|---|---|---|
+| 1 | registration R25, committed before anything else | ✅ 2026-09-29 |
+| 2 | build: `--universe f34`, `audit --pool --confirm --name`, the two check scripts take a tag; tests; committed | — |
+| 3 | work VM resized to 32 GB; the universe of F3+F4's blocks, frozen as `ft2/screen_members_f34.csv`, committed | — |
+| 4 | copies of the slices and the cost file; downloads `r25_klines`, `r25_metrics` (done = `archive fetch done`) | — |
+| 5 | ingest, input check; `costwide`, cost check; R24's fills re-priced (validity (2), (3)) | — |
+| 6 | the run `r25` (log `output/logs/r25.log`; done = its `wrote ` line), the book check, the read `r25_read` | — |
+| 7 | the read: validity first, then the gate; Result into §8 R25, README, §7; work VM stopped | — |
 
 ## 5. Decision table (what the P2 readings mean for model choice)
 
@@ -829,7 +833,7 @@ down before they are fetched.
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25) |
 | **Open interest as a rank book (`oibook`, R21)** — **CLOSED 2026-09-28** | Needed from Vadim: nothing. On R18's 188 names, F1+F2, the data that chose the three features: taker net −17.3 [−28.9, −5.8], maker −9.6 [−21.2, +2.0], gross +1.6, flip p 0.50. The score's rank IC is +0.034 (t 5.2) and all of it is the two lowest tenths (the most violent names) falling behind; top minus bottom is +12 bps a leg in the mean on all cells, under the cost | none for the book: no other k, weights, hold or side on these cells. The features stay candidates for a model's inputs (R20: NOT DETECTABLE). A longer horizon is a new question (P8 "What next" (1)), not a revival |
-| **The open-interest score at a 7-day hold, names outside the twelve (R22, R23, R24)** — R23 read 2026-09-29: CLEARS before costs on 71 unread weeks; **R24 read 2026-09-29: the priced book is a CANDIDATE by its gate** | Needed from Vadim: whether to spend F3+F4 on the confirmation (P8 "What next"). R24, `oibook` hold 2,016 k 6, taker, 2021-12 → 2023-04 and F1+F2 pooled: 5,054 trades, gross +38.6, net +17.2 [−16.7, +51.1], hedged net +20.2, flip p 0.025, costs doubled +8.4, maker +26.1; per sample +21.9 and +12.3; the early sample's second half −12.6; short hedged net +64.6, long −24.1. Not certified: the net is one times its se | R25 on Vadim's decision: a confirmation on the outside names of F3+F4 (F5 in reserve), the book fixed before any file is fetched. Never another k, hold, side or weighting chosen on the cells already read |
+| **The open-interest score at a 7-day hold, names outside the twelve (R22, R23, R24)** — R23 read 2026-09-29: CLEARS before costs on 71 unread weeks; **R24 read 2026-09-29: the priced book is a CANDIDATE by its gate** | Needed from Vadim: nothing — decided 2026-09-29 (F3+F4 only, the full book), Claude runs R25 (P8 "What next", step table). R24, `oibook` hold 2,016 k 6, taker, 2021-12 → 2023-04 and F1+F2 pooled: 5,054 trades, gross +38.6, net +17.2 [−16.7, +51.1], hedged net +20.2, flip p 0.025, costs doubled +8.4, maker +26.1; per sample +21.9 and +12.3; the early sample's second half −12.6; short hedged net +64.6, long −24.1. Not certified: the net is one times its se | **R25 (registered 2026-09-29)**: the confirmation on the outside names of F3+F4, the book unchanged, F5 in reserve. Never another k, hold, side or weighting chosen on the cells already read |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
@@ -2442,6 +2446,80 @@ Result:        **Read 2026-09-29 (the chain 06:45 → 07:58 UTC on the work VM; 
                interval. No variant is read on these cells under this registration — no other k, weights, hold,
                grid, feature or side (a short-only book on (D2) would be one; as a hypothesis for the confirmation
                it would have to be written into that registration before F3+F4 is fetched).
+
+### R25 — the confirmation read of oibook at a 7-day hold: names outside the twelve, F3+F4, once (registered 2026-09-29 on Vadim's decisions — F3+F4 only, the full book as it is — before the members of F3+F4 were chosen and before any 5m bar, funding or metrics file of an outside name in those months was fetched; read —)
+Question:      R24's book — six names bought, six sold by the open-interest score, held 7 days, every cost paid — kept
+               +17 bps a trade on the two samples that had been read for the score, and passed its flip test. Both
+               samples had been looked at. On months nobody has read for names outside the twelve, does the same
+               book, unchanged, leave money?
+Rule:          `ft2/audit.py::OIBook` (`oibook`), UNCHANGED in code and in every parameter from R24: hold 2,016 bars,
+               k = 6 a side, hourly decisions, one unit each, the i-th highest and the i-th lowest one unit, one
+               position per pair. The score and its three features by `audit.features`, unchanged.
+               Vadim's two decisions, 2026-09-29: the months are F3+F4 (F5 stays unread, in reserve); the number that
+               decides is the FULL book's. The short side against the market (R24 (D2)) is reported beside it and
+               decides nothing — that figure does not pay for its hedge, so it is not a book an account could run.
+Universe:      `universe.screen_select(("F3", "F4"))`, unchanged — R18's rule: at the start of each 30-day block of
+               F3 and F4 (the harness's own blocks), the 60 USDT perpetuals with the largest median daily quote
+               volume over the 30 days before it, a daily bar on each of those days, the twelve left out. Daily bars
+               before the block only. Frozen as `ft2/screen_members_f34.csv` and committed BEFORE any 5m kline,
+               funding or metrics file of F3+F4 is fetched for a member.
+Cost:          R24's: `ft2 costwide`'s pooled candle proxy (fitted on the twelve's tape days; the members have no
+               tape), read as priced and with spread + impact doubled (re-priced from the run's own decisions). Fees
+               VIP 0 (5 bps a side).
+Validity:      read first, or the read is void: (1) every fetch ends with 0 errors and 0 bad checksums, and nothing
+               dated 2026-01-01 or later is fetched; (2) every row the three archive slices and the cost file held
+               before is in them after, unchanged (`scripts/r23_check_inputs.py`, `scripts/r24_check_costwide.py`,
+               against copies taken before), and every member has rows in each source on F3+F4's days; (3) R24's
+               saved fills, re-priced on the new slices and costs, come back to 1e-9 (`ft2 audit --pool` on R24's two
+               runs under another name: numbers already read); (4) `ft2 audit <run> --book` PASS — every decision on
+               the hourly grid and on a member of its block, whole units, longs = shorts; (5) no decision before the
+               first block, no priced trade whose exit is at or after 2026-01-01 00:00.
+Statistic:     the harness's, on the run's taker fills (`ft2 audit --pool <run> --confirm`): mean net bps per trade,
+               interval clustered by day, MDE; gross, hedged, hedged net; the flip null, 200 draws.
+Commands:      on the work VM (resized to 32 GB for this: the slices grow to about 72M rows), one job at a time —
+                 `vm.sh run universe --screen --folds F3 F4` → `vm.sh pull` → copy output/universe_screen_members.csv to
+                   ft2/screen_members_f34.csv, commit
+                 on the VM: copies of data/{candles_5m_archive,funding_archive,metrics,cost_daily_wide}.parquet as *_before_r25
+                 `vm.sh bg r25_klines archive klines/5m fundingRate --universe f34 --monthly --start 2024-08-01 --end 2025-12-31`
+                 `vm.sh bg r25_metrics archive metrics --universe f34 --start 2024-08-01 --end 2025-12-31`
+                 `vm.sh run ingest klines funding_archive metrics --universe all`, then `scripts/r23_check_inputs.py r25`
+                 `vm.sh run costwide --universe all --start 2021-12-01`, then `scripts/r24_check_costwide.py r25`
+                 `vm.sh run audit --pool r24_oibook_7d_pre r24_oibook_7d_f12 --name r25_recheck_r24`
+                 `vm.sh bg r25 backtest oibook --universe f34 --folds F3 F4 --registration R25 --param hold=2016 k=6 members=ft2/screen_members_f34.csv --execs taker maker --name r25_oibook_7d_f34`
+                 `vm.sh run audit r25_oibook_7d_f34 --book`
+                 `vm.sh run audit --pool r25_oibook_7d_f34 --confirm --name r25_read` → output/backtest/r25_read/pool.md
+Folds read:    F3+F4, for names outside the twelve, once, logged (`output/backtest/confirmation_reads.csv`). The
+               twelve's F3+F4 were read by R16 for another question; no outside name's F3 or F4 has been read by
+               anything. F5 is not touched and nothing of it is fetched.
+Gate:          validity PASS, then on the taker book as priced:
+               CONFIRMED if net > 0 AND hedged net > 0 AND flip p ≤ 0.05. It licenses no money. It licenses one next
+               step, on Vadim's decision: a registration for paper trading this book forward (P7's pattern), with the
+               hedge, the sizes and the money read fixed there.
+               CLOSED if the upper end of the net interval is below zero AND the maker net is ≤ 0.
+               Otherwise NOT CONFIRMED, with its MDE: the book is parked. F3+F4 are spent for this question; what
+               could revive it is written into §7 then — F5 together with the months that accrue from now on (a new
+               registration, Vadim's decision), or a measured lower cost on these names. A miss at this power is
+               "not confirmed", not "no effect" (Principle 5).
+               The per-fold sign is NOT in the gate, by design and stated now: each fold is 35 weeks, and a real
+               effect of R24's size has the wrong sign in one of them about one time in four. F3 and F4 are
+               reported apart.
+               Whatever the verdict: no variant on these cells — no other k, weights, hold, grid, feature or side;
+               the short side's row licenses nothing.
+Described:     decides nothing. F3 and F4 apart; long and short apart, hedged; the maker book; costs doubled; trades
+               a day and positions open; the unpriced trades and why; the share of the net the five best names
+               carry; R24's and this run's fills pooled (5,054 + these), labelled as two-thirds exploration.
+Power:         stated before the read, and it is about even odds. R24's samples, each about as long as this one, had
+               a net se of 24.1 and 24.9 and a flip null about 23 wide centred on minus the cost: to pass, the net
+               must reach about +18 … +22. If the true net is R24's +17: passes about 45 times in 100. If +30: two
+               times in three. If nothing is there: one in twenty. The MDE will be near 68. CLOSED needs a net below
+               about −47 and is out of reach unless the book loses heavily.
+Expectation:   180–230 names are a member at least once, 80–130 of them new to the slices; validity PASS. 2,200–2,700
+               trades, 22–34 positions open on average. Gross +0 … +55 (exploration numbers shrink when confirmed:
+               R24's +38.6 is the upper middle of the band), costs as a taker 19–23 with funding, net −20 … +35,
+               hedged net within 6 of it; maker net 6–10 higher; costs doubled 7–11 lower; flip p 0.02–0.6. The
+               short side carries the hedged money again. About one chance in three CONFIRMED. Likeliest: a net
+               between 0 and +20 that does not pass the flip test — NOT CONFIRMED.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
