@@ -720,7 +720,7 @@ simulated book with costs, not a trade. Registration: §8 R23.
 | step | what | state |
 |---|---|---|
 | 1 | registration R23, committed before anything else | ✅ 2026-09-29 |
-| 2 | the universe of the 17 blocks: `vm.sh run universe --screen --pre`, frozen as `ft2/screen_members_pre.csv`, committed | — |
+| 2 | the universe of the 17 blocks: `vm.sh run universe --screen --pre`, frozen as `ft2/screen_members_pre.csv`, committed | ✅ 2026-09-29: 141 names, 60 in every block, none of the twelve, 103 of them also members of R18 |
 | 3 | downloads to the work VM: `r23_klines`, `r23_metrics` (logs `output/logs/r23_*.log`; done = the line `archive fetch done`, errors → re-run the same command) | — |
 | 4 | build: the cells from members and candles (`horizon --pre`), `--universe pre`, tests (`ft2.sh --test`), committed before the run | — |
 | 5 | R22's output set aside, ingest, R22 re-run and compared (validity (2)) | — |
