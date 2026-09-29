@@ -132,3 +132,43 @@ def test_a_registered_read_waits_for_r22_to_come_back(tmp_path, monkeypatch):
         horizon.run_pre(registration="R23")
     with pytest.raises(SystemExit, match="no '### R99 ' block"):
         horizon.run_pre(registration="R99")
+
+
+def test_the_lean_ingest_writes_what_the_string_ingest_wrote(tmp_path, monkeypatch):
+    """R23: the archive slices are built with the symbol as a category from the start. Same rows, same order, same last
+    duplicate kept, the same categories (the pairs present, sorted) as sorting strings and casting at the end gave."""
+    import io
+    import zipfile
+
+    from ft2 import data
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    rng = np.random.default_rng(0)
+    raw, syms = [], ["ZZUSDT", "1000AUSDT", "BBUSDT", "aaUSDT"]                     # asked for in no order; one has no file
+    for sym in syms[:3]:
+        d = tmp_path / "data/raw/external/binance/metrics" / sym
+        d.mkdir(parents=True)
+        for day in ("2021-12-02", "2021-12-01"):
+            ts = pd.date_range(day, periods=6, freq="5min").strftime("%Y-%m-%d %H:%M:%S")
+            df = pd.DataFrame({"create_time": ts, "symbol": sym, **{k: rng.random(6) for k in data.METRICS_COLS if k != "create_time"}})
+            df = pd.concat([df, df.iloc[[2]].assign(sum_open_interest=9.0)])       # a duplicate key: the last one is kept
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w") as z:
+                z.writestr(f"{sym}-metrics-{day}.csv", df.to_csv(index=False))
+            (d / f"{sym}-metrics-{day}.zip").write_bytes(buf.getvalue())
+            (d / f"{sym}-metrics-{day}.zip.ok").touch()
+            raw.append(df)
+    r = data.ingest_metrics(syms)
+    got = pd.read_parquet(r["file"])
+    old = pd.concat(raw, ignore_index=True).rename(columns=data.METRICS_COLS)[["symbol", "ts", *[c for c in data.METRICS_COLS.values() if c != "ts"]]]
+    old["ts"] = pd.to_datetime(old["ts"], utc=True)
+    # files are read in name order (sorted glob): 12-01 before 12-02
+    old = pd.concat([old[old["symbol"] == s].sort_values("ts", kind="mergesort") for s in syms[:3]], ignore_index=True)
+    old = old.sort_values(["symbol", "ts"], kind="mergesort").drop_duplicates(["symbol", "ts"], keep="last").reset_index(drop=True)
+    old["symbol"] = old["symbol"].astype("category")
+    assert r["rows_in"] == 42 and r["dups_dropped"] == 6 and len(got) == 36 and (got.groupby("symbol", observed=True)["oi"].apply(lambda x: (x == 9.0).sum()) == 2).all()
+    assert list(got["symbol"].cat.categories) == list(old["symbol"].cat.categories) == ["1000AUSDT", "BBUSDT", "ZZUSDT"]
+    pd.testing.assert_frame_equal(got, old)
+    with pytest.raises(ValueError, match="not among the pairs"):
+        data.ingest_metrics(["ZZUSDT", "BBUSDT"] + ["1000BUSDT"]) if (tmp_path / "data/raw/external/binance/metrics/1000AUSDT").rename(
+            tmp_path / "data/raw/external/binance/metrics/1000BUSDT") else None

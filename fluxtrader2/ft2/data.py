@@ -104,6 +104,22 @@ def _read_zips(kind: str, symbol: str, pattern: str = "*.zip", **read_csv_kw) ->
     return pd.concat((pd.read_csv(f, **read_csv_kw) for f in files), ignore_index=True)
 
 
+def _as_category(sym, symbols: list[str]) -> pd.Categorical:
+    """The symbol column of one pair's rows as a category over ALL the pairs asked for, in sorted order: a byte a row in
+    place of a string a row, the parts concatenate without going back to strings, and sorting by it is sorting by name.
+    (R23: the slices hold ~48M rows of ~330 names; as strings the concat and the sort did not fit the work VM's 16 GB.)"""
+    out = pd.Categorical(sym, categories=sorted(symbols))
+    if out.isna().any():
+        raise ValueError(f"a row's symbol is not among the pairs asked for: {set(pd.unique(pd.Series(sym))) - set(symbols)}")
+    return out
+
+
+def _tidy_symbol(df: pd.DataFrame) -> pd.DataFrame:
+    """What `astype("category")` on the strings gave: only the pairs present, in sorted order."""
+    df["symbol"] = df["symbol"].cat.remove_unused_categories()
+    return df
+
+
 def ingest_metrics(symbols: list[str]) -> dict:
     """archive metrics (5m) → data/metrics.parquet: (symbol, ts) → oi, oi_value, top_ls_*, global_ls, taker_ratio."""
     parts = []
@@ -113,11 +129,12 @@ def ingest_metrics(symbols: list[str]) -> dict:
             continue
         df = df.rename(columns=METRICS_COLS)[["symbol", "ts", *[c for c in METRICS_COLS.values() if c != "ts"]]]
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        df["symbol"] = _as_category(df["symbol"], symbols)
         parts.append(df)
     df = pd.concat(parts, ignore_index=True)
+    del parts
     n_in = len(df)
-    df = df.sort_values(["symbol", "ts"], kind="mergesort").drop_duplicates(["symbol", "ts"], keep="last").reset_index(drop=True)
-    df["symbol"] = df["symbol"].astype("category")
+    df = _tidy_symbol(df.sort_values(["symbol", "ts"], kind="mergesort").drop_duplicates(["symbol", "ts"], keep="last").reset_index(drop=True))
     df.to_parquet(PROC / "metrics.parquet", index=False)
     return {"slice": "metrics", "rows_in": n_in, "dups_dropped": n_in - len(df), "rows_out": len(df),
             "first": df["ts"].min(), "last": df["ts"].max(), "file": str(PROC / "metrics.parquet")}
@@ -137,14 +154,14 @@ def ingest_klines(symbols: list[str], interval: str = "5m") -> dict:
         if df.empty:
             continue
         df = df[df["open_time"].str.isdigit()]
-        out = pd.DataFrame({"symbol": sym, "open_time": pd.to_datetime(df["open_time"].astype("int64"), unit="ms", utc=True)})
+        out = pd.DataFrame({"symbol": _as_category([sym] * len(df), symbols), "open_time": pd.to_datetime(df["open_time"].astype("int64"), unit="ms", utc=True)})
         for c in ("open", "high", "low", "close", "volume", "quote_volume"):
             out[c] = df[c].astype(float).to_numpy()
         parts.append(out)
     df = pd.concat(parts, ignore_index=True)
+    del parts
     n_in, dst = len(df), PROC / f"candles_{interval}_archive.parquet"
-    df = df.sort_values(["symbol", "open_time"], kind="mergesort").drop_duplicates(["symbol", "open_time"], keep="last").reset_index(drop=True)
-    df["symbol"] = df["symbol"].astype("category")
+    df = _tidy_symbol(df.sort_values(["symbol", "open_time"], kind="mergesort").drop_duplicates(["symbol", "open_time"], keep="last").reset_index(drop=True))
     df.to_parquet(dst, index=False)
     return {"slice": dst.stem, "rows_in": n_in, "dups_dropped": n_in - len(df), "rows_out": len(df),
             "first": df["open_time"].min(), "last": df["open_time"].max(), "file": str(dst)}
