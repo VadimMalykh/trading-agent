@@ -748,8 +748,8 @@ months nobody has read (F3+F4), and that is Vadim's decision. Registration: §8 
 |---|---|---|
 | 1 | registration R24, committed before anything else | ✅ 2026-09-29 |
 | 2 | build: the pooled read (`ft2 audit --pool`), `scripts/r24_check_costwide.py`, tests (`ft2.sh --test`), committed before any run | ✅ 2026-09-29: `audit.pool`, `tests/test_p8_pre.py`; 94 pass. `OIBook` itself is not touched |
-| 3 | costs for the early months: the file as it was set aside, `costwide --universe all --start 2021-12-01`, the check | — |
-| 4 | run PRE (`r24_pre`, log `output/logs/r24_pre.log`; done = its `wrote ` line), then its book check | — |
+| 3 | costs for the early months: the file as it was set aside, `costwide --universe all --start 2021-12-01`, the check | ✅ 2026-09-29 06:42 UTC: `output/backtest/r24_costwide_check.json` PASS — all 89,103 rows of the file as it was are in the new one (139,406 rows, from 2021-12-01), largest difference 0.0; all 141 members priced on 60,777 name-days; spread and impact per side: median 6.3 bps, one day in twenty above 21 |
+| 4 | run PRE (`r24_pre`, log `output/logs/r24_pre.log`; done = its `wrote ` line), then its book check | 🔵 steps 4–6 STARTED 2026-09-29 as one chain, one job after the other (`vm.sh bgsh r24_chain …`, the registered commands in the registered order; chain log `output/logs/r24_chain.log`, per job `r24_pre.log`, `r24_f12.log`, `r24_pool.log`). Done = `output/backtest/r24_pool/pool.md` exists; a job that fails stops the chain; if it died (`sudo dmesg \| grep -i killed`), start the remaining commands of §8 R24 again, one at a time |
 | 5 | run F12 (`r24_f12`), then its book check | — |
 | 6 | the pooled read (`r24_pool`) | — |
 | 7 | the read: validity first, then the gate; Result into §8 R24, README, §7; work VM stopped | — |
