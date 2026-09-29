@@ -223,3 +223,32 @@ def test_two_runs_are_read_as_one_book_and_costs_are_doubled_by_repricing(tmp_pa
     (bt.OUT / "b" / "meta.json").write_text(json.dumps({**m, "cost_mult": 2.0}))
     with pytest.raises(SystemExit, match="validity FAIL"):
         audit.pool(runs, name="pool2")
+
+
+# ---- R25: the confirmation's gate -----------------------------------------------------------------------------------------
+def test_the_confirmation_gate_and_its_read(tmp_path, monkeypatch):
+    from ft2 import audit
+    from ft2 import backtest as bt
+    r = {"net": 20.0, "net_hi": 50.0, "hedged_net": 18.0, "flip_p": 0.03, "gross_positive_in_each": False, "maker_net": 25.0}
+    assert audit.confirm_verdict(r) == "CONFIRMED"                                  # the per-sample sign is not in this gate
+    for k, x in (("net", -1.0), ("hedged_net", -1.0), ("flip_p", 0.06)):
+        assert audit.confirm_verdict({**r, k: x}) == "NOT CONFIRMED", k
+    assert audit.confirm_verdict({**r, "net": -30.0, "net_hi": -5.0, "maker_net": -2.0}) == "CLOSED"
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    _synth(days=120)
+    _members(tmp_path / "m.csv")
+    _sources(planted="taker_ratio")
+    _plant_score(hold=LONG)
+    for name in ("x", "e1"):
+        bt.run(audit.OIBook(hold=LONG, k=2, members=str(tmp_path / "m.csv")), NAMES, ["F1"], draws=20, refit_days=15, execs=("taker", "maker"), name=name)
+        assert audit.book_check(name)["status"] == "PASS"
+    monkeypatch.setattr(audit, "BESIDE", ("e1", "absent"))
+    txt = audit.pool(["x"], "read", confirm=True)
+    g = json.loads((bt.OUT / "read" / "gate.json").read_text())
+    tab = pd.read_csv(bt.OUT / "read" / "pool.csv").set_index(["exec", "scope"])
+    one = pd.read_parquet(bt.OUT / "x" / "results.parquet").query("exec == 'taker' and scope == 'all'").iloc[0]
+    assert g["verdict"] == "CONFIRMED" and "R25, the confirmation read" in txt and "Gate: CONFIRMED if" in txt
+    assert np.isclose(tab.loc[("taker", "pooled"), "net"], one["net"]) and ("taker", "x F1") in tab.index
+    both = tab.loc[("taker", "with e1, absent (exploration)")]
+    assert both["trades"] == 2 * one["trades"] and np.isclose(both["net"], one["net"])

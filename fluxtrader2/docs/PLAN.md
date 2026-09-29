@@ -776,7 +776,7 @@ decision. Registration: §8 R25.
 | step | what | state |
 |---|---|---|
 | 1 | registration R25, committed before anything else | ✅ 2026-09-29 |
-| 2 | build: `--universe f34`, `audit --pool --confirm --name`, the two check scripts take a tag; tests; committed | — |
+| 2 | build: `--universe f34`, `audit --pool --confirm --name`, the two check scripts take a tag; tests; committed | ✅ 2026-09-29: 95 pass. `OIBook` is not touched; `archive fundingRate --monthly` now fetches only the months asked for (nothing of F5) |
 | 3 | work VM resized to 32 GB; the universe of F3+F4's blocks, frozen as `ft2/screen_members_f34.csv`, committed | — |
 | 4 | copies of the slices and the cost file; downloads `r25_klines`, `r25_metrics` (done = `archive fetch done`) | — |
 | 5 | ingest, input check; `costwide`, cost check; R24's fills re-priced (validity (2), (3)) | — |

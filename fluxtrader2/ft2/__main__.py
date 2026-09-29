@@ -49,10 +49,13 @@ def _symbols(args) -> list[str]:
     if u == "pre":                                            # R23: the members of the blocks before F1
         from .universe import PRE_MEMBERS_CSV, screen_symbols
         return screen_symbols(PRE_MEMBERS_CSV)
+    if u == "f34":                                            # R25: the members of F3+F4's blocks
+        from .universe import F34_MEMBERS_CSV, screen_symbols
+        return screen_symbols(F34_MEMBERS_CSV)
     if u == "all":                                            # the archive slices are rewritten whole: ingest every name they have ever held
-        from .universe import PRE_MEMBERS_CSV, WIDE, screen_symbols
-        pre = screen_symbols(PRE_MEMBERS_CSV) if PRE_MEMBERS_CSV.exists() else []
-        return list(dict.fromkeys([*PAIRS, *WIDE, *screen_symbols(), *pre]))
+        from .universe import F34_MEMBERS_CSV, PRE_MEMBERS_CSV, WIDE, screen_symbols
+        more = [x for f in (PRE_MEMBERS_CSV, F34_MEMBERS_CSV) if f.exists() for x in screen_symbols(f)]
+        return list(dict.fromkeys([*PAIRS, *WIDE, *screen_symbols(), *more]))
     return args.symbols or PAIRS
 
 
@@ -79,9 +82,9 @@ def cmd_screen(args):
 
 def cmd_audit(args):
     from . import audit
-    if args.pool:                                             # R24: several `oibook` runs read as one book
-        print(audit.pool([args.run, *args.more]))
-        return print(f"wrote {audit.bt.OUT / 'r24_pool'}/")
+    if args.pool:                                             # R24: several `oibook` runs read as one book; --confirm (R25): the confirmation's gate
+        print(audit.pool([args.run, *args.more], args.name, confirm=args.confirm))
+        return print(f"wrote {audit.bt.OUT / args.name}/")
     if args.book:                                             # R21: the validity of an `oibook` run, read before its money
         v = audit.book_check(args.run)
         return print(f"book check {v['status']}: {v}")
@@ -166,7 +169,7 @@ def main(argv=None):
                                       "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
     i.add_argument("--symbols", nargs="*", help="archive slices only: which pairs (default the twelve)")
-    i.add_argument("--universe", choices=["wide", "screen", "pre", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
+    i.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
     a.add_argument("kinds", nargs="+", help="bookDepth metrics aggTrades fundingRate klines/1m …")
@@ -174,7 +177,7 @@ def main(argv=None):
     a.add_argument("--start", default="2023-01-01")
     a.add_argument("--end", default=None, help="inclusive; default: two days ago")
     a.add_argument("--monthly", action="store_true", help="klines/<interval>: the archive's monthly files for the months of [start, end] instead of daily ones")
-    a.add_argument("--universe", choices=["wide", "screen", "pre", "all"])
+    a.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "all"])
     u = sub.add_parser("universe", help="R10: rank every USDT perpetual the archive lists by median daily quote volume over the four months before F0 → output/universe_wide.md; "
                                         "--screen (R18): the members per block and what a screener could rank them by → output/universe_screen.md")
     u.add_argument("--n", type=int, default=None, help="default 40; with --screen 60 a block")
@@ -184,7 +187,7 @@ def main(argv=None):
     u.add_argument("--folds", nargs="*", default=["F1", "F2"], help="--screen: the folds whose blocks get a membership")
     cw = sub.add_parser("costwide", help="R10: spread + impact for pairs without a tape (one pooled candle proxy fitted on the twelve) → data/cost_daily_wide.parquet, output/cost_wide.md")
     cw.add_argument("--symbols", nargs="*")
-    cw.add_argument("--universe", choices=["wide", "screen", "pre", "all"])
+    cw.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "all"])
     cw.add_argument("--start", default="2023-01-01")
     t = sub.add_parser("tape", help="P1: stream archive aggTrades into data/tape/<symbol>.parquet (per-minute summary); zips are not kept")
     t.add_argument("--symbols", nargs="*")
@@ -228,7 +231,7 @@ def main(argv=None):
         if a_.dest in ("taker_bps", "maker_bps"):
             b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
     b.add_argument("--symbols", nargs="*")
-    b.add_argument("--universe", choices=["wide", "screen", "pre"], help="ft2.universe.WIDE, the forty of R10, or the screener's members (R18), instead of the twelve")
+    b.add_argument("--universe", choices=["wide", "screen", "pre", "f34"], help="ft2.universe.WIDE, the forty of R10, or the screener's members (R18), instead of the twelve")
     sc = sub.add_parser("screen", help="P8 (R18): the screener read of a `transferbook` run → output/screen/<run>/screen.md (see ft2/screen.py)")
     sc.add_argument("run", help="the run's directory name under output/backtest/")
     sc.add_argument("--reference", default=None, help="the run whose forecasts the training names must reproduce (default: R13 B's)")
@@ -238,6 +241,8 @@ def main(argv=None):
                                       "`transferbook` run → output/audit/<run>/audit.md (see ft2/audit.py)")
     au.add_argument("run", help="the run's directory name under output/backtest/")
     au.add_argument("more", nargs="*", help="--pool: the other runs")
+    au.add_argument("--name", default="r24_pool", help="--pool: the output directory under output/backtest/")
+    au.add_argument("--confirm", action="store_true", help="--pool (R25): the confirmation's gate, and R24's saved fills pooled beside it (described)")
     au.add_argument("--pool", action="store_true", help="R24: read the named `oibook` runs as one book → output/backtest/r24_pool/pool.md")
     au.add_argument("--draws", type=int, default=200)
     au.add_argument("--book", action="store_true", help="R21: check an `oibook` run's decisions (hourly grid, members only, whole dollar-neutral units) → <run>/book_check.json")

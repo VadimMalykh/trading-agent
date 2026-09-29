@@ -172,6 +172,9 @@ OUT_PRE_MD = Path("output/universe_screen_pre.md")
 OUT_PRE_CSV = Path("output/universe_screen_pre_members.csv")
 
 
+F34_MEMBERS_CSV = Path(__file__).with_name("screen_members_f34.csv")     # R25: the members of F3+F4's blocks (`screen_select(("F3", "F4"))`), frozen once
+
+
 def pre_starts() -> list[pd.Timestamp]:
     """The block starts of R23's scored days: every 30 days from the first one."""
     from .backtest import REFIT_DAYS

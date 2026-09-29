@@ -165,8 +165,8 @@ def main(kinds: list[str], symbols: list[str], start: str, end: str | None, mont
     total_err = 0
     for kind in kinds:
         for sym in symbols:
-            if kind == "fundingRate":
-                c = fetch_monthly(kind, sym)
+            if kind == "fundingRate":                         # with --monthly only the months of [start, end] (R25: nothing of an unread fold is fetched)
+                c = fetch_monthly(kind, sym, months=months_between(s, e) if monthly else None)
             elif "lines/" in kind and monthly:                # klines/<interval>, premiumIndexKlines/<interval>, …
                 c = fetch_monthly(kind.split("/", 1)[0], sym, sub=kind.split("/", 1)[1], months=months_between(s, e))
             elif "lines/" in kind:

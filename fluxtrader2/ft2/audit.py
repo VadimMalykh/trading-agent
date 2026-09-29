@@ -313,6 +313,16 @@ def pool_verdict(r: dict) -> str:
     return "CLOSED" if r["net_hi"] < 0 and r["maker_net"] <= 0 else "NOT FUNDED"
 
 
+def confirm_verdict(r: dict) -> str:
+    """R25's gate, on the taker book as priced: the per-sample sign is not in it (registered)."""
+    if r["net"] > 0 and r["hedged_net"] > 0 and r["flip_p"] <= P_BAR:
+        return "CONFIRMED"
+    return "CLOSED" if r["net_hi"] < 0 and r["maker_net"] <= 0 else "NOT CONFIRMED"
+
+
+BESIDE = ("r24_oibook_7d_pre", "r24_oibook_7d_f12")     # R25, described: the exploration runs whose saved fills are pooled beside the confirmation's
+
+
 def _pooled_p(nulls: list[pd.DataFrame], exec_: str, kind: str, real: float) -> dict:
     """The null pooled draw by draw: each run's draw weighted by its trades."""
     x = pd.concat([n[(n["exec"] == exec_) & (n["kind"] == kind)] for n in nulls], ignore_index=True).dropna(subset=["net"])
@@ -321,7 +331,7 @@ def _pooled_p(nulls: list[pd.DataFrame], exec_: str, kind: str, real: float) -> 
     return {"draws": len(d), "mean": float(d.mean()), "sd": float(d.std()), "p95": float(d.quantile(0.95)), "p": (1 + int((d >= real).sum())) / (len(d) + 1)}
 
 
-def pool(runs: list[str], name: str = "r24_pool") -> str:
+def pool(runs: list[str], name: str = "r24_pool", confirm: bool = False) -> str:
     """The fills of several `oibook` runs as ONE book (registration R24): the harness's statistics on the pooled fills,
     the flip null pooled draw by draw, costs doubled by re-pricing each run's own decisions. Validity first."""
     from . import ceiling
@@ -351,7 +361,8 @@ def pool(runs: list[str], name: str = "r24_pool") -> str:
             and v["reprice_max_abs_diff"] <= REPRICE_TOL and v["cost_mult"] == 1.0 else "FAIL"
         val.append(v)
         holds.add(int(p["hold"]))
-        lab = lambda f: f.assign(run=run, part=np.where(pd.DatetimeIndex(f["t"]) < POOL_SPLIT["FP"], run + " H1", run + " H2") if "FP" in fold_names else run)      # noqa: E731
+        lab = lambda f: f.assign(run=run, part=np.where(pd.DatetimeIndex(f["t"]) < POOL_SPLIT["FP"], run + " H1", run + " H2") if "FP" in fold_names else      # noqa: E731
+                                 (run + " " + f["fold"].astype(str)) if confirm else run)
         F["taker"].append(lab(f1)), F["maker"].append(lab(pd.read_parquet(rd / "fills_maker.parquet"))), F["taker_x2"].append(lab(f2))
         nulls.append(pd.read_parquet(rd / "null.parquet"))
         days.append(bt.scored_days(fold_names, M.index[-1]))
@@ -371,6 +382,14 @@ def pool(runs: list[str], name: str = "r24_pool") -> str:
     rows += [{"exec": "taker", "scope": r, **bt.summarize(t[t["run"] == r], days, hold)} for r in runs]
     rows += [{"exec": "taker", "scope": r, **bt.summarize(t[t["part"] == r], days, hold)} for r in sorted(set(t["part"]) - set(runs))]
     rows += [{"exec": "taker", "scope": k, **bt.summarize(t[t["side"] == s], days, hold)} for k, s in bt.SIDES.items()]
+    if confirm:                                               # described: the exploration runs' saved fills beside this one's
+        ex, ex_days = [t], [days]
+        for r in BESIDE:
+            if (bt.OUT / r / "fills_taker.parquet").exists() and r not in runs:
+                ex.append(pd.read_parquet(bt.OUT / r / "fills_taker.parquet"))
+                ex_days.append(bt.scored_days(m_ := json.loads((bt.OUT / r / "meta.json").read_text())["folds"], folds.bounds(m_[-1])[1] - bt.BAR))
+        if len(ex) > 1:
+            rows.append({"exec": "taker", "scope": f"with {', '.join(BESIDE)} (exploration)", **bt.summarize(pd.concat(ex, ignore_index=True), ex_days[0].append(ex_days[1:]).unique().sort_values(), hold)})
     rows += [{"exec": "taker, costs doubled", "scope": r, **bt.summarize(F["taker_x2"][F["taker_x2"]["run"] == r], days, hold)} for r in runs]
     rows += [{"exec": "maker", "scope": r, **bt.summarize(F["maker"][F["maker"]["run"] == r], days, hold)} for r in runs]
     tab = pd.DataFrame(rows)
@@ -380,7 +399,7 @@ def pool(runs: list[str], name: str = "r24_pool") -> str:
     gross_each = {r: float(tab[(tab["exec"] == "taker") & (tab["scope"] == r)]["gross"].iloc[0]) for r in runs}
     g = {"net": float(a["net"]), "net_lo": float(a["net_lo"]), "net_hi": float(a["net_hi"]), "net_mde": float(a["net_mde"]), "hedged_net": float(a["hedged_net"]),
          "gross": float(a["gross"]), "flip_p": flip["p"], "gross_positive_in_each": bool(all(x > 0 for x in gross_each.values())), "maker_net": float(tab.iloc[1]["net"])}
-    g["verdict"] = pool_verdict(g)
+    g["verdict"] = confirm_verdict(g) if confirm else pool_verdict(g)
     pr = t.dropna(subset=["net_bps"])
     by = pr.groupby("symbol")["net_bps"].sum().sort_values()
     op = pd.DataFrame([{"run": v["run"], "trades": v["priced"], "unpriced": v["unpriced"], **dict(zip(("max_open", "avg_open"), (json.loads((bt.OUT / v["run"] / "meta.json").read_text())[k]
@@ -388,7 +407,7 @@ def pool(runs: list[str], name: str = "r24_pool") -> str:
     show = lambda df, k=2: df.round(k).to_markdown(index=False)                         # noqa: E731
     cols = ["exec", "scope", "trades", "unpriced", "trades_per_day", "hit", "gross", "hedged", "fee", "other_cost", "funding", "net", "net_lo", "net_hi", "net_mde", "hedged_net",
             "hedged_net_lo", "hedged_net_hi"]
-    md = [f"# The open-interest score as a priced book at a {hold}-bar hold (R24) — {', '.join(f'`{r}`' for r in runs)} pooled (`ft2 audit --pool`)\n",
+    md = [f"# The open-interest score as a priced book at a {hold}-bar hold ({'R25, the confirmation read' if confirm else 'R24'}) — {', '.join(f'`{r}`' for r in runs)} pooled (`ft2 audit --pool`)\n",
           f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {len(pr):,} priced trades on {pr['symbol'].nunique()} names, {len(days)} days in the folds read\n",
           "\nWords: a *trade* is one position in one name, opened an hour after the ranking was read and closed 7 days later; the book always opens a bought and a sold name "
           "together. *gross*: what a trade earned before costs, in bps (0.01 %) of the position — 1 bps is 1 USDT on 10,000. *hedged*: the same against the move of the other "
@@ -402,6 +421,7 @@ def pool(runs: list[str], name: str = "r24_pool") -> str:
           f"flip null {flip['mean']:+.2f} ± {flip['sd']:.2f}, one in twenty {flip['p95']:+.2f}, **flip p {flip['p']:.3f}** ({flip['draws']} draws); gross per sample: "
           f"{', '.join(f'{k} {x:+.2f}' for k, x in gross_each.items())}; maker net {g['maker_net']:+.2f} (flip p {flip_m['p']:.3f}). Shuffle null (reported, does not decide): "
           f"{shuf['mean']:+.2f} ± {shuf['sd']:.2f}, p {shuf['p']:.3f}.\n",
+          "\nGate: CONFIRMED if net > 0, hedged net > 0 and flip p ≤ 0.05; CLOSED if the net interval's upper end < 0 and the maker net ≤ 0; else NOT CONFIRMED.\n" if confirm else
           "\nGate: CANDIDATE if net > 0, hedged net > 0, flip p ≤ 0.05 and gross > 0 in each sample; CLOSED if the net interval's upper end < 0 and the maker net ≤ 0; else NOT FUNDED.\n",
           "\n## The rows\n", show(tab[cols]), "\n",
           "\n## Positions\n", show(op), "\n",
