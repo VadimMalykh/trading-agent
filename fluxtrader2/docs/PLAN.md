@@ -2318,7 +2318,7 @@ Re-executed:   **2026-09-30, the re-execution `actual` (§3; the run 06:38 → 0
                (+21.8 against 17.6; a reference row) and by oi_chg_1w at 7 days (−22.7); oi_turn and the forecast no
                longer meet it. R23 was registered on the first read's numbers; its own re-execution follows.
 
-### R23 — the open-interest score at a 7-day hold on months nobody has read: stage 1 of two, the confirmation folds behind a stop (registered 2026-09-29 on Vadim's "(A1)", before the universe of those months was chosen, before any 5m bar or metrics file of them was fetched and before the code was written; read 2026-09-29: CLEARS — M +66.7 bps a leg, centre +14.1, M_c +52.6, se 21.6, u 2.43, one-sided p 0.002, both halves and the part after the first day positive; stage 2 is not run, F3+F4 untouched)
+### R23 — the open-interest score at a 7-day hold on months nobody has read: stage 1 of two, the confirmation folds behind a stop (registered 2026-09-29 on Vadim's "(A1)", before the universe of those months was chosen, before any 5m bar or metrics file of them was fetched and before the code was written; read 2026-09-29: CLEARS — M +66.7 bps a leg, centre +14.1, M_c +52.6, se 21.6, u 2.43, one-sided p 0.002, both halves and the part after the first day positive; stage 2 is not run, F3+F4 untouched; RE-EXECUTED 2026-09-30 in actual returns: does NOT clear — GO ON by the gate: M +20.4, M_c +30.7, se 27.2, u 1.13, p 0.12, the second half negative, +3.5 without the two collapse months)
 Question:      R22 left one number leaning: on F1+F2 the names R21's open-interest score ranks highest earned, over the
                next 7 days, 59 bps a leg more than the names it ranks lowest (41 of it the timing's, 1.5 times its
                noise) against a round trip of 17.6 — on the cells that chose the score. On cells that did not choose
@@ -2479,6 +2479,47 @@ Result:        **Read 2026-09-29 (the run 03:01 → 03:11 UTC on the work VM; co
                gate are that registration's; F3+F4 stay whole for its confirmation. No variant is read on these
                cells under this registration — no other hold, tenth, window, signal, side or weighting; the
                reference rows license nothing.
+Re-executed:   **2026-09-30, the re-execution `actual` (§3; the run 06:49 → 06:54 UTC on the work VM, the registered command
+               with `--name pre_actual --reexecute actual`; commit a5c47a1 holds the corrected unit and the protocol
+               before the run; output/horizon/pre_actual, 471 shifts; logged as R23/actual, FP and F0, beside the
+               first read's rows): in actual returns the score at 7 days does NOT clear. By the gate: GO ON — M_c is
+               above the cost without clearing. The first read's CLEARS was the unit.**
+               Validity first: PASS — (3) and (4) as in the first read: 717,222 cells of 141 names on 500 whole days,
+               0 cells of a non-member, 0 of the twelve, 0 at or after the end, 471 shifts, the score on 98.5 % of
+               the cells; and the same cells (`same_as_first_read.json`): 12 rows, the cells, days, shifts, the
+               share a shift keeps and the rank IC of every row equal the first read's, largest difference 0.0. (1)
+               and (2) were checks of the fetch and the ingest and are not repeated (§3). No deviation.
+               The family — M (first read, in logs) → M · centre · M_c · se · u · one-sided p · H1, H2 · after the
+               first day (bps a leg):
+                 oi_score  7d  (+66.7) → +20.4 · −10.2 · +30.7 · 27.2 · +1.13 · 0.12 · +53.3, −12.4 · +18.7     GO ON
+               (704,453 cells; interval of M_c [−22.7, +84.1]; MDE 76.3.) Three of the gate's five conditions fail:
+               u (1.13 against 2), p (0.12 against 0.05) and the second half, which is negative.
+               Reference rows, outside the family, no verdict (M first read → M · M_c · se · u):
+                 oi_score   1d (+23.3) →  +5.3 ·  +6.4 ·  5.1 · +1.25     3d (+46.4) → +13.7 · +17.1 · 13.3 · +1.29
+                 oi_turn    1d (+27.4) →  +7.0 ·  +8.3 ·  6.8 · +1.22     3d (+65.9) → +22.8 · +27.1 · 19.4 · +1.39     7d (+86.8) → +26.5 · +41.0 · 45.5 · +0.90
+                 oi_chg_1w  1d (−21.1) →  −7.7 ·  −6.9 ·  5.7 · −1.21     3d (−42.7) → −18.0 · −15.2 · 15.6 · −0.98     7d (−53.2) → −35.8 · −28.1 · 35.8 · −0.78
+                 oi_chg_1d  1d (−14.7) →  −3.4 ·  −3.3 ·  4.2 · −0.77     3d  (−4.6) →  +1.8 ·  +2.3 ·  7.9 · +0.30     7d  (−9.5) →  −0.6 ·  +1.1 · 12.2 · +0.09
+               Every sign is the first read's except oi_chg_1d beyond a day; no row reaches 1.4 times its noise,
+               where the first read had five rows above 3.
+               Described, decides nothing:
+               (E1) the two collapses of 2022 are nearly all of it: with 2022-05 and 2022-11 left out M is +3.5
+               (first read +43.4). The second half alone is −12.4 (first read +27.9).
+               (E2) the ranking is there and the money is not: the rank IC at the hold is unchanged, +0.044 (HAC t
+               3.2), and the MEDIAN label against the peers still runs in order from −247 in the score's lowest
+               tenth to −48 in its highest. The MEAN runs −27, −37, −14, −7, −1, +9, +27, +20, +19, +9 (first read
+               −86, −62, −24, −15, −2, +12, +40, +39, +45, +45): the names the score ranks low usually fall
+               behind, and the few of them that soar take most of it back from a sold position.
+               (E3) funding's part of M −3.5 as before; the HAC se over days 27.0 (the null's 27.2).
+               Reading: **on the 71 weeks that did not choose it, the score at a 7-day hold earns 20 bps a leg in
+               actual returns where the log showed 67 — 1.1 times its noise, negative in the second half, and
+               nothing without the two collapse months. R24 and R25 were registered on the first read's CLEARS; in
+               the unit a position is paid in, that candidate was not there.**
+               Consequences: the verdict of this read is GO ON, which by the registration OFFERS stage 2 to Vadim —
+               the same number on the outside names of F3+F4, pooled with this one (pooled CLEARS needs M_c > 17.6
+               and u ≥ 2). It is his go, not the gate's, and the situation has changed since the registration: those
+               months were fetched and read by R25 for this score's book (its own re-execution follows), so they are
+               no longer unread for the score. Claude's recommendation is written in P8 after R25's re-execution is
+               read. No variant on these cells, as before.
 
 ### R24 — oibook at a 7-day hold: the open-interest score as a priced book, on both samples that have been read for it (registered 2026-09-29 on Vadim's go, before the pooled read was written and before the rule saw any bar at this hold; read 2026-09-29: CANDIDATE by the gate — taker net +17.2 [−16.7, +51.1] a trade on 5,054 trades, gross +38.6, flip p 0.025, gross positive in both samples; the net's own interval holds zero, and all of the hedged money is the short side)
 Question:      R23 found, on cells that did not choose it, that the names the score ranks highest earn over the next 7
