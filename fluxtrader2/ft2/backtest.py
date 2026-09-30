@@ -25,6 +25,10 @@ What it guarantees, so that a strategy cannot get any of it wrong:
                  pays a positive rate). A leg on a day P1 could not price (censored depth) is not
                  guessed: the trade is counted as `unpriced` and left out.
   latency        A decision at t (the bar closed at t) is executed at the close LATENCY bars later.
+  the unit       What a position of fixed size earns, per unit of its size at entry: gross = side × (exit / entry − 1),
+                 in bps. Not side × log(exit / entry), which this harness counted until 2026-09-30 (PLAN §3, R25 (D1)):
+                 the log overstates every short and understates every long by about half the squared move. Both nulls
+                 are priced by the same code. `labels` (a model's target, never money) stays the log move.
   the book rule  One open position per pair; a decision made while one is open is recorded and skipped.
                  Decisions that share a `group` id (the two legs of a pair trade) are taken or skipped
                  together. A strategy's `max_side` caps the positions open at once on one side.
@@ -38,8 +42,8 @@ What it guarantees, so that a strategy cannot get any of it wrong:
                    flip     the real decisions on the real path, every decision of a calendar day multiplied
                             by one random sign. The timing, the sizes, the bunching on volatile days and the
                             side mix inside a day are the rule's own; only "which way, that day" is random.
-  diagnostics    `mkt_bps` on every fill is the equal-weight move of the OTHER pairs over the same two
-                 bars; gross − side × mkt is the HEDGED gross — what the trade
+  diagnostics    `mkt_bps` on every fill is what one unit spread equally over the OTHER pairs, bought and sold
+                 at the same two bars, earned (`basket`); gross − side × mkt is the HEDGED gross — what the trade
                  earned against the market rather than with it. Long and short are reported apart.
   folds          F1+F2 by default. FP+F0 is the pre-history (folds.PREHISTORY): FP puts the archive's klines
                  under the collector's and has no maker_ev (P1 measured no fills there). A confirmation fold is read only with `--registration R<n>`, only if
@@ -52,7 +56,6 @@ A strategy is a `Strategy` subclass: `hold` (bars), `uses_labels`, `fit(M, y, no
 from __future__ import annotations
 
 import dataclasses
-import functools
 import json
 import re
 from pathlib import Path
@@ -71,6 +74,7 @@ LATENCY = 1              # bars between the decision and the execution price
 REFIT_DAYS = 30          # a block: the strategy is refitted (if it fits anything) this often
 MAKER_WAIT = 3           # bars a maker order rests before the leg crosses as a taker (= P1's MAKER_H of 15 minutes)
 EXECS = ("taker", "maker", "maker_ev")
+UNIT = "actual"          # gross = side × (exit / entry − 1); a run without this in its meta was counted in logs (before 2026-09-30)
 SIDES = {"long": 1, "short": -1}
 
 
@@ -91,14 +95,6 @@ class Market:
     @property
     def columns(self) -> pd.Index:
         return self.close.columns
-
-    @functools.cached_property
-    def others(self) -> np.ndarray:
-        """bar × pair: the cumulative equal-weight move (bps) of the OTHER pairs — the market a trade in that pair is hedged with."""
-        r = (np.log(self.close).diff() * 1e4).to_numpy()
-        have = ~np.isnan(r)
-        n = have.sum(1, keepdims=True) - have
-        return np.cumsum(np.where(n > 0, (np.nansum(r, 1, keepdims=True) - np.nan_to_num(r)) / np.maximum(n, 1), 0.0), axis=0)
 
     def until(self, t: pd.Timestamp) -> "Market":
         """The market strictly before t."""
@@ -190,8 +186,8 @@ class Strategy:
         return {k: v for k, v in vars(self).items() if not k.startswith("_") and isinstance(v, (int, float, str, bool, tuple, list))}
 
     def fit(self, M: Market, y: pd.DataFrame, now: pd.Timestamp) -> None:
-        """M is the market strictly before `now`; y[t, pair] is the move (bps) a position decided at t
-        would have earned gross, only for labels that ended before `now`."""
+        """M is the market strictly before `now`; y[t, pair] is the log move (bps) over the bars a position decided
+        at t would be held (`labels`), only for labels that ended before `now`."""
 
     def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
         raise NotImplementedError
@@ -240,6 +236,7 @@ def get_strategy(name: str, params: dict) -> Strategy:
 
 # ---- walk-forward -------------------------------------------------------------------------------------
 def labels(M: Market, hold: int, latency: int) -> pd.DataFrame:
+    """What a strategy's `fit` is handed: the LOG move over the hold, bps. A target, not money — `price` counts money."""
     lr = np.log(M.close)
     return (lr.shift(-(latency + hold)) - lr.shift(-latency)) * 1e4
 
@@ -314,6 +311,23 @@ def _ahead(x: pd.DataFrame, w: int, how: str) -> np.ndarray:
     return (r.min() if how == "min" else r.max())[::-1].shift(-1).to_numpy()
 
 
+def basket(px: np.ndarray, e: np.ndarray, x: np.ndarray, j: np.ndarray, chunk: int = 2048) -> np.ndarray:
+    """Per trade (pair j, bought at row e, sold at row x): what one unit spread equally over the OTHER pairs earns
+    between the same two rows, bps — the mean of exit / entry − 1 over the pairs with a price at both. A basket bought
+    once and held, as the position is: measured this way a pair picked at random earns the basket's return in the
+    mean, whatever the size of the moves. 0 where no other pair has both prices."""
+    key, inv = np.unique(e.astype(np.int64) * (len(px) + 1) + x, return_inverse=True)
+    ke, kx = key // (len(px) + 1), key % (len(px) + 1)
+    S, N = np.zeros(len(key)), np.zeros(len(key))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        for a in range(0, len(key), chunk):
+            r = px[kx[a:a + chunk]] / px[ke[a:a + chunk]]
+            S[a:a + chunk], N[a:a + chunk] = np.nansum(r, axis=1), np.isfinite(r).sum(axis=1)
+        own = px[x, j] / px[e, j]
+    n = N[inv] - np.isfinite(own)
+    return np.where(n > 0, (S[inv] - np.nan_to_num(own)) / np.maximum(n, 1) - 1.0, 0.0) * 1e4
+
+
 def price(dec: pd.DataFrame, M: Market, C: Costs, exec_: str, taker_bps: float, maker_bps: float, latency: int = LATENCY,
           src: np.ndarray | None = None) -> pd.DataFrame:
     """Fills for the accepted decisions. `src` (a row indexer from `_shuffle_days`) takes the PRICE PATH
@@ -345,9 +359,9 @@ def price(dec: pd.DataFrame, M: Market, C: Costs, exec_: str, taker_bps: float, 
             legs[leg] = (p0, p * maker_bps + (1 - p) * taker_bps, p * -pick(C.maker_adv) + (1 - p) * other_t, p)
     pe, pxx = legs["e"][0], legs["x"][0]
     fee, other, p_fill = (legs["e"][k] + legs["x"][k] for k in (1, 2, 3))
-    gross = np.where(ok, s * np.log(pxx / pe) * 1e4, np.nan)
+    gross = np.where(ok, s * (pxx / pe - 1.0) * 1e4, np.nan)           # what the position earns: never the log (the module's docstring, "the unit")
     re_, rx = rows["e"][1], rows["x"][1]
-    mkt = np.where(ok, M.others[rows["x"][0], j] - M.others[rows["e"][0], j], np.nan)      # close to close: the maker's wait is not in it
+    mkt = np.where(ok, basket(px, rows["e"][0], rows["x"][0], j), np.nan)      # close to close: the maker's wait is not in it
     fund = -s * (C.fundcum[rx, j] - C.fundcum[re_, j])
     out = pd.DataFrame({"id": d.index, "t": d["t"].array, "symbol": d["symbol"].to_numpy(), "fold": d["fold"].to_numpy(), "side": s.astype(int),
                         "size": d["size"].to_numpy(), "exec": exec_, "entry_t": idx[re_], "exit_t": idx[rx], "entry_px": pe, "exit_px": pxx,
@@ -407,7 +421,10 @@ def open_positions(dec: pd.DataFrame, index: pd.DatetimeIndex, latency: int) -> 
 
 
 # ---- the run ----------------------------------------------------------------------------------------------
-def _guard(fold_names, registration: str | None) -> list[str]:
+def _guard(fold_names, registration: str | None, reexecute: str | None = None) -> list[str]:
+    """The folds of `fold_names` that are read once per registered question. `reexecute` (a tag): a registered read made
+    again after a defect in the measurement (PLAN §3) — only of folds that registration has already read, only if the
+    plan says so under that tag, once per tag, and logged as `R<n>/<tag>` beside the first read, which stays."""
     conf = [f for f in fold_names if f in folds.CONFIRMATION + folds.PREHISTORY]      # the pre-history is an honest read too: once, by registration
     if not conf:
         return conf
@@ -415,19 +432,31 @@ def _guard(fold_names, registration: str | None) -> list[str]:
         raise SystemExit(f"{conf} are confirmation folds (or the pre-history, guarded the same way): they are read only by a registered contrast (--registration R<n>, PLAN §3/§8)")
     if not PLAN.exists() or not re.search(rf"^### {registration} ", PLAN.read_text(), flags=re.M):
         raise SystemExit(f"no '### {registration} ' block in {PLAN}: write the registration before the read")
-    if READS.exists():
-        r = pd.read_csv(READS)
-        again = sorted(set(r.loc[r["registration"] == registration, "fold"]) & set(conf))
-        if again:
-            raise SystemExit(f"{registration} has already read {again} ({READS}): a fold is read once per question")
+    r = pd.read_csv(READS) if READS.exists() else pd.DataFrame(columns=["registration", "fold"])
+    if reexecute:
+        if not re.fullmatch(r"[a-z0-9_]+", reexecute) or f"re-execution `{reexecute}`" not in PLAN.read_text():
+            raise SystemExit(f"no \"re-execution `{reexecute}`\" in {PLAN}: write what is re-executed, and why, before the run (PLAN §3)")
+        first = sorted(set(conf) - set(r.loc[r["registration"] == registration, "fold"]))
+        if first:
+            raise SystemExit(f"{registration} has not read {first}: nothing to re-execute — a first read is made without --reexecute")
+        registration = read_tag(registration, reexecute)
+    again = sorted(set(r.loc[r["registration"] == registration, "fold"]) & set(conf))
+    if again:
+        raise SystemExit(f"{registration} has already read {again} ({READS}): a fold is read once per question")
     return conf
+
+
+def read_tag(registration: str | None, reexecute: str | None) -> str | None:
+    """How a read is named in the log and in a run's meta: `R<n>`, or `R<n>/<tag>` for a re-execution."""
+    return f"{registration}/{reexecute}" if registration and reexecute else registration
 
 
 def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, execs=EXECS, draws: int = 200, taker_bps: float = 5.0, maker_bps: float = 2.0,
         latency: int = LATENCY, refit_days: int = REFIT_DAYS, registration: str | None = None, name: str | None = None, seed: int = 0,
-        cost_mult: float = 1.0) -> dict:
+        cost_mult: float = 1.0, reexecute: str | None = None) -> dict:
     fold_names = folds.order(fold_names)
-    conf = _guard(fold_names, registration)
+    conf = _guard(fold_names, registration, reexecute)
+    registration = read_tag(registration, reexecute)
     end = folds.bounds(fold_names[-1])[1]
     M = market(symbols, end, PRE_START if "FP" in fold_names else ceiling.START, strategy.needs)      # F1… runs see exactly the market they always saw
     C = load_costs(M.index, M.columns, end, cost_mult)
@@ -484,7 +513,7 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
     src_ = pd.read_parquet(DAILY_WIDE, columns=["symbol"])["symbol"].astype(str).unique() if DAILY_WIDE.exists() else []
     meta = {"strategy": strategy.name, "params": strategy.params(), "folds": fold_names, "registration": registration, "taker_bps": taker_bps,
             "pairs_on_proxy_cost": sorted(set(M.columns) & set(src_) - set(pd.read_parquet(DAILY, columns=["symbol"])["symbol"].astype(str).unique())),
-            "maker_bps": maker_bps, "cost_mult": cost_mult, "latency_bars": latency, "refit_days": refit_days, "draws": draws, "seed": seed, "notional": NOTIONAL,
+            "maker_bps": maker_bps, "cost_mult": cost_mult, "unit": UNIT, "latency_bars": latency, "refit_days": refit_days, "draws": draws, "seed": seed, "notional": NOTIONAL,
             "pairs": list(M.columns), "decisions": len(dec), "accepted": int(dec["accepted"].sum()), "max_open": max_open, "avg_open": avg_open,
             "generated": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC"}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
@@ -508,7 +537,8 @@ def report(meta: dict, res: pd.DataFrame, floor: pd.DataFrame) -> str:
           f" · blocks of {meta['refit_days']} days · {meta['decisions']:,} decisions, {meta['accepted']:,} taken (one position per pair)"
           + (f" · **{len(meta['pairs_on_proxy_cost'])} of {len(meta['pairs'])} pairs priced by the cross-pair candle proxy (`ft2 costwide`, no tape)**" if meta.get("pairs_on_proxy_cost") else "")
           + f" · at most {meta['max_open']} positions open at once, {meta['avg_open']:.2f} on average\n",
-          "\nWords: a basis point (bps) is 0.01 %; *gross* is the move earned before costs, *net* after fees, spread, impact and funding; "
+          "\nWords: a basis point (bps) is 0.01 %; *gross* is what the position earned before costs — side × (exit price / entry price − 1), not a log — "
+          "*net* after fees, spread, impact and funding; "
           f"one *unit of notional* is {meta['notional']:,} USDT, so 1 bps net = {meta['notional'] / 1e4:.0f} USDT per trade. *taker* crosses the spread on both legs; "
           f"*maker* rests a limit order at the bar's close for {MAKER_WAIT * 5} minutes on each leg, is filled only if a later bar trades through it, and "
           "otherwise crosses as a taker at the price by then (so `other_cost` is what the unfilled legs paid and the missed move is inside gross); "
@@ -516,7 +546,7 @@ def report(meta: dict, res: pd.DataFrame, floor: pd.DataFrame) -> str:
           "The interval is 95 %, clustered by day; "
           "*MDE* is the smallest true mean this sample could tell from zero (80 % power). The *noise floor* is the same pipeline on labels whose days were "
           "shuffled; p is the share of shuffles that did at least as well. *flip p* is the stricter null: the rule's own trades, with every day's sides "
-          "multiplied by one random sign. *hedged* is gross minus the side × the other pairs' average move over the same bars: what the trade earned "
+          "multiplied by one random sign. *hedged* is gross minus the side × what one unit spread equally over the other pairs earned over the same bars: what the trade earned "
           "against the market rather than with it; *hedged net* is that minus the same costs (the hedge leg is not costed).\n", "\n## Bottom line\n"]
     for _, r in res[res["scope"] == "all"].iterrows():
         fl = floor[floor["exec"] == r["exec"]].iloc[0]

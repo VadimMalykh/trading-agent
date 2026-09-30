@@ -84,9 +84,35 @@ Read this section first if you are new to the problem; it defines the words used
 - **Registration file.** Each registered contrast is a short block in §8 of this document:
   name, question, contrast, folds read, gate, expectation, and, after the read, the result. Written
   before the number, dated, never edited after the read except to add the result.
-- **The unit of money (found defective 2026-09-29, R25 (D1)).** Until corrected the harness and the longer-hold label count a trade
-  as side × log(exit / entry). A position earns side × (exit / entry − 1). Every money number of §8 is in the first unit;
-  it is close for the twelve at holds up to a day and wrong for shorts of violent names held a week.
+- **The unit of money (found defective 2026-09-29, R25 (D1); corrected 2026-09-30).** A trade is counted as a position
+  of fixed size earns it: gross = side × (exit / entry − 1), per unit of the size at entry (`backtest.price`;
+  `horizon.labels` for the longer-hold label). Until the correction both counted side × log(exit / entry), which
+  overstates every short and understates every long by about half the squared move: close for the twelve at holds up to
+  a day, wrong for shorts of violent names held a week. Every money number of §8 written before 2026-09-30 is in logs;
+  a run counted in actual returns says `"unit": "actual"` in its meta.
+  *Hedged* is gross minus side × what one unit spread equally over the other pairs, bought and sold at the same two
+  bars, earned (`backtest.basket`: the mean of their returns, not of their logs — counted so, a name picked at random
+  earns the basket in the mean, whatever the size of the moves). The flip and the shuffle null are priced by the same
+  code. Two things stay logs because they are not money: a model's fitting target (`backtest.labels` — R14's served
+  model and P7 are untouched) and the rank IC's vol-standardised label.
+  What the harness still rounds, stated here: the exit leg's fee, spread and impact, and each funding payment, are
+  charged in bps of the size at entry, not of the position's value at that moment. Nothing on small moves; its size on
+  the 7-day books is measured beside each re-executed read (`scripts/actual_describe.py`, described, decides nothing).
+- **The re-execution `actual` (Vadim's decision 2026-09-30: "(1)" of P8's "What next").** R22, R23, R24 and R25 are made
+  again by their registered commands on the corrected unit — the same cells, members, data and parameters; no download,
+  no ingest, nothing else changed. Each writes beside the first read's output (`…_actual`); a guarded fold is read again
+  only under `--reexecute actual`, which the guard allows for folds that registration has already read, once, logged as
+  `R<n>/actual` in `confirmation_reads.csv` beside the first read's rows, which stay. Each §8 block gets a
+  "Re-executed" paragraph under its first result, which is not edited. The re-executed verdict is the read's verdict;
+  the first stays on record as what the log unit showed.
+  Validity of a re-execution, read first: the first read's own checks on the run (book check, cells, shifts, coverage),
+  and `scripts/actual_check.py` — for a book, the decisions and every fill's times, prices, costs and funding are the
+  first read's to the last digit, and the first read's fills re-priced give this run's net; for an audit, the cells, the
+  shifts and the rank IC are the first read's. The first reads' checks of the INGEST (R23 (2), R25 (2) and (3)) are not
+  repeated: nothing has been ingested since, and the check above is what says the inputs are the same.
+  Commands: `scripts/actual_chain.sh` on the work VM (`vm.sh bgsh actual 'bash scripts/actual_chain.sh'`), R22 → R23 →
+  R24 → R25, each step once. R1–R21 are not made again: one table from their saved fills (`scripts/actual_table.py`,
+  below), no new verdict.
 - **Ledger.** Every simulated trade records the decision (what, when, why, at what size) and the
   fill (price, cost) *separately*, so that execution assumptions can be re-priced without
   re-deciding.
@@ -609,8 +635,8 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: one decision — how to correct the record after the defect found at R25's read ("What next"
-below). Claude recommends (1): fix the measure and re-execute R22–R25 as registered.**
+**Needed from Vadim: nothing now. He decided "(1)" on 2026-09-30: the measure is fixed (§3 "The unit of money") and
+R22–R25 are re-executed as registered (§3 "The re-execution `actual`"; each §8 block's "Re-executed" paragraph).**
 Commands, gates and numbers: §8 R18–R25. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `ft2/horizon.py`, `tests/test_p8_*.py`.
 
@@ -801,7 +827,7 @@ bought side.
 | 6 | the run, made once | ✅ 15:20 → 15:52 UTC |
 | 7 | the read | ✅ validity PASS; the gate's letter: CONFIRMED; the measure defective — verdict HELD. Work VM stopped |
 
-**What next — one decision for Vadim: how to correct the record.**
+**What next — one decision for Vadim: how to correct the record. DECIDED 2026-09-30: (1).** The options as they were put:
 
 - **(1) — recommended. Fix the measure, then re-execute R22, R23, R24 and R25 exactly as registered.** The harness and
   the label count the actual return of a position (one change, tested against known cases); the four reads are run

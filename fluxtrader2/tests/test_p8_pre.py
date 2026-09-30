@@ -109,6 +109,20 @@ def test_the_read_finds_the_score_planted_at_the_longer_hold(tmp_path, monkeypat
     assert len(b) == 3 and np.allclose(b["cells_per_bar"], 12) and b["bars"].sum() == 60 * 24
     assert not (tmp_path / "output/backtest/confirmation_reads.csv").exists()        # no registration, no log
 
+    # a re-execution (PLAN §3): only of a read that was made, under a tag the plan names, logged beside the first read
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/PLAN.md").write_text("the re-execution `fix`: why.\n\n### R23 — the score on the months before F1\n")
+    horizon.R22_CHECK.write_text(json.dumps({"status": "PASS"}))
+    kw = dict(holds=(LONG,), refs=(HOLD, 36), members=str(tmp_path / "m.csv"), days=DAYS, end=END, jobs=1, registration="R23")
+    with pytest.raises(SystemExit, match="nothing to re-execute"):
+        horizon.run_pre(**kw, reexecute="fix", name="again")
+    horizon.run_pre(**kw, name="first")
+    horizon.run_pre(**kw, reexecute="fix", name="again")
+    assert list(pd.read_csv(tmp_path / "output/backtest/confirmation_reads.csv")["registration"]) == ["R23", "R23", "R23/fix", "R23/fix"]
+    assert pd.read_csv(horizon.OUT / "again" / "signals.csv").equals(pd.read_csv(horizon.OUT / "first" / "signals.csv"))
+    with pytest.raises(SystemExit, match="already read"):
+        horizon.run_pre(**kw, reexecute="fix", name="again")
+
 
 def test_without_a_signal_nothing_clears_and_a_thin_score_voids_the_run(tmp_path, monkeypatch):
     _market(tmp_path, monkeypatch, plant=False)

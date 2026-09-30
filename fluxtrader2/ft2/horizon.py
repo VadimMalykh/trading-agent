@@ -6,7 +6,9 @@ puts at the bottom — in the mean, in bps, by more than the round trip? A ceili
 
 cells      `audit.frame`'s: the scored cells of a `transferbook` run, hourly decision bars, the block's members.
 label      what a long position earns before trading costs: the move from the close one bar after t to the close `hold`
-           bars later, minus the funding a long pays over those bars (`backtest.load_costs`' cumulative funding), bps.
+           bars later — exit / entry − 1, the harness's unit; a log until 2026-09-30 (PLAN §3) — minus the funding a
+           long pays over those bars (`backtest.load_costs`' cumulative funding), bps. The rank IC beside it keeps
+           R20's vol-standardised log label: a rank, not money.
 signals    `SIGNALS`: R20's five unresolved features by `audit.features`' own code, and the run's own forecast ẑ.
 statistic  `_tenths`: per bar the mean label of the tenth highest by the signal minus that of the tenth lowest, halved —
            bps per leg of a top-against-bottom book; averaged per day; M = the mean over days.
@@ -41,10 +43,11 @@ U_BAR, P_BAR, IC_TOL = 2.0, 0.05, 1e-9
 
 
 def labels(M: bt.Market, fundcum: np.ndarray, hold: int, latency: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(the move, what a long earns): `backtest.labels`, and the same minus the funding a long pays between the entry bar
-    and the exit bar — `backtest.price`'s gross and gross + funding of a long."""
+    """(the move, what a long earns): exit / entry − 1 between the entry bar and the exit bar — what a long of fixed
+    size earns, never the log (PLAN §3) — and the same minus the funding it pays: `backtest.price`'s gross and
+    gross + funding of a long."""
     fc = pd.DataFrame(fundcum, index=M.index, columns=M.columns)
-    y = bt.labels(M, hold, latency)
+    y = (M.close.shift(-(latency + hold)) / M.close.shift(-latency) - 1.0) * 1e4
     return y, y - (fc.shift(-(latency + hold)) - fc.shift(-latency))
 
 
@@ -116,7 +119,7 @@ def verdict(r: dict, cost: float = COST) -> str:
     return "CLOSED" if abs(r["m_c"]) + 1.96 * r["se"] < cost else "NOT DETECTABLE"
 
 
-def run(run: str, holds=HOLDS, members: str | None = None, cost: float = COST, jobs: int = 4) -> str:
+def run(run: str, holds=HOLDS, members: str | None = None, cost: float = COST, jobs: int = 4, name: str | None = None) -> str:
     from joblib import Parallel, delayed
     A = audit.frame(run, members)
     fold_names, ref, latency, end, M, o, names, idx, sig, z, grid, cell, v = (A[k] for k in (
@@ -218,13 +221,13 @@ def run(run: str, holds=HOLDS, members: str | None = None, cost: float = COST, j
           "\n## Reference rows — the one-day hold and R21's score (outside the family, no verdict)\n", show(ref_tab[main]), "\n", show(ref_tab[more], 4), "\n",
           "\n## The label against the bar's peers, by the signal's tenth (1 = lowest, 10 = highest), bps\n", "\n### mean\n", show(wide("mean"), 1), "\n",
           "\n### median\n", show(wide("median"), 1), "\n"]
-    out = OUT / run
+    out = OUT / (name or run)
     out.mkdir(parents=True, exist_ok=True)
     (out / "horizon.md").write_text("\n".join(md))
     tab.to_csv(out / "signals.csv", index=False)
     tenth.to_csv(out / "tenths.csv", index=False)
     d.to_parquet(out / "shifts.parquet", index=False)
-    (out / "validity.json").write_text(json.dumps({**v, "null_max_u_p95": float(mx.quantile(0.95)), "cost_bps": cost}, indent=1))
+    (out / "validity.json").write_text(json.dumps({**v, "null_max_u_p95": float(mx.quantile(0.95)), "cost_bps": cost, "unit": bt.UNIT}, indent=1))
     return "\n".join(md)
 
 
@@ -302,13 +305,14 @@ def pooled(s1: dict, s2: dict, cost: float = COST) -> dict:
 
 
 def run_pre(holds=PRE_HOLDS, refs=PRE_REFS, members=None, days=None, end=None, cost: float = COST, skip=PRE_SKIP, registration: str | None = "R23",
-            jobs: int = 4, name: str = PRE) -> str:
+            jobs: int = 4, name: str = PRE, reexecute: str | None = None) -> str:
     from joblib import Parallel, delayed
     from .forecast import _derive
     holds, refs = [int(h) for h in holds], [int(h) for h in refs]
     every, first, latency = [*refs, *holds], refs[0], bt.LATENCY
     if registration:                                          # the pre-history is read once per registered question, and only once R22 came back
-        conf = bt._guard(PRE_FOLDS, registration)
+        conf = bt._guard(PRE_FOLDS, registration, reexecute)
+        registration = bt.read_tag(registration, reexecute)
         if not (R22_CHECK.exists() and json.loads(R22_CHECK.read_text()).get("status") == "PASS"):
             raise SystemExit(f"{R22_CHECK} does not say PASS: re-run R22 after the ingest and compare it first (scripts/r23_check_r22.py)")
     A = frame_pre(members, days, end, every)
@@ -328,7 +332,7 @@ def run_pre(holds=PRE_HOLDS, refs=PRE_REFS, members=None, days=None, end=None, c
     ok = (v["grid_in_market"] and v["whole_days"] and n_cells > 0 and not (v["cells_not_a_member"] or v["cells_of_the_twelve"] or v["cells_at_or_after_end"])
           and v["shifts"] == nd - 2 * gap_days(every) + 1 and v["score_coverage"] >= COVER_BAR)
     v["status"] = "PASS" if ok else "FAIL"
-    (out / "validity.json").write_text(json.dumps({**v, "cost_bps": cost, "notes": notes}, indent=1))
+    (out / "validity.json").write_text(json.dumps({**v, "cost_bps": cost, "notes": notes, "unit": bt.UNIT}, indent=1))
     if not ok:                                                # void: no number is computed on cells that are not the registered ones
         raise SystemExit(f"validity FAIL, nothing was read: {v}")
 

@@ -331,11 +331,11 @@ def _pooled_p(nulls: list[pd.DataFrame], exec_: str, kind: str, real: float) -> 
     return {"draws": len(d), "mean": float(d.mean()), "sd": float(d.std()), "p95": float(d.quantile(0.95)), "p": (1 + int((d >= real).sum())) / (len(d) + 1)}
 
 
-def pool(runs: list[str], name: str = "r24_pool", confirm: bool = False) -> str:
+def pool(runs: list[str], name: str = "r24_pool", confirm: bool = False, beside=None) -> str:
     """The fills of several `oibook` runs as ONE book (registration R24): the harness's statistics on the pooled fills,
     the flip null pooled draw by draw, costs doubled by re-pricing each run's own decisions. Validity first."""
     from . import ceiling
-    out = bt.OUT / name
+    out, beside = bt.OUT / name, tuple(beside or BESIDE)
     out.mkdir(parents=True, exist_ok=True)
     F, nulls, days, val, holds = {"taker": [], "maker": [], "taker_x2": []}, [], [], [], set()
     for run in runs:
@@ -384,12 +384,12 @@ def pool(runs: list[str], name: str = "r24_pool", confirm: bool = False) -> str:
     rows += [{"exec": "taker", "scope": k, **bt.summarize(t[t["side"] == s], days, hold)} for k, s in bt.SIDES.items()]
     if confirm:                                               # described: the exploration runs' saved fills beside this one's
         ex, ex_days = [t], [days]
-        for r in BESIDE:
+        for r in beside:
             if (bt.OUT / r / "fills_taker.parquet").exists() and r not in runs:
                 ex.append(pd.read_parquet(bt.OUT / r / "fills_taker.parquet"))
                 ex_days.append(bt.scored_days(m_ := json.loads((bt.OUT / r / "meta.json").read_text())["folds"], folds.bounds(m_[-1])[1] - bt.BAR))
         if len(ex) > 1:
-            rows.append({"exec": "taker", "scope": f"with {', '.join(BESIDE)} (exploration)", **bt.summarize(pd.concat(ex, ignore_index=True), ex_days[0].append(ex_days[1:]).unique().sort_values(), hold)})
+            rows.append({"exec": "taker", "scope": f"with {', '.join(beside)} (exploration)", **bt.summarize(pd.concat(ex, ignore_index=True), ex_days[0].append(ex_days[1:]).unique().sort_values(), hold)})
     rows += [{"exec": "taker, costs doubled", "scope": r, **bt.summarize(F["taker_x2"][F["taker_x2"]["run"] == r], days, hold)} for r in runs]
     rows += [{"exec": "maker", "scope": r, **bt.summarize(F["maker"][F["maker"]["run"] == r], days, hold)} for r in runs]
     tab = pd.DataFrame(rows)

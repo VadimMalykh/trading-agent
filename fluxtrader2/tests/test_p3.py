@@ -221,4 +221,65 @@ def test_hedged_gross_removes_a_move_every_pair_shares():
     C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, np.zeros((60, 3)))
     dec = pd.DataFrame({"t": idx[[10]], "symbol": "A", "side": 1, "size": 1.0, "hold": 20, "fold": "F1", "accepted": True})
     f = bt.price(dec, M, C, "taker", 0.0, 0.0).iloc[0]
-    assert abs(f["gross_bps"] - (np.log(1.01) + np.log(1.002)) * 1e4) < 1e-6 and abs(f["hedged_bps"] - np.log(1.002) * 1e4) < 1e-6
+    assert abs(f["gross_bps"] - (1.01 * 1.002 - 1) * 1e4) < 1e-6 and abs(f["mkt_bps"] - 100.0) < 1e-6 and abs(f["hedged_bps"] - 20.2) < 1e-6
+
+
+def _one_trade(entry: dict, exit_: dict, side: int, symbol: str = "A"):
+    """One position in `symbol`, entered at row 11 and closed at row 31, on flat prices that step from `entry` to `exit_` in between."""
+    idx = pd.date_range("2024-01-01", periods=60, freq="5min", tz="UTC")
+    close = pd.DataFrame({k: np.where(np.arange(60) < 20, entry[k], exit_[k]) for k in entry}, index=idx, dtype=float)
+    M = bt.Market(close, close, close, close)
+    z = np.zeros((1, close.shape[1]))
+    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, np.zeros(close.shape))
+    dec = pd.DataFrame({"t": idx[[10]], "symbol": symbol, "side": side, "size": 1.0, "hold": 20, "fold": "F1", "accepted": True})
+    return bt.price(dec, M, C, "taker", 0.0, 0.0).iloc[0]
+
+
+def test_a_trade_is_counted_as_the_position_earns_not_in_logs():
+    """PLAN §3, R25 (D1): side × (exit / entry − 1). The two cases that exposed the log, and a small move where they agree."""
+    fall = _one_trade({"A": 4.9}, {"A": 1.0}, -1)                  # a short of a name that falls by four fifths makes 80 % of its size …
+    assert abs(fall["gross_bps"] - 7959.18) < 0.01 and abs(np.log(1.0 / 4.9)) * 1e4 > 15_890                       # … where the log said 159 %
+    assert abs(_one_trade({"A": 4.9}, {"A": 1.0}, 1)["gross_bps"] + 7959.18) < 0.01
+    rise = _one_trade({"A": 1.13}, {"A": 17.96}, -1)               # a short of a name that rises sixteen-fold loses fifteen times its size …
+    assert abs(rise["gross_bps"] + (17.96 / 1.13 - 1) * 1e4) < 1e-6 and rise["gross_bps"] < -148_000 < -5 * np.log(17.96 / 1.13) * 1e4      # … not 2.8 times
+    for side in (1, -1):                                           # 10 bps: the log is within a hundredth of a bps
+        small = _one_trade({"A": 100.0}, {"A": 100.1}, side)
+        assert abs(small["gross_bps"] - side * 10.0) < 1e-9 and abs(small["gross_bps"] - side * np.log(1.001) * 1e4) < 0.01
+
+
+def test_the_hedge_is_a_basket_bought_once_and_held():
+    """The market a trade is measured against: one unit spread equally over the other pairs — the mean of their returns,
+    not the mean of their logs — over the pairs priced at both bars, the trade's own left out."""
+    f = _one_trade({"A": 10.0, "B": 10.0, "C": 10.0, "D": 10.0}, {"A": 12.0, "B": 20.0, "C": 5.0, "D": np.nan}, 1)
+    assert abs(f["mkt_bps"] - 2500.0) < 1e-6 and abs(f["hedged_bps"] - (2000.0 - 2500.0)) < 1e-6      # B +100 %, C −50 %: +25 % (their logs average to zero); D has no exit
+    g = _one_trade({"A": 10.0, "B": 10.0, "C": 10.0, "D": 10.0}, {"A": 12.0, "B": 20.0, "C": 5.0, "D": np.nan}, -1, "B")
+    assert abs(g["mkt_bps"] - (-1500.0)) < 1e-6 and abs(g["hedged_bps"] - (-10000.0 - 1500.0)) < 1e-6  # A +20 %, C −50 %: −15 %; a short of B lost its size, and the hedge (a long) 15 % more
+    alone = _one_trade({"A": 10.0}, {"A": 12.0}, 1)
+    assert alone["mkt_bps"] == 0.0 and abs(alone["hedged_bps"] - 2000.0) < 1e-6                         # no other pair: nothing to hedge with
+    rng = np.random.default_rng(0)                                 # `basket` against the definition, row by row
+    px = np.exp(rng.normal(0, 0.3, (40, 7)))
+    px[rng.random(px.shape) < 0.1] = np.nan
+    e, x, j = rng.integers(0, 20, 300), rng.integers(20, 40, 300), rng.integers(0, 7, 300)
+    want = []
+    for a, b, k in zip(e, x, j):
+        r = np.delete(px[b] / px[a], k)
+        want.append((np.nanmean(r) - 1) * 1e4 if np.isfinite(r).any() else 0.0)
+    assert np.allclose(bt.basket(px, e, x, j, chunk=16), want)
+
+
+def test_a_registered_read_is_re_executed_once_under_its_tag_and_the_first_read_stays(tmp_path):
+    _synth(tmp_path, start="2024-08-05", days=55)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/PLAN.md").write_text("## 8\n\n### R1 — planted (registered 2026-09-21, read —)\n")
+    with pytest.raises(SystemExit, match="re-execution `fix`"):                    # the plan must say what is re-executed, before the run
+        bt.run(Planted(), PAIRS, ["F3"], draws=0, registration="R1", reexecute="fix")
+    (tmp_path / "docs/PLAN.md").write_text("## 3\n\nthe re-execution `fix`: why.\n\n## 8\n\n### R1 — planted (registered 2026-09-21, read —)\n")
+    with pytest.raises(SystemExit, match="nothing to re-execute"):                  # … and only a read that was made can be made again
+        bt.run(Planted(), PAIRS, ["F3"], draws=0, registration="R1", reexecute="fix")
+    bt.run(Planted(), PAIRS, ["F3"], draws=2, registration="R1")
+    r = bt.run(Planted(), PAIRS, ["F3"], draws=2, registration="R1", reexecute="fix", name="again")
+    assert r["meta"]["registration"] == "R1/fix" and r["meta"]["unit"] == "actual" and "registration R1/fix" in (r["dir"] / "report.md").read_text()
+    assert list(pd.read_csv(bt.READS)["registration"]) == ["R1", "R1/fix"]
+    for kw in ({"reexecute": "fix"}, {}):                                           # once per tag; and the first read is still refused a second time
+        with pytest.raises(SystemExit, match="already read"):
+            bt.run(Planted(), PAIRS, ["F3"], draws=0, registration="R1", **kw)

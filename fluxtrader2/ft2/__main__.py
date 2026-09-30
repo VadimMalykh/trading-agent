@@ -83,7 +83,7 @@ def cmd_screen(args):
 def cmd_audit(args):
     from . import audit
     if args.pool:                                             # R24: several `oibook` runs read as one book; --confirm (R25): the confirmation's gate
-        print(audit.pool([args.run, *args.more], args.name, confirm=args.confirm))
+        print(audit.pool([args.run, *args.more], args.name, confirm=args.confirm, beside=args.beside))
         return print(f"wrote {audit.bt.OUT / args.name}/")
     if args.book:                                             # R21: the validity of an `oibook` run, read before its money
         v = audit.book_check(args.run)
@@ -95,12 +95,12 @@ def cmd_audit(args):
 def cmd_horizon(args):
     from . import horizon
     if args.pre:                                              # R23: the months before F1, cells from the frozen members
-        print(horizon.run_pre(args.holds or horizon.PRE_HOLDS))
-        return print(f"wrote {horizon.OUT / horizon.PRE}/")
+        print(horizon.run_pre(args.holds or horizon.PRE_HOLDS, name=args.name or horizon.PRE, reexecute=args.reexecute))
+        return print(f"wrote {horizon.OUT / (args.name or horizon.PRE)}/")
     if not args.run:
         raise SystemExit("horizon: name the run, or --pre")
-    print(horizon.run(args.run, args.holds or horizon.HOLDS))
-    print(f"wrote {horizon.OUT / args.run}/")
+    print(horizon.run(args.run, args.holds or horizon.HOLDS, name=args.name))
+    print(f"wrote {horizon.OUT / (args.name or args.run)}/")
 
 
 def cmd_costwide(args):
@@ -156,7 +156,7 @@ def cmd_backtest(args):
     if args.strategy == "transferbook":                       # the training names first, in their fixed order; then the names to score
         syms = [*PAIRS, *(s for s in syms if s not in PAIRS)]
     r = backtest.run(backtest.get_strategy(args.strategy, dict(args.param or [])), syms, args.folds, args.execs, args.draws,
-                     args.taker_bps, args.maker_bps, args.latency, args.refit_days, args.registration, args.name, args.seed, args.cost_mult)
+                     args.taker_bps, args.maker_bps, args.latency, args.refit_days, args.registration, args.name, args.seed, args.cost_mult, args.reexecute)
     print((r["dir"] / "report.md").read_text())
     print(f"wrote {r['dir']}/")
 
@@ -227,6 +227,8 @@ def main(argv=None):
     b.add_argument("--seed", type=int, default=0)
     b.add_argument("--cost-mult", type=float, default=1.0, help="sensitivity: multiply spread + impact (not fees) by this")
     b.add_argument("--name", help="output directory under output/backtest/ (default: the strategy's name)")
+    b.add_argument("--reexecute", metavar="TAG", help="a registered read made again after a defect in the measurement (PLAN §3): only of folds --registration "
+                                                       "has read, logged as R<n>/TAG beside the first read")
     for a_ in c._actions:
         if a_.dest in ("taker_bps", "maker_bps"):
             b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
@@ -244,6 +246,7 @@ def main(argv=None):
     au.add_argument("--name", default="r24_pool", help="--pool: the output directory under output/backtest/")
     au.add_argument("--confirm", action="store_true", help="--pool (R25): the confirmation's gate, and R24's saved fills pooled beside it (described)")
     au.add_argument("--pool", action="store_true", help="R24: read the named `oibook` runs as one book → output/backtest/r24_pool/pool.md")
+    au.add_argument("--beside", nargs="*", help="--pool --confirm: the exploration runs pooled beside the confirmation's (default: R24's two as first read)")
     au.add_argument("--draws", type=int, default=200)
     au.add_argument("--book", action="store_true", help="R21: check an `oibook` run's decisions (hourly grid, members only, whole dollar-neutral units) → <run>/book_check.json")
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
@@ -251,6 +254,8 @@ def main(argv=None):
     hz.add_argument("run", nargs="?", help="the run's directory name under output/backtest/")
     hz.add_argument("--holds", nargs="*", type=int, default=None, help="in 5m bars (default 864 2016; with --pre 2016)")
     hz.add_argument("--pre", action="store_true", help="R23: the open-interest score on the months before F1 (ft2/screen_members_pre.csv) → output/horizon/pre/horizon.md")
+    hz.add_argument("--name", help="output directory under output/horizon/ (default: the run's name; with --pre, pre)")
+    hz.add_argument("--reexecute", metavar="TAG", help="--pre: R23's read made again after a defect in the measurement (PLAN §3), logged as R23/TAG")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
