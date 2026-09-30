@@ -683,7 +683,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, F3+F4 untouched; R24, the score as a priced book at a 7-day hold on both samples read for it, read 2026-09-29: CANDIDATE by the gate — +17 bps a trade after costs on 5,054 trades, flip p 0.025, but one times its noise and all of it the short side; R25, the confirmation read of that book on the outside names of F3+F4, read 2026-09-29: passed its gate on a defective number — the harness measures profit in log returns, which flatters shorts of violent names; with the actual return the book loses in every sample; verdict HELD)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, F3+F4 untouched; R24, the score as a priced book at a 7-day hold on both samples read for it, read 2026-09-29: CANDIDATE by the gate — +17 bps a trade after costs on 5,054 trades, flip p 0.025, but one times its noise and all of it the short side; R25, the confirmation read of that book on the outside names of F3+F4, read 2026-09-29: passed its gate on a defective number — the harness measured profit in log returns, which flatters shorts of violent names; **R22–R25 RE-EXECUTED in actual returns 2026-09-30 (Vadim's decision): R22 nothing clears and the lean mostly gone (+21 a leg, 0.7 times its noise), R23 does not clear (+20, 1.1 times its noise), R24 NOT FUNDED (net −14), R25 NOT CONFIRMED (net −39) — the book is parked; nothing outside the twelve clears its costs**)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -695,8 +695,9 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: nothing now. He decided "(1)" on 2026-09-30: the measure is fixed (§3 "The unit of money") and
-R22–R25 are re-executed as registered (§3 "The re-execution `actual`"; each §8 block's "Re-executed" paragraph).**
+**Needed from Vadim: two decisions, neither urgent ("What next" below) — (A) R23's offered stage 2: Claude recommends
+not running it; (B) what the screener phase does next: Claude recommends parking the search on outside names. The
+re-execution he decided on 2026-09-30 is done (§3; each §8 block's "Re-executed" paragraph).**
 Commands, gates and numbers: §8 R18–R25. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `ft2/horizon.py`, `tests/test_p8_*.py`.
 
@@ -887,7 +888,63 @@ bought side.
 | 6 | the run, made once | ✅ 15:20 → 15:52 UTC |
 | 7 | the read | ✅ validity PASS; the gate's letter: CONFIRMED; the measure defective — verdict HELD. Work VM stopped |
 
-**What next — one decision for Vadim: how to correct the record. DECIDED 2026-09-30: (1).** The options as they were put:
+**Result of the re-execution (2026-09-30), in plain words. Counted as a position actually earns, is anything left of
+the open-interest idea? No. Every link of the chain R22 → R25 was the way of counting.** Vadim chose to fix the
+measure and run the four reads again exactly as registered (§3 "The unit of money", "The re-execution `actual`"). Each
+re-run was first checked to be the same read — the same cells or the same trades, prices, costs and funding as the
+first time, to the last digit — so only the unit differs. Per position of 10,000 USDT, a week's hold:
+
+| read | what it asked | first read (log returns) | re-executed (actual returns) | verdict now |
+|---|---|---|---|---|
+| R22 | on the months that chose the idea: does the top tenth earn more than the bottom tenth? | +59 before costs, 1.5 times its noise | **+21**, 0.7 times its noise | nothing clears (as before) — the lean is mostly gone |
+| R23 | the same on 71 weeks nobody had read | +67 before costs, 2.4 times its noise — passed | **+20**, 1.1 times its noise; second half negative; +3 without the two collapse months of 2022 | does not pass ("go on": above the cost, not certified) |
+| R24 | traded with costs, both samples already read | +17 after costs, coin test passed (1 in 40) | **−14** [−53, +25]; both samples lose; a coin's direction does as well 4 times in 10 | not funded |
+| R25 | the same book on 69 unread weeks | +70 after costs — passed on a number that was not money | **−39** [−189, +110]; a coin does as well 1 time in 2 | **NOT CONFIRMED — the book is parked** |
+
+Why the unit mattered so much here: the names the ranking puts at the bottom — names in a trading frenzy — do fall
+behind in the typical week (the median is 250–300 USDT below their peers). But a few of them rise two-, four-,
+sixteen-fold, and a sold position pays for that rise in full. Log returns shrink exactly those rises, so the mean
+looked like money. In R25's months a single name (MYX) decides the result.
+
+One more thing the check turned up. The harness charges funding (what holders of a position pay each other every few
+hours) on the position's size at entry. A sold position in a name that has risen sixteen-fold pays funding on sixteen
+times that. Counted so, R25's loss is 67 a trade, not 39; on R24's samples the difference is nothing (0.05). It changes
+no verdict; it is a change the harness needs before another book of this kind is read (§7).
+
+**Can anything outside the twelve trade profitably yet? No.** Eight reads (R18–R25) have now found nothing on names
+outside the twelve that clears its costs. R14 on the twelve (P7, paper trading) is not touched by any of this and reads
+slightly better in actual returns (§3's table: +39 against +34; R16 +41 against +33).
+
+| step | what | state |
+|---|---|---|
+| 1 | the unit corrected, tests, the protocol written | ✅ a5c47a1, before any re-run |
+| 2 | R1–R21: one table from saved fills, no new verdict | ✅ 3c99450 (§3) |
+| 3 | R22 → R25 re-executed, one chain, 06:38 → 08:33 UTC | ✅ all validity PASS, all four "same as the first read" PASS |
+| 4 | the four reads, one commit each | ✅ 88be475, ba37154, 55dc239, 18e27ff. Work VM stopped |
+
+**What next — two decisions for Vadim, neither urgent; nothing runs until he answers.**
+
+**Decision A — R23's "go on": read its stage 2, or not?** R23 was registered in two stages. Its re-executed verdict
+("go on") offers the second stage: the same before-costs number on the outside names of 2024-09 → 2026-01, pooled with
+the first stage. It was meant for months nobody had read; since then R25 has read those months for this very idea.
+- **(A1) — recommended: do not run it.** Costs nothing. Those months are no longer unread; the book built from this
+  number lost on them (R25); and a pass would only license that book, which has now been run on all three samples and
+  lost on each. The open-interest score is closed as a trade idea at this hold.
+- **(A2) run it.** About 15 minutes on the work VM, no download. We would learn whether the before-costs number is
+  there on those months; whatever it says could not be acted on, for the reasons above.
+
+**Decision B — what the screener phase does next.**
+- **(B1) — recommended: park the search on outside names; keep P7 running; pick the next question in a fresh
+  session.** F5 (37 weeks) stays unread. Before any new registration Claude makes the one harness change named above
+  (funding on the position's value) — small, tested, no verdict depends on it.
+- **(B2) a book with a protective stop** (close a sold position once it has lost a set share of its size). A new rule
+  and a new registration; it could be explored on the three samples already read and confirmed only on F5 or on months
+  still to come. The evidence for it is thin: with a sold position's loss capped at its size the book still loses on
+  R24's two samples (−9) and is positive on R25's (+32) because of one trade.
+- **(B3) new information** (PLAN §9: ETF flows, US indices, events) — a ceiling audit first, as P2 did; its own
+  registration.
+
+The decision of 2026-09-29 → 2026-09-30, for the record — how to correct the record after R25; **Vadim chose (1)**:
 
 - **(1) — recommended. Fix the measure, then re-execute R22, R23, R24 and R25 exactly as registered.** The harness and
   the label count the actual return of a position (one change, tested against known cases); the four reads are run
@@ -951,7 +1008,8 @@ bought side.
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 unread. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25) |
 | **Open interest as a rank book (`oibook`, R21)** — **CLOSED 2026-09-28** | Needed from Vadim: nothing. On R18's 188 names, F1+F2, the data that chose the three features: taker net −17.3 [−28.9, −5.8], maker −9.6 [−21.2, +2.0], gross +1.6, flip p 0.50. The score's rank IC is +0.034 (t 5.2) and all of it is the two lowest tenths (the most violent names) falling behind; top minus bottom is +12 bps a leg in the mean on all cells, under the cost | none for the book: no other k, weights, hold or side on these cells. The features stay candidates for a model's inputs (R20: NOT DETECTABLE). A longer horizon is a new question (P8 "What next" (1)), not a revival |
-| **The open-interest score at a 7-day hold, names outside the twelve (R22–R25)** — **R25 read 2026-09-29: passed its gate on a defective measure; verdict HELD** | Needed from Vadim: how to correct the record (P8 "What next"). The harness and the label measure a trade in log returns, which overstates shorts and understates longs by half the squared move; this book shorts the most violent names. As measured / actual, net a trade: R24 +17.2 / −13.9 (flip p 0.01 / 0.40); R25 +69.9 / −39.4 (0.005 / 0.59); with a short's loss capped at its size −9.3 and +32.5. R22's and R23's statistic not yet re-measured | (1) the measure corrected and R22–R25 re-executed as registered (recommended), or (2) the re-pricing accepted as the record. A book with a protective stop is a new rule and a new registration; the only unread months left for outside names are F5 and what accrues |
+| **The open-interest score at a 7-day hold, names outside the twelve (R22–R25)** — **PARKED 2026-09-30: re-executed in actual returns, R25 NOT CONFIRMED** | Needed from Vadim: decision A of P8 "What next" (R23's offered stage 2 — recommended: not run). The first reads counted a trade in log returns, which overstates shorts and understates longs by half the squared move; this book shorts the most violent names. First read → re-executed: R22 the score at 7 days +58.9 → +20.7 a leg (u 1.54 → 0.68); R23 +66.7 → +20.4 (u 2.43 → 1.13, CLEARS → GO ON); R24 net +17.2 → −13.9 [−52.9, +25.1], flip p 0.025 → 0.42 (CANDIDATE → NOT FUNDED); R25 net +69.9 → −39.4 [−189.3, +110.5], flip p 0.005 → 0.51 (NOT CONFIRMED; −66.7 with funding counted on the position's value). The ranking is real (rank IC +0.02 … +0.04, the median in order); the mean is not there for a sold position | none proposed. As registered: F5 with the months that accrue (a new registration, Vadim's decision) or a measured lower cost — the gross before costs is +11.6, +3.2, −5.6 on the three samples, below the round trip's cost on each. A book with a protective stop is a new rule and a new registration (capped at a short's size: −9.3 on R24's samples, +32.5 on R25's, one trade); the only unread months left for outside names are F5 and what accrues |
+| **The harness charges funding and the exit leg's costs on the size at entry** (§3 "The unit of money"; found 2026-09-30, R25 (E4)) | Needed from Vadim: nothing. On small moves it is nothing (R24's samples: +0.05 bps a trade). On a short of a name that rises many-fold it understates the loss: R25 net −39.4 as counted, −66.7 with each funding payment on the position's value at that moment (two MYX shorts). No verdict depends on it | Claude changes `backtest.load_costs` / `price` and `horizon.labels` (funding as Σ rate × close at the event ÷ entry price; exit-leg costs × exit ÷ entry), with tests, BEFORE the next registration of a book or label held longer than a day on names outside the twelve; `scripts/actual_describe.py` is the reference |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
 | **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
