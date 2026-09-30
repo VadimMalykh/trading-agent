@@ -2702,7 +2702,7 @@ Re-executed:   **2026-09-30, the re-execution `actual` (§3; the steps 06:54 →
                registered on the first read's CANDIDATE and read F3+F4 (its re-execution follows). No variant is
                read on these cells, as before.
 
-### R25 — the confirmation read of oibook at a 7-day hold: names outside the twelve, F3+F4, once (registered 2026-09-29 on Vadim's decisions — F3+F4 only, the full book as it is — before the members of F3+F4 were chosen and before any 5m bar, funding or metrics file of an outside name in those months was fetched; read 2026-09-29: by the letter of the gate CONFIRMED (net +69.9, flip p 0.005) — and NOT a confirmation of money: the harness measures a trade in log returns, which flatters every short; re-priced with the actual return the same trades lose 39 a trade. The verdict is held until the read is re-executed on a corrected measure — Vadim's decision)
+### R25 — the confirmation read of oibook at a 7-day hold: names outside the twelve, F3+F4, once (registered 2026-09-29 on Vadim's decisions — F3+F4 only, the full book as it is — before the members of F3+F4 were chosen and before any 5m bar, funding or metrics file of an outside name in those months was fetched; read 2026-09-29: by the letter of the gate CONFIRMED (net +69.9, flip p 0.005) — and NOT a confirmation of money: the harness measures a trade in log returns, which flatters every short; re-priced with the actual return the same trades lose 39 a trade. The verdict is held until the read is re-executed on a corrected measure — Vadim's decision; RE-EXECUTED 2026-09-30 in actual returns: NOT CONFIRMED — net −39.4 [−189.3, +110.5], hedged net −39.0, gross −5.6, flip p 0.51; the book is parked)
 Question:      R24's book — six names bought, six sold by the open-interest score, held 7 days, every cost paid — kept
                +17 bps a trade on the two samples that had been read for the score, and passed its flip test. Both
                samples had been looked at. On months nobody has read for names outside the twelve, does the same
@@ -2833,6 +2833,60 @@ Result:        **Read 2026-09-29 (the run 15:20 → 15:52 UTC on the work VM, ma
                rules ask for when a measurement is found defective is re-execution of the registered reads on the
                corrected measure, the new verdicts replacing these, both kept (P8 "What next"): Vadim's decision.
                F3+F4 are spent for this question either way; F5 is untouched.
+Re-executed:   **2026-09-30, the re-execution `actual` (§3; the run 07:44 → 08:17 UTC on the work VM, its book check, the
+               same-trades check and the read 08:17 → 08:33, the registered commands with `--reexecute actual` and
+               the names `…_actual`; commit a5c47a1 holds the corrected unit and the protocol before the run;
+               output/backtest/r25_oibook_7d_f34_actual, r25_read_actual, 200 draws; logged as R25/actual, F3 and
+               F4, beside the first read's rows): in actual returns, by the gate, NOT CONFIRMED. The hold on the
+               verdict is lifted: this is R25's verdict. The book is parked.**
+               Validity first: PASS. (4) book check PASS, the first read's counts: 138,996 decisions, 2,408 taken in
+               1,204 whole units, 208 names, none off the grid, none on a non-member. (5) first decision 2024-09-03
+               00:00, last exit 2025-12-31 22:05; the fills re-priced to 0.0. The same trades
+               (`same_as_first_read.json`, taker and maker): the decisions are identical row by row; every fill
+               has the first read's times, prices, fees, spread and impact, and funding; the first read's fills
+               re-priced with the actual return give this run's net to 1e-14. (1)–(3), the checks of the fetch and
+               the ingest, are not repeated (§3). No deviation from the commands.
+               The gate's numbers (taker, as priced; first read, in logs → this read): 2,368 trades on 200 names,
+               right on 52 %. Gross (+103.77) → **−5.56**, hedged (+104.88) → −5.16; fees 10.00, spread and impact
+               11.89, funding −11.96, unchanged → **net (+69.92) → −39.41 [−189.28, +110.46]**, MDE 214.1; hedged net
+               (+71.03) → −39.01 [−189.75, +111.73]; flip null −24.49 ± 69.96, one in twenty +80.53, **flip p (0.005)
+               → 0.512**. All three conditions of CONFIRMED fail. Not CLOSED: the net interval's upper end is above
+               zero (maker net −27.23). Shuffle null −32.23 ± 55.33, p 0.62 (does not decide).
+               F3 net +49.1 [−58.5, +156.7], F4 −132.1 [−412.7, +148.7] (first read +96.4, +42.2); costs doubled
+               −51.30; with R24's re-executed fills (7,422 trades, two thirds exploration) net −22.0 [−76.8, +32.7].
+               Described, decides nothing:
+               (E1) the sample is far noisier in actual returns: the net's se is 76.5 bps where the log showed 37.8
+               and 24 had been expected, and the MDE 214. One name does most of it — MYX: the shorts of 2025-08-04
+               (0.43 → 1.71) and 2025-09-04 (1.13 → 17.96) lost 36,941 and 151,900 bps. The five worst names sum
+               to −243,818 bps (MYX, H, KAITO, FARTCOIN, SUI), the five best to +88,815; the net summed over trades
+               is −93,319 on 200 names, 100 of them positive.
+               (E2) the two sides: long net −48.2, hedged net −70.2 [−165.4, +25.0]; short net −30.6, hedged net −7.8
+               [−265.2, +249.6] (first read: short hedged net +100.1). Neither side earns against the market.
+               (E3) with every short closed at the loss of its whole size at most — a different rule — net +32.5
+               [−39.8, +104.7], flip p 0.02, as the first read's (D2) had it. Four shorts are capped; one of them (MYX,
+               2025-09-04) is 58.7 of the 71.9 bps between the two (counted again here; (D2) wrote "63 of the
+               105"). On R24's samples the same cap leaves −9.3 (R24 (E3)).
+               (E4) what the harness still rounds matters HERE (`described.md`; §3). With each funding payment
+               counted on the position's value at that moment, and the exit leg's costs on its value at the exit,
+               the net is −66.7 [−251.4, +117.9], not −39.4: 27.3 bps a trade worse, all of it funding (−27.6;
+               exit costs +0.3) and all of it on the sold side (−55 a short). Ten trades carry 87 % of it: the two
+               MYX shorts paid 47,059 and 25,897 bps of funding on a position that had grown 16- and 4-fold, where
+               the sum of the rates says 2,920 and 7,211. On R24's samples the same correction was +0.05. It
+               changes no verdict — it makes this one worse — and it is written into §7 as a change the harness
+               needs before another book of this kind is read.
+               Against what P8 said to expect from the re-pricing (R25 not confirmed; −39.4, flip p 0.59): the net
+               to the digit; the flip p is the harness's own 200 draws (0.51).
+               Reading: **on 69 weeks nobody had read, counted as a position earns, the book lost 39 bps a trade
+               (67 with funding counted on what the position had become), no better than a coin's direction. It
+               is not shown to lose either: this sample can only see an effect above 214 bps, because a sold
+               position in a name that rises sixteen-fold is what decides the mean. The chain R22 → R25 rested on
+               the log unit at every link: the lean (R22), the candidate before costs (R23) and the candidate
+               after costs (R24) are all gone in actual returns.**
+               Consequences: NOT CONFIRMED — the book is parked, nothing is licensed, no paper trading is proposed.
+               F3+F4 are spent for this question. As registered, what could revive it is a new registration on F5
+               together with the months that accrue, or a measured lower cost — neither is proposed: the book
+               lost on all three samples, and its gross before costs is +11.6, +3.2 and −5.6 — under its costs in each. A book
+               with a protective stop is a new rule (P8 "What next"). No variant on these cells.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
