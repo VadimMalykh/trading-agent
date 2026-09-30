@@ -2521,7 +2521,7 @@ Re-executed:   **2026-09-30, the re-execution `actual` (§3; the run 06:49 → 0
                no longer unread for the score. Claude's recommendation is written in P8 after R25's re-execution is
                read. No variant on these cells, as before.
 
-### R24 — oibook at a 7-day hold: the open-interest score as a priced book, on both samples that have been read for it (registered 2026-09-29 on Vadim's go, before the pooled read was written and before the rule saw any bar at this hold; read 2026-09-29: CANDIDATE by the gate — taker net +17.2 [−16.7, +51.1] a trade on 5,054 trades, gross +38.6, flip p 0.025, gross positive in both samples; the net's own interval holds zero, and all of the hedged money is the short side)
+### R24 — oibook at a 7-day hold: the open-interest score as a priced book, on both samples that have been read for it (registered 2026-09-29 on Vadim's go, before the pooled read was written and before the rule saw any bar at this hold; read 2026-09-29: CANDIDATE by the gate — taker net +17.2 [−16.7, +51.1] a trade on 5,054 trades, gross +38.6, flip p 0.025, gross positive in both samples; the net's own interval holds zero, and all of the hedged money is the short side; RE-EXECUTED 2026-09-30 in actual returns: NOT FUNDED — taker net −13.9 [−52.9, +25.1], hedged net −11.8, gross +7.5, flip p 0.42, both samples negative)
 Question:      R23 found, on cells that did not choose it, that the names the score ranks highest earn over the next 7
                days 67 bps a leg more than the names it ranks lowest, before trading costs (R22, on the cells that
                chose it: 59). That is a measurement on every hourly cell. Traded — one position per name, fees, spread,
@@ -2651,6 +2651,56 @@ Result:        **Read 2026-09-29 (the chain 06:45 → 07:58 UTC on the work VM; 
                interval. No variant is read on these cells under this registration — no other k, weights, hold,
                grid, feature or side (a short-only book on (D2) would be one; as a hypothesis for the confirmation
                it would have to be written into that registration before F3+F4 is fetched).
+Re-executed:   **2026-09-30, the re-execution `actual` (§3; the steps 06:54 → 07:44 UTC on the work VM, the registered
+               commands with `--reexecute actual` and the names `…_actual`; commit a5c47a1 holds the corrected unit and
+               the protocol before the run; output/backtest/r24_oibook_7d_pre_actual, r24_oibook_7d_f12_actual,
+               r24_pool_actual, 200 draws; PRE logged as R24/actual, FP and F0, beside the first read's rows): in
+               actual returns, by the gate, NOT FUNDED. The book lost in both samples. The first read's CANDIDATE
+               was the unit.**
+               Validity first: PASS. (2) book checks PASS, the first read's counts — PRE 145,644 decisions, 2,630
+               taken in 1,315 whole units, 141 names; F12 139,212 decisions, 2,508 taken in 1,254 units, 185 names;
+               none off the grid, none on a non-member. (3) PRE's first decision 2021-12-10 00:00, last exit
+               2023-04-30 18:05; the fills re-priced to 0.0. The same trades (`same_as_first_read.json`, both
+               runs, taker and maker): the decisions are identical row by row; every fill has the first read's
+               times, prices, fees, spread and impact, and funding; the first read's fills re-priced with the
+               actual return give this run's net to 1e-14. (1), the check of `costwide`'s re-run, is not repeated
+               (§3): the cost file is the one the first read used. No deviation from the commands.
+               Taker, as priced, pooled (first read, in logs → this read): **5,054 trades** on 222 names, right on
+               52 %. Gross (+38.61) → **+7.52**, hedged (+41.61) → +9.61; fees 10.00, spread and impact 8.84,
+               funding −2.56, unchanged → **net (+17.20) → −13.89 [−52.87, +25.10]**, MDE 55.7; hedged net (+20.21)
+               → −11.79 [−51.31, +27.73]. Flip null −17.69 ± 18.92, one in twenty +12.82: **flip p (0.025) → 0.418**.
+               Shuffle null −34.20 ± 18.41, p 0.129 (does not decide). Gate: net > 0 fails, hedged net > 0 fails,
+               flip p ≤ 0.05 fails; gross is positive in both samples (+11.64, +3.21). Not CLOSED: the net
+               interval's upper end is above zero.
+               Per sample: PRE net (+21.90) → −11.07 [−61.45, +39.32]; F12 (+12.29) → −16.84 [−76.72, +43.04].
+               Maker, pooled: net (+26.14) → −4.83 [−43.93, +34.26], flip p 0.418. Costs doubled: (+8.36) → −22.72.
+               Described, decides nothing:
+               (E1) the two sides against the market: short hedged net +44.4 [−8.5, +97.3] (first read +64.6 [+19.4,
+               +109.7]), long −67.9 [−111.0, −24.8] (first read −24.1). The sold side no longer stands clear of zero,
+               and what the book buys loses more than the sold side makes.
+               (E2) PRE's halves: net +21.9 [−50.0, +93.8] and −43.3 [−112.0, +25.3] (first read +57.3, −12.6).
+               Without the trades decided in 2022-05 and 2022-11: pooled net −15.8.
+               (E3) the tail is the sold side's: the ten largest losses are all shorts of names that rose 80–209 %
+               in the week (1000SHIB and 1000BONK of 2024-02-27: −20,789 and −15,964 bps; APT, GALA, ARK, TRB,
+               BIGTIME, OP, TURBO, MATIC). With every short closed at the loss of its whole size at most — a
+               different rule — the pooled net is −9.3 [−45.0, +26.3], flip p 0.34: a cap does not rescue it here.
+               (E4) what the harness still rounds (`described.md`; §3): with the exit leg's costs and each funding
+               payment counted on the position's value at that moment the pooled net is −13.83 against −13.89 —
+               +0.05 bps a trade in the mean (exit costs +0.21, funding −0.16), though single trades move by up
+               to 950 bps (the TRB short of 2023-10-19 paid 2,468 bps of funding, not 1,526). The rounding decides
+               nothing on this book.
+               (E5) names: the net summed over trades is −70,180 bps on 222 names, 118 positive; five best +79,744
+               (THETA, JASMY, MANA, NEO, RNDR), five worst −111,263 (MATIC, APT, TRB, AR, FET).
+               Against what §P8 said to expect from the re-pricing (R24 not funded; pooled −13.9, flip p 0.40): as
+               expected, to the digit on the net; the flip p is the harness's own 200 draws.
+               Reading: **traded with costs and counted as a position earns, the score at a 7-day hold lost 14 bps a
+               trade on the two samples that had been read for it — both samples negative, and no better than the
+               same trades with the direction left to a coin (four draws in ten did as well). The +17 that made it
+               a candidate was the log unit. "The first book outside the twelve that did not lose money" is
+               withdrawn: it lost.**
+               Consequences: NOT FUNDED — by the registration no fold is spent on this book. One was: R25 was
+               registered on the first read's CANDIDATE and read F3+F4 (its re-execution follows). No variant is
+               read on these cells, as before.
 
 ### R25 — the confirmation read of oibook at a 7-day hold: names outside the twelve, F3+F4, once (registered 2026-09-29 on Vadim's decisions — F3+F4 only, the full book as it is — before the members of F3+F4 were chosen and before any 5m bar, funding or metrics file of an outside name in those months was fetched; read 2026-09-29: by the letter of the gate CONFIRMED (net +69.9, flip p 0.005) — and NOT a confirmation of money: the harness measures a trade in log returns, which flatters every short; re-priced with the actual return the same trades lose 39 a trade. The verdict is held until the read is re-executed on a corrected measure — Vadim's decision)
 Question:      R24's book — six names bought, six sold by the open-interest score, held 7 days, every cost paid — kept
