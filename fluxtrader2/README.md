@@ -38,8 +38,9 @@ In this order:
 3. **Before any new registration of a book or label held longer than a day on outside names:** make the harness change
    in §7 ("The harness charges funding … on the size at entry"), with tests; `scripts/actual_describe.py` is the
    reference for the numbers it must reproduce (R25: −66.7; R24 pooled: −13.83).
-4. **Housekeeping, any time the work VM is up, on Vadim's word:** `data/*_before_r23.parquet`, `data/*_before_r25.parquet`
-   and `data/cost_daily_wide_before_r24.parquet` did their job — the checks PASS — and can be deleted.
+4. **Housekeeping: done 2026-09-30.** The eight `data/*_before_r23|r24|r25.parquet` copies on the work VM were deleted on
+   Vadim's word (6 GB; the checks they served had passed). `scripts/r23_check_inputs.py` and `r24_check_costwide.py`
+   can no longer be re-run against them.
 
 Where the re-execution's outputs are (pulled, not in git): `output/horizon/r18_transferbook_1d_actual`, `output/horizon/pre_actual`,
 `output/backtest/r24_pool_actual`, `output/backtest/r25_read_actual` (`pool.md`, `described.md`), each run's
