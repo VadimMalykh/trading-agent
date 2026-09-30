@@ -2129,7 +2129,7 @@ Result:        **Read 2026-09-28 (the run 04:27 → 05:03 UTC; commit 97b6020 ho
                trip here; the bar for a rule is money in the mean, not the rank.** What follows is Vadim's decision
                (P8 "What next").
 
-### R22 — the longer hold: what R20's five unresolved numbers and the price-bar forecast say about a name's next 3 and 7 days, in money (registered 2026-09-28 on Vadim's go, before the code was written and before any label beyond one day was computed; read 2026-09-28: 0 of 12 clear — twelve NOT DETECTABLE; the open-interest numbers lean the right way and grow with the hold (the score +11, +25, +59 bps a leg at 1, 3, 7 days) at 1.3–1.5 times their noise)
+### R22 — the longer hold: what R20's five unresolved numbers and the price-bar forecast say about a name's next 3 and 7 days, in money (registered 2026-09-28 on Vadim's go, before the code was written and before any label beyond one day was computed; read 2026-09-28: 0 of 12 clear — twelve NOT DETECTABLE; the open-interest numbers lean the right way and grow with the hold (the score +11, +25, +59 bps a leg at 1, 3, 7 days) at 1.3–1.5 times their noise; RE-EXECUTED 2026-09-30 in actual returns: 0 of 12 clear, twelve NOT DETECTABLE as before, and the lean is mostly the unit — the score +3, +4, +21 at 1, 3, 7 days, 0.2–0.7 times its noise)
 Question:      Everything measured on names outside the twelve was measured at a one-day hold, and nothing clears its costs
                there (R10, R12, R13 A, R18–R21). A round trip costs the same whether a position is held a day or a week,
                and the numbers that showed something are slow ones. Held 3 days or 7 days, do the names a signal puts at
@@ -2271,6 +2271,52 @@ Result:        **Read 2026-09-28 (the run 07:25 → 07:44 UTC; commit 4c122f1 ho
                opposite sign. No variant is read on these cells — no other hold, tenth, window, side or weighting (a
                short-only rule on (D1) would be one). Counted on these cells so far: R18's four screens, R19's one,
                R20's twelve features, R21's book, these twelve. What follows is Vadim's decision (P8 "What next").
+Re-executed:   **2026-09-30, the re-execution `actual` (§3; the run 06:38 → 06:49 UTC on the work VM, the registered command
+               with `--name r18_transferbook_1d_actual`; commit a5c47a1 holds the corrected unit and the protocol before
+               the run; output/horizon/r18_transferbook_1d_actual, 456 shifts): in actual returns 0 of 12 clear the
+               gate — twelve NOT DETECTABLE, as before; and the lean of the open-interest numbers, which is what R23
+               was registered on, is mostly gone.**
+               Validity first: PASS — the first read's three checks as before (694,501 cells of 188 names, largest
+               |Δ label| 7.3e-13, R20's five ICs to 8.7e-17, 485 whole days, 456 shifts), and the same cells
+               (`same_as_first_read.json`): 21 rows, the cells, days, shifts and the rank IC of every row equal the
+               first read's, largest difference 0.0. No deviation from the command.
+               Per signal × hold — M (first read, in logs) → M · centre · M_c · se · u · family-wise p (bps a leg):
+                 oi_turn        3d  (+26.6) →  +0.2 ·  −1.1 ·  +1.3 ·  26.7 · +0.05 · 1.0
+                 oi_turn        7d  (+54.8) →  +3.2 ·  −9.0 · +12.2 ·  68.1 · +0.18 · 1.0
+                 oi_chg_1w      3d   (−8.3) →  +2.3 ·  −6.5 ·  +8.8 ·  28.2 · +0.31 · 1.0
+                 oi_chg_1w      7d  (−56.2) → −39.7 · −17.0 · −22.7 ·  70.3 · −0.32 · 1.0
+                 oi_chg_1d      3d  (−11.6) →  −7.2 ·  −2.6 ·  −4.6 ·  11.6 · −0.39 · 1.0
+                 oi_chg_1d      7d   (−4.1) →  +1.9 ·  −6.9 ·  +8.7 ·  24.0 · +0.36 · 1.0
+                 global_ls      3d  (−23.0) → −40.5 · −31.2 ·  −9.3 ·  47.3 · −0.20 · 1.0
+                 global_ls      7d  (−11.0) → −38.3 · −74.7 · +36.4 · 120.2 · +0.30 · 1.0
+                 top_vs_global  3d   (+5.0) → +21.7 · +28.0 ·  −6.3 ·  38.4 · −0.16 · 1.0
+                 top_vs_global  7d  (−29.4) →  −2.2 · +67.9 · −70.2 ·  97.9 · −0.72 · 0.96
+                 forecast       3d   (−6.1) →  +4.7 ·  −1.5 ·  +6.2 ·  11.2 · +0.56 · 0.99
+                 forecast       7d  (−32.0) → −14.8 ·  −4.2 · −10.6 ·  22.0 · −0.48 · 1.0
+               The family bar: the largest |u| of the twelve over the shifts 1.44 on average, 3.41 one time in twenty;
+               the largest real |u| is 0.72. Reference rows (M first read → M · M_c · se · u): R21's score — 1d
+               (+11.1) → +3.5 · +2.6 · 5.5 · 0.48; 3d (+25.0) → +4.5 · +3.0 · 14.7 · 0.21; 7d (+58.9) → +20.7 · +21.8 ·
+               32.3 · 0.68, both folds positive (+12.8, +28.9), after the first day +17.8. oi_turn at one day (+11.8)
+               → +2.2; the forecast at one day (+2.3) → +6.8 (u 1.53).
+               Described, decides nothing:
+               (E1) where the lean went. The lowest tenth of oi_turn — the names in a frenzy — still falls behind
+               in the TYPICAL case: median against the bar's peers −97, −188, −300 bps at one, three and seven days
+               (first read −92, −173, −260). In the MEAN it is −11, −11, −18 (first read −25, −50, −94): a few of
+               those names rise so far that they pay most of it back, and a sold position carries that rise in
+               full where the log shrank it. The score's lowest tenth: mean −12, −12, −23 (first read −22, −41, −77).
+               (E2) the forecast's "wrong way round at a week" (first read (D2)) is the unit too: M_c −29.1, u −1.62
+               → −10.6, u −0.48. Its rank IC is unchanged (−0.031, the label there is R20's) — the ranking is
+               inverted, the money is not there.
+               (E3) the standard errors are wider in actual returns (oi_turn 7d 51.0 → 68.1, the score 26.9 → 32.3):
+               the right tail the log compressed is in them.
+               Reading: **counted as a position earns, nothing on these cells leans further than its noise: the
+               open-interest score is +21 bps a leg at seven days, 0.7 times its noise, where the log showed +59 at
+               1.5; oi_turn alone is +3 where the log showed +55. Two thirds of what R22 reported for the
+               open-interest numbers was the unit. The verdict — twelve NOT DETECTABLE — stands.**
+               Consequences: nothing is licensed, as before. The clause for new cells (|M_c| above the cost, the part
+               after the first day agreeing, one sign in both folds) is now met only by the score at 7 days, barely
+               (+21.8 against 17.6; a reference row) and by oi_chg_1w at 7 days (−22.7); oi_turn and the forecast no
+               longer meet it. R23 was registered on the first read's numbers; its own re-execution follows.
 
 ### R23 — the open-interest score at a 7-day hold on months nobody has read: stage 1 of two, the confirmation folds behind a stop (registered 2026-09-29 on Vadim's "(A1)", before the universe of those months was chosen, before any 5m bar or metrics file of them was fetched and before the code was written; read 2026-09-29: CLEARS — M +66.7 bps a leg, centre +14.1, M_c +52.6, se 21.6, u 2.43, one-sided p 0.002, both halves and the part after the first day positive; stage 2 is not run, F3+F4 untouched)
 Question:      R22 left one number leaning: on F1+F2 the names R21's open-interest score ranks highest earned, over the
