@@ -117,6 +117,66 @@ Read this section first if you are new to the problem; it defines the words used
   fill (price, cost) *separately*, so that execution assumptions can be re-priced without
   re-deciding.
 
+**R1–R21 as measured and in actual returns (2026-09-30; `scripts/actual_table.py` → `output/backtest/actual_table.md`).**
+The saved fills of every harness read made before the correction, counted both ways — decisions, prices, costs and
+funding the runs' own; no run was made again, no null was drawn again, and **no verdict changes here**. bps per unit of
+notional (1 bps = 1 USDT on 10,000), interval 95 % clustered by day. *actual − log* is about half the squared move:
+positive on a long, negative on a short.
+
+In plain words: on the twelve at a 4-hour hold the two ways of counting differ by under 3 bps a trade for rules that
+trade both sides and by +5 … +8 for rules that only buy (R4, R8). At a one-day hold the gap is 5–17 bps where one side
+carries the money, and small where the sides balance (R15 −0.2, R18 +2.9): the twelve's candle ridge is BETTER in
+actual returns (R14 +34.2 → +39.2, R16 +33.1 → +41.2, R13 B +33.0 → +39.3 — its money is on the bought side, and so
+is R11's, +5.1 → +17.4); the books that sell violent names are worse (R9 −2.2 → −8.5, R12 −44 → −57, R13 A −78 → −95,
+R21 −17.3 → −25.3; R12 at 4 hours −149 → −195 on 49 trades). No closed rule turns positive outside its noise, and no
+gate is re-read: each gate also read a null, which this table does not redraw.
+
+| reg | run | folds | exec | trades | gross: log → actual | net: log [95 %] | net: actual [95 %] | actual − log (long side, short side) |
+|---|---|---|---|---|---|---|---|---|
+| R1 | `reversal4h` | F1+F2 | taker | 3,395 | +21.7 → +21.0 | +9.7 [-6.7, +26.2] | **+9.1** [-7.9, +26.1] | -0.6 (+5.9, -6.4) |
+| R1 | `reversal4h` | F1+F2 | maker | 3,404 | +17.9 → +17.3 | +14.0 [-2.7, +30.8] | **+13.4** [-3.9, +30.7] | -0.7 (+5.8, -6.4) |
+| R2 | `rank4h` | F1+F2 | taker | 1,777 | -12.5 → -14.6 | -25.2 [-36.2, -14.1] | **-27.3** [-38.9, -15.7] | -2.1 (+3.1, -7.4) |
+| R2 | `rank4h` | F1+F2 | maker | 1,780 | -16.3 → -18.5 | -20.6 [-31.7, -9.5] | **-22.7** [-34.4, -11.1] | -2.2 (+3.1, -7.4) |
+| R3 | `rev_cap3` | F1+F2 | taker | 2,353 | +0.2 → -2.0 | -11.6 [-26.2, +3.0] | **-13.7** [-29.2, +1.8] | -2.1 (+5.5, -6.9) |
+| R3 | `rev_cap3` | F1+F2 | maker | 2,359 | -3.1 → -5.3 | -6.9 [-21.4, +7.7] | **-9.0** [-24.4, +6.4] | -2.1 (+5.5, -6.9) |
+| R3 | `rev_invvol` | F1+F2 | taker | 3,395 | +18.7 → +18.2 | +6.8 [-11.1, +24.7] | **+6.3** [-12.0, +24.5] | -0.6 (+5.8, -6.0) |
+| R3 | `rev_invvol` | F1+F2 | maker | 3,404 | +15.2 → +14.7 | +11.3 [-6.8, +29.4] | **+10.8** [-7.7, +29.3] | -0.6 (+5.7, -6.0) |
+| R3 | `rev_invvol_cap3` | F1+F2 | taker | 2,353 | -0.5 → -2.3 | -12.3 [-27.3, +2.7] | **-14.1** [-29.9, +1.7] | -1.8 (+5.4, -6.5) |
+| R3 | `rev_invvol_cap3` | F1+F2 | maker | 2,359 | -3.5 → -5.4 | -7.3 [-22.3, +7.7] | **-9.1** [-24.9, +6.6] | -1.9 (+5.3, -6.5) |
+| R4 | `panic4h` | F1+F2 | taker | 3,249 | +52.7 → +57.3 | +39.9 [+19.0, +60.8] | **+44.5** [+23.8, +65.2] | +4.6 (+4.6, long only) |
+| R4 | `panic4h` | F1+F2 | maker | 3,254 | +50.4 → +55.0 | +45.7 [+24.8, +66.6] | **+50.3** [+29.6, +71.0] | +4.6 (+4.6, long only) |
+| R4 | `panic4h_pre` | FP+F0 | taker | 5,244 | +19.8 → +27.7 | +7.4 [-16.9, +31.7] | **+15.2** [-8.6, +39.1] | +7.9 (+7.9, long only) |
+| R4 | `panic4h_pre` | FP+F0 | maker | 5,278 | +15.7 → +23.6 | +11.7 [-12.3, +35.8] | **+19.5** [-4.1, +43.1] | +7.8 (+7.8, long only) |
+| R5 | `rankcont4h` | F1+F2 | taker | 1,777 | +12.5 → +14.6 | -0.2 [-11.3, +10.9] | **+1.9** [-9.7, +13.6] | +2.1 (+7.4, -3.1) |
+| R5 | `rankcont4h` | F1+F2 | maker | 1,779 | +9.2 → +11.4 | +4.9 [-6.3, +16.2] | **+7.1** [-4.8, +18.9] | +2.1 (+7.4, -3.1) |
+| R8 | `trendfall4h` | FP+F0+F1+F2 | taker | 3,384 | +65.6 → +71.3 | +51.9 [+26.4, +77.4] | **+57.6** [+31.9, +83.2] | +5.7 (+5.7, long only) |
+| R8 | `trendfall4h` | FP+F0+F1+F2 | maker | 3,423 | +60.1 → +65.7 | +54.9 [+29.7, +80.0] | **+60.5** [+35.2, +85.8] | +5.6 (+5.6, long only) |
+| R9 | `bookimb1d` | F1+F2 | taker | 4,411 | +8.0 → +1.8 | -2.2 [-25.2, +20.7] | **-8.5** [-31.6, +14.6] | -6.3 (+12.4, -11.3) |
+| R9 | `bookimb1d` | F1+F2 | maker | 4,417 | +4.8 → -1.5 | +2.4 [-20.5, +25.3] | **-3.9** [-27.0, +19.3] | -6.3 (+12.4, -11.3) |
+| R10 | `r10_rankcont4h_k4` | F1+F2 | taker | 9,360 | +1.6 → +1.6 | -14.6 [-19.8, -9.4] | **-14.6** [-21.2, -8.1] | -0.0 (+4.5, -4.6) |
+| R10 | `r10_rankcont4h_k4` | F1+F2 | maker | 9,366 | -2.7 → -2.7 | -7.4 [-12.5, -2.3] | **-7.4** [-14.0, -0.9] | -0.0 (+4.5, -4.6) |
+| R11 | `r11_bookimb1d_long` | F1+F2 | taker | 4,106 | +20.7 → +33.0 | +5.1 [-24.8, +35.0] | **+17.4** [-13.2, +48.0] | +12.2 (+12.2, long only) |
+| R11 | `r11_bookimb1d_long` | F1+F2 | maker | 4,114 | +17.9 → +30.2 | +10.3 [-19.7, +40.2] | **+22.5** [-8.1, +53.1] | +12.2 (+12.2, long only) |
+| R12 | `r12_ridgebook_4h` | F1+F2 | taker | 49 | -132.4 → -178.2 | -149.0 [-417.6, +119.6] | **-194.7** [-495.7, +106.2] | -45.8 (+3.7, -48.7) |
+| R12 | `r12_ridgebook_4h` | F1+F2 | maker | 49 | -139.8 → -185.8 | -147.2 [-414.4, +120.1] | **-193.1** [-492.7, +106.5] | -45.9 (+3.2, -48.8) |
+| R12 | `r12_ridgebook_1d` | F1+F2 | taker | 1,648 | -28.1 → -41.1 | -44.3 [-101.0, +12.4] | **-57.3** [-116.5, +2.0] | -13.0 (+16.9, -25.0) |
+| R12 | `r12_ridgebook_1d` | F1+F2 | maker | 1,653 | -34.7 → -47.7 | -39.0 [-95.6, +17.6] | **-52.1** [-111.2, +7.1] | -13.1 (+16.9, -25.2) |
+| R13 | `r13_ridgebook_1d_inpair` | F1+F2 | taker | 1,410 | -58.4 → -75.9 | -77.9 [-153.7, -2.0] | **-95.3** [-174.9, -15.8] | -17.5 (+18.8, -30.5) |
+| R13 | `r13_ridgebook_1d_inpair` | F1+F2 | maker | 1,411 | -65.2 → -82.8 | -72.5 [-147.6, +2.7] | **-90.1** [-169.0, -11.1] | -17.6 (+18.7, -30.6) |
+| R13 | `r13_ridgebook_1d_inpair12` | F1+F2 | taker | 1,915 | +46.9 → +53.2 | +33.0 [+0.5, +65.5] | **+39.3** [+4.9, +73.7] | +6.3 (+19.4, -13.5) |
+| R13 | `r13_ridgebook_1d_inpair12` | F1+F2 | maker | 1,927 | +44.5 → +50.9 | +38.9 [+5.6, +72.2] | **+45.2** [+10.0, +80.5] | +6.3 (+19.5, -13.6) |
+| R14 | `r14_ridgebook_1d_ho12` | F1+F2 | taker | 1,896 | +48.0 → +53.0 | +34.2 [+6.1, +62.3] | **+39.2** [+9.6, +68.8] | +5.0 (+18.1, -13.9) |
+| R14 | `r14_ridgebook_1d_ho12` | F1+F2 | maker | 1,909 | +45.3 → +50.4 | +39.8 [+11.0, +68.6] | **+44.8** [+14.4, +75.2] | +5.0 (+18.2, -13.8) |
+| R15 | `r15_ridgebook_1d_ho12_all` | F1+F2 | taker | 4,033 | +14.5 → +14.3 | +2.7 [-13.8, +19.2] | **+2.5** [-14.5, +19.5] | -0.2 (+10.7, -10.0) |
+| R15 | `r15_ridgebook_1d_ho12_all` | F1+F2 | maker | 4,041 | +12.1 → +11.9 | +8.2 [-8.1, +24.5] | **+8.0** [-8.8, +24.8] | -0.2 (+10.7, -10.0) |
+| R16 | `r16_ridgebook_1d_ho12_f34` | F3+F4 | taker | 1,750 | +46.1 → +54.2 | +33.1 [-0.4, +66.6] | **+41.2** [+5.7, +76.7] | +8.1 (+24.6, -13.6) |
+| R16 | `r16_ridgebook_1d_ho12_f34` | F3+F4 | maker | 1,750 | +42.7 → +50.7 | +37.8 [+4.2, +71.3] | **+45.7** [+10.1, +81.3] | +8.0 (+24.5, -13.7) |
+| R18 | `r18_transferbook_1d` | F1+F2 | taker | 16,306 | +8.6 → +11.6 | -7.9 [-29.3, +13.5] | **-5.0** [-25.9, +16.0] | +2.9 (+21.3, -16.5) |
+| R18 | `r18_transferbook_1d` | F1+F2 | maker | 16,306 | +3.9 → +6.8 | -0.0 [-21.4, +21.4] | **+3.0** [-18.1, +24.0] | +3.0 (+21.4, -16.5) |
+| R21 | `r21_oibook_1d` | F1+F2 | taker | 8,214 | +1.6 → -6.4 | -17.3 [-28.9, -5.8] | **-25.3** [-37.6, -13.0] | -7.9 (+10.0, -25.9) |
+| R21 | `r21_oibook_1d` | F1+F2 | maker | 8,214 | -3.4 → -11.4 | -9.6 [-21.2, +2.0] | **-17.5** [-29.9, -5.2] | -7.9 (+10.0, -25.9) |
+
+
 ## 4. Phases
 
 Each phase names its deliverable, its exact command once the code exists, and what it needs
