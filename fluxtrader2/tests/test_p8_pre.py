@@ -229,7 +229,7 @@ def test_two_runs_are_read_as_one_book_and_costs_are_doubled_by_repricing(tmp_pa
     a, pooled, x2 = tab.loc[("taker", "a")], tab.loc[("taker", "pooled")], tab.loc[("taker, costs doubled", "pooled")]
     assert a["trades"] == one["trades"] and np.isclose(a["net"], one["net"]) and np.isclose(a["gross"], one["gross"])      # a run alone is the harness's own read
     assert pooled["trades"] == 2 * a["trades"] and np.isclose(pooled["net"], a["net"]) and np.isclose(pooled["gross"], x2["gross"])   # the same book twice
-    assert np.isclose(pooled["other_cost"], 2.0) and np.isclose(x2["other_cost"], 4.0) and np.isclose(pooled["net"] - x2["net"], 2.0)   # 2 × (0.5 spread + 0.5 impact)
+    assert np.isclose(pooled["other_cost"], 2.0, atol=0.01) and np.isclose(x2["other_cost"], 4.0, atol=0.01) and np.isclose(pooled["net"] - x2["net"], 2.0, atol=0.01)   # 2 × (0.5 spread + 0.5 impact); the exit leg on exit / entry, so not exact
     assert g["gross"] > 10 and g["net"] > 0 and g["flip_p"] <= 0.05 and g["gross_positive_in_each"] and g["verdict"] == "CANDIDATE", g
     assert tab.loc[("taker", "long"), "trades"] == tab.loc[("taker", "short"), "trades"] and ("maker", "pooled") in tab.index
     # a run made with other costs, or of another hold, is not pooled

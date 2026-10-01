@@ -36,15 +36,15 @@ In this order:
 2. **When Vadim wants the next question for the screener** (a fresh session): candidates are in PLAN P8 "What next"
    ((B2) a protective-stop book, thin evidence; (B3) new information, a ceiling audit first) and §9. F5 (37 weeks) is
    the only unread fold.
-3. **Before any new registration of a book or label held longer than a day on outside names:** make the harness change
-   in §7 ("The harness charges funding … on the size at entry"), with tests; `scripts/actual_describe.py` is the
-   reference for the numbers it must reproduce (R25: −66.7; R24 pooled: −13.83).
+3. **The harness change of §7 (funding and the exit leg on the position's value): DONE 2026-10-01**, with tests;
+   PASS 2026-10-01 07:13 UTC — R25 (2,368 trades) net -66.74 against -66.74, R24 pooled (5,054) net -13.83 against -13.83, largest difference over every statistic of the four samples 5.7e-14 bps; the gross unchanged trade by trade. No registration was waiting on it; it was a precondition for any book or label held longer
+   than a day on outside names.
 4. **Housekeeping: done 2026-09-30.** The eight `data/*_before_r23|r24|r25.parquet` copies on the work VM were deleted on
    Vadim's word (6 GB; the checks they served had passed). `scripts/r23_check_inputs.py` and `r24_check_costwide.py`
    can no longer be re-run against them.
 
 Where the re-execution's outputs are (pulled, not in git): `output/horizon/r18_transferbook_1d_actual`, `output/horizon/pre_actual`,
-`output/backtest/r24_pool_actual`, `output/backtest/r25_read_actual` (`pool.md`, `described.md`), each run's
+`output/backtest/r24_pool_actual`, `output/backtest/r25_read_actual` (`pool.md`, `described.md`), `output/backtest/charged_check` (the harness change's reference check), each run's
 `same_as_first_read.json`, `output/backtest/actual_table.md`; the chain's log `output/logs/actual.log`.
 
 Five things learned the hard way: money is counted as a position earns it — a shortcut (a log, a cost in bps of the entry size) is measured against the exact figure before a gate reads it (`scripts/actual_describe.py`); a result far outside its expected band is checked trade by trade before it is believed (R25: the unit of profit was wrong); a check that merges two whole slices does not fit the work VM's 16 GB (compare name by name, as `scripts/r23_check_inputs.py` does); `vm.sh bg …` piped into `grep` does not return until the job ends (the job itself is

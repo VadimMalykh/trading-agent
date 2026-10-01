@@ -350,8 +350,8 @@ def pool(runs: list[str], name: str = "r24_pool", confirm: bool = False, beside=
         first = pd.Timestamp(mem["block"].min())
         same = lambda a, b: float(np.nanmax(np.abs(a.to_numpy() - b.to_numpy()))) if len(a) == len(b) and (a.isna() == b.isna().to_numpy()).all() else np.inf      # noqa: E731
         f1 = pd.read_parquet(rd / "fills_taker.parquet")
-        re1 = bt.price(dec, M, bt.load_costs(M.index, M.columns, end, 1.0), "taker", meta["taker_bps"], meta["maker_bps"], meta["latency_bars"])
-        f2 = bt.price(dec, M, bt.load_costs(M.index, M.columns, end, 2.0), "taker", meta["taker_bps"], meta["maker_bps"], meta["latency_bars"])
+        re1 = bt.price(dec, M, bt.load_costs(M.index, M.columns, end, 1.0, M.close), "taker", meta["taker_bps"], meta["maker_bps"], meta["latency_bars"])
+        f2 = bt.price(dec, M, bt.load_costs(M.index, M.columns, end, 2.0, M.close), "taker", meta["taker_bps"], meta["maker_bps"], meta["latency_bars"])
         priced = f1.dropna(subset=["net_bps"])
         v = {"run": run, "folds": "+".join(fold_names), "hold": int(p["hold"]), "k": int(p["k"]), "book_check": chk["status"], "decisions": len(dec), "accepted": int(dec["accepted"].sum()),
              "first_decision": str(dec["t"].min()), "decisions_before_the_first_block": int((dec["t"] < first).sum()), "priced": len(priced),

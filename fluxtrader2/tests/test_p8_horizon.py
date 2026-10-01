@@ -104,7 +104,7 @@ def test_the_read_finds_the_signal_planted_at_the_longer_hold(tmp_path, monkeypa
     # the label is what the harness pays a long: a fill's gross + funding, by its side
     end = bt.folds.bounds("F1")[1]
     M = bt.market([*TRAIN, *NAMES], end)
-    y, earned = horizon.labels(M, bt.load_costs(M.index, M.columns, end).fundcum, HOLD, 1)
+    y, earned = horizon.labels(M, bt.load_costs(M.index, M.columns, end, close=M.close), HOLD, 1)
     f = pd.read_parquet(r["dir"] / "fills_taker.parquet").dropna(subset=["net_bps"])
     i, j = M.index.get_indexer(f["t"]), M.columns.get_indexer(f["symbol"])
     assert len(f) > 500 and np.allclose(f["side"] * y.to_numpy()[i, j], f["gross_bps"]) and np.allclose(f["side"] * earned.to_numpy()[i, j], f["gross_bps"] + f["funding_bps"])

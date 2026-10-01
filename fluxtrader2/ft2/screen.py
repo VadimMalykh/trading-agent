@@ -304,7 +304,7 @@ def read(run: str, reference: str | None = None, draws: int = DRAWS, members: st
     dec = pd.read_parquet(run_dir / "decisions.parquet")
     starts = pd.DatetimeIndex(sorted(mem["block"].unique()))
     dec["block"] = starts[starts.searchsorted(pd.DatetimeIndex(dec["t"]), side="right") - 1]
-    C, C2 = bt.load_costs(M.index, M.columns, end, meta["cost_mult"]), bt.load_costs(M.index, M.columns, end, 2 * meta["cost_mult"])
+    C, C2 = bt.load_costs(M.index, M.columns, end, meta["cost_mult"], M.close), bt.load_costs(M.index, M.columns, end, 2 * meta["cost_mult"], M.close)
     days = bt.scored_days(fold_names, M.index[-1])
     execs = [e for e in ("taker", "maker") if (run_dir / f"fills_{e}.parquet").exists()]
     money = [{"book": "all members", **r} for r in book(dec, None, M, C, C2, days, hold, execs, meta["taker_bps"], meta["maker_bps"], latency, draws, seed)]

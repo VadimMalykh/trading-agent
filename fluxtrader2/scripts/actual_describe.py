@@ -4,9 +4,11 @@ runs, each apart and pooled, three rows:
                 entry on both legs; funding = the signed sum of the rates.
   capped        the same with every short closed at the loss of its whole size at most — a different rule (a stop), shown
                 because R25's first read showed it.
-  in full       what the harness still rounds: the exit leg's fee, spread and impact are paid on the position's value at
-                the exit (× exit / entry), and each funding payment on its value at that moment (× the close at the
-                funding time / entry). Both are nothing on small moves.
+  in full       the exit leg's fee, spread and impact paid on the position's value at the exit (× exit / entry), and each
+                funding payment on its value at that moment (× the close at the funding time / entry). Both are nothing
+                on small moves. The harness rounded both away until 2026-10-01; since then it charges them so (`backtest.CHARGED`,
+                meta `"charged": "value"`), and on such a run this row equals *as counted* — the funding rebuilt here is
+                asserted against the harness's (the self-check `scripts/charged_check.py` runs).
 The flip null is drawn again on each row (`backtest.flip_days`' rule: every decision of a day × one random sign).
 Run where the data is (the work VM): python scripts/actual_describe.py <output name> <run> [<run> …]
 → output/backtest/<output name>/described.md, described.csv"""
@@ -35,9 +37,10 @@ def load(run: str) -> tuple[pd.DataFrame, pd.DatetimeIndex, int]:
     f["cost"] = f["fee_bps"] + f["other_cost_bps"]
 
     M = bt.market(meta["pairs"], end, bt.PRE_START if "FP" in fo else ceiling.START)
-    C = bt.load_costs(M.index, M.columns, end, meta["cost_mult"])
+    C = bt.load_costs(M.index, M.columns, end, meta["cost_mult"], M.close)
     j, d = M.columns.get_indexer(f["symbol"]), C.days.get_indexer(pd.DatetimeIndex(f["exit_t"]).floor("D"))
-    f["cost_full"] = f["cost"] + (meta["taker_bps"] + C.taker_leg[d, j]) * (r - 1)          # the exit leg, on the exit's size
+    charged = meta.get("charged") == bt.CHARGED                                           # the harness already pays the exit leg and the funding on the value
+    f["cost_full"] = f["cost"] if charged else f["cost"] + (meta["taker_bps"] + C.taker_leg[d, j]) * (r - 1)          # the exit leg, on the exit's size
 
     ev = data.load("funding_archive", columns=["symbol", "ts", "rate"], symbols=sorted(f["symbol"].unique()))
     ev = ev[ev["ts"] < end].assign(symbol=lambda x: x["symbol"].astype(str))
@@ -51,7 +54,7 @@ def load(run: str) -> tuple[pd.DataFrame, pd.DatetimeIndex, int]:
         k = f.index.get_indexer(g.index)
         sd, pe = g["side"].to_numpy(float), g["entry_px"].to_numpy()
         plain[k], full[k] = -sd * (c0[b] - c0[a]), -sd * (c1[b] - c1[a]) / pe
-    assert np.allclose(plain, f["funding_bps"], rtol=0, atol=1e-6), "the funding rebuilt here is not the harness's"
+    assert np.allclose(full if charged else plain, f["funding_bps"], rtol=0, atol=1e-6), "the funding rebuilt here is not the harness's"
     f["funding_full"], f["run"] = full, run
     return f, bt.scored_days(fo, folds.bounds(fo[-1])[1] - bt.BAR), int(meta["params"]["hold"])
 

@@ -81,6 +81,8 @@ def test_prehistory_runs_under_the_collector_and_is_read_once_by_registration(tm
     (tmp_path / "docs/PLAN.md").write_text("### R9 — test\n")
     r = bt.run(bt.Coin(hold=12), PAIRS, ["FP"], execs=("taker", "maker"), draws=2, registration="R9", cost_mult=2.0)
     x = r["results"].query("scope == 'all' and exec == 'taker'").iloc[0]
-    assert x["trades"] > 100 and x["unpriced"] < 10 and abs(x["other_cost"] - 2 * 2 * (0.5 + 0.5)) < 1e-9       # two legs × (half of 1 bps spread + 0.5 impact) × 2; unpriced: only trades still open when the fold's market ends
+    f = r["fills"]["taker"].dropna(subset=["net_bps"])
+    rr = np.average(1 + f["side"] * f["gross_bps"] / 1e4, weights=f["size"])                     # exit / entry: the exit leg is paid on it
+    assert x["trades"] > 100 and x["unpriced"] < 10 and abs(x["other_cost"] - 2 * (0.5 + 0.5) * (1 + rr)) < 1e-9 and abs(x["other_cost"] - 4) < 0.01       # two legs × (half of 1 bps spread + 0.5 impact) × 2; unpriced: only trades still open when the fold's market ends
     with pytest.raises(SystemExit):
         bt.run(bt.Coin(hold=12), PAIRS, ["FP"], draws=2, registration="R9")

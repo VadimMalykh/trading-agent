@@ -7,7 +7,8 @@ puts at the bottom — in the mean, in bps, by more than the round trip? A ceili
 cells      `audit.frame`'s: the scored cells of a `transferbook` run, hourly decision bars, the block's members.
 label      what a long position earns before trading costs: the move from the close one bar after t to the close `hold`
            bars later — exit / entry − 1, the harness's unit; a log until 2026-09-30 (PLAN §3) — minus the funding a
-           long pays over those bars (`backtest.load_costs`' cumulative funding), bps. The rank IC beside it keeps
+           long pays over those bars, each payment on the position's value at that moment (`backtest.load_costs`'
+           `fundval` ÷ the entry close; on its size at entry until 2026-10-01), bps. The rank IC beside it keeps
            R20's vol-standardised log label: a rank, not money.
 signals    `SIGNALS`: R20's five unresolved features by `audit.features`' own code, and the run's own forecast ẑ.
 statistic  `_tenths`: per bar the mean label of the tenth highest by the signal minus that of the tenth lowest, halved —
@@ -42,13 +43,15 @@ PER_DAY = 24                       # the grid's bars in a day
 U_BAR, P_BAR, IC_TOL = 2.0, 0.05, 1e-9
 
 
-def labels(M: bt.Market, fundcum: np.ndarray, hold: int, latency: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def labels(M: bt.Market, C: bt.Costs, hold: int, latency: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(the move, what a long earns): exit / entry − 1 between the entry bar and the exit bar — what a long of fixed
-    size earns, never the log (PLAN §3) — and the same minus the funding it pays: `backtest.price`'s gross and
-    gross + funding of a long."""
-    fc = pd.DataFrame(fundcum, index=M.index, columns=M.columns)
-    y = (M.close.shift(-(latency + hold)) / M.close.shift(-latency) - 1.0) * 1e4
-    return y, y - (fc.shift(-(latency + hold)) - fc.shift(-latency))
+    size earns, never the log (PLAN §3) — and the same minus the funding it pays, each payment on the position's value
+    at that moment (`C.fundval`, ÷ the entry close): `backtest.price`'s gross and gross + funding of a long."""
+    assert C.fundval is not None, "horizon.labels: the costs were loaded without the market's close"
+    fv = pd.DataFrame(C.fundval, index=M.index, columns=M.columns)
+    pe = M.close.shift(-latency)
+    y = (M.close.shift(-(latency + hold)) / pe - 1.0) * 1e4
+    return y, y - (fv.shift(-(latency + hold)) - fv.shift(-latency)) / pe
 
 
 def gap_days(holds) -> int:
@@ -132,8 +135,8 @@ def run(run: str, holds=HOLDS, members: str | None = None, cost: float = COST, j
     cm = cell.to_numpy()
 
     # the labels: the price move (gross), and what a long earns (the move minus the funding it pays)
-    fundcum = bt.load_costs(M.index, M.columns, end).fundcum
-    G, Y = ({h: labels(M, fundcum, h, latency)[i].loc[grid, names].to_numpy() for h in every} for i in (0, 1))
+    C = bt.load_costs(M.index, M.columns, end, close=M.close)
+    G, Y = ({h: labels(M, C, h, latency)[i].loc[grid, names].to_numpy() for h in every} for i in (0, 1))
     Zh = {h: (bt.labels(M, h, latency).loc[idx, names] / (sig * np.sqrt(h)).where(sig > 0)).clip(-Z_CLIP, Z_CLIP).loc[grid] for h in every}
 
     # the signals, on the run's cells
@@ -227,7 +230,7 @@ def run(run: str, holds=HOLDS, members: str | None = None, cost: float = COST, j
     tab.to_csv(out / "signals.csv", index=False)
     tenth.to_csv(out / "tenths.csv", index=False)
     d.to_parquet(out / "shifts.parquet", index=False)
-    (out / "validity.json").write_text(json.dumps({**v, "null_max_u_p95": float(mx.quantile(0.95)), "cost_bps": cost, "unit": bt.UNIT}, indent=1))
+    (out / "validity.json").write_text(json.dumps({**v, "null_max_u_p95": float(mx.quantile(0.95)), "cost_bps": cost, "unit": bt.UNIT, "charged": bt.CHARGED}, indent=1))
     return "\n".join(md)
 
 
@@ -332,13 +335,13 @@ def run_pre(holds=PRE_HOLDS, refs=PRE_REFS, members=None, days=None, end=None, c
     ok = (v["grid_in_market"] and v["whole_days"] and n_cells > 0 and not (v["cells_not_a_member"] or v["cells_of_the_twelve"] or v["cells_at_or_after_end"])
           and v["shifts"] == nd - 2 * gap_days(every) + 1 and v["score_coverage"] >= COVER_BAR)
     v["status"] = "PASS" if ok else "FAIL"
-    (out / "validity.json").write_text(json.dumps({**v, "cost_bps": cost, "notes": notes, "unit": bt.UNIT}, indent=1))
+    (out / "validity.json").write_text(json.dumps({**v, "cost_bps": cost, "notes": notes, "unit": bt.UNIT, "charged": bt.CHARGED}, indent=1))
     if not ok:                                                # void: no number is computed on cells that are not the registered ones
         raise SystemExit(f"validity FAIL, nothing was read: {v}")
 
     # the labels: the price move (gross), and what a long earns (the move minus the funding it pays)
-    fundcum = bt.load_costs(M.index, M.columns, end).fundcum
-    G, Y = ({h: labels(M, fundcum, h, latency)[i].reindex(grid)[names].to_numpy() for h in every} for i in (0, 1))
+    C = bt.load_costs(M.index, M.columns, end, close=M.close)
+    G, Y = ({h: labels(M, C, h, latency)[i].reindex(grid)[names].to_numpy() for h in every} for i in (0, 1))
     sig = _derive(M.close.loc[idx, names])["sig"]["1w"]
     Zh = {h: (bt.labels(M, h, latency).loc[idx, names] / (sig * np.sqrt(h)).where(sig > 0)).clip(-Z_CLIP, Z_CLIP).reindex(grid) for h in every}
 

@@ -105,7 +105,9 @@ def test_planted_edge_is_recovered_and_a_coin_pays_the_cost(tmp_path):
         assert x["trades"] > 500 and abs(x["gross"] - EDGE) < 3 * x["net_se"]
         assert abs(x["net"] - (EDGE - rt)) < 3 * x["net_se"] and x["net_lo"] > 0
         assert 0.3 < x["net_se"] < 1.5                                                           # ≈ SD·√HOLD / √trades
-        assert abs(x["fee"] + x["other_cost"] - rt) < 1e-9
+        f = r["fills"][e].dropna(subset=["net_bps"])
+        rr = 1 + f["side"] * f["gross_bps"] / 1e4                                                 # exit / entry: the exit leg is paid on it
+        assert abs(x["fee"] + x["other_cost"] - rt / 2 * (1 + np.average(rr, weights=f["size"]))) < 1e-9 and abs(x["fee"] + x["other_cost"] - rt) < 0.01
     fl = r["floor"].set_index("exec")
     assert (fl["p"] <= 0.05).all() and abs(fl.loc["taker", "null_mean"] + TAKER_RT) < 3        # the null centres on minus the cost
     assert (fl["flip_p"] <= 0.05).all() and abs(fl.loc["taker", "flip_null_mean"] + TAKER_RT) < 3  # … and so does the day-flip null
@@ -121,9 +123,10 @@ def test_planted_edge_is_recovered_and_a_coin_pays_the_cost(tmp_path):
 
     # the ledger: the same decisions re-priced — fee, execution and latency change fills, never decisions
     M, dec = bt.market(PAIRS, r["decisions"]["t"].max() + pd.Timedelta("2D")), r["decisions"]
-    C = bt.load_costs(M.index, M.columns, M.index[-1] + bt.BAR)
+    C = bt.load_costs(M.index, M.columns, M.index[-1] + bt.BAR, close=M.close)
     a, b = bt.price(dec, M, C, "taker", 5.0, 2.0), bt.price(dec, M, C, "taker", 4.0, 2.0)
-    assert np.allclose((b["net_bps"] - a["net_bps"]).dropna(), 2.0) and (a["id"] == b["id"]).all()
+    rr = 1 + a["side"] * a["gross_bps"] / 1e4                                                  # exit / entry: a bps of fee is paid once on the entry size and once on the exit's
+    assert np.allclose((b["net_bps"] - a["net_bps"]).dropna(), (1 + rr).dropna()) and (a["id"] == b["id"]).all() and abs((b["net_bps"] - a["net_bps"]).mean() - 2) < 0.01
     assert a["net_bps"].isna().sum() <= len(PAIRS)                                               # only a trade whose exit lies past the data is left unpriced
     l0 = bt.price(dec, M, C, "taker", 5.0, 2.0, latency=0)
     assert l0["gross_bps"].mean() < a["gross_bps"].mean() - 1                                    # executed a bar early, the position is closed one bar before the drift ends
@@ -159,7 +162,8 @@ def test_funding_is_signed_and_only_while_open():
     flat = pd.DataFrame(100.0, index=idx, columns=["A"])
     M = bt.Market(flat, flat, flat, flat)
     z = np.zeros((1, 1))
-    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, np.where(np.arange(100) >= 50, 1.0, 0.0)[:, None])    # +1 bps paid by longs at row 50
+    fc = np.where(np.arange(100) >= 50, 1.0, 0.0)[:, None]
+    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, fc, fc * 100.0)    # +1 bps paid by longs at row 50, on a flat price
     dec = pd.DataFrame({"t": idx[[40, 40, 60]], "symbol": "A", "side": [1, -1, 1], "size": 1.0, "hold": 20, "fold": "F1", "accepted": True})
     f = bt.price(dec, M, C, "taker", 0.0, 0.0)
     assert list(f["net_bps"].round(9)) == [-1.0, 1.0, 0.0]
@@ -175,7 +179,7 @@ def test_maker_fills_only_when_traded_through():
     high.iloc[32, 0] = 100.1                         # … and later trades through the resting offer (exit filled)
     M = bt.Market(close, high, low, close)
     one = np.ones((1, 2))
-    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), one * 1.5, one * 0, one, np.zeros((60, 2)))
+    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), one * 1.5, one * 0, one, np.zeros((60, 2)), np.zeros((60, 2)))
     dec = pd.DataFrame({"t": idx[[10, 10]], "symbol": ["A", "B"], "side": 1, "size": 1.0, "hold": 20, "fold": "F1", "accepted": True})
     f = bt.price(dec, M, C, "maker", 5.0, 2.0, latency=0).set_index("symbol")
     assert f.loc["A", "p_fill"] == 1 and f.loc["A", "fee_bps"] == 4.0 and f.loc["A", "other_cost_bps"] == 0 and abs(f.loc["A", "gross_bps"]) < 1e-9
@@ -218,7 +222,7 @@ def test_hedged_gross_removes_a_move_every_pair_shares():
     close.iloc[25:, 0] *= 1.002                      # … and A adds 20 bps of its own
     M = bt.Market(close, close, close, close)
     z = np.zeros((1, 3))
-    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, np.zeros((60, 3)))
+    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, np.zeros((60, 3)), np.zeros((60, 3)))
     dec = pd.DataFrame({"t": idx[[10]], "symbol": "A", "side": 1, "size": 1.0, "hold": 20, "fold": "F1", "accepted": True})
     f = bt.price(dec, M, C, "taker", 0.0, 0.0).iloc[0]
     assert abs(f["gross_bps"] - (1.01 * 1.002 - 1) * 1e4) < 1e-6 and abs(f["mkt_bps"] - 100.0) < 1e-6 and abs(f["hedged_bps"] - 20.2) < 1e-6
@@ -230,7 +234,7 @@ def _one_trade(entry: dict, exit_: dict, side: int, symbol: str = "A"):
     close = pd.DataFrame({k: np.where(np.arange(60) < 20, entry[k], exit_[k]) for k in entry}, index=idx, dtype=float)
     M = bt.Market(close, close, close, close)
     z = np.zeros((1, close.shape[1]))
-    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, np.zeros(close.shape))
+    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), z, z, z + 1.0, np.zeros(close.shape), np.zeros(close.shape))
     dec = pd.DataFrame({"t": idx[[10]], "symbol": symbol, "side": side, "size": 1.0, "hold": 20, "fold": "F1", "accepted": True})
     return bt.price(dec, M, C, "taker", 0.0, 0.0).iloc[0]
 
@@ -283,3 +287,39 @@ def test_a_registered_read_is_re_executed_once_under_its_tag_and_the_first_read_
     for kw in ({"reexecute": "fix"}, {}):                                           # once per tag; and the first read is still refused a second time
         with pytest.raises(SystemExit, match="already read"):
             bt.run(Planted(), PAIRS, ["F3"], draws=0, registration="R1", **kw)
+
+
+def test_funding_and_the_exit_leg_are_charged_on_the_positions_value():
+    """PLAN §3 / §7 (2026-10-01): a funding payment is rate × the close at the event ÷ the entry price; the exit leg's fee, spread
+    and impact are paid on exit ÷ entry. A short of a name that triples pays both on three times its size."""
+    idx = pd.date_range("2024-01-01", periods=60, freq="5min", tz="UTC")
+    close = pd.DataFrame({"A": np.where(np.arange(60) < 25, 100.0, 300.0), "B": 50.0}, index=idx)
+    M = bt.Market(close, close, close, close)
+    one = np.ones((1, 2))
+    fc = np.where(np.arange(60) >= 26, 1.0, 0.0)[:, None] * one          # +1 bps rate paid by longs at row 26, after the move at row 25
+    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), one * 1.5, one * 0, one, fc, fc * close.to_numpy()[26])   # the close at the event: A 300, B 50
+    dec = pd.DataFrame({"t": idx[[10, 10, 10]], "symbol": ["A", "A", "B"], "side": [-1, 1, 1], "size": 1.0, "hold": 20, "fold": "F1", "accepted": True})
+    f = bt.price(dec, M, C, "taker", 5.0, 2.0)
+    sh, lo, b = f.iloc[0], f.iloc[1], f.iloc[2]
+    assert abs(sh["gross_bps"] + 20_000) < 1e-6 and abs(sh["funding_bps"] - 3.0) < 1e-9 and abs(sh["fee_bps"] - (5 + 5 * 3)) < 1e-9 and abs(sh["other_cost_bps"] - (1.5 + 1.5 * 3)) < 1e-9
+    assert abs(lo["funding_bps"] + 3.0) < 1e-9 and abs(lo["fee_bps"] - 20) < 1e-9 and abs(lo["net_bps"] - (20_000 - 20 - 6 - 3)) < 1e-9
+    assert abs(b["funding_bps"] + 1.0) < 1e-9 and abs(b["fee_bps"] - 10) < 1e-9 and abs(b["other_cost_bps"] - 3.0) < 1e-9        # no move: the size at entry
+    # the shuffle null keeps the real funding, scaled by the REAL path: the price path of row 0 (flat at 100 → 100) for the trade at row 10
+    src = np.arange(60)
+    src[10] = 0                                                         # the decision at row 10 reads its path from row 0: entry at row 1, exit at row 21, A is 100 at both
+    g = bt.price(dec, M, C, "taker", 5.0, 2.0, src=src).iloc[0]
+    assert abs(g["gross_bps"]) < 1e-9 and abs(g["funding_bps"] - 3.0) < 1e-9 and abs(g["fee_bps"] - 10) < 1e-9
+
+
+def test_load_costs_values_funding_at_the_close_at_the_event(tmp_path):
+    _synth(tmp_path, start="2024-01-01", days=5, rate=1e-4)
+    end = pd.Timestamp("2024-01-06", tz="UTC")
+    M = bt.market(PAIRS, end)
+    C = bt.load_costs(M.index, M.columns, end, close=M.close)
+    f = pd.read_parquet("data/funding_archive.parquet")
+    f = f[(f["symbol"] == PAIRS[0]) & (f["ts"] < end)].sort_values("ts")
+    assert len(f) >= 3 and C.fundval.shape == C.fundcum.shape
+    at = M.close[PAIRS[0]].ffill().reindex(f["ts"], method="ffill").to_numpy()
+    want = np.concatenate([[0.0], np.cumsum(f["rate"].to_numpy() * 1e4 * at)])[np.searchsorted(f["ts"].to_numpy().astype("datetime64[ns]"), M.index.to_numpy().astype("datetime64[ns]"), "right")]
+    assert np.allclose(C.fundval[:, 0], want) and (np.abs(C.fundval[:, 0]) > 0).any()
+    assert bt.load_costs(M.index, M.columns, end).fundval is None

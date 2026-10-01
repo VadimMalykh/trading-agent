@@ -22,8 +22,13 @@ What it guarantees, so that a strategy cannot get any of it wrong:
                    maker_ev  P1's unconditional version, for reference: the day's measured fill share p
                           at (fee − post-fill drift), the other 1 − p at the taker leg, as an expected value.
                  Funding is the signed sum of the archive's events while the position is open (a long
-                 pays a positive rate). A leg on a day P1 could not price (censored depth) is not
-                 guessed: the trade is counted as `unpriced` and left out.
+                 pays a positive rate), each payment on the position's VALUE at that moment (rate × the
+                 close at the event ÷ the entry price). The exit leg's fee, spread and impact are paid on
+                 the position's value at the exit (× exit ÷ entry); the entry leg's on its size. Charged so
+                 since 2026-10-01 (`CHARGED`; before, both were in bps of the size at entry — nothing on
+                 small moves, −27 bps a trade on R25's shorts of names that rose many-fold). A leg on a
+                 day P1 could not price (censored depth) is not guessed: the trade is counted as
+                 `unpriced` and left out.
   latency        A decision at t (the bar closed at t) is executed at the close LATENCY bars later.
   the unit       What a position of fixed size earns, per unit of its size at entry: gross = side × (exit / entry − 1),
                  in bps. Not side × log(exit / entry), which this harness counted until 2026-09-30 (PLAN §3, R25 (D1)):
@@ -75,6 +80,7 @@ REFIT_DAYS = 30          # a block: the strategy is refitted (if it fits anythin
 MAKER_WAIT = 3           # bars a maker order rests before the leg crosses as a taker (= P1's MAKER_H of 15 minutes)
 EXECS = ("taker", "maker", "maker_ev")
 UNIT = "actual"          # gross = side × (exit / entry − 1); a run without this in its meta was counted in logs (before 2026-09-30)
+CHARGED = "value"        # funding and the exit leg on the position's value; a run without this in its meta charged them on the size at entry (before 2026-10-01)
 SIDES = {"long": 1, "short": -1}
 
 
@@ -144,13 +150,16 @@ class Costs:
     maker_adv: np.ndarray        # day × pair, bps: drift after a maker fill vs the resting price (negative = adverse)
     maker_fill: np.ndarray       # day × pair: share of resting orders filled within MAKER_H minutes
     fundcum: np.ndarray          # bar × pair: cumulative funding rate, bps, over events stamped ≤ t
+    fundval: np.ndarray | None   # bar × pair: cumulative rate × the close at the event (bps × price) — the payment on the position's value, ÷ the entry price
 
 
 def _ns(x) -> np.ndarray:
     return pd.DatetimeIndex(x).as_unit("ns").asi8
 
 
-def load_costs(index: pd.DatetimeIndex, cols: pd.Index, end: pd.Timestamp, cost_mult: float = 1.0) -> Costs:
+def load_costs(index: pd.DatetimeIndex, cols: pd.Index, end: pd.Timestamp, cost_mult: float = 1.0, close: pd.DataFrame | None = None) -> Costs:
+    """`close` (the market's, on `index`) values each funding payment at the close at or before the event; without it
+    `fundval` is None and `price` / `horizon.labels` refuse — only a caller that reads no funding (`market.basket_cost`) omits it."""
     d = pd.read_parquet(DAILY)
     d["symbol"] = d["symbol"].astype(str)
     if DAILY_PRE.exists():                                     # days before the tape: the candle proxy (`ft2 costpre`), never mixed into tape days
@@ -165,13 +174,21 @@ def load_costs(index: pd.DatetimeIndex, cols: pd.Index, end: pd.Timestamp, cost_
     sp = piv("spread_cal_bps")
     f = data.load("funding_archive", columns=["symbol", "ts", "rate"], symbols=list(cols))
     f = f[f["ts"] < end]
-    cum = np.zeros((len(index), len(cols)))
+    cum, val = np.zeros((len(index), len(cols))), (None if close is None else np.zeros((len(index), len(cols))))
+    if close is not None:
+        assert close.index.equals(index), "load_costs: `close` must be on the cost index"
+        cl = close.reindex(columns=cols).ffill().to_numpy()
     for j, sym in enumerate(cols):
         e = f[f["symbol"].astype(str) == sym].sort_values("ts")
         if len(e):
-            cum[:, j] = np.concatenate([[0.0], np.cumsum(e["rate"].to_numpy() * 1e4)])[np.searchsorted(_ns(e["ts"]), _ns(index), "right")]
+            ts, rate = _ns(e["ts"]), e["rate"].to_numpy() * 1e4
+            pos = np.searchsorted(ts, _ns(index), "right")
+            cum[:, j] = np.concatenate([[0.0], np.cumsum(rate)])[pos]
+            if close is not None:                              # the close at or before the event (an event before the first bar: the first close — a constant, gone in every difference)
+                at = cl[np.clip(np.searchsorted(_ns(index), ts, "right") - 1, 0, None), j]
+                val[:, j] = np.concatenate([[0.0], np.cumsum(np.nan_to_num(rate * at))])[pos]
     return Costs(pd.DatetimeIndex(sp.index), (sp / 2 + piv(f"imp_{NOTIONAL}")).to_numpy() * cost_mult, piv(f"maker_adv_{MAKER_H}").to_numpy(),
-                 piv(f"maker_fill_{MAKER_H}").to_numpy(), cum)
+                 piv(f"maker_fill_{MAKER_H}").to_numpy(), cum, val)
 
 
 # ---- strategies ---------------------------------------------------------------------------------------
@@ -332,6 +349,7 @@ def price(dec: pd.DataFrame, M: Market, C: Costs, exec_: str, taker_bps: float, 
           src: np.ndarray | None = None) -> pd.DataFrame:
     """Fills for the accepted decisions. `src` (a row indexer from `_shuffle_days`) takes the PRICE PATH
     from another day — the noise floor; the times, the cost series and the funding stay the real ones."""
+    assert C.fundval is not None, "price: the costs were loaded without the market's close (funding is charged on the position's value)"
     d = dec[dec["accepted"]]
     idx, n = M.index, len(M.index)
     i, j = idx.get_indexer(d["t"]), M.columns.get_indexer(d["symbol"])
@@ -358,11 +376,15 @@ def price(dec: pd.DataFrame, M: Market, C: Costs, exec_: str, taker_bps: float, 
             p = pick(C.maker_fill)
             legs[leg] = (p0, p * maker_bps + (1 - p) * taker_bps, p * -pick(C.maker_adv) + (1 - p) * other_t, p)
     pe, pxx = legs["e"][0], legs["x"][0]
-    fee, other, p_fill = (legs["e"][k] + legs["x"][k] for k in (1, 2, 3))
-    gross = np.where(ok, s * (pxx / pe - 1.0) * 1e4, np.nan)           # what the position earns: never the log (the module's docstring, "the unit")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r = pxx / pe                                                    # the position's value at the exit, per unit of its size at entry
+    fee, other = (legs["e"][k] + legs["x"][k] * r for k in (1, 2))      # the exit leg is paid on what the position is worth then (CHARGED)
+    p_fill = legs["e"][3] + legs["x"][3]
+    gross = np.where(ok, s * (r - 1.0) * 1e4, np.nan)                  # what the position earns: never the log (the module's docstring, "the unit")
     re_, rx = rows["e"][1], rows["x"][1]
     mkt = np.where(ok, basket(px, rows["e"][0], rows["x"][0], j), np.nan)      # close to close: the maker's wait is not in it
-    fund = -s * (C.fundcum[rx, j] - C.fundcum[re_, j])
+    with np.errstate(invalid="ignore", divide="ignore"):                # each payment on the value at its moment, ÷ the entry close of the REAL path (the funding stays real under `src`)
+        fund = -s * (C.fundval[rx, j] - C.fundval[re_, j]) / px[re_, j]
     out = pd.DataFrame({"id": d.index, "t": d["t"].array, "symbol": d["symbol"].to_numpy(), "fold": d["fold"].to_numpy(), "side": s.astype(int),
                         "size": d["size"].to_numpy(), "exec": exec_, "entry_t": idx[re_], "exit_t": idx[rx], "entry_px": pe, "exit_px": pxx,
                         "gross_bps": gross, "mkt_bps": mkt, "hedged_bps": gross - s * mkt, "fee_bps": fee, "other_cost_bps": other, "p_fill": p_fill / 2, "funding_bps": fund})
@@ -459,7 +481,7 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
     registration = read_tag(registration, reexecute)
     end = folds.bounds(fold_names[-1])[1]
     M = market(symbols, end, PRE_START if "FP" in fold_names else ceiling.START, strategy.needs)      # F1… runs see exactly the market they always saw
-    C = load_costs(M.index, M.columns, end, cost_mult)
+    C = load_costs(M.index, M.columns, end, cost_mult, M.close)
     y = labels(M, strategy.hold, latency)
     print(f"{strategy.name}: walk-forward over {'+'.join(fold_names)}, {len(M.index):,} bars × {len(M.columns)} pairs…", flush=True)
     dec = walk(strategy, M, fold_names, y, latency, refit_days)
@@ -513,7 +535,7 @@ def run(strategy: Strategy, symbols: list[str], fold_names=folds.EXPLORATION, ex
     src_ = pd.read_parquet(DAILY_WIDE, columns=["symbol"])["symbol"].astype(str).unique() if DAILY_WIDE.exists() else []
     meta = {"strategy": strategy.name, "params": strategy.params(), "folds": fold_names, "registration": registration, "taker_bps": taker_bps,
             "pairs_on_proxy_cost": sorted(set(M.columns) & set(src_) - set(pd.read_parquet(DAILY, columns=["symbol"])["symbol"].astype(str).unique())),
-            "maker_bps": maker_bps, "cost_mult": cost_mult, "unit": UNIT, "latency_bars": latency, "refit_days": refit_days, "draws": draws, "seed": seed, "notional": NOTIONAL,
+            "maker_bps": maker_bps, "cost_mult": cost_mult, "unit": UNIT, "charged": CHARGED, "latency_bars": latency, "refit_days": refit_days, "draws": draws, "seed": seed, "notional": NOTIONAL,
             "pairs": list(M.columns), "decisions": len(dec), "accepted": int(dec["accepted"].sum()), "max_open": max_open, "avg_open": avg_open,
             "generated": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC"}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
