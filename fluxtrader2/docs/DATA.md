@@ -168,6 +168,20 @@ ZEC 2023-06-01 2.6 bps (tick 0.01 at 32); ZEC 2026-08-01 0.2 bps. It is a *lower
 the effective spread (flips at the same price count as zero) and is validated against the
 collector's quoted spread in their overlap in P1.
 
+### index_1m (HistData.com, 1 min; P8 B3) — `data/index_1m.parquet`: `(symbol, ts) → open, high, low, close`
+
+The US stock index as a round-the-clock CFD, one-minute bid bars: `US500` (HistData's SPXUSD) and `US100` (NSXUSD), from
+HistData.com's free yearly / monthly zips (`ft2 index fetch|ingest|inventory`, `ft2/index.py`; raw under
+`data/raw/external/histdata/`). **The site calls the clock "EST without daylight saving"; it is not** — measured 2026-10-01
+against Dukascopy's minutes, it is UTC−4 from the last Sunday of March to the last Sunday of October (the European calendar; the
+file switches at 20:00 on the March Sunday and repeats 19:00–19:59 on the October Sunday) and UTC−5 otherwise; `hist_read`
+converts by that rule. So converted, **the minutes are identical to Dukascopy's USA500.IDX/USD** (147,611 common minutes,
+correlation 1.0000, level difference 0.0 bps): HistData mirrors Dukascopy's feed, whose own datafeed throttles bulk fetching
+(a few files a minute, then 503s) and is kept only as the cross-check (`data/index_1m_dukascopy.parquet`, 2020-05-01 →
+2020-10-07) and as a candidate live feed (an hour's tick file is up within the hour after it closes). Yahoo's ES=F hourly
+bars (two years, about ten minutes behind): hourly return correlation 0.95, daily 0.99, level ÷ future 0.9957 (the basis).
+`output/index_inventory.md` has the tables.
+
 ### Archive tables as measured (`ft2 inventory`, 2026-09-15)
 
 | table | pairs | window (UTC) | rows | integrity (`output/inventory.md` has the per-pair tables) |
@@ -183,6 +197,7 @@ collector's quoted spread in their overlap in P1.
 | `ft2/screen_hindsight.csv` — **the members' 2026 volume** (R19, 2026-09-27) | the 188 members, one row a name: `hind_musd`, the median daily quote volume over the window (a day without a bar = 0), and `hind_days` | 2026-01-01 → 2026-08-31, monthly 1d archive files | 188 | 38 names with a median of zero (gone or renamed; the archive keeps flat zero-volume bars for a delisted contract, so 180 names have a bar on all 243 days). Hindsight on purpose: read by R19's diagnostic only, never an input to a model or a tradable screen. Only quote volume is read |
 | `metrics` (5m) — **the screener's members** (R20, 2026-09-28) | +188 pairs (`ft2/screen_members.csv`); the twelve unchanged | members: 2023-04-01 (or listing) → 2024-08-31, daily archive files; the twelve as before | 26,897,086 in the slice (was 4,322,018); 24,174,288 inside 2023-04 → 2024-08 on 199 names | 188 fetches, 0 errors, 0 bad checksums; files absent from the archive are days before a listing, plus 1–2 days on some old names (ZEN, XEM, XMR 2; XLM 1). 42 duplicate keys dropped. **The slice is rewritten whole by `ft2 ingest metrics --universe all`; the twelve's rows came back identical, value by value**, against `data/metrics_before_r20.parquet` (kept on the work VM). On R20's 694,501 cells the features built from it cover 99.7–99.9 % |
 | `premium` (archive `premiumIndexKlines/5m`) — `data/premium.parquet`: `(symbol, open_time) → premium`, the bar's last premium index (perpetual over the spot index, minus one) (R20, 2026-09-28) | the 188 members; **not the twelve** (not fetched: R20's cells leave them out) | 2023-04-01 (or listing) → 2024-08-31, monthly archive files | 22,763,516 | 188 fetches, 0 errors, 0 bad checksums, 0 duplicates; up to 17 monthly files a name, fewer for names listed inside the window. Covers 100 % of R20's cells |
+| `index_1m` (HistData, 1 min; P8 B3, 2026-10-01) | US500, US100 | 2020-01-01 → 2026-09-24 (yearly zips 2020–2025, monthly 2026-01 → 09; the current month is not offered) | 4,482,652 (US100 2,257,516; US500 2,225,136) | 30 fetches, 0 errors; 388 rows swapped by a minute in the current year's files (sorted, the later kept). Hours (UTC): the week opens Sunday 22:00 in European summer / 23:00 in winter and closes Friday 20:15 / 21:15; a daily break 20:15–22:00 / 21:15–23:00; 1,070–1,080 traded minutes a weekday; US holidays closed or thin (Christmas Eve → the 27th, Good Friday). **Thin: 2023-02 → 2023-07 holds 19–24k rows a month against 27–30k elsewhere — whole hours missing inside sessions; 658 of the 1,501 gaps over 30 min are in 2023.** A feature read from it must say what it does on a stale minute |
 | `ladder` (collector `orderbook_levels`, ~12 s, P1) | 12 | 2026-08-05 (ADA/AVAX/LINK/XRP 08-14) → 2026-09-13 | 3,388,622 | 40 per-day raw exports (3.5 GB gz, kept); 0 duplicates; the 100 levels reach only 1.7 bps from mid on BTC (4 on ETH, 13 on ZEC/HYPE) versus 70–480 bps on the thin pairs, so BTC/ETH ladders hold ~1–3 % of the archive's ±1 % notional and the archive band is what scales impact back in time |
 
 ## Folds (fixed 2026-09-15; `ft2/folds.py` is the code, this is the record)
