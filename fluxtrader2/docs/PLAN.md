@@ -3122,6 +3122,80 @@ Result:        **Read 2026-10-01 (the run 16:33 → 16:38 UTC on the work VM, 5 
                a REVERSAL rule, not this one. What follows (§9 #7's other series — the ETF flows, a scrape; §9 #8 events;
                or P7 alone) is Vadim's decision; §9 #7's index row is closed as per-name information at one day.
 
+### R27 — the US spot-ETF flows as per-name information: a name's sensitivity to BTC × the last known flow, and BTC itself against the alts after a flow, on names outside the twelve and on the twelve, F2 (registered 2026-10-02 on Vadim's "ETF", before the code was written and before any crypto bar was read against the flows; read —)
+Question:      The exchange's own numbers (R20–R25) and the stock index (R26) say nothing per name. The spot-ETF flows are
+               demand for bitcoin itself, published daily and known the next morning (DATA.md `etf_flows`). Does what the
+               funds took in or paid out YESTERDAY say which name does better than its peers today — through each name's
+               sensitivity to BTC and, on the twelve, through BTC itself against the alts? A ceiling audit (Principle 2):
+               no model, no book, no confirmation fold, no download beyond the source already audited.
+Flow:          BTC's daily total, US$ millions (Farside; holidays left out). KNOWN-AT, measured: a US trading day d's total
+               is known from 09:00 UTC on d + 1 — never earlier; the all-data table is the final value. F(t) = the total
+               of the latest day known at t; F5(t) = the sum of the last five known days' totals. "Large": |F| ≥ 300 US$m
+               (one standard deviation; a fifth of F2's days). ETH's flows are NOT read (29 days in F2 — not explorable).
+Cells:         two universes on the SAME hourly grid — F2 alone (embargoed, 2024-01-03 → 2024-08-31, 242 whole days):
+               F1 holds no flow. (a) OUTSIDE — R18's F2 cells (`audit.frame` cut to F2; the block's 60 members, 188 names
+               less those whose blocks fall in F1). (b) THE TWELVE — R26's `cells_twelve` cut to F2 (11 names). Label,
+               both: R18's (the 288-bar move over σ_1w·√288, clipped at ±5). Validity, read first or the run is void: the
+               labels equal R18's on every F2 cell to 1e-6; the twelve's cells hold every F2 decision of
+               `r14_ridgebook_1d_ho12` that a label can reach; 242 whole days; the shift count below.
+Features:      beta_btc — the name's 30-day hourly sensitivity to BTCUSDT (R26's `beta` with BTC's hourly close in place of
+               the index, every hour, ≥ 200 hours; NaN for BTCUSDT itself on the twelve, by definition 1) — is NOT in the
+               family: a level, read as a reference row and as the lens of the three below.
+               The family, seven numbers, each per name and known strictly before t:
+                 bflow      beta_btc × F(t)                                    (both universes)
+                 bflow_5d   beta_btc × F5(t)                                   (both)
+                 bflow_big  beta_btc × F(t) where |F(t)| ≥ 300, else NaN        (both)
+                 own_flow   F(t) for BTCUSDT, 0 for every other name           (the twelve only: BTC against the alts)
+               What the statistic sees, stated so nobody reads more into it: it ranks across the names at one instant, so
+               beta × F has the ORDER of beta on an inflow day and the reverse order on an outflow day — the flow's size
+               enters only through the sign, the ≥ 300 cut and the five-day sum. own_flow puts BTC at the top on an inflow
+               day and at the bottom on an outflow day, the alts tied. A feature is NaN before the first flow is known
+               (2024-01-12 09:00 UTC; F5 from 01-18) and on a name without beta.
+Statistic:     R26's (`ceiling._ic_xs`): per bar the Spearman across the names present (≥ 5), averaged per day, the mean
+               over days; HAC t beside, decides nothing.
+Null:          R26's: the labels move by a whole number of days, every admissible shift, the same shift on both universes;
+               gap 32 days (beta's 30 + the hold's 1 + 1; the five-day sum and the cut add no window) → 242 − 64 + 1 =
+               179 shifts. Centre and se of each number from its own shifts; u = IC_c / se; per shift the largest |u| of
+               the seven → the family-wise p.
+Described:     decides nothing. Coverage per month; the IC in the two halves of F2 (2024-01-03 → 04-30, 05-01 → 08-31) and
+               the share of months with its sign; beta_btc's IC on all cells, after an inflow day and after an outflow
+               day — "the flow itself"; the number of days with |F| ≥ 300; the three bflow rows with F replaced by its
+               SURPRISE (F minus the mean of the five days before it), reference rows; the runs' own forecasts (R18's on
+               (a); R14's decisions give none); break-even IC at taker cost on each universe (R26's numbers).
+Commands:      the flows to the work VM (data/ is not pushed): `gcloud compute scp data/etf_flows.parquet fluxtrader2-work:~/fluxtrader2/data/`;
+               then `vm.sh bg r27 audit r18_transferbook_1d --family etf --twelve` → output/audit/r18_transferbook_1d_etf/audit.md
+               and output/audit/twelve_etf/audit.md. The code: `audit_index.features_etf`, `audit_index.run` taking the
+               family and the folds, written AFTER this block is committed; its tests on made-up bars: the known-at rule
+               (a flow stamped d is not seen before d + 1 09:00 UTC), the sign/order property, the cut, own_flow's shape,
+               the F2-only grid and its shift count.
+Folds read:    F2 (exploration) only. No confirmation fold. Every source is cut at the end of F2.
+Gate:          validity PASS on both universes, then per number:
+               CLEARS if |u| ≥ 2 AND family-wise p ≤ 0.05 AND the IC has one sign in the two halves of F2. ≥ 1 clears → a
+               candidate on exploration data; it licenses no trade and no fold. Stage 2, registered as its own block (R28)
+               BEFORE any F3 or F4 bar is read against the flows: the same number, same code, on F3+F4 pooled, once — new
+               cells for this question (the F3+F4 members of `ft2/screen_members_f34.csv`; the twelve's F3+F4) — gate as
+               here with F3 and F4 in place of the halves; only a stage-2 pass licenses the smallest priced book.
+               CLOSED if |IC_c| + 1.96 se < 0.02. NOT DETECTABLE otherwise, with its MDE (2.8 se).
+               None clears → nothing is licensed and NO read on F3+F4 is licensed by this block (it would spend them on
+               this question for nothing); what follows is Vadim's decision. Whatever the verdict: no variant on these
+               cells under this registration — no other threshold, window, horizon, sum, ETH, issuer split, flow-size
+               weighting or hour-of-day cut.
+Power:         stated before the read. F2 holds 242 days, half of R26's 485, and the flows reach ~232 of them. OUTSIDE:
+               R26's se 0.002–0.008 on 485 days → 0.006–0.012 here (bflow, bflow_5d), MDE 0.017–0.034; bflow_big on a
+               fifth of the days: se ≈ 0.015–0.025, MDE 0.04–0.07. THE TWELVE: se 0.015–0.03; own_flow, one name against
+               ten, se ≈ 0.03–0.05, MDE ≈ 0.1. The family bar (the largest of seven |u| on noise) is expected at 2.6–2.8:
+               to CLEAR, |IC_c| ≈ 0.02–0.035 outside, 0.05–0.1 on the twelve. Break-even: 0.033 on the members, 0.029 on
+               the twelve (R26). This read can find a large effect or say "not detectable"; on the twelve it cannot close.
+Expectation:   validity PASS. Coverage: bflow and bflow_5d ≈ 95 % of cells, bflow_big 15–25 %, own_flow ≈ 95 % on the
+               twelve. Crypto reacts to the flow news during the US evening; by 09:00 UTC the next day most of it is in the
+               price: bflow and bflow_5d inside ±0.012, bflow_big inside ±0.02; own_flow 0 … +0.03 (institutional demand
+               persists a little, BTC ahead of the alts after an inflow day), inside ±1 se; beta_btc after an inflow
+               positive and after an outflow negative, each inside ±0.02; the surprise rows no larger than the plain ones.
+               About one chance in eight that a number clears the family bar. Likeliest: seven NOT DETECTABLE (half of
+               R26's sample), own_flow or bflow_5d the nearest.
+Result:        — (filled once, after the read; per number: IC, centre, IC_c, se, u, family-wise p, halves, MDE, verdict;
+               validity; coverage; the described rows)
+
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
 Contrast:      A vs B, per <trade | unit notional>, bps
@@ -3144,7 +3218,7 @@ built here in P2 and needs no download.
 | 4 | **Same pairs on a second venue** (Bybit / OKX perps, 1m klines) | their public archives | Cross-venue lead-lag at short horizons; only relevant if P2 funds a sub-15m horizon | parked |
 | 5 | On-chain, news, sentiment | various | Low prior at these horizons, high engineering cost; not now | parked |
 | 6 | **Open interest, funding and positioning as SCREENER characteristics** (Vadim's question 2026-09-27: "new features?") | the archive's `metrics` and `fundingRate`, every symbol, free | R15 found they add nothing as model inputs on the twelve. Not tested: as things a screener ranks names by (open interest over volume = crowded, funding at an extreme). Per name, so it has breadth. **Read directly against the next day's move in R20 (2026-09-28): funding closed; open interest over volume and open-interest change NOT DETECTABLE and the nearest (IC +0.033, −0.019, −0.016)**; `metrics` for the 188 members is on the work VM | R20 ✅ as a ceiling audit; as screens of a forecast still parked (the forecast has nothing to sort, R18) |
-| 7 | **Market-wide daily series: spot-ETF net flows (BTC from 2024-01-11, ETH from 2024-07-23), stablecoin supply, Deribit implied volatility (DVOL), macro dates (FOMC, CPI)** (Vadim, 2026-09-27) | Farside tables (scrape), DefiLlama, Deribit API, a calendar; all free | One number a day for the whole market: ≈ 650 days of ETF history, so only an IC ≥ 0.1 is detectable, and it is a market-direction input where our surviving signal is pair-vs-peers. Best uses: (a) BTC/ETH against the alts the day after a large flow; (b) a regime switch or a size multiplier. Known-at time matters: a day's flow is published after the US close, usable from ≈ 03:00 UTC the next day. **US stock indices (S&P 500, Nasdaq; Vadim, 2026-09-27)** belong to this family with two differences: index futures trade almost round the clock on weekdays, so the series is intraday and covers all folds, and it is closed at weekends (a regime of its own). Still one number for the whole market: to reach pair-vs-peers it enters as EACH NAME'S trailing sensitivity to the index × the index's recent move, which is per name and has breadth — the same construction applies to the ETF flows. Source to audit: free minute history of the index ETFs or futures, and a live feed the serve host can read. **Source audit DONE 2026-10-01 (`ft2 index`; DATA.md `index_1m`): the S&P 500 and the Nasdaq 100 as round-the-clock CFDs, one-minute bars 2020-01 → 2026-09, from HistData.com (free, keyless; its clock is not the fixed EST it states — measured and converted) and identical to Dukascopy's feed, whose hourly tick files (up within the hour after the hour closes) are the live-feed candidate beside Yahoo's ES=F (ten minutes behind); 2023-02 → 2023-07 is thin. ETF flows: Farside's HTML table is the only free route (a scrape), not fetched.** **ETF flows fetched 2026-10-01 (`ft2 etf`; DATA.md `etf_flows`): BTC 682 trading days from 2024-01-11 (F2 161, F3 165, F4 167, F5 174; F1 none), ETH from 2024-07-23 (F2 29 — not explorable); the funds sum to the total, the holiday calendar is the exchanges'; known-at measured on 36 Wayback snapshots of the live page: the total is partial the same evening and final from 9 h after the 21:00 UTC close — a flow is known from 09:00 UTC the next day.** | **R26 READ 2026-10-01: CLOSED as per-name information at one day** (§8): five per-name features — a name's 30-day sensitivity to US100, and that sensitivity × the index's move over 1, 4, 24 h and into a close — on R20's 188 outside names and on the twelve, R22's shift null, one family of ten: 0 of 10 clear, six CLOSED (upper bound under 0.02), four NOT DETECTABLE; the nearest is a REVERSAL on closed hours (bx_gap outside −0.015, u −2.0, family p 0.31), half of break-even even if real. US500 no stronger. The minute data stays (`ft2 index`) for a market-direction or sizing use if one is ever registered; the ETF flows (a scrape) are the row's open item |
+| 7 | **Market-wide daily series: spot-ETF net flows (BTC from 2024-01-11, ETH from 2024-07-23), stablecoin supply, Deribit implied volatility (DVOL), macro dates (FOMC, CPI)** (Vadim, 2026-09-27) | Farside tables (scrape), DefiLlama, Deribit API, a calendar; all free | One number a day for the whole market: ≈ 650 days of ETF history, so only an IC ≥ 0.1 is detectable, and it is a market-direction input where our surviving signal is pair-vs-peers. Best uses: (a) BTC/ETH against the alts the day after a large flow; (b) a regime switch or a size multiplier. Known-at time matters: a day's flow is published after the US close, usable from ≈ 03:00 UTC the next day. **US stock indices (S&P 500, Nasdaq; Vadim, 2026-09-27)** belong to this family with two differences: index futures trade almost round the clock on weekdays, so the series is intraday and covers all folds, and it is closed at weekends (a regime of its own). Still one number for the whole market: to reach pair-vs-peers it enters as EACH NAME'S trailing sensitivity to the index × the index's recent move, which is per name and has breadth — the same construction applies to the ETF flows. Source to audit: free minute history of the index ETFs or futures, and a live feed the serve host can read. **Source audit DONE 2026-10-01 (`ft2 index`; DATA.md `index_1m`): the S&P 500 and the Nasdaq 100 as round-the-clock CFDs, one-minute bars 2020-01 → 2026-09, from HistData.com (free, keyless; its clock is not the fixed EST it states — measured and converted) and identical to Dukascopy's feed, whose hourly tick files (up within the hour after the hour closes) are the live-feed candidate beside Yahoo's ES=F (ten minutes behind); 2023-02 → 2023-07 is thin. ETF flows: Farside's HTML table is the only free route (a scrape), not fetched.** **ETF flows fetched 2026-10-01 (`ft2 etf`; DATA.md `etf_flows`): BTC 682 trading days from 2024-01-11 (F2 161, F3 165, F4 167, F5 174; F1 none), ETH from 2024-07-23 (F2 29 — not explorable); the funds sum to the total, the holiday calendar is the exchanges'; known-at measured on 36 Wayback snapshots of the live page: the total is partial the same evening and final from 9 h after the 21:00 UTC close — a flow is known from 09:00 UTC the next day.** **R27 registered 2026-10-02** (§8): the flows as per-name information on F2 (the only exploration fold that holds them) — a name's sensitivity to BTC × the last known flow, × the five-day sum, × a large flow, and BTC itself against the alts; a stage 2 on F3+F4 only for a number that clears | **R26 READ 2026-10-01: CLOSED as per-name information at one day** (§8): five per-name features — a name's 30-day sensitivity to US100, and that sensitivity × the index's move over 1, 4, 24 h and into a close — on R20's 188 outside names and on the twelve, R22's shift null, one family of ten: 0 of 10 clear, six CLOSED (upper bound under 0.02), four NOT DETECTABLE; the nearest is a REVERSAL on closed hours (bx_gap outside −0.015, u −2.0, family p 0.31), half of break-even even if real. US500 no stronger. The minute data stays (`ft2 index`) for a market-direction or sizing use if one is ever registered; the ETF flows (a scrape) are the row's open item |
 | 8 | **Scheduled per-name events: token unlocks, listings and delistings, exchange "monitoring" tags** | DefiLlama unlocks, Binance announcements | Known in advance, per name, and about exactly the young names R14's money sits in. Risk: the history of announcements is hard to reconstruct without hindsight | parked — after #3 and #6; needs a source audit first |
 
 Rule for adding any of them: a raw download lands under `data/raw/external/<source>/`, is
