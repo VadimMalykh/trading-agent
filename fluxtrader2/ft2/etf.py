@@ -172,13 +172,29 @@ def wayback_list() -> list[str]:
     return [x[0] for x in r[1:]]
 
 
-def wayback_fetch(stamps: list[str], hours: set[int] | None = None, pause: float = 4.0) -> dict:
-    """Snapshots at the UTC hours asked for (all if None) → WAYBACK/<ts>.html; cached."""
+def sample(stamps: list[str], per_hour: int | None, hours: set[int] | None = None) -> list[str]:
+    """At most `per_hour` snapshots per UTC hour (all if None), spread over the list, at the hours asked for (all if None)."""
+    by: dict[int, list[str]] = {}
+    for ts in stamps:
+        h = int(ts[8:10])
+        if hours is None or h in hours:
+            by.setdefault(h, []).append(ts)
+    out = []
+    for h in sorted(by):
+        xs = by[h]
+        if per_hour is None or len(xs) <= per_hour:
+            out += xs
+        else:
+            out += [xs[int(i)] for i in np.linspace(0, len(xs) - 1, per_hour).round()]
+    return out
+
+
+def wayback_fetch(stamps: list[str], hours: set[int] | None = None, pause: float = 12.0, per_hour: int | None = 3) -> dict:
+    """Snapshots at the UTC hours asked for (all if None), `per_hour` of each → WAYBACK/<ts>.html; cached. The Wayback Machine
+    allows a request every ten seconds or so from one address and answers 429 beyond that."""
     WAYBACK.mkdir(parents=True, exist_ok=True)
     n = {"ok": 0, "skip": 0, "err": 0}
-    for ts in stamps:
-        if hours is not None and int(ts[8:10]) not in hours:
-            continue
+    for ts in sample(stamps, per_hour, hours):
         dest = WAYBACK / f"{ts}.html"
         if dest.exists():
             n["skip"] += 1
@@ -217,7 +233,7 @@ def known_at(snapshots: dict[str, pd.DataFrame], final: pd.DataFrame) -> pd.Data
     return pd.DataFrame(rows)
 
 
-def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None = None) -> str:
+def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None = None, per_hour: int | None = 3) -> str:
     x = load()
     md = [f"# The US spot-ETF net flows as fetched (`ft2 etf inventory`)\n",
           f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {OUT} · Farside Investors' all-data tables, US$ millions, one row a US trading day\n"]
@@ -246,7 +262,7 @@ def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None =
                f"of their signs {np.sign(both['BTC']).corr(np.sign(both['ETH'])):.2f}.\n"]
     if wayback:
         stamps = wayback_list()
-        n = wayback_fetch(stamps, hours)
+        n = wayback_fetch(stamps, hours, per_hour=per_hour)
         snaps = {}
         for f in sorted(WAYBACK.glob("*.html")):
             try:
@@ -271,11 +287,12 @@ def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None =
     return text
 
 
-def main(action: str, no_wayback: bool = False, hours: list[int] | None = None) -> None:
+def main(action: str, no_wayback: bool = False, hours: list[int] | None = None, per_hour: int | None = 3) -> None:
+    per_hour = per_hour or None
     if action == "fetch":
         fetch()
     elif action == "ingest":
         ingest()
     elif action == "inventory":
-        print(inventory(wayback=not no_wayback, hours=set(hours) if hours else None))
+        print(inventory(wayback=not no_wayback, hours=set(hours) if hours else None, per_hour=per_hour))
         print(f"wrote {REPORT}")

@@ -84,3 +84,10 @@ def test_known_at_classifies_a_live_snapshot_against_the_final_table():
     assert np.isclose(k["hours_after_close"].iloc[0], 5.0) and np.isclose(k["hours_after_close"].iloc[1], 2.0) and np.isclose(k["hours_after_close"].iloc[3], 15.0)
     assert k["live_total"].iloc[1] == 1000.0 and k["final_total"].iloc[1] == 901.9
     assert etf.known_at({"20240110120000": etf.parse(_page(ROWS[:1]))}, final).empty                       # before the first day: nothing to compare
+
+
+def test_sample_spreads_a_few_snapshots_over_each_hour():
+    stamps = [f"2024{m:02d}{d:02d}{h:02d}0000" for m in (8, 9, 10) for d in (1, 15) for h in (3, 12)]      # six per hour, two hours
+    out = etf.sample(stamps, 3)
+    assert len(out) == 6 and {s[8:10] for s in out} == {"03", "12"} and out[0] == "20240801030000" and out[2] == "20241015030000"
+    assert etf.sample(stamps, None) == sorted(stamps, key=lambda s: (s[8:10], s)) and etf.sample(stamps, 3, {12}) == out[3:]

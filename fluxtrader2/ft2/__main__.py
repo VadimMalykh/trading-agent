@@ -71,7 +71,7 @@ def cmd_index(args):
 
 def cmd_etf(args):
     from . import etf
-    etf.main(args.action, args.no_wayback, args.hours)
+    etf.main(args.action, args.no_wayback, args.hours, args.per_hour)
 
 
 def cmd_universe(args):
@@ -283,6 +283,7 @@ def main(argv=None):
     et.add_argument("action", choices=["fetch", "ingest", "inventory"])
     et.add_argument("--no-wayback", action="store_true", help="inventory: skip the known-at measurement on the Wayback Machine's snapshots of the live page")
     et.add_argument("--hours", nargs="*", type=int, default=None, help="inventory: fetch only the snapshots taken at these UTC hours (default all)")
+    et.add_argument("--per-hour", type=int, default=3, help="inventory: at most this many snapshots per UTC hour, spread over the archive (0 = all; the Wayback Machine throttles)")
     ix.add_argument("--workers", type=int, default=None, help="fetch --source dukascopy: concurrent requests (default 3; the feed throttles)")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
