@@ -2000,15 +2000,62 @@ the twelfth run is recorded, and `--contrast` refuses outright.
 | F1 s1 | `20260929T120303Z` | 117836a | val [2025-10-08 01:00 → 2026-03-25 10:30] | ✅ recorded 2026-10-01 | ep 21; gate 0.6516; 60m-head gate warning (note a) |
 | F1 s2 | `20260929T175418Z` | 117836a | same line as s1 | ✅ recorded 2026-10-01 | ep 26; gate 0.7631 |
 | F1 s3 | `20260930T064441Z` | 117836a | same line as s1 | ✅ recorded 2026-10-01 | ep 25; gate 0.6862 |
-| F0 s1 | **not launched** | — | — | — | The queue went F1 s3 → F0 s2 → F0 s3. The file brought back as `logs/WFX8-F0-s1.log` was a second copy of F1 s3's log (identical md5; run `20260930T064441Z`, `knob VAL_OFFSET=0.125`, `knob SEED=3`) and was deleted 2026-10-01; the bucket holds no other run between X8b s3 and F0 s3. **To launch:** §10.5's export block, then `VAL_OFFSET=0.000 SEED=1 ./scripts/gcp_train.sh --gpu 60 384`; fetch as `logs/WFX8-F0-s1.log` and check the log's own `knob VAL_OFFSET=0.000` / `knob SEED=1` lines before trusting the name. *2026-10-01: Vadim is launching it* |
+| F0 s1 | `20261001T062818Z` | 117836a | val [2026-03-25 10:35 → 2026-09-09 20:05] (same line as s2, s3) | ✅ all thirteen, recorded 2026-10-01 | **Launched last** (2026-10-01 06:28 UTC, after the queue had gone F1 s3 → F0 s2 → F0 s3; the file first brought back under this name was a copy of F1 s3's log, deleted). The log's own `knob VAL_OFFSET=0.000` / `knob SEED=1` lines checked; md5 distinct from the other eleven. ep 51 (the family's latest stop); gate 0.9947; 12 pairs; 60m-head gate warning (note a) |
 | F0 s2 | `20260930T120908Z` | 117836a | val [2026-03-25 10:35 → 2026-09-09 20:05] | ✅ recorded 2026-10-01 | ep 37; gate 0.9897; 60m-head gate warning (note a) |
 | F0 s3 | `20261001T031146Z` | 117836a | same line as s2 | ✅ recorded 2026-10-01 | ep 22; gate 0.5336 |
 
-**Notes carried with the eleven recorded runs (2026-10-01; observations, not decisions):**
+**Notes carried with the twelve recorded runs (2026-10-01; observations, not decisions):**
 
-* **(a) `WARNING: at the SERVED gate … this head gates ZERO bars — the 60m head would never fire`** on F1 s1 and F0 s2 is the 60m head at the cut derived on the 240m head; the primary head gates its 2% by construction. Five banked fold logs carry the same line (WF-F0-s2, F0-s3, F1-s1, F3-s2, F3-s3) and were recorded. Not a void.
-* **(b) Check 9, what the CONSTANT block prints:** F0 and F1 — 11/19 on all twelve pairs and `_global` (`has_funding_oi` joins the ten book/trade columns: the archive covers every pair's whole train window there); F2 and F3 — 11/19 on the long pairs, 10/19 on WLD and `_global` (WLD's train window starts before its 2023-07 listing, so its mask is not constant), and no fit line at all for HYPE (no train row before its listing). `oi` and `oi_chg` appear in no list in any of the eleven logs.
-* **(c) Check 11:** the three seeds of F1, F2 and F3 and the two of F0 print identical `Split` lines — one snapshot, so the between-seed drift §6.0 describes for the banked era is absent here. `dumps.WALKFORWARD_X8_SPLITS` carries each fold's span.
-* **(d) Git:** F2 s1 cloned `91d26f6`, the other ten `117836a`; `git diff --stat 91d26f6 117836a -- ml apps scripts` is empty (the span is fluxtrader2 commits only), so all eleven trained and were scored by identical code. Both are after `be9df37` (check 13). F2 s1's log had not been brought back at all; Claude fetched it from `gs://fluxtrader-train-artifacts/logs/20260928T051128Z.log`.
-* **(e) Every log:** `OI join: OI_JOIN_AT_CLOSE=1 (open interest as of the bar close)`; `Align age: ALIGN_AGE_FIX=0`; no `Embargo:` line; no `BROKEN SCALE`; eval `Val samples` span equal to the `Split` line's; early stops 21–37.
-* **(f) The harness, run 2026-10-01 on the eleven:** `M3_ERA=walkforward_x8 m3 validate` → **TEST 3 PASS** on all eleven dumps (55 cells, every one MATCH); `m3 folds` → `PROVISIONAL — NOT §3's VERDICT`, `1 of the twelve pre-registered runs are missing (F0s1)`, as registered; `m3 folds --contrast walkforward` ran (F2 + F3 are complete on both families, which is all the code checks) — **its output was not read**, by §10.6's rule that nothing from a partial family is quoted. The eleven dumps are in `ml/train/output/eval_dumps/`.
+* **(a) `WARNING: at the SERVED gate … this head gates ZERO bars — the 60m head would never fire`** on F1 s1, F0 s1 and F0 s2 is the 60m head at the cut derived on the 240m head; the primary head gates its 2% by construction. Five banked fold logs carry the same line (WF-F0-s2, F0-s3, F1-s1, F3-s2, F3-s3) and were recorded. Not a void.
+* **(b) Check 9, what the CONSTANT block prints:** F0 and F1 — 11/19 on all twelve pairs and `_global` (`has_funding_oi` joins the ten book/trade columns: the archive covers every pair's whole train window there); F2 and F3 — 11/19 on the long pairs, 10/19 on WLD and `_global` (WLD's train window starts before its 2023-07 listing, so its mask is not constant), and no fit line at all for HYPE (no train row before its listing). `oi` and `oi_chg` appear in no list in any of the twelve logs (F0 s1: 11/19 on all twelve pairs and `_global`, as F0 s2/s3).
+* **(c) Check 11:** the three seeds of every fold print identical `Split` lines — one snapshot, so the between-seed drift §6.0 describes for the banked era is absent here. `dumps.WALKFORWARD_X8_SPLITS` carries each fold's span.
+* **(d) Git:** F2 s1 cloned `91d26f6`, the other eleven `117836a`; `git diff --stat 91d26f6 117836a -- ml apps scripts` is empty (the span is fluxtrader2 commits only), so all twelve trained and were scored by identical code. Both are after `be9df37` (check 13). F2 s1's log had not been brought back at all; Claude fetched it from `gs://fluxtrader-train-artifacts/logs/20260928T051128Z.log`.
+* **(e) Every log:** `OI join: OI_JOIN_AT_CLOSE=1 (open interest as of the bar close)`; `Align age: ALIGN_AGE_FIX=0`; no `Embargo:` line; no `BROKEN SCALE`; eval `Val samples` span equal to the `Split` line's; early stops 21–51 (F0 s1 the latest at 51; F0 s2 37; the other ten 21–29).
+* **(f) The harness, run 2026-10-01 on the twelve** (Docker, `ml_analysis` image, in this order): `M3_ERA=walkforward_x8 m3 validate` → **TEST 3 PASS** on all twelve dumps (60 cells, every one MATCH; F0 s1's five rows reproduce its log's 240m table exactly); `m3 folds` → §3's verdict, §10.8; `m3 folds --contrast walkforward` → §10.8. The twelve dumps are in `ml/train/output/eval_dumps/`. An earlier pass on the eleven (before F0 s1 existed) printed PROVISIONAL and its contrast was not read, as §10.6 requires.
+
+### 10.8 THE RESULT (recorded 2026-10-01, after all twelve runs passed §10.6 and TEST 3)
+
+**In plain language.** The same trading rule, run on models retrained with the archive's open-interest history (the X8 recipe, end-of-bar convention), held up on the two folds no policy search has looked at: **+36.2 bps per trade net of the 14-bps taker line, lower bound +14.5**, against the banked family's +33.2 / +9.3. The side-by-side difference between the two families on the same days, **+3.3 bps per trade with an interval of −12 to +19**, is too small to see at this sample — exactly the expectation written in §10.3 ("NOT DETECTABLE"). Read as §10.3 says: the recipe is certified on untouched history, and it is not worse than the banked recipe; the folds do not measure its gain.
+
+**A. §3's five criteria — `M3_ERA=walkforward_x8 ./scripts/m3.sh -m m3 folds`** (twelve pairs, taker 14 bps, day-clustered; 11 pairs on F3 because HYPE has no val row there, as in the banked F3):
+
+| # | criterion | result |
+|---|---|---|
+| **W1** | pooled net at taker on F2+F3, clustered 95% **lower** bound | **+36.16 bps, CI [+14.46, +57.85]**, n = 4,154 in 304 clusters — LB **+14.46 > 0** ✅ |
+| **W2** | each decision fold's clustered **upper** bound > 0 | F2 +36.94 (hi +68.42) ✅ · F3 +35.36 (hi +65.33) ✅ |
+| **W3** | ≥ 100 trades and ≥ 40 exit-day clusters per fold | F2 2,090/164 · F3 2,064/140 · F1 1,441/108 · F0 2,080/168 ✅ |
+| **W4** | all three seeds pooled-positive on the decision folds | s1 +20.47 (1,573) · s2 +34.63 (1,364) · s3 +58.14 (1,217) ✅ |
+| **W5** | trade rate ≥ 0.5/day/seed on every fold | 4.05 · 3.75 · 2.85 · 4.12 ✅ |
+
+**Verdict A: CONFIRMED — W1 > 0 with W2–W5 holding.** Per fold (each fold's own cut and ladder): F2 +36.94 [+5.5, +68.4] over 2,090 trades; F3 +35.36 [+5.4, +65.3] over 2,064. Reported only: F1 +74.56 [−20.5, +169.6] over 1,441; F0 +4.96 [−13.2, +23.1] over 2,080. The flat-size anchor (never selected on): F2 +27.54, F3 +20.14, F1 +45.18, F0 −2.81. Restricted to the 11 pairs present in every fold: F2 +29.06 [−1.6, +59.7], F3 +35.36.
+
+**B. The contrast — `M3_ERA=walkforward_x8 ./scripts/m3.sh -m m3 folds --contrast walkforward`** (A = this family, B = the banked family; net bps per trade at taker, A − B, each fold clipped to the span both eras' val windows cover; `universe.paired_diff_bps`):
+
+| scope | shared span | A trades | B trades | A net | B net | diff | SE | 95% CI | clusters | MDE80 |
+|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|
+| F2 | 2025-04-19 02:00 → 2025-10-04 04:35 | 2,029 | 2,312 | +38.02 | +40.14 | −2.12 | 8.73 | [−19.23, +14.99] | 165 | 24.45 |
+| F3 | 2024-10-17 09:00 → 2025-04-16 11:45 | 2,063 | 1,937 | +35.37 | +25.33 | +10.03 | 13.44 | [−16.30, +36.37] | 153 | 37.62 |
+| **F2+F3** | | 4,092 | 4,249 | +36.68 | +33.39 | **+3.29** | 7.96 | **[−12.30, +18.89]** | 318 | 22.28 |
+
+Day-bootstrap SE of the pooled difference 7.99 against the analytic 7.96 (2,000 draws) — they agree. **Verdict B: NOT DETECTABLE** — the interval covers zero; a difference under 22.3 bps/trade is invisible at this power. Not WORSE. (§10.3's forecast was SE ≈ 17 / MDE ≈ 48 on the per-family intervals; the paired estimator is tighter because both arms share the same days.)
+
+**What this licenses (§10.4, first bullet, nothing more): X8″ — three full-window runs of this section's recipe, seeds 1–3, ≈ $4.5, ~8 h serial, launched by Vadim.** Its family-median seed by plateau-mean LB (the U12 rule) is the promotion candidate, *if* X8″ reads MOVED against X0 with X8's statistic (NEXT_TRAINING_PLAN §2 X8's result block: plateau-mean LB at cov 0.05 on the 240m head, the registered fallback if a plateau is shorter than 15 epochs). If it does not, nothing is promoted and both reads go to Vadim. The commands — X8's block with the two served-convention knobs; **not a fold, so no fold variables and no `ALLOW_RECIPE_DRIFT`**:
+
+```sh
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export DUMP_MAX_AGE_MIN=100000                      # the pinned 20260913T050118Z snapshot — same as X0, X8, the folds
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet
+export ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1    # decision (b) — the folds' convention
+unset VAL_OFFSET VAL_FRACTION TRAIN_FRACTION ALLOW_RECIPE_DRIFT SPLIT_EMBARGO ALIGN_AGE_FIX   # not a fold
+
+FEATURE_GROUPS=legacy SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # X8" s1
+FEATURE_GROUPS=legacy SEED=2 ./scripts/gcp_train.sh --gpu 60 384   # X8" s2  (after s1 is DONE)
+FEATURE_GROUPS=legacy SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X8" s3
+
+./scripts/gcp_status.sh
+./scripts/gcp_logs.sh <run_id> > logs/X8pp_s1.log     # X8pp_s2, X8pp_s3 — never --save
+```
+
+**Go/no-go before each VM** (the launcher prints it, costs nothing): `recipe differs from the incumbent (T1) in:` with exactly three items — `ARCHIVE_OI: incumbent=''  this run='gs://…metrics_um_5m_83c85bd7.parquet'`, `ARCHIVE_OI_SHIFT_MIN: incumbent='0'  this run='5'`, `OI_JOIN_AT_CLOSE: incumbent='0'  this run='1'` — and **no** `fold drift accepted` line (that line means a fold variable leaked in). A `cache miss` line means the snapshot moved — stop. **Acceptance per log, before the read:** X0's `Split` line exactly (`train=3724724 val=931182 | val [2025-12-14 09:35 → 2026-09-09 20:05 UTC]`); `knob ARCHIVE_OI_SHIFT_MIN=5` and `knob OI_JOIN_AT_CLOSE=1` in the resolved-knobs block; twelve `Archive OI: … sha8=83c85bd7, shift_min=5` lines; `OI join: OI_JOIN_AT_CLOSE=1 (open interest as of the bar close)`; `Align age: ALIGN_AGE_FIX=0`; no `Embargo:` line; `oi` / `oi_chg` in no CONSTANT list; `git_sha` at or after `be9df37`. Bring back the three logs; Claude fetches the dumps and reads in a fresh session. Promotion, if MOVED: §10.4's U12 runbook steps (own C13 cut and C4 ladder, `gcp_promote.sh`, constants restated, ledgers backed up and cleared, `/health` showing `oi_join_at_close: true`, the forward clock's fifth start as its own registered restart).
