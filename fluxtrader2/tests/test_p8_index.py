@@ -26,6 +26,19 @@ def _walk(base: float, n: int, seed: int) -> np.ndarray:
 
 
 # ---- HistData ------------------------------------------------------------------------------------------------------
+def _last_sunday(y: int, m: int) -> date:
+    d = date(y, m + 1, 1) - timedelta(days=1)
+    return d - timedelta(days=(d.weekday() + 1) % 7)
+
+
+def _file_offset(t_utc: datetime) -> timedelta:
+    """The measured rule in UTC terms: the file clock is UTC−4 from Monday 00:00 UTC after the last Sunday of March to Monday 00:00 UTC
+    after the last Sunday of October, UTC−5 otherwise."""
+    a = datetime.combine(_last_sunday(t_utc.year, 3) + timedelta(days=1), datetime.min.time())
+    b = datetime.combine(_last_sunday(t_utc.year, 10) + timedelta(days=1), datetime.min.time())
+    return timedelta(hours=4) if a <= t_utc < b else timedelta(hours=5)
+
+
 def _hist_zip(sym: str, days: list[date], seed: int = 0) -> bytes:
     """A zip as the site serves it: DAT_ASCII_<PAIR>_M1_<p>.csv (semicolon rows in EST without DST) and a status .txt."""
     rows, k = [], 0
@@ -36,8 +49,7 @@ def _hist_zip(sym: str, days: list[date], seed: int = 0) -> bytes:
             o, c = px[m - 1] if m else px[0], px[m]
             hi, lo = max(o, c) * 1.0001, min(o, c) * 0.9999
             t_utc = datetime(d.year, d.month, d.day) + timedelta(minutes=m)
-            t_est = t_utc - timedelta(hours=5)                      # the file's clock
-            rows.append(f"{t_est:%Y%m%d %H%M%S};{o:.6f};{hi:.6f};{lo:.6f};{c:.6f};0")
+            rows.append(f"{t_utc - _file_offset(t_utc):%Y%m%d %H%M%S};{o:.6f};{hi:.6f};{lo:.6f};{c:.6f};0")
     pair = index.HIST_PAIRS[sym]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -65,6 +77,25 @@ def test_hist_read_moves_the_fixed_est_clock_to_utc_and_rejects_a_bad_file():
         z.writestr("DAT_ASCII_SPXUSD_M1_2024.csv", "20240610 000000;100;99;101;100;0\n")        # high below the open
     with pytest.raises(ValueError):
         index.hist_read(bad.getvalue(), "US500")
+
+
+def test_hist_read_follows_the_european_clock_and_splits_the_repeated_october_hour():
+    """Across the 2024 October switch (Sun 2024-10-27) and the 2025 March switch (Sun 2025-03-30): the file's clock is UTC−4 before, UTC−5
+    after October's Monday 00:00 UTC; the hour 19:00–19:59 of the October Sunday appears twice in the file and maps to two different UTC hours."""
+    oct_days = [date(2024, 10, 24) + timedelta(days=i) for i in range(6)]                        # Thu … Tue
+    df = index.hist_read(_hist_zip("US500", oct_days), "US500")
+    assert df.attrs == {"backwards": 0, "dup_minutes": 0}, df.attrs                               # in UTC nothing goes back and no minute is twice
+    assert df["ts"].is_monotonic_increasing and not df["ts"].duplicated().any()
+    sun = df[df["ts"].dt.date == date(2024, 10, 27)]
+    assert sun["ts"].min() == pd.Timestamp("2024-10-27 22:00", tz="UTC") and len(sun) == 120     # the Sunday open at 22:00 UTC, as the synthetic calendar has it
+    mon = df[df["ts"].dt.date == date(2024, 10, 28)]
+    assert mon["ts"].min() == pd.Timestamp("2024-10-28 00:00", tz="UTC") and len(mon) == 1380     # every UTC minute of Monday is there once
+    mar_days = [date(2025, 3, 27) + timedelta(days=i) for i in range(6)]
+    df = index.hist_read(_hist_zip("US500", mar_days), "US500")
+    assert df.attrs == {"backwards": 0, "dup_minutes": 0} and df["ts"].is_monotonic_increasing
+    assert (df.groupby(df["ts"].dt.date).size().reindex([date(2025, 3, 31), date(2025, 4, 1)]) == 1380).all()       # the Monday after the switch is whole
+    o = index.hist_offset(pd.Series(pd.to_datetime(["2025-03-30 19:59", "2025-03-30 20:00", "2025-10-26 18:59", "2025-10-26 19:00", "2025-10-26 19:59", "2025-10-26 19:00", "2025-10-26 20:00"])))
+    assert list(o / pd.Timedelta("1h")) == [5, 4, 4, 4, 4, 5, 5]
 
 
 def test_hist_periods_are_years_then_the_complete_months_of_this_year():

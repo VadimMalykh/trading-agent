@@ -4,11 +4,16 @@ Two index CFDs that trade round the clock on weekdays — the S&P 500 (US500) an
 bars, from two keyless public sources measured 2026-10-01 (DATA.md "index_1m"):
 
 histdata   THE SOURCE OF THE PARQUET. HistData.com's generic ASCII one-minute bars, SPXUSD and NSXUSD, from 2010: one zip a
-           year for past years, one a month for the current year (the current month is not offered). Timestamps are
-           Eastern Standard Time WITHOUT daylight saving (a fixed UTC−5, converted here); bid quotes; the volume column is
-           always 0 and is not kept; a minute without a tick is absent (no padding); each zip carries a status report of
-           the tick gaps over 60 s. Fetched by the site's form: GET the referer page with a cookie jar, read the `tk`
-           token, POST get.php. About 4.5 MB a year.
+           year for past years, one a month for the current year (the current month is not offered). The site calls the
+           clock "EST without daylight saving"; MEASURED (2026-10-01, against Dukascopy's minutes — correlation 0.999 at
+           the right offset, 0.00 at the wrong one — and Yahoo's ES=F hours in the weeks where the US and the European
+           calendars differ) it is UTC−4 from the last Sunday of March to the last Sunday of October (the EUROPEAN
+           calendar, the file's clock switching at 20:00 on the March Sunday and repeating 19:00–19:59 on the October
+           Sunday) and UTC−5 otherwise. `hist_read` converts by that rule, the repeated hour split by row order. Bid
+           quotes; the volume column is always 0 and is not kept; a minute without a tick is absent (no padding); the
+           current year's files have rows swapped by a minute here and there (sorted; the later row kept); 2023-02 →
+           2023-07 is thin (whole hours missing inside sessions). Each zip carries a status report of the tick gaps over
+           60 s. Fetched by the site's form: GET the referer page with a cookie jar, read the `tk` token, POST get.php.
 dukascopy  Dukascopy's datafeed: daily one-minute candle files (BID), USA500.IDX/USD and USATECH.IDX/USD, from 2011-09.
            Bulk fetching is throttled hard (2026-10-01: a few files a minute, then 503s and dropped connections for an
            hour from each address that tried) — so it is NOT the bulk source; what was fetched serves as a cross-check of
@@ -53,7 +58,7 @@ HIST_PAIRS = {"US500": "SPXUSD", "US100": "NSXUSD"}
 HIST_ROOT = data.RAW / "external" / "histdata"
 HIST_PAGE = "https://www.histdata.com/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/"
 HIST_POST = "https://www.histdata.com/get.php"
-EST = pd.Timedelta("5h")                 # the files' clock: EST without daylight saving = UTC − 5, all year
+WINTER, SUMMER = pd.Timedelta("5h"), pd.Timedelta("4h")      # UTC = file clock + offset; summer by the European calendar (the module docstring)
 OUT = data.PROC / "index_1m.parquet"
 
 INSTRUMENTS = {"US500": "USA500IDXUSD", "US100": "USATECHIDXUSD"}
@@ -145,16 +150,39 @@ def hist_read(body: bytes, sym: str) -> pd.DataFrame:
     df = pd.read_csv(z.open(csv[0]), sep=";", header=None, names=["t", "open", "high", "low", "close", "volume"], dtype={"t": str})
     if not len(df):
         raise ValueError("an empty csv")
-    ts = pd.to_datetime(df["t"], format="%Y%m%d %H%M%S", utc=True) + EST
+    t = pd.to_datetime(df["t"], format="%Y%m%d %H%M%S")          # the file's clock, naive
     if not ((df["high"] >= df[["open", "close"]].max(axis=1)) & (df["low"] <= df[["open", "close"]].min(axis=1))).all():
         raise ValueError("a bar whose high or low does not hold its open and close")
+    ts = (t + hist_offset(t)).dt.tz_localize("UTC")
     out = pd.DataFrame({"symbol": sym, "ts": ts, "open": df["open"], "high": df["high"], "low": df["low"], "close": df["close"]})
-    back = int((ts.diff() < pd.Timedelta(0)).sum())              # the clock jumping back: the feed repeats an hour at a daylight-saving change
-    out = out.sort_values("ts", kind="stable")                   # (NSXUSD 2020-10-25 19:00–19:59 EST twice); the later pass is kept
+    back = int((ts.diff() < pd.Timedelta(0)).sum())              # rows out of order (the current year's files: a minute swapped here and there)
+    out = out.sort_values("ts", kind="stable")
     dups = int(out["ts"].duplicated().sum())
     out = out.drop_duplicates("ts", keep="last").reset_index(drop=True)
     out.attrs = {"backwards": back, "dup_minutes": dups}
     return out
+
+
+def _last_sunday(year: int, month: int) -> pd.Timestamp:
+    d = pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(0)
+    return d - pd.Timedelta(days=(d.dayofweek + 1) % 7)
+
+
+def hist_offset(t: pd.Series) -> pd.Series:
+    """Per row, what to add to the file's clock to get UTC: SUMMER from 20:00 on the last Sunday of March up to the hour
+    19:00–19:59 of the last Sunday of October — which the file holds TWICE: the first pass is summer, the second (after the
+    clock jumps back) is winter — and WINTER otherwise. Rows are taken in file order, as the site writes them."""
+    off = pd.Series(WINTER, index=t.index)
+    for y in t.dt.year.unique():
+        a = _last_sunday(y, 3) + pd.Timedelta(hours=20)
+        b = _last_sunday(y, 10) + pd.Timedelta(hours=19)
+        summer = (t >= a) & (t < b + pd.Timedelta(hours=1))
+        rep = (t >= b) & (t < b + pd.Timedelta(hours=1))         # the repeated hour: winter once the clock has jumped back
+        if rep.any():
+            jumped = (t.diff() < pd.Timedelta(0)) & rep
+            summer &= ~(rep & (jumped.cumsum() > 0))
+        off[summer] = SUMMER
+    return off
 
 
 def hist_status(sym: str, period: str) -> str:
@@ -343,7 +371,7 @@ def inventory(out: Path = REPORT, fetch_live: bool = True) -> str:
     trading hours, and — described — the minutes against Dukascopy's days and the hours against Yahoo's front future."""
     x = load()
     md = [f"# The US index CFDs as fetched (`ft2 index inventory`)\n", f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {OUT} · a row is a traded minute; "
-          "HistData's EST clock converted to UTC (+5 h, all year)\n"]
+          "HistData's clock moved to UTC by the measured rule (+4 h on the European summer calendar, +5 h otherwise)\n"]
     rows = []
     for sym in sorted(SYMBOLS):
         g = x[x["symbol"] == sym]
@@ -385,8 +413,12 @@ def inventory(out: Path = REPORT, fetch_live: bool = True) -> str:
         both = pd.concat([h.rename("cfd"), y.set_index("ts")["close"].rename("es")], axis=1).dropna()
         r = np.log(both).diff().dropna()
         dd = np.log(both.resample("1D").last().dropna()).diff().dropna()
+        summer = pd.Series(False, index=r.index)
+        for yy in r.index.year.unique():
+            summer |= (r.index >= (_last_sunday(yy, 3) + pd.Timedelta(days=1)).tz_localize("UTC")) & (r.index < (_last_sunday(yy, 10) + pd.Timedelta(days=1)).tz_localize("UTC"))
         md += ["\n## US500 against Yahoo's front E-mini future (ES=F, hourly, the last two years; described)\n",
-               f"\n{len(both):,} common hours; correlation of hourly log returns {r['cfd'].corr(r['es']):.4f}, of daily {dd['cfd'].corr(dd['es']):.4f}; "
+               f"\n{len(both):,} common hours; correlation of hourly log returns {r['cfd'].corr(r['es']):.4f} (European summer {r[summer]['cfd'].corr(r[summer]['es']):.4f} on "
+               f"{int(summer.sum()):,} hours, winter {r[~summer]['cfd'].corr(r[~summer]['es']):.4f} on {int((~summer).sum()):,}), of daily {dd['cfd'].corr(dd['es']):.4f}; "
                f"the CFD's level ÷ the future's: median {float((both['cfd'] / both['es']).median()):.4f} (the basis).\n"]
     else:
         md += ["\n## US500 against Yahoo's front E-mini future: not fetched\n"]
