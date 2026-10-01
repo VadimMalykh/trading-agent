@@ -98,8 +98,9 @@ Vadim: launch F0 s1 (≈ $1.5, ~3 h): WALKFORWARD §10.5's export block exactly 
 `VAL_OFFSET=0.000 SEED=1 ./scripts/gcp_train.sh --gpu 60 384`; go/no-go: the three drift items
 and `fold drift accepted`, no `cache miss`; after `./scripts/gcp_status.sh` says DONE,
 `./scripts/gcp_logs.sh <run_id> > logs/WFX8-F0-s1.log`, and check the log's own
-`knob VAL_OFFSET=0.000` / `knob SEED=1` lines before trusting the name.** Claude then, in a
-fresh session: the thirteen checks on that log; record it in `dumps.WALKFORWARD_X8_RUNS` and
+`knob VAL_OFFSET=0.000` / `knob SEED=1` lines before trusting the name.** *2026-10-01, Vadim:
+launching F0 s1 himself; the next session starts when he says it is done, from this block.*
+Claude then, in a fresh session: the thirteen checks on that log; record it in `dumps.WALKFORWARD_X8_RUNS` and
 `validate.PUBLISHED_FIXED_COV_WALKFORWARD_X8`, fetch its dump; the three §10.6 commands
 (`validate`, `folds`, `folds --contrast walkforward`); §10.4's reading. Expectation for the
 contrast: NOT DETECTABLE. **If CONFIRMED and the contrast is not WORSE:** X8″'s three commands
