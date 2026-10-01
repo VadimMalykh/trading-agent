@@ -2953,6 +2953,111 @@ Re-executed:   **2026-09-30, the re-execution `actual` (§3; the run 07:44 → 0
                lost on all three samples, and its gross before costs is +11.6, +3.2 and −5.6 — under its costs in each. A book
                with a protective stop is a new rule (P8 "What next"). No variant on these cells.
 
+### R26 — the US stock index as per-name information: a name's sensitivity to the Nasdaq 100 × the index's recent move, on names outside the twelve and on the twelve (registered 2026-10-01 on Vadim's "write R26", before the code was written and before any crypto bar was read against the index; read —)
+Question:      Eight reads (R18–R25) found nothing outside the twelve that clears its costs, all of it information the
+               exchange publishes about a name. P8 (B3) asks about information from outside crypto: the US stock index
+               trades almost round the clock on weekdays and crypto is known to move with it. One number for the whole
+               market has no cross-section, so it reaches pair-vs-peers only through each name — does a name's trailing
+               SENSITIVITY to the index, times what the index just did, say which way the name moves over the next day
+               AGAINST the other names? A ceiling audit (Principle 2): no model, no book, no fold spent, no download —
+               the index is in `data/index_1m.parquet` (DATA.md `index_1m`, audited 2026-10-01).
+Index:         ONE, fixed here: US100 (the Nasdaq 100 CFD; crypto's known tie is to tech). US500 is a reference (Described).
+               A minute bar stamped ts is known from ts + 1 min; the index's value at an instant s is the close of the last
+               traded minute ≤ s − 1 min. The index is OPEN at s if that minute is within 15 min of s, CLOSED otherwise
+               (the weekend Friday 20:15/21:15 → Sunday 22:00/23:00 UTC, the daily break, US holidays — and an hour missing
+               inside a session, which 2023-05 → 07 has many of: by this rule it reads as closed, and the per-month
+               coverage below says how often). Nothing is interpolated.
+Cells:         two universes, the same grid and the same label, each a set of cells of its own:
+               (a) OUTSIDE — R18's, exactly (R20's, R21's, R22's): the scored cells of `output/backtest/r18_transferbook_1d`,
+                   hourly decision bars of F1+F2, embargoed, the block's 60 members, the twelve left out; 694,501 cells,
+                   188 names, 485 days.
+               (b) THE TWELVE — every hour of F1+F2 (embargoed, the same 485 days) × the twelve present with a label
+                   and a σ_1w (11: HYPE lists in F4), the collector's bars (`ceiling.panel`). About 125,000 cells.
+               Label, both: R18's — the move from the close one bar after t to the close 288 bars later, over σ_1w·√288,
+               clipped at ±5 (`audit.frame`'s code). The statistic ranks across the names present, so no de-meaning.
+               VALIDITY, read first or the run is void: (a) the audit's labels equal R18's on every cell to 1e-6 and the
+               cell count is R18's (R20's check); (b) on the cells `r14_ridgebook_1d_ho12` scored, the labels equal that
+               run's z to 1e-6, and every hour has ≥ 5 names.
+Features:      five per universe, fixed here, each per name and known strictly before t:
+                 beta     the name's trailing sensitivity: the least-squares slope of the name's hourly log return on
+                          US100's hourly log return over the 30 days before t, over the hours ending ≤ t at whose both
+                          ends the index was OPEN (≥ 200 such hours, else NaN; a weekday holds about 18). Hourly returns
+                          are close-to-close on the hourly grid. A LEVEL: the null keeps a name's own labels (below).
+                 bx_1h    beta × m_1h, where m_h is US100's log move from its value at t − h to its value at t, bps;
+                          read only when the index is OPEN at t and at t − h, else NaN
+                 bx_4h    beta × m_4h, the same rule
+                 bx_24h   beta × m_24h; read when the index is OPEN at t; the start is the index's value at t − 24 h
+                          whatever that minute's age (on a Monday morning: Friday's close) — the weekend gap is inside
+                 bx_gap   read only when the index is CLOSED at t: beta × the index's log move over its last 240 traded
+                          minutes before the close that is in force (what the index did going into the break), bps.
+                          Open hours NaN. On the twelve the same five.
+               Why these and not "the index's move itself" or "the weekend": a number shared by every name at one instant
+               has no rank across names and cannot be a feature of this statistic. The index's move itself is read as a
+               SPLIT of beta's IC by the sign of m_24h (Described), and the closed regime as bx_gap and as a split of
+               bx_24h's IC by open / closed hours. A feature is read on its cells only; the coverage is reported.
+Statistic:     R20's, unchanged (`ceiling._ic_xs`): per bar, the Spearman correlation across the names present (≥ 5 with
+               feature and label) of the feature with the label; averaged per day; the mean over days. ONE horizon (1d),
+               ONE bet (relative). The HAC t over days (2 lags) is reported beside the null's u and decides nothing.
+Null:          R22's, not R20's: the labels move by a whole number of days, the same for every name and every bar (a
+               circular shift of the scored days; time of day kept, whole rows move), EVERY admissible shift. A shift is
+               admissible if no day receives the labels of a day less than 32 days away in either direction (30 days of
+               beta's window + 1 of hold + 1); 485 days → 422 shifts, the SAME shift applied to both universes. A name
+               keeps its own labels, so a lasting link between a name's LEVEL of a feature (beta) and its drift survives
+               in the null and earns no credit (R20). Per feature × universe: centre = the mean of the IC over the
+               shifts, se = their standard deviation, IC_c = IC − centre, u = IC_c / se (R20 (D1): each number against
+               the centre of its own null — the reason R20's whole-days null is not used again). Family: the 5 × 2 = 10;
+               per shift the largest |u| of the ten → the family-wise p of a real |u|.
+Described:     decides nothing. Per feature × universe: the coverage of cells, per month (the thin months 2023-05 → 07
+               fall in F1); the IC per fold and the share of months with its sign; the IC on OPEN hours and on CLOSED
+               hours apart (beta, bx_24h); beta's IC on hours where m_24h > 0 and where m_24h < 0, and the difference —
+               "the index's move itself"; the five with US500 in place of US100 (reference rows, no null, no verdict);
+               beta over 90 days in place of 30 (one reference row); R18's forecast by the same statistic on (a) and
+               R14's held-out forecast on (b) (the reference rows); the IC at which trading the top tenth breaks even
+               at taker cost on each universe (P2 #7's formula; the members' priced round trip ≈ 18 bps, the twelve's
+               ≈ 12.5); and the mean age of the index minute in force at t, per hour of the week.
+Commands:      on the work VM, in this order —
+                 `vm.sh bg r26 audit r18_transferbook_1d --family index --twelve` → output/audit/r18_transferbook_1d_index/audit.md
+                                                                                 and output/audit/twelve_index/audit.md
+               (the code: `audit.features_index`, the shift null of `horizon.shifts` on the hourly grid, a `--twelve`
+               cells builder on `ceiling.panel`; written AFTER this block is committed; its tests on made-up bars check
+               the open/closed rule, the known-from time, beta against numpy's lstsq and the shift count.)
+Folds read:    F1+F2 (exploration), the cells R18–R22 read, and the twelve's F1+F2 that P2–P5 read. No confirmation fold,
+               no download. Every source is cut at the end of F2; the index parquet reaches 2026-09 but nothing after
+               2024-09-01 is loaded.
+Gate:          validity PASS on both universes, then per feature × universe:
+               CLEARS if |u| ≥ 2 AND family-wise p ≤ 0.05 AND the IC has one sign in F1 and F2. ≥ 1 clears → a candidate
+               exists on exploration data; it licenses no trade. Next registration, on Vadim's go: the smallest thing
+               that trades it through the harness, priced — on the twelve if it clears there (P7's names, measured cost,
+               a book the serve host could run), else a rank rule on the members — and the serving lag is part of it
+               (Dukascopy's hour file lands after the hour closes, Yahoo's ES=F is ten minutes behind: a 1h feature read
+               here as if the minute were known at once must be re-read at the lag it can be served at). A confirmation
+               read only on cells not read for this family, as Vadim decides (F3+F4 of the outside names were read for
+               the open-interest book; F5 is unread on both universes).
+               CLOSED if |IC_c| + 1.96 se < 0.02 (R20's bar): the index says nothing usable about that name's next day
+               against its peers, at one day, on that universe.
+               NOT DETECTABLE otherwise, with its MDE (2.8 se).
+               None clears → nothing is licensed; what follows is Vadim's decision (§9 #7's other series — the ETF flows,
+               a scrape; §9 #8 events; or P7 alone). Whatever the verdict: no variant on these cells under this
+               registration — no other index, window, lag, hold, sensitivity measure, or hour-of-week cut.
+Power:         stated before the read. OUTSIDE: R20's features had se 0.004–0.009 on all cells; bx_1h, bx_4h and bx_24h
+               are read on about half the cells (open hours ≈ 53 % of a week, less in the thin months), bx_gap on the
+               other half, so their se is expected at 0.008–0.014 and MDE 0.022–0.039; beta on nearly all cells,
+               0.005–0.010. THE TWELVE: a Spearman across 11 names is wide (sd ≈ 0.32 per bar; R14's held-out IC 0.033
+               had se 0.016 on all cells) — se 0.02–0.03 on half the cells, MDE 0.06–0.08: the twelve cannot CLOSE a
+               feature at 0.02 and can only find a large effect. The family bar (the largest of ten |u| on noise) is
+               expected at 2.9–3.1: to CLEAR, |IC_c| ≈ 0.025–0.04 outside, ≈ 0.06–0.09 on the twelve. Break-even on
+               the members is about 0.033 (R20 (D3)); on the twelve 0.02–0.03 (P2 #7).
+Expectation:   validity PASS on both. Coverage: beta ≥ 90 % of cells, bx_1h/bx_4h/bx_24h 45–55 %, bx_gap 45–55 %, 2023-05 →
+               07 lower by a fifth. Crypto moves WITH the index within minutes, so a move already made says little
+               about the next day: bx_1h and bx_4h inside ±0.010 (a small positive if high-beta names under-react);
+               bx_24h and bx_gap 0 … +0.015 (the weekend carry of Friday's move the likeliest place); beta a level,
+               inside ±0.015 on the outside names (centred: ±1.5 sd), inside ±1 se on the twelve. The split by the
+               index's sign: beta's IC positive after an index rise and negative after a fall, each inside ±0.02. US500
+               rows within ±0.005 of US100's. About one chance in six that a feature clears the family bar. Likeliest:
+               ten NOT DETECTABLE, bx_24h or bx_gap the nearest on the outside names, nothing on the twelve.
+Result:        — (filled once, after the read; per feature × universe: IC, centre, IC_c, se, u, family-wise p, F1/F2, MDE,
+               verdict; validity; coverage; the described rows)
+
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
 Contrast:      A vs B, per <trade | unit notional>, bps
@@ -2975,7 +3080,7 @@ built here in P2 and needs no download.
 | 4 | **Same pairs on a second venue** (Bybit / OKX perps, 1m klines) | their public archives | Cross-venue lead-lag at short horizons; only relevant if P2 funds a sub-15m horizon | parked |
 | 5 | On-chain, news, sentiment | various | Low prior at these horizons, high engineering cost; not now | parked |
 | 6 | **Open interest, funding and positioning as SCREENER characteristics** (Vadim's question 2026-09-27: "new features?") | the archive's `metrics` and `fundingRate`, every symbol, free | R15 found they add nothing as model inputs on the twelve. Not tested: as things a screener ranks names by (open interest over volume = crowded, funding at an extreme). Per name, so it has breadth. **Read directly against the next day's move in R20 (2026-09-28): funding closed; open interest over volume and open-interest change NOT DETECTABLE and the nearest (IC +0.033, −0.019, −0.016)**; `metrics` for the 188 members is on the work VM | R20 ✅ as a ceiling audit; as screens of a forecast still parked (the forecast has nothing to sort, R18) |
-| 7 | **Market-wide daily series: spot-ETF net flows (BTC from 2024-01-11, ETH from 2024-07-23), stablecoin supply, Deribit implied volatility (DVOL), macro dates (FOMC, CPI)** (Vadim, 2026-09-27) | Farside tables (scrape), DefiLlama, Deribit API, a calendar; all free | One number a day for the whole market: ≈ 650 days of ETF history, so only an IC ≥ 0.1 is detectable, and it is a market-direction input where our surviving signal is pair-vs-peers. Best uses: (a) BTC/ETH against the alts the day after a large flow; (b) a regime switch or a size multiplier. Known-at time matters: a day's flow is published after the US close, usable from ≈ 03:00 UTC the next day. **US stock indices (S&P 500, Nasdaq; Vadim, 2026-09-27)** belong to this family with two differences: index futures trade almost round the clock on weekdays, so the series is intraday and covers all folds, and it is closed at weekends (a regime of its own). Still one number for the whole market: to reach pair-vs-peers it enters as EACH NAME'S trailing sensitivity to the index × the index's recent move, which is per name and has breadth — the same construction applies to the ETF flows. Source to audit: free minute history of the index ETFs or futures, and a live feed the serve host can read. **Source audit DONE 2026-10-01 (`ft2 index`; DATA.md `index_1m`): the S&P 500 and the Nasdaq 100 as round-the-clock CFDs, one-minute bars 2020-01 → 2026-09, from HistData.com (free, keyless; its clock is not the fixed EST it states — measured and converted) and identical to Dukascopy's feed, whose hourly tick files (up within the hour after the hour closes) are the live-feed candidate beside Yahoo's ES=F (ten minutes behind); 2023-02 → 2023-07 is thin. ETF flows: Farside's HTML table is the only free route (a scrape), not fetched.** | the ceiling registration next (B3): the index family as per-name information — each name's trailing sensitivity × the index's move over the last hours and the last day, the index's move itself, the weekend — on R20's cells (outside names) and on the twelve, written before any crypto bar is read against it |
+| 7 | **Market-wide daily series: spot-ETF net flows (BTC from 2024-01-11, ETH from 2024-07-23), stablecoin supply, Deribit implied volatility (DVOL), macro dates (FOMC, CPI)** (Vadim, 2026-09-27) | Farside tables (scrape), DefiLlama, Deribit API, a calendar; all free | One number a day for the whole market: ≈ 650 days of ETF history, so only an IC ≥ 0.1 is detectable, and it is a market-direction input where our surviving signal is pair-vs-peers. Best uses: (a) BTC/ETH against the alts the day after a large flow; (b) a regime switch or a size multiplier. Known-at time matters: a day's flow is published after the US close, usable from ≈ 03:00 UTC the next day. **US stock indices (S&P 500, Nasdaq; Vadim, 2026-09-27)** belong to this family with two differences: index futures trade almost round the clock on weekdays, so the series is intraday and covers all folds, and it is closed at weekends (a regime of its own). Still one number for the whole market: to reach pair-vs-peers it enters as EACH NAME'S trailing sensitivity to the index × the index's recent move, which is per name and has breadth — the same construction applies to the ETF flows. Source to audit: free minute history of the index ETFs or futures, and a live feed the serve host can read. **Source audit DONE 2026-10-01 (`ft2 index`; DATA.md `index_1m`): the S&P 500 and the Nasdaq 100 as round-the-clock CFDs, one-minute bars 2020-01 → 2026-09, from HistData.com (free, keyless; its clock is not the fixed EST it states — measured and converted) and identical to Dukascopy's feed, whose hourly tick files (up within the hour after the hour closes) are the live-feed candidate beside Yahoo's ES=F (ten minutes behind); 2023-02 → 2023-07 is thin. ETF flows: Farside's HTML table is the only free route (a scrape), not fetched.** | **R26 registered 2026-10-01** (§8): five per-name features — a name's 30-day sensitivity to US100, and that sensitivity × the index's move over the last 1, 4 and 24 h and into a close — on R20's outside cells and on the twelve, R22's shift null, one family of ten. Next: the code (`audit --family index --twelve`), then the run; read — |
 | 8 | **Scheduled per-name events: token unlocks, listings and delistings, exchange "monitoring" tags** | DefiLlama unlocks, Binance announcements | Known in advance, per name, and about exactly the young names R14's money sits in. Risk: the history of announcements is hard to reconstruct without hindsight | parked — after #3 and #6; needs a source audit first |
 
 Rule for adding any of them: a raw download lands under `data/raw/external/<source>/`, is
