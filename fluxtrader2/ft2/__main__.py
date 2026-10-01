@@ -69,6 +69,11 @@ def cmd_index(args):
     index.main(args.action, args.source, args.start, args.end, args.symbols, args.workers)
 
 
+def cmd_etf(args):
+    from . import etf
+    etf.main(args.action, args.no_wayback, args.hours)
+
+
 def cmd_universe(args):
     from . import universe
     if args.screen:
@@ -274,6 +279,10 @@ def main(argv=None):
     ix.add_argument("--start", default=None, help="fetch: first day (default FP's first day, 2020-05-01; histdata: its year)")
     ix.add_argument("--end", default=None, help="fetch --source dukascopy: last day inclusive (default yesterday UTC)")
     ix.add_argument("--symbols", nargs="*", default=None, help="US500 US100 (default both)")
+    et = sub.add_parser("etf", help="P8 (B3′, PLAN §9 #7): the US spot-ETF net flows from Farside's tables → data/raw/external/farside/, data/etf_flows.parquet, output/etf_inventory.md (see ft2/etf.py)")
+    et.add_argument("action", choices=["fetch", "ingest", "inventory"])
+    et.add_argument("--no-wayback", action="store_true", help="inventory: skip the known-at measurement on the Wayback Machine's snapshots of the live page")
+    et.add_argument("--hours", nargs="*", type=int, default=None, help="inventory: fetch only the snapshots taken at these UTC hours (default all)")
     ix.add_argument("--workers", type=int, default=None, help="fetch --source dukascopy: concurrent requests (default 3; the feed throttles)")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
@@ -284,7 +293,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "serve": cmd_serve, "index": cmd_index, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon}[args.cmd](args)
+            "costwide": cmd_costwide, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon}[args.cmd](args)
 
 
 if __name__ == "__main__":
