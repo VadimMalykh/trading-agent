@@ -132,14 +132,24 @@ RUNS_BY_ERA["walkforward"] = WALKFORWARD_RUNS
 #
 # Filled the same way as WALKFORWARD_RUNS — from each run's own `Split walkforward_window`
 # line — and every `None` is a run that does not exist yet.
+# Recorded 2026-10-01 from each log's own `Split walkforward_window` line after §10.6's
+# thirteen checks (WALKFORWARD_PROTOCOL §10.7). F0 s1 was never launched (the queue skipped
+# it; the file brought back under that name was a copy of F1 s3's log) — it stays None until
+# its run exists, and `m3 folds` stays PROVISIONAL / `--contrast` refuses until then.
 WALKFORWARD_X8_RUNS: dict[str, str | None] = {
-    "F0s1": None, "F0s2": None, "F0s3": None,
-    "F1s1": None, "F1s2": None, "F1s3": None,
-    "F2s1": None, "F2s2": None, "F2s3": None,
-    "F3s1": None, "F3s2": None, "F3s3": None,
+    "F0s1": None, "F0s2": "20260930T120908Z", "F0s3": "20261001T031146Z",
+    "F1s1": "20260929T120303Z", "F1s2": "20260929T175418Z", "F1s3": "20260930T064441Z",
+    "F2s1": "20260928T051128Z", "F2s2": "20260928T125736Z", "F2s3": "20260928T161613Z",
+    "F3s1": "20260928T223432Z", "F3s2": "20260929T051858Z", "F3s3": "20260929T082532Z",
 }
+# One pinned snapshot for all twelve (§10.1), so the three seeds of a fold print identical
+# `Split` lines — no between-seed drift in this era (checked: F1, F2, F3 three for three; F0
+# s2 == s3).
 WALKFORWARD_X8_SPLITS: dict[str, tuple[str, str] | None] = {
-    "F0": None, "F1": None, "F2": None, "F3": None,
+    "F0": ("2026-03-25 10:35", "2026-09-09 20:05"),
+    "F1": ("2025-10-08 01:00", "2026-03-25 10:30"),
+    "F2": ("2025-04-19 02:00", "2025-10-08 00:55"),
+    "F3": ("2024-10-17 09:00", "2025-04-19 02:00"),
 }
 RUNS_BY_ERA["walkforward_x8"] = WALKFORWARD_X8_RUNS
 

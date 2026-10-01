@@ -1988,18 +1988,27 @@ the twelfth run is recorded, and `--contrast` refuses outright.
 
 ### 10.7 Record (filled in as runs complete; nothing above this line changes)
 
-| run | run id | git | `Split walkforward_window` val span | checks 1–11 | notes |
+| run | run id | git | `Split walkforward_window` val span | checks 1–13 | notes |
 |---|---|---|---|---|---|
 | F2 s1 | *void:* `20260924T122208Z` | 0a83a0e | — | launched unshifted before decision (2); stopped in dump restore, nothing trained | not part of any statistic |
-| F2 s1 | — | | | | |
-| F2 s2 | — | | | | |
-| F2 s3 | — | | | | |
-| F3 s1 | — | | | | |
-| F3 s2 | — | | | | |
-| F3 s3 | — | | | | |
-| F1 s1 | — | | | | |
-| F1 s2 | — | | | | |
-| F1 s3 | — | | | | |
-| F0 s1 | — | | | | |
-| F0 s2 | — | | | | |
-| F0 s3 | — | | | | |
+| F2 s1 | `20260928T051128Z` | 91d26f6 | val [2025-04-19 02:00 → 2025-10-08 00:55] | ✅ all thirteen, recorded 2026-10-01 | early stop ep 21; gate 0.5989; 12 pairs. Log fetched by Claude from the bucket on 2026-10-01 — it had not been brought back (note d) |
+| F2 s2 | `20260928T125736Z` | 117836a | same line as s1 | ✅ recorded 2026-10-01 | ep 25; gate 0.5828 |
+| F2 s3 | `20260928T161613Z` | 117836a | same line as s1 | ✅ recorded 2026-10-01 | ep 27; gate 0.6962 |
+| F3 s1 | `20260928T223432Z` | 117836a | val [2024-10-17 09:00 → 2025-04-19 02:00] | ✅ recorded 2026-10-01 | ep 23; gate 0.6361; **11 pairs** (HYPE has no val row, as in the banked F3) |
+| F3 s2 | `20260929T051858Z` | 117836a | same line as s1 | ✅ recorded 2026-10-01 | ep 29; gate 0.7484; 11 pairs |
+| F3 s3 | `20260929T082532Z` | 117836a | same line as s1 | ✅ recorded 2026-10-01 | ep 26; gate 0.6835; 11 pairs |
+| F1 s1 | `20260929T120303Z` | 117836a | val [2025-10-08 01:00 → 2026-03-25 10:30] | ✅ recorded 2026-10-01 | ep 21; gate 0.6516; 60m-head gate warning (note a) |
+| F1 s2 | `20260929T175418Z` | 117836a | same line as s1 | ✅ recorded 2026-10-01 | ep 26; gate 0.7631 |
+| F1 s3 | `20260930T064441Z` | 117836a | same line as s1 | ✅ recorded 2026-10-01 | ep 25; gate 0.6862 |
+| F0 s1 | **not launched** | — | — | — | The queue went F1 s3 → F0 s2 → F0 s3. The file brought back as `logs/WFX8-F0-s1.log` was a second copy of F1 s3's log (identical md5; run `20260930T064441Z`, `knob VAL_OFFSET=0.125`, `knob SEED=3`) and was deleted 2026-10-01; the bucket holds no other run between X8b s3 and F0 s3. **To launch:** §10.5's export block, then `VAL_OFFSET=0.000 SEED=1 ./scripts/gcp_train.sh --gpu 60 384`; fetch as `logs/WFX8-F0-s1.log` and check the log's own `knob VAL_OFFSET=0.000` / `knob SEED=1` lines before trusting the name |
+| F0 s2 | `20260930T120908Z` | 117836a | val [2026-03-25 10:35 → 2026-09-09 20:05] | ✅ recorded 2026-10-01 | ep 37; gate 0.9897; 60m-head gate warning (note a) |
+| F0 s3 | `20261001T031146Z` | 117836a | same line as s2 | ✅ recorded 2026-10-01 | ep 22; gate 0.5336 |
+
+**Notes carried with the eleven recorded runs (2026-10-01; observations, not decisions):**
+
+* **(a) `WARNING: at the SERVED gate … this head gates ZERO bars — the 60m head would never fire`** on F1 s1 and F0 s2 is the 60m head at the cut derived on the 240m head; the primary head gates its 2% by construction. Five banked fold logs carry the same line (WF-F0-s2, F0-s3, F1-s1, F3-s2, F3-s3) and were recorded. Not a void.
+* **(b) Check 9, what the CONSTANT block prints:** F0 and F1 — 11/19 on all twelve pairs and `_global` (`has_funding_oi` joins the ten book/trade columns: the archive covers every pair's whole train window there); F2 and F3 — 11/19 on the long pairs, 10/19 on WLD and `_global` (WLD's train window starts before its 2023-07 listing, so its mask is not constant), and no fit line at all for HYPE (no train row before its listing). `oi` and `oi_chg` appear in no list in any of the eleven logs.
+* **(c) Check 11:** the three seeds of F1, F2 and F3 and the two of F0 print identical `Split` lines — one snapshot, so the between-seed drift §6.0 describes for the banked era is absent here. `dumps.WALKFORWARD_X8_SPLITS` carries each fold's span.
+* **(d) Git:** F2 s1 cloned `91d26f6`, the other ten `117836a`; `git diff --stat 91d26f6 117836a -- ml apps scripts` is empty (the span is fluxtrader2 commits only), so all eleven trained and were scored by identical code. Both are after `be9df37` (check 13). F2 s1's log had not been brought back at all; Claude fetched it from `gs://fluxtrader-train-artifacts/logs/20260928T051128Z.log`.
+* **(e) Every log:** `OI join: OI_JOIN_AT_CLOSE=1 (open interest as of the bar close)`; `Align age: ALIGN_AGE_FIX=0`; no `Embargo:` line; no `BROKEN SCALE`; eval `Val samples` span equal to the `Split` line's; early stops 21–37.
+* **(f) The harness, run 2026-10-01 on the eleven:** `M3_ERA=walkforward_x8 m3 validate` → **TEST 3 PASS** on all eleven dumps (55 cells, every one MATCH); `m3 folds` → `PROVISIONAL — NOT §3's VERDICT`, `1 of the twelve pre-registered runs are missing (F0s1)`, as registered; `m3 folds --contrast walkforward` ran (F2 + F3 are complete on both families, which is all the code checks) — **its output was not read**, by §10.6's rule that nothing from a partial family is quoted. The eleven dumps are in `ml/train/output/eval_dumps/`.
