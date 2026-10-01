@@ -93,6 +93,10 @@ def cmd_audit(args):
     if args.book:                                             # R21: the validity of an `oibook` run, read before its money
         v = audit.book_check(args.run)
         return print(f"book check {v['status']}: {v}")
+    if args.family == "index":                                # R26: the US index as per-name information, the shift null, the twelve beside the members
+        from . import audit_index
+        print(audit_index.run(args.run, pairs=PAIRS, twelve=args.twelve, jobs=args.jobs))
+        return print(f"wrote {audit_index.OUT / (args.run + '_index')}/" + (f" and {audit_index.OUT / 'twelve_index'}/" if args.twelve else ""))
     print(audit.run(args.run, args.draws))
     print(f"wrote {audit.OUT / args.run}/")
 
@@ -254,6 +258,9 @@ def main(argv=None):
     au.add_argument("--beside", nargs="*", help="--pool --confirm: the exploration runs pooled beside the confirmation's (default: R24's two as first read)")
     au.add_argument("--draws", type=int, default=200)
     au.add_argument("--book", action="store_true", help="R21: check an `oibook` run's decisions (hourly grid, members only, whole dollar-neutral units) → <run>/book_check.json")
+    au.add_argument("--family", choices=["exchange", "index"], default="exchange", help="R26: `index` — the US index family (beta, beta × the index's move) with R22's shift null → output/audit/<run>_index/")
+    au.add_argument("--twelve", action="store_true", help="--family index: the twelve on the same grid as a second universe (one family of ten) → output/audit/twelve_index/")
+    au.add_argument("--jobs", type=int, default=4)
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
                                         "`transferbook` run → output/horizon/<run>/horizon.md (see ft2/horizon.py)")
     hz.add_argument("run", nargs="?", help="the run's directory name under output/backtest/")

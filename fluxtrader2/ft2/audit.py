@@ -96,6 +96,12 @@ def features(idx: pd.DatetimeIndex, cols: list[str], dv: pd.DataFrame, end: pd.T
     return {k: F[k].replace([np.inf, -np.inf], np.nan) for k in keys}, notes
 
 
+def features_index(*args, **kwargs):
+    """R26 (`ft2/audit_index.py`): the index family — beta and beta × the index's move — on an hourly grid."""
+    from .audit_index import features_index as f
+    return f(*args, **kwargs)
+
+
 def _day(ts: pd.DatetimeIndex) -> np.ndarray:
     return (ts.floor("D") - ts[0].floor("D")).days.to_numpy()
 
