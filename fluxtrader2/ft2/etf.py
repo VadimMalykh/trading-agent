@@ -233,7 +233,7 @@ def known_at(snapshots: dict[str, pd.DataFrame], final: pd.DataFrame) -> pd.Data
     return pd.DataFrame(rows)
 
 
-def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None = None, per_hour: int | None = 3) -> str:
+def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None = None, per_hour: int | None = 3, cached: bool = False) -> str:
     x = load()
     md = [f"# The US spot-ETF net flows as fetched (`ft2 etf inventory`)\n",
           f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {OUT} · Farside Investors' all-data tables, US$ millions, one row a US trading day\n"]
@@ -261,8 +261,8 @@ def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None =
         md += [f"\n## BTC against ETH (described)\n", f"\n{len(both)} common days; correlation of the daily totals {both['BTC'].corr(both['ETH']):.2f}; "
                f"of their signs {np.sign(both['BTC']).corr(np.sign(both['ETH'])):.2f}.\n"]
     if wayback:
-        stamps = wayback_list()
-        n = wayback_fetch(stamps, hours, per_hour=per_hour)
+        stamps = [] if cached else wayback_list()
+        n = {"cached": True} if cached else wayback_fetch(stamps, hours, per_hour=per_hour)
         snaps = {}
         for f in sorted(WAYBACK.glob("*.html")):
             try:
@@ -274,7 +274,7 @@ def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None =
         k.to_csv(out.with_name("etf_known_at.csv"), index=False)
         by = k.groupby("hour_utc").agg(snapshots=("final", "size"), has_row=("has_row", "mean"), final=("final", "mean"))
         bya = k.assign(h=np.floor(k["hours_after_close"]).clip(0, 30).astype(int)).groupby("h").agg(snapshots=("final", "size"), final=("final", "mean"))
-        md += [f"\n## Known-at: the live page as the Wayback Machine saw it ({len(stamps)} snapshots listed, {len(snaps)} read; fetched {n})\n",
+        md += [f"\n## Known-at: the live page as the Wayback Machine saw it ({len(snaps)} snapshots read from {WAYBACK}; {'the cache only' if cached else f'{len(stamps)} listed, fetched {n}'})\n",
                "\nFor each snapshot: the last US trading day whose session had closed (21:00 UTC), whether the live page already had that day's row, and whether "
                f"its total equalled the final table's within {TOL} US$m. By the snapshot's UTC hour:\n", by.round(2).to_markdown(), "\n",
                "\nBy whole hours after that day's 21:00 UTC close (30 = a day or more):\n", bya.round(2).to_markdown(), "\n"]
@@ -287,12 +287,12 @@ def inventory(out: Path = REPORT, wayback: bool = True, hours: set[int] | None =
     return text
 
 
-def main(action: str, no_wayback: bool = False, hours: list[int] | None = None, per_hour: int | None = 3) -> None:
+def main(action: str, no_wayback: bool = False, hours: list[int] | None = None, per_hour: int | None = 3, cached: bool = False) -> None:
     per_hour = per_hour or None
     if action == "fetch":
         fetch()
     elif action == "ingest":
         ingest()
     elif action == "inventory":
-        print(inventory(wayback=not no_wayback, hours=set(hours) if hours else None, per_hour=per_hour))
+        print(inventory(wayback=not no_wayback, hours=set(hours) if hours else None, per_hour=per_hour, cached=cached))
         print(f"wrote {REPORT}")

@@ -182,6 +182,24 @@ correlation 1.0000, level difference 0.0 bps): HistData mirrors Dukascopy's feed
 bars (two years, about ten minutes behind): hourly return correlation 0.95, daily 0.99, level ÷ future 0.9957 (the basis).
 `output/index_inventory.md` has the tables.
 
+### etf_flows (Farside Investors, daily; P8 B3′, §9 #7) — `data/etf_flows.parquet`: `(asset, day, fund) → flow_musd, holiday`
+
+The US spot bitcoin and ether ETFs' daily net flows, US$ millions, one row a US trading day, one column a fund, from Farside's
+free all-data tables (`ft2 etf fetch|ingest|inventory`, `ft2/etf.py`; raw under `data/raw/external/farside/`, a dated copy per
+fetch). **Measured 2026-10-01 (`output/etf_inventory.md`):** BTC 12 funds, 698 days 2024-01-11 → 2026-09-30 (682 trading days
++ 16 holiday rows); ETH 11 funds, 560 days 2024-07-23 → 2026-09-30. The funds sum to the total to 1e-13 on every row (the
+parser refuses a page where they do not). US market holidays are rows with every fund blank until 2025-06-19 and absent after
+(12 weekdays without a row from 2025-07-04 on, all holidays); they are flagged `holiday` and left out of `etf.totals`. ETH has
+13 real zero-flow days. **Per fold (BTC trading days):** F2 161 (from 2024-01-11; F1 none), F3 165, F4 167, F5 174; ETH F2 29
+— too few to explore, so ETH is not a feature of any exploration read. Daily total: BTC mean +82, sd 337, |total| > 300 on
+31 % of days; ETH mean +25, sd 142; BTC and ETH totals correlate 0.49 (signs 0.41) on 560 common days.
+**Known-at, measured on the Wayback Machine's snapshots of the live page** (`etf.known_at`, 36 snapshots read — the archive
+throttles to a few an hour, so the early hours hold one or two samples each): the day's row is on the live page the same
+evening, but its total is partial until the funds have all reported — 0 of 7 snapshots final within 5 h of the 21:00 UTC
+close, 1 of 2 at 5–6 h, and **24 of 24 final from 9 h on**. Rule for any feature: **a day's flow is known from 09:00 UTC the
+next calendar day** (12 h after the close); the all-data table is the final value and must not be read earlier. A fetch on
+a holiday or before the US close sees a blank last row (the day in progress), which the parser drops.
+
 ### Archive tables as measured (`ft2 inventory`, 2026-09-15)
 
 | table | pairs | window (UTC) | rows | integrity (`output/inventory.md` has the per-pair tables) |
@@ -197,6 +215,7 @@ bars (two years, about ten minutes behind): hourly return correlation 0.95, dail
 | `ft2/screen_hindsight.csv` — **the members' 2026 volume** (R19, 2026-09-27) | the 188 members, one row a name: `hind_musd`, the median daily quote volume over the window (a day without a bar = 0), and `hind_days` | 2026-01-01 → 2026-08-31, monthly 1d archive files | 188 | 38 names with a median of zero (gone or renamed; the archive keeps flat zero-volume bars for a delisted contract, so 180 names have a bar on all 243 days). Hindsight on purpose: read by R19's diagnostic only, never an input to a model or a tradable screen. Only quote volume is read |
 | `metrics` (5m) — **the screener's members** (R20, 2026-09-28) | +188 pairs (`ft2/screen_members.csv`); the twelve unchanged | members: 2023-04-01 (or listing) → 2024-08-31, daily archive files; the twelve as before | 26,897,086 in the slice (was 4,322,018); 24,174,288 inside 2023-04 → 2024-08 on 199 names | 188 fetches, 0 errors, 0 bad checksums; files absent from the archive are days before a listing, plus 1–2 days on some old names (ZEN, XEM, XMR 2; XLM 1). 42 duplicate keys dropped. **The slice is rewritten whole by `ft2 ingest metrics --universe all`; the twelve's rows came back identical, value by value**, against `data/metrics_before_r20.parquet` (kept on the work VM). On R20's 694,501 cells the features built from it cover 99.7–99.9 % |
 | `premium` (archive `premiumIndexKlines/5m`) — `data/premium.parquet`: `(symbol, open_time) → premium`, the bar's last premium index (perpetual over the spot index, minus one) (R20, 2026-09-28) | the 188 members; **not the twelve** (not fetched: R20's cells leave them out) | 2023-04-01 (or listing) → 2024-08-31, monthly archive files | 22,763,516 | 188 fetches, 0 errors, 0 bad checksums, 0 duplicates; up to 17 monthly files a name, fewer for names listed inside the window. Covers 100 % of R20's cells |
+| `etf_flows` (Farside, daily; P8 B3′, 2026-10-01) | BTC (12 funds), ETH (11) | BTC 2024-01-11 → 2026-09-30, ETH 2024-07-23 → | 15,794 (BTC 698 days × 13, ETH 560 × 12) | funds = total to 1e-13 on every row; the holiday calendar as the US exchanges'; known-at measured on 36 Wayback snapshots: final from 9 h after the close (24 of 24), partial before — a flow is known from 09:00 UTC the next day |
 | `index_1m` (HistData, 1 min; P8 B3, 2026-10-01) | US500, US100 | 2020-01-01 → 2026-09-24 (yearly zips 2020–2025, monthly 2026-01 → 09; the current month is not offered) | 4,482,652 (US100 2,257,516; US500 2,225,136) | 30 fetches, 0 errors; 388 rows swapped by a minute in the current year's files (sorted, the later kept). Hours (UTC): the week opens Sunday 22:00 in European summer / 23:00 in winter and closes Friday 20:15 / 21:15; a daily break 20:15–22:00 / 21:15–23:00; 1,070–1,080 traded minutes a weekday; US holidays closed or thin (Christmas Eve → the 27th, Good Friday). **Thin: 2023-02 → 2023-07 holds 19–24k rows a month against 27–30k elsewhere — whole hours missing inside sessions; 658 of the 1,501 gaps over 30 min are in 2023.** A feature read from it must say what it does on a stale minute |
 | `ladder` (collector `orderbook_levels`, ~12 s, P1) | 12 | 2026-08-05 (ADA/AVAX/LINK/XRP 08-14) → 2026-09-13 | 3,388,622 | 40 per-day raw exports (3.5 GB gz, kept); 0 duplicates; the 100 levels reach only 1.7 bps from mid on BTC (4 on ETH, 13 on ZEC/HYPE) versus 70–480 bps on the thin pairs, so BTC/ETH ladders hold ~1–3 % of the archive's ±1 % notional and the archive band is what scales impact back in time |
 
