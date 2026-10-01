@@ -146,11 +146,15 @@ def hist_read(body: bytes, sym: str) -> pd.DataFrame:
     if not len(df):
         raise ValueError("an empty csv")
     ts = pd.to_datetime(df["t"], format="%Y%m%d %H%M%S", utc=True) + EST
-    if not ts.is_monotonic_increasing or ts.duplicated().any():
-        raise ValueError("timestamps not strictly increasing")
     if not ((df["high"] >= df[["open", "close"]].max(axis=1)) & (df["low"] <= df[["open", "close"]].min(axis=1))).all():
         raise ValueError("a bar whose high or low does not hold its open and close")
-    return pd.DataFrame({"symbol": sym, "ts": ts, "open": df["open"], "high": df["high"], "low": df["low"], "close": df["close"]})
+    out = pd.DataFrame({"symbol": sym, "ts": ts, "open": df["open"], "high": df["high"], "low": df["low"], "close": df["close"]})
+    back = int((ts.diff() < pd.Timedelta(0)).sum())              # the clock jumping back: the feed repeats an hour at a daylight-saving change
+    out = out.sort_values("ts", kind="stable")                   # (NSXUSD 2020-10-25 19:00–19:59 EST twice); the later pass is kept
+    dups = int(out["ts"].duplicated().sum())
+    out = out.drop_duplicates("ts", keep="last").reset_index(drop=True)
+    out.attrs = {"backwards": back, "dup_minutes": dups}
+    return out
 
 
 def hist_status(sym: str, period: str) -> str:
@@ -166,7 +170,9 @@ def ingest(symbols=SYMBOLS) -> dict:
         for f in sorted((HIST_ROOT / HIST_PAIRS[sym]).glob("*.zip")):
             if f.with_suffix(".zip.ok").exists():
                 df = hist_read(f.read_bytes(), sym)
-                n_in += len(df)
+                n_in += len(df) + df.attrs["dup_minutes"]
+                if df.attrs["backwards"]:
+                    print(f"  {f.name}: the clock jumps back {df.attrs['backwards']} time(s), {df.attrs['dup_minutes']} minutes twice — the later pass kept", flush=True)
                 parts.append(df)
     if not parts:
         raise SystemExit("index ingest: no fetched zip — run `ft2 index fetch` first")

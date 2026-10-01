@@ -55,6 +55,11 @@ def test_hist_read_moves_the_fixed_est_clock_to_utc_and_rejects_a_bad_file():
     assert (df["symbol"] == "US500").all() and "volume" not in df.columns and df["ts"].is_monotonic_increasing
     with pytest.raises(Exception):
         index.hist_read(b"<html>no token</html>", "US500")
+    rep = io.BytesIO()                                                 # the repeated hour at a daylight-saving change: sorted, the later pass kept, counted
+    with zipfile.ZipFile(rep, "w") as z:
+        z.writestr("DAT_ASCII_SPXUSD_M1_2020.csv", "20201025 140000;100;101;99;100;0\n20201025 140100;100;101;99;100.5;0\n20201025 140000;100;101;99;100.7;0\n20201025 140200;100;101;99;101;0\n")
+    r = index.hist_read(rep.getvalue(), "US500")
+    assert list(r["close"]) == [100.7, 100.5, 101.0] and r.attrs == {"backwards": 1, "dup_minutes": 1} and r["ts"].is_monotonic_increasing
     bad = io.BytesIO()
     with zipfile.ZipFile(bad, "w") as z:
         z.writestr("DAT_ASCII_SPXUSD_M1_2024.csv", "20240610 000000;100;99;101;100;0\n")        # high below the open
