@@ -145,6 +145,15 @@ def test_the_read_finds_the_planted_continuation_and_the_twelves_labels_are_the_
     A = audit.frame("transfer", str(tmp_path / "m.csv"))
     assert B["validity"]["status"] == "PASS" and B["validity"]["checked"] == "forecast" and B["validity"]["max_abs_dz"] < 1e-9 and B["grid"].equals(A["grid"]), B["validity"]
     assert audit_index.cells_twelve(NAMES, ["F1"], HOLD, run=None)["validity"]["status"] == "PASS"
+    # a run that kept no forecast: its decisions' cells, except those decided after the last bar a label can reach
+    dec = pd.read_parquet(bt.OUT / "transfer" / "forecast.parquet").query("group == 0")[["t", "symbol"]].iloc[::7]
+    last = pd.DataFrame({"t": [B["grid"][-1]] * 2, "symbol": NAMES[:2]})
+    (bt.OUT / "dec_only").mkdir()
+    pd.concat([dec, last]).to_parquet(bt.OUT / "dec_only" / "decisions.parquet", index=False)
+    vd = audit_index.cells_twelve(NAMES, ["F1"], HOLD, run="dec_only")["validity"]
+    assert vd["status"] == "PASS" and vd["checked"] == "decisions" and vd["run_cells_beyond_label"] >= 2 and vd["run_cells_without_label"] == 0, vd      # the two at the last hour, and the forecast's own label-less last hours
+    pd.concat([dec, pd.DataFrame({"t": [B["grid"][5]], "symbol": ["NOPEUSDT"]})]).to_parquet(bt.OUT / "dec_only" / "decisions.parquet", index=False)
+    assert audit_index.cells_twelve(NAMES, ["F1"], HOLD, run="dec_only")["validity"]["status"] == "FAIL"
     assert audit_index.cells_twelve(NAMES, ["F1"], HOLD, run="no_such_run")["validity"]["status"] == "FAIL"
     txt = audit_index.run("transfer", pairs=NAMES, twelve=True, members=str(tmp_path / "m.csv"), jobs=1)
     out = audit_index.OUT / "transfer_index"

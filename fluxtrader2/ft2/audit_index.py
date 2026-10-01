@@ -165,9 +165,13 @@ def cells_twelve(pairs: list[str], fold_names=folds.EXPLORATION, hold: int = HOL
         inside = (ti >= 0) & (si >= 0)
         has = np.zeros(len(d), dtype=bool)
         has[inside] = cell.to_numpy()[ti[inside], si[inside]]
-        v.update({"checked": "decisions", "run_cells": int(len(d)), "run_cells_off_grid": int((ti < 0).sum()), "run_cells_without_label": int((~has).sum()),
-                  "note": "the run kept no forecast.parquet: its decisions' cells are checked to be cells here with a label"})
-        v["status"] = "PASS" if has.all() else "FAIL"
+        reach = M.index[-1] - audit.BAR * (hold + latency)                # the last t whose label fits before the market's cut (`screen.cells` drops the rest too)
+        beyond = np.asarray(pd.DatetimeIndex(d["t"]) > reach)
+        v.update({"checked": "decisions", "run_cells": int(len(d)), "run_cells_off_grid": int((ti < 0).sum()), "run_cells_beyond_label": int(beyond.sum()),
+                  "run_cells_without_label": int((~has & ~beyond).sum()),
+                  "note": "the run kept no forecast.parquet: its decisions' cells are checked to be cells here with a label, except those decided after the last "
+                          "bar a label can reach before the fold's end (counted as beyond_label)"})
+        v["status"] = "PASS" if (has | beyond).all() else "FAIL"
     else:
         v.update({"checked": "none", "note": f"no run `{run}` to check against"})
         v["status"] = "FAIL" if run else "PASS"
