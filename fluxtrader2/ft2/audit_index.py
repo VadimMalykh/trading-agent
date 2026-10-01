@@ -170,13 +170,19 @@ def cells_twelve(pairs: list[str], fold_names=folds.EXPLORATION, hold: int = HOL
         v["status"] = "PASS" if ok.all() and v["max_abs_dz"] <= audit.Z_TOL and v["run_cells_off_grid"] == 0 else "FAIL"
     elif run_dir is not None and (run_dir / "decisions.parquet").exists():
         d = pd.read_parquet(run_dir / "decisions.parquet", columns=["t", "symbol"])
+        td = pd.Series(pd.DatetimeIndex(d["t"]), index=d.index)
+        inside_folds = np.zeros(len(d), dtype=bool)
+        for f in fold_names:
+            inside_folds |= folds.mask(td, f).to_numpy()
+        n_outside_folds = int((~inside_folds).sum())                        # the run's decisions in folds this read does not cover
+        d = d[inside_folds].reset_index(drop=True)
         ti, si = grid.get_indexer(d["t"]), pd.Index(names).get_indexer(d["symbol"])
         inside = (ti >= 0) & (si >= 0)
         has = np.zeros(len(d), dtype=bool)
         has[inside] = cell.to_numpy()[ti[inside], si[inside]]
         reach = M.index[-1] - audit.BAR * (hold + latency)                # the last t whose label fits before the market's cut (`screen.cells` drops the rest too)
         beyond = np.asarray(pd.DatetimeIndex(d["t"]) > reach)
-        v.update({"checked": "decisions", "run_cells": int(len(d)), "run_cells_off_grid": int((ti < 0).sum()), "run_cells_beyond_label": int(beyond.sum()),
+        v.update({"checked": "decisions", "run_cells": int(len(d)), "run_cells_outside_folds": n_outside_folds, "run_cells_off_grid": int((ti < 0).sum()), "run_cells_beyond_label": int(beyond.sum()),
                   "run_cells_without_label": int((~has & ~beyond).sum()),
                   "note": "the run kept no forecast.parquet: its decisions' cells are checked to be cells here with a label, except those decided after the last "
                           "bar a label can reach before the fold's end (counted as beyond_label)"})
@@ -436,7 +442,8 @@ def run(run: str, pairs: list[str] | None = None, twelve: bool = True, members: 
                  "the last 1, 4 or 24 hours (read when the index is open); *bx_gap*: times what it did going into its close (read when it is closed). ")
     else:
         fl = ctx["flows"]
-        source = f"BTC's daily ETF flow, {int((fl.index + FLOW_KNOWN <= end).sum())} days known before {end:%Y-%m-%d}, {int(U[0]['own']['big'].sum() // 24)} large-flow days on the grid"
+        on_grid = fl[(fl.index + FLOW_KNOWN >= grid[0]) & (fl.index + FLOW_KNOWN <= grid[-1])]
+        source = f"BTC's daily ETF flow, {int((fl.index + FLOW_KNOWN <= end).sum())} days known before {end:%Y-%m-%d}, {len(on_grid)} of them inside the grid, {int((on_grid.abs() >= FLOW_BIG).sum())} large"
         title = f"# The US spot-ETF flows as per-name information (R27) — the cells of `{run}`{' and the twelve' if twelve else ''}, {'+'.join(fold_names)} (`ft2 audit --family etf`)\n"
         words = ("\nWords: *beta_btc* is how much a name moves with BTC, hour by hour, over the last 30 days. *bflow*: that sensitivity times yesterday's net flow into the US spot "
                  "bitcoin ETFs (known from 09:00 UTC the next day); *bflow_5d*: times the last five days' flows; *bflow_big*: the same on days whose flow was at least 300 US$m, "

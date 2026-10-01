@@ -136,3 +136,10 @@ def test_the_read_finds_the_planted_flow_effect_on_the_cut_grid(tmp_path, monkey
     A = audit.frame("transfer", str(tmp_path / "m.csv"))
     C = audit_index._cut(A, ["F1"])
     assert C["grid"].equals(A["grid"]) and C["validity"]["cells_in_folds"] == A["validity"]["cells"]
+    # the twelve's check against a run's decisions counts a decision in a fold not read apart, not as off the grid
+    dec = pd.read_parquet(bt.OUT / "transfer" / "forecast.parquet").query("group == 0")[["t", "symbol"]].iloc[::9]
+    f0 = pd.DataFrame({"t": [pd.Timestamp("2023-04-20 10:00", tz="UTC")] * 2, "symbol": NAMES[:2]})            # F0: not read
+    (bt.OUT / "dec_f0").mkdir()
+    pd.concat([f0, dec]).to_parquet(bt.OUT / "dec_f0" / "decisions.parquet", index=False)
+    vd = audit_index.cells_twelve(NAMES, ["F1"], HOLD, run="dec_f0")["validity"]
+    assert vd["status"] == "PASS" and vd["run_cells_outside_folds"] == 2 and vd["run_cells_off_grid"] == 0 and vd["run_cells"] == len(dec), vd
