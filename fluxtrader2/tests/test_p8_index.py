@@ -1,8 +1,11 @@
-"""ft2 index (P8 B3, PLAN §9 #7): the Dukascopy daily one-minute candle files decoded, the padded minutes dropped, the inventory's hours."""
+"""ft2 index (P8 B3, PLAN §9 #7): HistData's zips read with the EST clock moved to UTC; Dukascopy's daily files decoded, the padded
+minutes dropped; the inventory's hours and gaps."""
+import io
 import lzma
 import os
 import struct
-from datetime import date, timedelta
+import zipfile
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -10,7 +13,83 @@ import pytest
 
 from ft2 import index
 
+WEEKDAY = {m for m in range(1440) if not 21 * 60 <= m < 22 * 60}      # the break 21:00–22:00 UTC
 
+
+def _traded(d: date) -> set[int]:
+    wd = d.weekday()
+    return set() if wd == 5 else ({m for m in range(22 * 60, 1440)} if wd == 6 else WEEKDAY)
+
+
+def _walk(base: float, n: int, seed: int) -> np.ndarray:
+    return base * np.exp(np.cumsum(np.random.default_rng(seed).normal(0, 2e-4, n)))
+
+
+# ---- HistData ------------------------------------------------------------------------------------------------------
+def _hist_zip(sym: str, days: list[date], seed: int = 0) -> bytes:
+    """A zip as the site serves it: DAT_ASCII_<PAIR>_M1_<p>.csv (semicolon rows in EST without DST) and a status .txt."""
+    rows, k = [], 0
+    for d in days:
+        px = _walk(5400.0 if sym == "US500" else 19000.0, 1440, seed + k)
+        k += 1
+        for m in sorted(_traded(d)):
+            o, c = px[m - 1] if m else px[0], px[m]
+            hi, lo = max(o, c) * 1.0001, min(o, c) * 0.9999
+            t_utc = datetime(d.year, d.month, d.day) + timedelta(minutes=m)
+            t_est = t_utc - timedelta(hours=5)                      # the file's clock
+            rows.append(f"{t_est:%Y%m%d %H%M%S};{o:.6f};{hi:.6f};{lo:.6f};{c:.6f};0")
+    pair = index.HIST_PAIRS[sym]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"DAT_ASCII_{pair}_M1_2024.csv", "\n".join(rows) + "\n")
+        z.writestr(f"DAT_ASCII_{pair}_M1_2024.txt", "HistData.com (c) 2012\nStatus Report\n")
+    return buf.getvalue()
+
+
+def test_hist_read_moves_the_fixed_est_clock_to_utc_and_rejects_a_bad_file():
+    days = [date(2024, 6, 10) + timedelta(days=i) for i in range(8)]       # Mon … Mon
+    df = index.hist_read(_hist_zip("US500", days), "US500")
+    assert df["ts"].iloc[0] == pd.Timestamp("2024-06-10 00:00", tz="UTC") and df["ts"].dt.tz is not None
+    per_day = df.groupby(df["ts"].dt.date).size()
+    assert per_day[date(2024, 6, 10)] == 1380 and date(2024, 6, 15) not in per_day.index and per_day[date(2024, 6, 16)] == 120
+    assert (df["symbol"] == "US500").all() and "volume" not in df.columns and df["ts"].is_monotonic_increasing
+    with pytest.raises(Exception):
+        index.hist_read(b"<html>no token</html>", "US500")
+    bad = io.BytesIO()
+    with zipfile.ZipFile(bad, "w") as z:
+        z.writestr("DAT_ASCII_SPXUSD_M1_2024.csv", "20240610 000000;100;99;101;100;0\n")        # high below the open
+    with pytest.raises(ValueError):
+        index.hist_read(bad.getvalue(), "US500")
+
+
+def test_hist_periods_are_years_then_the_complete_months_of_this_year():
+    assert index.hist_periods("2020-05-01", date(2026, 10, 1)) == ["2020", "2021", "2022", "2023", "2024", "2025", "202601", "202602", "202603", "202604", "202605", "202606", "202607", "202608", "202609"]
+    assert index.hist_periods("2024-01-01", date(2024, 1, 15)) == []
+    assert index.hist_path("US100", "202603").as_posix().endswith("histdata/NSXUSD/DAT_ASCII_NSXUSD_M1_202603.zip")
+
+
+def test_ingest_builds_the_parquet_from_the_ok_zips_only(tmp_path):
+    os.chdir(tmp_path)
+    days = [date(2024, 6, 10) + timedelta(days=i) for i in range(14)]
+    for sym in index.SYMBOLS:
+        p = index.hist_path(sym, "2024")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(_hist_zip(sym, days, seed=7))
+        p.with_suffix(".zip.ok").touch()
+    stray = index.hist_path("US500", "2023")
+    stray.write_bytes(_hist_zip("US500", days[:2], seed=1))                  # no .ok: never read
+    r = index.ingest()
+    x = index.load()
+    assert r["rows_out"] == len(x) and set(x["symbol"].cat.categories) == {"US100", "US500"} and x["ts"].min() == pd.Timestamp("2024-06-10", tz="UTC")
+    assert len(x[x["symbol"] == "US500"]) == 10 * 1380 + 2 * 120 and list(x.columns) == ["symbol", "ts", "open", "high", "low", "close"]
+    md = index.inventory(fetch_live=False)
+    assert "days_fetched" not in md and "| Sat" in md and "not fetched" in md and "0 gaps" in md
+    lines = [l for l in md.splitlines() if l.startswith("| Wed") or l.startswith("| Sat") or l.startswith("| Sun")]
+    wed, sat, sun = (np.array([float(v) for v in l.split("|")[2:-1]]) for l in lines[:3])
+    assert (wed[:21] == 60).all() and wed[21] == 0 and (wed[22:] == 60).all() and (sat == 0).all() and (sun[:22] == 0).all() and (sun[22:] == 60).all()
+
+
+# ---- Dukascopy -----------------------------------------------------------------------------------------------------
 def _day_file(day: date, base: float, traded: set[int], seed: int = 0) -> bytes:
     """A feed file: 1,440 records (sec, open, close, low, high × 1000, volume); a minute not in `traded` repeats the last close at zero volume."""
     rng = np.random.default_rng(seed)
@@ -28,25 +107,6 @@ def _day_file(day: date, base: float, traded: set[int], seed: int = 0) -> bytes:
     return lzma.compress(b"".join(out))
 
 
-WEEKDAY = {m for m in range(1440) if not 21 * 60 <= m < 22 * 60}      # the break 21:00–22:00 UTC
-
-
-def _plant(tmp_path, days=10):
-    os.chdir(tmp_path)
-    d0 = date(2024, 6, 10)                                            # a Monday
-    for sym, instr in index.INSTRUMENTS.items():
-        base = 5400.0 if sym == "US500" else 19000.0
-        for i in range(days):
-            d = d0 + timedelta(days=i)
-            wd = d.weekday()
-            traded = set() if wd == 5 else ({m for m in range(22 * 60, 1440)} if wd == 6 else WEEKDAY)
-            p = index.path(instr, d)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(_day_file(d, base, traded, seed=i))
-            p.with_suffix(".bi5.ok").touch()
-    return d0
-
-
 def test_decode_reads_the_feeds_records_and_rejects_what_is_not_a_day():
     d = date(2024, 6, 12)
     df = index.decode(_day_file(d, 5400.0, WEEKDAY), d)
@@ -57,28 +117,23 @@ def test_decode_reads_the_feeds_records_and_rejects_what_is_not_a_day():
         index.decode(b"<html><body><h1>503 Service Unavailable</h1></body></html>", d)
     with pytest.raises(ValueError):
         index.decode(lzma.compress(_day_file(d, 5400.0, WEEKDAY)[:10]), d)
-
-
-def test_ingest_drops_the_padded_minutes_and_keeps_the_path_month_zero_based(tmp_path):
-    d0 = _plant(tmp_path)
     assert index.path("USA500IDXUSD", date(2024, 1, 5)).as_posix().endswith("USA500IDXUSD/2024/00/05/BID_candles_min_1.bi5")
     assert index.url("USA500IDXUSD", date(2024, 12, 31)).endswith("/USA500IDXUSD/2024/11/31/BID_candles_min_1.bi5")
-    r = index.ingest()
-    x = index.load()
-    assert r["rows_in"] == 2 * 10 * 1440 and r["rows_out"] == len(x) and set(x["symbol"].cat.categories) == {"US100", "US500"}
+
+
+def test_duka_ingest_drops_the_padded_minutes(tmp_path):
+    os.chdir(tmp_path)
+    d0 = date(2024, 6, 10)
+    for sym, instr in index.INSTRUMENTS.items():
+        for i in range(10):
+            d = d0 + timedelta(days=i)
+            p = index.path(instr, d)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(_day_file(d, 5400.0 if sym == "US500" else 19000.0, _traded(d), seed=i))
+            p.with_suffix(".bi5.ok").touch()
+    r = index.duka_ingest()
+    x = pd.read_parquet(index.OUT_DUKA)
     g = x[x["symbol"] == "US500"]
     per_day = g.groupby(g["ts"].dt.date).size()
-    assert per_day[d0] == 1380 and d0 + timedelta(days=5) not in per_day.index and per_day[d0 + timedelta(days=6)] == 120   # Mon full, Sat absent, Sun from 22:00
+    assert r["rows_in"] == 2 * 10 * 1440 and per_day[d0] == 1380 and d0 + timedelta(days=5) not in per_day.index and per_day[d0 + timedelta(days=6)] == 120
     assert (g["volume"] > 0).all() and g["ts"].is_monotonic_increasing and not g.duplicated(["ts"]).any()
-    assert x["ts"].min() == pd.Timestamp("2024-06-10", tz="UTC")
-
-
-def test_inventory_reads_the_hours_and_the_gaps(tmp_path):
-    _plant(tmp_path, days=14)
-    index.ingest()
-    md = index.inventory(fetch_live=False)
-    assert "days_fetched" in md and "| Sat" in md and "not fetched" in md
-    lines = [l for l in md.splitlines() if l.startswith("| Wed") or l.startswith("| Sat") or l.startswith("| Sun")]
-    wed, sat, sun = (np.array([float(v) for v in l.split("|")[2:-1]]) for l in lines)
-    assert (wed[:21] == 60).all() and wed[21] == 0 and (wed[22:] == 60).all() and (sat == 0).all() and (sun[:22] == 0).all() and (sun[22:] == 60).all()
-    assert "0 gaps" in md

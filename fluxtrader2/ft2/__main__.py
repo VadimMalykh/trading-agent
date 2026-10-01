@@ -66,7 +66,7 @@ def cmd_archive(args):
 
 def cmd_index(args):
     from . import index
-    index.main(args.action, args.start, args.end, args.symbols, args.workers)
+    index.main(args.action, args.source, args.start, args.end, args.symbols, args.workers)
 
 
 def cmd_universe(args):
@@ -263,10 +263,11 @@ def main(argv=None):
     hz.add_argument("--reexecute", metavar="TAG", help="--pre: R23's read made again after a defect in the measurement (PLAN §3), logged as R23/TAG")
     ix = sub.add_parser("index", help="P8 (B3, PLAN §9 #7): the US index CFDs from Dukascopy's public datafeed → data/raw/external/dukascopy/, data/index_1m.parquet, output/index_inventory.md (see ft2/index.py)")
     ix.add_argument("action", choices=["fetch", "ingest", "inventory"])
-    ix.add_argument("--start", default=None, help="fetch: first day (default FP's first day, 2020-05-01)")
-    ix.add_argument("--end", default=None, help="fetch: last day inclusive (default yesterday UTC)")
+    ix.add_argument("--source", choices=["histdata", "dukascopy"], default="histdata", help="fetch/ingest: HistData (the parquet; default) or Dukascopy (the cross-check; throttled)")
+    ix.add_argument("--start", default=None, help="fetch: first day (default FP's first day, 2020-05-01; histdata: its year)")
+    ix.add_argument("--end", default=None, help="fetch --source dukascopy: last day inclusive (default yesterday UTC)")
     ix.add_argument("--symbols", nargs="*", default=None, help="US500 US100 (default both)")
-    ix.add_argument("--workers", type=int, default=None, help="fetch: concurrent requests (default 3; the feed throttles)")
+    ix.add_argument("--workers", type=int, default=None, help="fetch --source dukascopy: concurrent requests (default 3; the feed throttles)")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
