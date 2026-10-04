@@ -404,9 +404,9 @@ per seed-day), not resolvable offline. The forward ledger can carry the same que
 cost, because `policy_bars` stores the served model's side, confidence and the bar's price for
 every closed 5-minute bar. **R5** reconstructs `persist05` as a counterfactual of the recorded
 policy arm: at a trade's timer exit bar, if the bar's row for the same pair takes the **same
-side with confidence ≥ 0.6179307699203491** — `coverage_threshold(conf, 0.05)` on the same
-population as the cuts below, derived 2026-09-15 and restated 2026-09-20 for the U12
-checkpoint (was 0.5892829895019531) — and the bar 240 minutes later exists, the
+side with confidence ≥ 0.5500438213348389** — `coverage_threshold(conf, 0.05)` on the same
+population as the cuts below, derived 2026-09-15, restated 2026-09-20 for the U12
+checkpoint (0.6179307699203491) and 2026-10-04 for X8″ seed 3 — and the bar 240 minutes later exists, the
 hold is extended to it and re-priced at its stored price; at most **two** extensions (12 h). A
 later recorded policy trade on the same pair whose entry falls inside the extension is
 **swallowed** (it could not have been taken; its P&L is what the extension replaces — the saved
@@ -419,18 +419,21 @@ Executable: `forward.py:reading_extension`, `--bars`; the export script now pull
 interval excludes zero licenses *writing* the served-change registration §9.7 describes.
 
 **The constants.** Coverage cuts are `backtest.coverage_threshold(conf, c)` over the served
-checkpoint's own split — **since the 2026-09-20 promote: U12 seed 2, eval run
-`20260916T164212Z`, the twelve served pairs, horizon 240** (NEXT_TRAINING_PLAN §2). R0–R5 are
-unchanged as readings; only these per-checkpoint constants were restated, with the new ledger
-empty. The 8-pair checkpoint's values were 0.6296 / 0.6432 / 0.6499 / 0.6611 and p80 0.025596. The 0.02 entry reproduces
+checkpoint's own split — **since the 2026-10-04 promote (the forward clock's fifth start,
+15:18:49 UTC): X8″ seed 3, eval run `20261003T191545Z`, the twelve served pairs, horizon 240**
+(NEXT_TRAINING_PLAN §2 X8″; `logs/X8pp_c4_20261004.log`). R0–R5 are unchanged as readings;
+only these per-checkpoint constants were restated, before the new ledger held a row. U12 seed
+2's values (the fourth start, 2026-09-20 → 10-04, 14 closed policy trades, void and backed up)
+were 0.6709 / 0.6958 / 0.7077 / 0.7253; the ladder is the same numbers (same split, same BTC
+bars). The 0.02 entry reproduces
 `Policy.frozen_threshold/0` to the digit, which is the check that the population is right.
 
 | coverage | cut | why this level |
 |---|---|---|
-| 0.02 | 0.6708709597587585 | the served cut; the full policy arm |
-| 0.015 | 0.6958397030830383 | the round level between |
-| 0.01288 | 0.7077147364616394 | T6's count-matched coverage on twelve pairs — the parked question's own number |
-| 0.01 | 0.7253025770187378 | the round tighter level |
+| 0.02 | 0.5860595703125 | the served cut; the full policy arm |
+| 0.015 | 0.6075984835624695 | the round level between |
+| 0.01288 | 0.6196200251579285 | T6's count-matched coverage on twelve pairs — the parked question's own number |
+| 0.01 | 0.6390083432197571 | the round tighter level |
 
 Ladder edges `[0.003849115688353777, 0.008730954490602016, 0.014942771755158901,
 0.025370502844452858]`, size `(count of edges ≤ regime + 1) / 3` — `Policy.size_multiplier/2`.

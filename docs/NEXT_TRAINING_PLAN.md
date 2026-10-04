@@ -10,11 +10,12 @@ For the policy and what runs live, read [M3_PLAN.md](./M3_PLAN.md) and
 [M3_5_INTEGRATION.md](./M3_5_INTEGRATION.md); for the rules that govern a promotion,
 [M3_PROTOCOL.md](./M3_PROTOCOL.md) §9.
 
-**The served model** is seed 2, `m2_multi_20260819T142759Z_a186182b.pt`, **served on twelve
-pairs** since 2026-08-29 (it was eight until then — the eight were a conservative default held
-while four pairs lacked a measured crossing cost, never a decision against twelve). Its serving
-constants were re-derived on repaired candles on 2026-09-04: coverage cut
-`0.6296127438545227`, ladder p80 `0.025596268475055695`.
+**The served model** is X8″ seed 3, `m2_multi_20261003T191545Z_117836a9.pt` (sha256
+`d4621b0f…`), served on twelve pairs since 2026-10-04 15:18:49 UTC — the full-window instance
+of the fold-certified open-interest recipe (§2, X8″; WALKFORWARD §10). Serving constants from
+its own split: coverage cut `0.5860595703125`, ladder p80 `0.025370502844452858`. Before it:
+U12 seed 2 (2026-09-20 → 10-04, cut `0.6708709597587585`) and the eight-pair seed 2,
+`m2_multi_20260819T142759Z_a186182b.pt` (to 2026-09-20), which §1's reference numbers describe.
 
 🔴 **Every number below §1 was measured PRE-REPAIR.** Candles stored between 2026-07-18 and
 2026-09-03 were partial bars ([CANDLE_POLL_DEFECT.md](./CANDLE_POLL_DEFECT.md)); the data is
@@ -1072,8 +1073,32 @@ from its own val window, `gcp_promote.sh --checkpoint` with `ML_GATE_THRESHOLD` 
 constants restated in `policy.ex` / `regime.ex` / `config_test.exs` / `forward.py`, ledgers
 backed up and cleared, `/health` showing `n_features: 19`, `align_age_fix: false`,
 `oi_join_at_close: true`, `checkpoint_bound: true`, then the acceptance replay. It does not
-license a fourth seed, choosing a seed on P&L, or any other recipe change. **Not run on this
-read — the go is Vadim's (BACKLOG handoff, 2026-10-04).**
+license a fourth seed, choosing a seed on P&L, or any other recipe change.
+
+**The promotion record — 2026-10-04, on Vadim's go ("Promote now").** X8″ seed 3 is served.
+Checkpoint `m2_multi_20261003T191545Z_117836a9.pt`, sha256
+`d4621b0f230c1fee42084e1fe6e70ffe1d5f5bdee27d59c57231d99446d9f140`. C13/C4 from its own split
+(931,182 bars, twelve pairs; `logs/X8pp_c4_20261004.log` — the same script reproduces U12 seed
+2's cut, four cut levels, explore cut, ladder, 847 trades and mean size 1.295 to the digit):
+cut **0.5860595703125** (the trainer's SERVED GATE line reads 0.5861), top-5% explore cut
+0.5500438213348389, R1 levels 0.6075984835624695 / 0.6196200251579285 / 0.6390083432197571;
+ladder **unchanged** `[0.003849…, 0.008731…, 0.014943…, 0.025370502844452858]` (same split,
+same BTC bars); recomputing reproduces 818 trades, mean size 1.308, entry confidence 0.5861 ..
+0.8349. Code `0ee28f5` (constants in `policy.ex` / `config_test.exs` / `forward.py`,
+`regime.ex` unchanged in value; four tests whose literal confidences stood for "below the cut"
+moved under the new one; 142 tests, 0 failures). Deployed by Claude over `gcloud compute ssh`
+with no pilot position open (one open `explore_cov05` paper row went with the ledger): app
+stopped 15:15:36 UTC → `gcp_promote.sh` green at the requested gate, inference `/health`
+`n_features: 19`, `align_age_fix: false`, `oi_join_at_close: true`, `norm_degenerate_cols: 11`
+→ the app's checkpoint guard refused to trade on the old constants, as designed → VM on
+`0ee28f5` → ledgers backed up (`~/paper_trades_u12s2_20261004.csv`, 108 rows;
+`~/policy_bars_u12s2_20261004.csv`, 49,392 rows) and cleared → **app started 15:18:49 UTC, the
+forward clock's fifth start**; `/api/health`: `checkpoint_bound: true`, `frozen_threshold`
+0.5860595703125, twelve served, `last_error: null`, mode `simulation`, pilot enabled, nothing
+open. R0–R5's per-checkpoint constants restated in M3_5 §4.3 before the new ledger held a row.
+The inference image was not rebuilt: `serve.py` is bind-mounted and identical between
+`117836a` and `0ee28f5`, and a rebuild would re-resolve unpinned dependencies (§0.5 trap 13).
+Still owed: the `accept_76.py` replay of the new start (BACKLOG row 1).
 
 #### X8′ — the same recipe with open interest as serving supplies it today. RUN 2026-09-24→25, READ 2026-09-27: **FLAT**
 
