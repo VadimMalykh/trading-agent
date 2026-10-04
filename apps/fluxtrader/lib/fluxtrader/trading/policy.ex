@@ -95,37 +95,41 @@ defmodule FluxTrader.Trading.Policy do
   # `test/fluxtrader/trading/config_test.exs` is where this side asserts its copies, and a
   # change on either side has to be made on both.
   #
-  # Provenance — **U12 seed 2, the SERVED checkpoint** `m2_multi_20260916T164212Z_ace3ae5e.pt`
-  # (sha256 `30e6ac1e…`, `frozen_checkpoint_sha256/0`), a TWELVE-pair checkpoint scored on its
-  # own split — eval run `20260916T164212Z`, 931,182 bars in the 240m head over the twelve
-  # served pairs, val 2025-12-14 → 2026-09-09. Derived 2026-09-20 under M3_PROTOCOL §8.3 C4 at
-  # the U12 promote (NEXT_TRAINING_PLAN §2): chosen as the family median by plateau-mean LB
-  # before any P&L was read; failed one-split Tier 1 (P2, P5) and is certified by the
-  # walk-forward folds (RETRAIN_PLAN §8 Q2 (B), WALKFORWARD_PROTOCOL §7) — the promotion record
-  # says so. The previous constants (8-pair checkpoint `m2_multi_20260819T142759Z_a186182b.pt`,
-  # sha `882cd415…`) were cut 0.6708709597587585 / p80 0.025370502844452858. Re-derive with:
+  # Provenance — **X8″ seed 3, the SERVED checkpoint** `m2_multi_20261003T191545Z_117836a9.pt`
+  # (sha256 `d4621b0f…`, `frozen_checkpoint_sha256/0`), the full-window instance of the
+  # fold-certified `ARCHIVE_OI` recipe (open interest filled from the archive, joined at the
+  # bar's close — `oi_join_at_close` in its meta), scored on its own split — eval run
+  # `20261003T191545Z`, 931,182 bars in the 240m head over the twelve served pairs, val
+  # 2025-12-14 → 2026-09-09. Derived 2026-10-04 under M3_PROTOCOL §8.3 C4 at the X8″ promote
+  # (NEXT_TRAINING_PLAN §2 X8″, WALKFORWARD_PROTOCOL §10.4): the family median by plateau-mean
+  # LB, a rule fixed before any fold was read; the recipe is certified by the walk-forward
+  # folds (§10.8) and the family read MOVED against X0. The previous constants (U12 seed 2,
+  # `m2_multi_20260916T164212Z_ace3ae5e.pt`, sha `30e6ac1e…`) were cut 0.6708709597587585 /
+  # explore 0.6179307699203491 / the same ladder. Re-derive with:
   #
-  #     M3_ERA=repaired ./scripts/m3.sh -c "from m3 import dumps, backtest, regime; ..."
-  #     (`backtest.coverage_threshold` over `dumps.load('20260916T164212Z').at(240)`, and
-  #     `regime.build(...)['btc_absret_1d'].quantile([.2,.4,.6,.8])` — logs/U12_tier1_20260920.log)
+  #     M3_ERA=repaired ./scripts/m3.sh <script>   # from m3 import dumps, backtest, regime
+  #     (`backtest.coverage_threshold` over `dumps.load('20261003T191545Z').at(240)`, and
+  #     `regime.build(...)['btc_absret_1d'].quantile([.2,.4,.6,.8])` — logs/X8pp_c4_20261004.log,
+  #     which also reproduces the previous checkpoint's constants to the digit)
   #
-  # Recomputing the two lines below reproduces the run's sized policy exactly: 847 trades,
-  # mean size 1.295, entry confidence 0.6709 .. 0.8409. The trainer's own
-  # `SERVED GATE (C13, coverage-targeted)` line reads 0.6709.
+  # Recomputing the two lines below reproduces the run's sized policy exactly: 818 trades,
+  # mean size 1.308, entry confidence 0.5861 .. 0.8349. The trainer's own
+  # `SERVED GATE (C13, coverage-targeted)` line reads 0.5861.
   #
   # 🔴 THE CUT BELONGS TO A CHECKPOINT, NOT JUST TO A UNIVERSE. Absolute thresholds do not
-  # transfer across checkpoints (NEXT_TRAINING_PLAN §1.5): the previous checkpoint's 0.6296
-  # applied to this model would roughly double the trade rate. Swap all three constants
-  # together or none.
+  # transfer across checkpoints (NEXT_TRAINING_PLAN §1.5): the previous checkpoint's 0.6709
+  # is this model's top 0.7%, a third of the trade rate. Swap the cut, the explore cut and the
+  # sha together or none. The ladder did not move at this promote: it is a statement about
+  # BTC over the split, and the split is the previous checkpoint's.
   #
   # 🟢 The former KNOWN GAP is closed: the cut is now derived over the same twelve pairs that
   # are served, so realized coverage on the split is exactly 2%.
 
   # `coverage_threshold(conf, 0.02)` over the split — the k-th largest confidence,
   # k = round(n * 0.02). Selection is `conf >= threshold`, tie-inclusive.
-  @frozen_threshold 0.6708709597587585
+  @frozen_threshold 0.5860595703125
   # Top-5% cut over the same split (forward.py EXT_CUT). Exploratory arm only.
-  @explore_threshold 0.6179307699203491
+  @explore_threshold 0.5500438213348389
 
   # `r["btc_absret_1d"].quantile([0.2, 0.4, 0.6, 0.8])` over BARS, not over trades — the
   # ladder has to be a statement about the market (invariant 3).
@@ -153,7 +157,7 @@ defmodule FluxTrader.Trading.Policy do
   # therefore loud rather than silent — the 2026-08-31 served-vs-scored defect cannot recur
   # through this path. To promote: derive the new cut and ladder from the new checkpoint's
   # own split, update all three constants here and in `config_test.exs`, deploy.
-  @frozen_checkpoint_sha256 "30e6ac1e0e9233cd88b4ba9fdddba5cefca16a0311c66b34a54d27990977d6cf"
+  @frozen_checkpoint_sha256 "d4621b0f230c1fee42084e1fe6e70ffe1d5f5bdee27d59c57231d99446d9f140"
 
   # Retrain trigger (M3_PROTOCOL §9.1, §8.6 Q3 answered (b) on 2026-09-04): retrain when the
   # served checkpoint has gone this many days without a bar meeting its own cut. Calibrated

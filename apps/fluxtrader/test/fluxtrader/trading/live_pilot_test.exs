@@ -72,7 +72,7 @@ defmodule FluxTrader.Trading.LivePilotTest do
   test "the exploratory arm takes top-5% bars the policy rejects, in paper, and the A/B does not see them" do
     assert Policy.explore_threshold() < Policy.frozen_threshold()
 
-    boot([signal("BTCUSDT", 0.97), signal("ETHUSDT", 0.64), signal("SOLUSDT", 0.55)])
+    boot([signal("BTCUSDT", 0.97), signal("ETHUSDT", 0.57), signal("SOLUSDT", 0.50)])
 
     assert Ledger.open_pairs("policy") == MapSet.new(["BTCUSDT"])
     assert Ledger.open_pairs("flat_size") == MapSet.new(["BTCUSDT"])

@@ -49,15 +49,15 @@ BOOTSTRAP_SEED = 20260913          # the registration date; fixed so tables repr
 # --- the constants, transcribed from M3_5_INTEGRATION.md §4.3 -------------------------
 #
 # The coverage cuts are `backtest.coverage_threshold(conf, c)` over the served checkpoint's
-# own split (U12 seed 2, eval run 20260916T164212Z, the twelve served pairs, horizon 240),
-# re-derived 2026-09-20 at the U12 promote with the new ledger empty (the 8-pair checkpoint's
-# were 0.6296 / 0.6432 / 0.6499 / 0.6611) — the 0.02 entry reproduces the served
+# own split (X8″ seed 3, eval run 20261003T191545Z, the twelve served pairs, horizon 240),
+# re-derived 2026-10-04 at the X8″ promote with the new ledger empty (U12 seed 2's were
+# 0.6709 / 0.6958 / 0.7077 / 0.7253) — the 0.02 entry reproduces the served
 # `Policy.frozen_threshold/0` to the digit, which is the check that the population is right.
 CUTS = {
-    0.02:    0.6708709597587585,   # the served cut — the full policy arm
-    0.015:   0.6958397030830383,
-    0.01288: 0.7077147364616394,   # T6's count-matched coverage on twelve pairs
-    0.01:    0.7253025770187378,
+    0.02:    0.5860595703125,      # the served cut — the full policy arm
+    0.015:   0.6075984835624695,
+    0.01288: 0.6196200251579285,   # T6's count-matched coverage on twelve pairs
+    0.01:    0.6390083432197571,
 }
 SERVED_COVERAGE = 0.02
 
@@ -78,7 +78,7 @@ HOUR_SET = {0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22}
 # The cut is `backtest.coverage_threshold(conf, 0.05)` on the same population as CUTS
 # (repaired era, seed s2, eight pairs, horizon 240) — derived 2026-09-15 with the ledger at
 # 7 signal bars; on that population 0.02 reproduces the served cut to the digit.
-EXT_CUT = 0.6179307699203491   # U12 seed 2's split, 2026-09-20 (8-pair ckpt: 0.5892829895019531)
+EXT_CUT = 0.5500438213348389   # X8″ seed 3's split, 2026-10-04 (U12 seed 2: 0.6179307699203491)
 EXT_MAX = 2
 EXT_HOLD = pd.Timedelta(minutes=240)
 

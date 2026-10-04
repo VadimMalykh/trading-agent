@@ -450,7 +450,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
       signal(symbol: "ETHUSDT", confidence: 0.70, gated: false),
       # Below the cut. Neither arm may take it — a control that took this would be trading
       # bars the policy rejects, and the ledgers would stop being comparable.
-      signal(symbol: "SOLUSDT", confidence: 0.55, gated: true)
+      signal(symbol: "SOLUSDT", confidence: 0.50, gated: true)
     ]
 
     start_engine(signals, regime(0.025))
@@ -533,12 +533,12 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     now = DateTime.utc_now()
     fill_the_diagnostic_window(now)
 
-    # Tick 1 sees the bar at 0.60 (below the frozen 0.6296 cut) and records it. Tick 2 sees
+    # Tick 1 sees the bar at 0.50 (below the frozen cut) and records it. Tick 2 sees
     # the SAME bar_ts re-scored at 0.95 — the 2026-09-10 16:35 ZEC shape, where inference
     # re-scored the forming candle at a lower price and the re-score cleared the cut.
     start_engine_seq(
       [
-        [signal(symbol: "BTCUSDT", confidence: 0.60, ts: now)],
+        [signal(symbol: "BTCUSDT", confidence: 0.50, ts: now)],
         [signal(symbol: "BTCUSDT", confidence: 0.95, ts: now)]
       ],
       regime(0.05)
@@ -556,7 +556,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     # The ledger holds the first score, and only one row for the bar.
     import Ecto.Query, only: [from: 2]
     assert [row] = Repo.all(from(b in FluxTrader.Trading.PolicyBar, where: b.pair == "BTCUSDT"))
-    assert row.confidence == 0.60
+    assert row.confidence == 0.50
     refute row.gated
   end
 
@@ -566,7 +566,7 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
     start_engine_seq(
       [
-        [signal(symbol: "BTCUSDT", confidence: 0.60, ts: now)],
+        [signal(symbol: "BTCUSDT", confidence: 0.50, ts: now)],
         [signal(symbol: "BTCUSDT", confidence: 0.95, ts: now)],
         [signal(symbol: "BTCUSDT", confidence: 0.95, ts: DateTime.add(now, 300, :second))]
       ],

@@ -109,7 +109,12 @@ defmodule FluxTrader.Trading.ConfigTest do
     # together (C4). Reproduces eval run 20260916T164212Z's sized policy: 847 trades, mean size
     # 1.295, entry confidence 0.6709 .. 0.8409. The 8-pair checkpoint's values were
     # 0.6708709597587585 / p80 0.025370502844452858 / sha 882cd415….
-    assert Policy.frozen_threshold() == 0.6708709597587585
+    #
+    # 🔵 2026-10-04: X8″ promote — seed 3 of the fold-certified ARCHIVE_OI recipe. Cut and sha
+    # moved together; the ladder is the same numbers (same split, same BTC bars). Reproduces
+    # eval run 20261003T191545Z's sized policy: 818 trades, mean size 1.308, entry confidence
+    # 0.5861 .. 0.8349. U12 seed 2's values were 0.6708709597587585 / sha 30e6ac1e….
+    assert Policy.frozen_threshold() == 0.5860595703125
 
     assert Policy.frozen_regime_edges() == [
              0.003849115688353777,
@@ -121,10 +126,10 @@ defmodule FluxTrader.Trading.ConfigTest do
     assert Policy.frozen_ladder_p80() == 0.025370502844452858
 
     # The checkpoint both constants belong to: sha256 of
-    # gs://fluxtrader-train-artifacts/checkpoints/m2_multi_20260916T164212Z_ace3ae5e.pt.
+    # gs://fluxtrader-train-artifacts/checkpoints/m2_multi_20261003T191545Z_117836a9.pt.
     # `PolicyEngine` refuses to trade unless ml_inference reports exactly this.
     assert Policy.frozen_checkpoint_sha256() ==
-             "30e6ac1e0e9233cd88b4ba9fdddba5cefca16a0311c66b34a54d27990977d6cf"
+             "d4621b0f230c1fee42084e1fe6e70ffe1d5f5bdee27d59c57231d99446d9f140"
 
     assert String.length(Policy.frozen_checkpoint_sha256()) == 64
 

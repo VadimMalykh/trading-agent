@@ -72,7 +72,7 @@ defmodule FluxTrader.Trading.Regime do
   # truncated fetch cannot present a single stale reading as ready.
   @min_value_bars @bars_per_day + 12
   # Re-derived 2026-09-20 from U12 seed 2's own split at the promote (was 0.025596268475055695
-  # for the 8-pair checkpoint).
+  # for the 8-pair checkpoint). Unchanged at the X8″ promote 2026-10-04: same split, same BTC bars.
   @frozen_p80 0.025370502844452858
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
