@@ -995,7 +995,85 @@ FEATURE_GROUPS=legacy SEED=3 ./scripts/gcp_train.sh --gpu 60 384   # X2 s3
 ~2.5 h and ≈ $1.5 each, ~8 h serial. **Bring back the three logs** (never a summary); the read
 happens in a fresh session with §0.3's awk over the epoch lines, then the gate above.
 
-### 🟢 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23, RUN 2026-09-23→24, READ 2026-09-24: **MOVED** (+0.011 plateau-mean LB, 4σ, every seed above the control; cov-0.02 gross +18.2 vs +10.9). Re-run under the served convention (X8′), READ 2026-09-27: **FLAT** (+0.005, every seed above the control, under the +0.008 bar). X8b (the flow ratios on top of X8′), READ 2026-10-01: **FLAT**
+### 🟢 X8 — open-interest history inside the training window, from Binance's public archive. REGISTERED 2026-09-23, RUN 2026-09-23→24, READ 2026-09-24: **MOVED** (+0.011 plateau-mean LB, 4σ, every seed above the control; cov-0.02 gross +18.2 vs +10.9). Re-run under the served convention (X8′), READ 2026-09-27: **FLAT** (+0.005, every seed above the control, under the +0.008 bar). X8b (the flow ratios on top of X8′), READ 2026-10-01: **FLAT**. X8″ (the fold-certified recipe on the full window — the promotion candidate), READ 2026-10-04: **MOVED** (+0.009, every seed above the control; cov-0.02 gross +21.4)
+
+#### X8″ — the fold-certified recipe (end-of-bar open interest, served the same way) on the full window. RUN 2026-10-01→04, READ 2026-10-04: **MOVED**
+
+**Plain reading first.** X8″ is the model that would actually be served: X8's recipe, with the
+knob that makes serving read open interest at the bar's close, exactly as the twelve certified
+fold runs trained (WALKFORWARD §10). The score — the conservative "share of correct calls" on
+the 5% most confident bars of the 4-hour head — is **0.535 against the control's 0.526**, above
+the control on all three seeds and over the +0.008 bar written down before X8 ran. In money
+terms, at the served top-2% cut one trade earns **+21.4 basis points gross** (1 bp = 0.01%;
+≈ $1.07 on the $500 size unit) against the control's +10.9, i.e. **+7.4 after the 14-bps cost
+of a round trip** against −3.1, and positive after costs on every seed. **Can it be promoted:
+yes — this is the read §10.4 made the condition, and the recipe is already certified on the
+folds.** Nothing served changes until the promotion itself is run (BACKLOG handoff).
+
+| run | run id | acceptance (WALKFORWARD §10.8) | epochs | all-epoch mean LB | plateau n / mean | selected | cov 0.02 gross bps/trade, 240m (trades) |
+|---|---|---|---:|---|---|---|---:|
+| X8″ s1 | `20261001T155917Z` | ✅ every line | 37 | 0.5259 | 26 / **0.5334** | ep 17 (0.5512) | +19.15 (1,101) |
+| X8″ s2 | `20261002T053534Z` | ✅ every line | 36 | 0.5276 | 22 / **0.5363** | ep 16 (0.5578) | +20.66 (637) |
+| **X8″ s3** | **`20261003T191545Z`** | ✅ every line | 36 | 0.5254 | 23 / **0.5350** ← median | ep 16 (0.5507) | +24.86 (820) |
+
+- **Acceptance, each log by its own lines** (run id, `knob SEED=`, md5 distinct, and the
+  bucket lists exactly these three runs after F0 s1): X0's `Split` line exactly (`train=3724724
+  val=931182 | val [2025-12-14 09:35 → 2026-09-09 20:05 UTC]`); `knob ARCHIVE_OI_SHIFT_MIN=5`,
+  `knob OI_JOIN_AT_CLOSE=1`, no `VAL_OFFSET` / `ALLOW_RECIPE_DRIFT` knob; twelve `Archive OI: …
+  sha8=83c85bd7, shift_min=5` lines (printed by train and again by eval); `OI join:
+  OI_JOIN_AT_CLOSE=1 (open interest as of the bar close)`; `Align age: ALIGN_AGE_FIX=0`; no
+  `Embargo:` line; `oi` / `oi_chg` in no CONSTANT list (11/19, WLD and `_global` 10/19, as X8);
+  git `117836a` on all three (after `be9df37`); twelve pairs, `Pair embedding: ON dim=8`, 19
+  columns; no `BROKEN SCALE`, no `WARNING: at the SERVED gate`; SQLAlchemy 2.0.54.
+- **Primary, as registered (no fallback — plateaus 26 / 22 / 23, all ≥ 15):** X8″ **0.5349**
+  (between-seed sd 0.0015) vs X0 **0.5258**. **Contrast X8″ − X0 = +0.0091** — over the
+  +0.008 bar by 0.001, 3.5σ from zero on the registered SE of 0.0026; every X8″ seed (lowest
+  0.5334) above the X0 family mean and above X0's best seed (0.5266) → **MOVED.** The
+  recorded expectation (MOVED) held.
+- **The footnote X8 carries, larger here:** all-epoch means differ by only +0.0009 (0.5263 vs
+  0.5254) — the runs hold the plateau for 22–26 epochs and then run 11–14 degraded ones before
+  patience fires. The registered statistic is the plateau mean; the checkpoints are selected
+  inside the plateau (ep 17 / 16 / 16).
+- **Secondary — earning, not only ranking:** pooled cov-0.02 gross on the 240m head **+21.4
+  bps over 2,558 trades** (X0 +10.9 over 3,231; X8 +18.2 over 2,509); net at 14 bps per seed
+  +5.2 / +6.7 / +10.9; dir_acc at cov 0.02 0.599 / 0.579 / 0.576 on the identical 18,624 gated
+  bars (X0 0.576 / 0.562 / 0.570). At cov 0.05 gross +9.9 / +3.8 / +7.9. Not
+  MOVED-BUT-NOT-EARNING. Gross falls with coverage on s1 and s2; on s3 cov 0.01 is below cov
+  0.02 (+20.4 vs +24.9, 393 trades) and no sign flips (§0.4).
+- **"Its training rows are X8's exactly" — verified on two seeds, not on the third.** s1 and
+  s2 print X8 s1's and s2's `loss_tr` to four decimals at every epoch, stop at the same epoch
+  and select the same one; only the val side moves (≤ 0.002 LB per epoch — the collector tail
+  joined at the close). **s3 does not reproduce X8 s3**: `loss_tr` differs from epoch 1 (1.7383
+  vs 1.7382) and the runs diverge (36 epochs / plateau 23 / 0.5350 against 34 / 24 / 0.5393),
+  although its data block is line-for-line s1's apart from the seed. The cause is not
+  established from the log: the run was created in another zone (us-central1-b), took about
+  50 minutes longer and built its image with MarkupSafe 3.0.4 (3.0.3 before; filelock 4.0.9
+  from s2 — §0.5 trap 13, neither is numeric); GPU-level non-determinism on a different host
+  is the likely reading. It breaches no acceptance line and it is a valid seed-3 draw of the
+  recipe; it also lowers the family mean (a replica of X8 s3 would have read ≈ 0.539), so it
+  does not manufacture the MOVED. Observation, not a decision.
+- **Texture to carry into the promotion, none a gate:** side split at cov 0.05 — up LB 0.550 /
+  0.561 / 0.556, down 0.565 / 0.538 / 0.533, both sides above 0.52 on every seed; serialised
+  trades at the served gate are almost all long (1,100 / 1, 637 / 0, 786 / 34 — X0's are 981 /
+  0, 945 / 62, 1,225 / 18). Book-era LB at cov 0.05 0.558 / 0.558 / 0.535 (X0 0.546 / 0.557 /
+  0.527; X8 0.564 / 0.565 / 0.542), pre-book 0.547 / 0.554 / 0.551 — the median seed is the
+  weakest of the three on the most recent seven weeks, as X8's s3 was. C13 gates printed:
+  0.6088 / 0.6217 / 0.5861 (the served cut is re-derived by the runbook, not read from here).
+- **Norm flags, none a void:** X0's `hl_range` spikes, WLD's `has_funding_oi` spike and the
+  two `oi_chg` heavy-tail notes (HYPE 3 rows, ZEC 23), identical on all three logs and to X8.
+- **Promotion candidate, by the rule fixed in §10.4 before any fold was read (family median by
+  plateau-mean LB): s3**, run `20261003T191545Z`, checkpoint
+  `gs://fluxtrader-train-artifacts/checkpoints/m2_multi_20261003T191545Z_117836a9.pt`. Logs
+  `logs/X8pp_s{1,2,3}.log`; the three eval dumps are in `ml/train/output/eval_dumps/`.
+
+**What the read licenses (WALKFORWARD §10.4, first bullet, nothing more):** the promotion of
+X8″ s3 through the U12 runbook as the forward clock's **fifth start** — C13 cut and C4 ladder
+from its own val window, `gcp_promote.sh --checkpoint` with `ML_GATE_THRESHOLD` at that cut,
+constants restated in `policy.ex` / `regime.ex` / `config_test.exs` / `forward.py`, ledgers
+backed up and cleared, `/health` showing `n_features: 19`, `align_age_fix: false`,
+`oi_join_at_close: true`, `checkpoint_bound: true`, then the acceptance replay. It does not
+license a fourth seed, choosing a seed on P&L, or any other recipe change. **Not run on this
+read — the go is Vadim's (BACKLOG handoff, 2026-10-04).**
 
 #### X8′ — the same recipe with open interest as serving supplies it today. RUN 2026-09-24→25, READ 2026-09-27: **FLAT**
 
@@ -1077,8 +1155,8 @@ checkpoints carry no `oi_join_at_close` in their meta, so **the checkpoint that 
 served is retrained under the registered recipe — X8″, three full-window runs, ≈ $4.5,
 launched only if the folds come back CONFIRMED** (WALKFORWARD §10.4). Commands and checks:
 WALKFORWARD §10.5–10.6. 🟢 *2026-10-01: the folds came back CONFIRMED, the contrast NOT
-DETECTABLE (§10.8) — X8″ is licensed; its command block, go/no-go and per-log acceptance are
-in §10.8; logs `logs/X8pp_s{1,2,3}.log`.*
+DETECTABLE (§10.8) — X8″ was licensed, run 2026-10-01→04 and read **MOVED** on 2026-10-04
+(the X8″ block above).*
 
 **Result of X8, read 2026-09-24 in a fresh session** (`logs/X8_s1..3.log` against `logs/X0_s1..3.log`;
 all six on the identical `Split` line `train=3724724 val=931182 | val [2025-12-14 09:35 →
@@ -1531,7 +1609,7 @@ laptop's `ml_analysis` container.
 | **Training data volume / pair count** | **Closed (new, 2026-08-22)** | O8 added ADA/AVAX/LINK/XRP for 4.59M samples, +58%, the largest data increase available without new *kinds* of data. Re-aggregated onto the original 8 pairs it is inside the 3-seed family's spread at every coverage (+23.9 / +21.3 / +6.8 vs +19.4 / +22.0 / +8.9), and the pair-mix-corrected plateau mean is ≈0.512 vs 0.5239. Crypto pairs are highly correlated, so 58% more *rows* is far less than 58% more independent observations — the effective-sample gain was small and the measured gain is zero. Do not start a pair-count ladder *as a data experiment*. 🟢 **Amended 2026-08-27; both halves are now closed.** Pair count as *traded universe* is a genuinely different lever from pair count as *training data*, and it was tested on its own: the T-wave ran two more 12-pair seeds and the single-seed "+7.5 net bps/trade" **did not replicate**, then T6 ran the fair comparisons — trade-count-matched, cut-matched, cap-re-tuned — and put the effect within a couple of bps of zero in every one, against a data-resolution limit of ±37 bps. **The traded-universe question is closed as *undecidable on this evaluation period*, not as decided against.** ⚠️ This row read "the incumbent 8-pair universe stands" until 2026-08-29; it no longer does — **the served universe is twelve**, once every added pair carried its own measured crossing cost. What stays closed is the *question*, not the universe. §1.9 and §1.10 in [archive/TRAINING_HISTORY.md](./archive/TRAINING_HISTORY.md), `docs/T6_RESULTS.md` |
 | **Magnitude / cost-shaped training losses (`DIR_MAG_WEIGHT`)** | **Closed (new, 2026-08-23)** | R2 was the second and better-designed attempt at teaching M2 about economics rather than accuracy (N3's selection-time cousin was the first, closed 2026-08-18). It ran correctly — `at_clip` under 1%, `scale` ≈ 0.98, `mean\|r\|` rising with horizon — and it lost gross bps/trade at every coverage while driving brier from 0.250 to 0.316 and flattening `emp_up` to ≈0.48 in all ten bins. The mechanism generalizes past this one knob: **up-weighting large moves teaches the head that "confident and large" is the same axis as "confident and correct", and it is not.** Position sizing by expected move magnitude is M3's job and belongs in the policy, where it can be applied without corrupting the probability M2 exists to emit. §1.9 |
 | **Volatility-normalised training labels (`LABEL_MODE=volnorm`)** | **Closed (new, 2026-09-15) — WORSE** | X2 replaced the fixed ±0.6% flat band with a band in units of each pair's trailing one-day σ (k derived from the fixed label's flat share on the train window, so the class balance was unchanged), while selection and evaluation stayed on the fixed labels. Against a same-snapshot 3-seed control: **−0.0096** all-epoch mean LB (fallback read, every plateau under 15 epochs), every seed below the control, cov-0.02 gross +8.7 vs +10.9. `loss_tr` collapses from epoch 4–9, earlier than any 19-column run. The mechanism is the opposite of the hope: rescaling by a calm day's σ makes noise-sized moves directional, which the model memorises. It is the training-target cousin of the magnitude-loss row above — both try to change *what* M2 learns from calm vs volatile bars, and both lose. Do not try another k rule, vol window or label mode; the voided triple-barrier (`E3-tb`) is not reopened by this either. §2 |
-| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired.** ⚠️ *Amended 2026-09-13, resolved 2026-09-15:* reopened for **one** lever, X0/X1 in §2, under the feature row's own "genuinely external information" clause and on new evidence (B3's O5). **X1 came back WORSE (−0.020, §2) and the freeze is re-sealed.** ⚠️ *Amended again 2026-09-15, resolved the same day:* reopened for **one** further lever, X2 (§2, volatility-normalised training labels), funded by Vadim as the last offline M2 lever with a rationale. **X2 came back WORSE (−0.010, §2) and the freeze is re-sealed.** Eleven levers tested one at a time, one moved. The only reopening condition is §1.7's. ⚠️ *Amended 2026-09-23:* **that condition is met today for one served column** — Binance's public archive holds open interest at 5 minutes from 2020-09, i.e. inside the whole training window, for the two legacy columns (`oi`, `oi_chg`) that are currently zeroed. Reopened for **one** lever under it: **X8** (§2, registered, not launched), which adds no column. The "≈2027" was the date the *collector* would have supplied that history; it is not the condition. 🟢 *Resolved 2026-09-24:* **X8 came back MOVED** (+0.011 plateau-mean LB, every seed above, cov-0.02 gross +18.2 vs +10.9, plateaus intact at 22–26 epochs — §2) — the second lever in the project's history to move, and the first since 15m → 5m. The freeze is **not** re-sealed on this row's old terms: history inside the training window does reopen M2, and the archive supplies it. What stays closed is everything §5 closed on measurement (added columns, labels, losses, capacity, context, resolution, ensembling). Open under X8's licence list only: the fold certification of the `ARCHIVE_OI` recipe and X8b — both spend decisions for Vadim, both pre-registered before launch. 🟢 *2026-10-01:* **X8b read FLAT** (§2 X8b: +0.007 on the registered fallback against a +0.008 bar, +0.001 on plateau means, the same cov-0.02 money as X8′) — the added-columns route is closed with the positioning ratios tested; the fold certification stands at eleven of twelve recorded runs (WALKFORWARD §10.7). 🟢 *2026-10-01, evening:* **X8-F read CONFIRMED on all twelve** (W1 LB +14.46 net bps/trade on F2+F3; the contrast against the banked family +3.29 [−12.30, +18.89], NOT DETECTABLE, not worse — WALKFORWARD §10.8). X8″, the served checkpoint retrained under the certified recipe, is licensed and goes to Vadim (§10.8's commands); its MOVED against X0 is what would promote | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
+| **M2 as a research object** | 🔴 **FROZEN, 2026-08-24 — the exit condition fired.** ⚠️ *Amended 2026-09-13, resolved 2026-09-15:* reopened for **one** lever, X0/X1 in §2, under the feature row's own "genuinely external information" clause and on new evidence (B3's O5). **X1 came back WORSE (−0.020, §2) and the freeze is re-sealed.** ⚠️ *Amended again 2026-09-15, resolved the same day:* reopened for **one** further lever, X2 (§2, volatility-normalised training labels), funded by Vadim as the last offline M2 lever with a rationale. **X2 came back WORSE (−0.010, §2) and the freeze is re-sealed.** Eleven levers tested one at a time, one moved. The only reopening condition is §1.7's. ⚠️ *Amended 2026-09-23:* **that condition is met today for one served column** — Binance's public archive holds open interest at 5 minutes from 2020-09, i.e. inside the whole training window, for the two legacy columns (`oi`, `oi_chg`) that are currently zeroed. Reopened for **one** lever under it: **X8** (§2, registered, not launched), which adds no column. The "≈2027" was the date the *collector* would have supplied that history; it is not the condition. 🟢 *Resolved 2026-09-24:* **X8 came back MOVED** (+0.011 plateau-mean LB, every seed above, cov-0.02 gross +18.2 vs +10.9, plateaus intact at 22–26 epochs — §2) — the second lever in the project's history to move, and the first since 15m → 5m. The freeze is **not** re-sealed on this row's old terms: history inside the training window does reopen M2, and the archive supplies it. What stays closed is everything §5 closed on measurement (added columns, labels, losses, capacity, context, resolution, ensembling). Open under X8's licence list only: the fold certification of the `ARCHIVE_OI` recipe and X8b — both spend decisions for Vadim, both pre-registered before launch. 🟢 *2026-10-01:* **X8b read FLAT** (§2 X8b: +0.007 on the registered fallback against a +0.008 bar, +0.001 on plateau means, the same cov-0.02 money as X8′) — the added-columns route is closed with the positioning ratios tested; the fold certification stands at eleven of twelve recorded runs (WALKFORWARD §10.7). 🟢 *2026-10-01, evening:* **X8-F read CONFIRMED on all twelve** (W1 LB +14.46 net bps/trade on F2+F3; the contrast against the banked family +3.29 [−12.30, +18.89], NOT DETECTABLE, not worse — WALKFORWARD §10.8). X8″, the served checkpoint retrained under the certified recipe, is licensed and goes to Vadim (§10.8's commands); its MOVED against X0 is what would promote. 🟢 *2026-10-04:* **X8″ read MOVED** (plateau-mean LB 0.5349 vs 0.5258, +0.0091, every seed above; cov-0.02 gross +21.4 vs +10.9 — §2 X8″); the promotion candidate is s3 `20261003T191545Z`, and the promotion (fifth start) waits on Vadim's go | Written down in advance on 2026-08-22: "if O8 and R3 both come back flat (within ±0.005 plateau-mean LB of 0.5239) **and** R2 does not move gross bps/trade at cov 0.02 by more than +5, M2 is frozen at the §1.3 baseline and every remaining hour goes to M3." O8 −0.0017, R3b −0.0040, R3a −0.0054, R2 −3.2 bps. **Every clause fired.** Eight levers have now been tested one variable at a time against the same baseline — two feature sets, bar resolution, context length, model family, ensembling, loss shaping, data volume, and encoder capacity in both directions — and exactly one (15m → 5m) ever moved. The single reopening condition is §1.7's: order-book history deep enough to sit inside the *training* window, ≈2027. Do not queue an M2 run before then. §1.9, §2. **`docs/BOOK_ERA_PLAN.md` tests whether a *short-horizon* model on the book era can be decided early; it does not reopen this row, and §4.3 there forbids promoting anything on a 7-day validation window.** |
 | Full architecture swap (transformer / TCN) | **Closed, and reaffirmed 2026-08-22** | Was gated behind O3; O3 came back negative. The reopening condition written in 2026-08-19 was "if richer per-timestep features saturate and the residual failure looks like a modelling limit rather than an input limit" — Q3 and R1 have now *both* run and the failure looks like the opposite: the model already memorizes the training set the moment it is handed anything easy (`loss_tr` 1.70 → 1.13 in R1), while its validation loss never improves. That is an **input** limit and an SNR floor, not a modelling limit. A higher-capacity family would make it worse, not better. **Do not write a transformer.** 🔴 **Reaffirmed again 2026-08-23: R3a ran the two-run bracket's upward arm and produced exactly this prediction** — `loss_tr` 1.72 → 0.888 with `loss_va` never once reaching the baseline's level, and the worst calibration in the ledger. More capacity of any kind makes this problem worse. There is no remaining capacity question. |
 | Confidence calibration / temperature / focal loss | **Closed** | F4's head is *over*-confident (`[0.60,0.70)` bin mean_pred 0.636 vs empirical 0.547; N3's is 0.609 vs 0.521). Sharpening an over-confident head is the wrong direction. |
 | Raising `GATE_THRESHOLD` as an experiment | **Superseded by C1+C2** | The served gate is 0.58 and eval now reports there. Derive the operating point from the fixed-coverage P&L table, not from another sweep. |
