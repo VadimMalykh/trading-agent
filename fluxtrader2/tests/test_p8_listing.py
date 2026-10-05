@@ -130,3 +130,12 @@ def test_the_fingerprint_passes_what_came_back_and_fails_a_changed_name():
     assert fp.compare(old, new.assign(rows=lambda x: x["rows"].where(x["symbol"] != "B", 21)))["status"] == "FAIL"
     assert fp.compare(old, new[new["symbol"] != "B"])["status"] == "FAIL"
     assert fp.compare(old, new.assign(sum_close=lambda x: x["sum_close"] * (1 + 1e-9)))["status"] == "FAIL"
+    grown = new.copy()                                                                                           # A's klines now begin a month earlier: more rows, other sums
+    grown.loc[0, ["rows", "first", "sum_close", "sum_volume"]] = [15, D("2022-12-01"), 2.0, 14.0]
+    assert fp.compare(old, grown)["status"] == "FAIL"
+    ext = fp.extended(old, grown)
+    assert ext[["slice", "symbol"]].values.tolist() == [["candles_5m_archive", "A"]] and ext["first"].iloc[0] == D("2023-01-01")
+    r = fp.compare(old, grown, old.iloc[:1])                                                                     # on its old extent A is what it was
+    assert r["status"] == "PASS" and r["names_compared_on_their_old_extent"] == 1 and r["new_names"] == 1
+    assert fp.compare(old, grown, old.iloc[:1].assign(rows=9))["status"] == "FAIL"                               # … unless an old row is gone
+    assert len(fp.extended(old, grown.assign(rows=lambda x: x["rows"].where(x.index != 0, 5)))) == 0             # fewer rows is never an extension

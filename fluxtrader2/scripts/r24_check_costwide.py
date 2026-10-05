@@ -23,7 +23,8 @@ diff = {c: float(np.nanmax(np.abs(m[c] - m[c + "_new"]))) if m[c].notna().any() 
 nan_same = bool(all((m[c].isna() == m[c + "_new"].isna()).all() for c in num))
 if TAG == "r28":                                             # R28: the names are the launches of F1+F2, the days F1+F2's from each contract's first day
     from ft2 import listing
-    mem, (lo, hi) = listing.launch_symbols(), listing.window()
+    from ft2.__main__ import PAIRS
+    mem, (lo, hi) = [x for x in listing.launch_symbols() if x not in PAIRS], listing.window()      # 1000PEPE and WLD are of the twelve: priced from the tape (cost_daily), never in the wide file
 else:
     mem = universe.screen_symbols(universe.PRE_MEMBERS_CSV if TAG == "r24" else universe.F34_MEMBERS_CSV)
     lo, hi = (pd.Timestamp("2021-12-10", tz="UTC"), universe.PRE_END) if TAG == "r24" else (pd.Timestamp("2024-09-03", tz="UTC"), pd.Timestamp("2026-01-01", tz="UTC"))
