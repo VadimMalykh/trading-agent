@@ -199,3 +199,11 @@ def test_the_confirmation_gate_and_its_noise():
     r = listing.noise(h, t)
     assert r["n"] == 200 and np.isclose(r["M"], h.mean()) and r["se"] == max(r["se_bootstrap"], r["se_week"]) and np.isclose(r["u"], r["M"] / r["se"])
     assert 0.6 < r["se"] / r["se_plain"] < 1.6
+
+
+def test_the_frozen_lists_load_with_a_release_on_the_whole_second(tmp_path):
+    f = tmp_path / "l.csv"
+    f.write_text("contract,release,first_month,id\nAAAUSDT,2025-03-31 12:30:00+00:00,2025-03,1\nBBBUSDT,2025-04-01 08:00:01.250000+00:00,2025-04,2\n")
+    L = listing.launches(f)
+    assert L["release"].tolist() == [D("2025-03-31 12:30:00"), D("2025-04-01 08:00:01.25")] and listing.launch_symbols(f) == ["AAAUSDT", "BBBUSDT"]
+    assert len(listing.launches()) == 119 and len(listing.launches(listing.LAUNCHES34_CSV)) == 304            # the two frozen lists as committed

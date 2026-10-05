@@ -88,7 +88,7 @@ def select(fold_names=FOLDS) -> pd.DataFrame:
 
 def launches(path: Path | str | None = None) -> pd.DataFrame:
     L = pd.read_csv(path or LAUNCHES_CSV)
-    L["release"] = pd.to_datetime(L["release"], utc=True)
+    L["release"] = pd.to_datetime(L["release"], utc=True, format="ISO8601")      # a release on the whole second is written without its fraction
     return L
 
 
