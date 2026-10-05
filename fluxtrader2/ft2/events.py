@@ -54,6 +54,7 @@ CMS_LIST = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/qu
 CMS_DETAIL = "https://www.binance.com/bapi/composite/v1/public/cms/article/detail/query?articleCode={code}"
 CATALOGS = {48: "listing", 161: "delisting", 49: "news"}
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", "clienttype": "web"}
+WB_UA = {"User-Agent": "ft2-research/1.0 (a source audit; one request every ten seconds)"}   # the Wayback Machine answers 429 to a browser's User-Agent sent by a script, and serves a plain one
 NEXT_RE = re.compile(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.S)
 REC_RE = (re.compile(r"^.*\bfrom (.+?) on \{timestamp\}", re.S), re.compile(r"of (.+?) tokens (?:were|will be) unlocked"))
 QUOTES = ("USDT", "USDC", "BUSD", "USD", "FDUSD")
@@ -64,15 +65,15 @@ LEAD = pd.Timedelta(days=7)            # point-in-time: the last snapshot at lea
 PERP_KINDS = ("perp_launch", "perp_delist")
 
 
-def _get(u: str, timeout: int = 90, retries: int = 4) -> bytes:
+def _get(u: str, timeout: int = 90, retries: int = 4, headers: dict = UA) -> bytes:
     last = None
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=timeout) as r:
+            with urllib.request.urlopen(urllib.request.Request(u, headers=headers), timeout=timeout) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
             last = e
-            time.sleep(45 * (attempt + 1) if e.code == 429 else 3 * (attempt + 1))      # the Wayback Machine rate-limits: wait it out
+            time.sleep(3 * (attempt + 1))
         except Exception as e:  # noqa: BLE001
             last = e
             time.sleep(3 * (attempt + 1))
@@ -146,6 +147,24 @@ def base(perp: str) -> str:
     return re.sub(r"^(1000000|1000|1M)(?=[A-Z])", "", re.sub(r"(USDT|USDC|BUSD)$", "", perp.upper()))
 
 
+def align(asof: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
+    """A snapshot's protocols under today's ids. DefiLlama re-keys a protocol over the years (Arbitrum 2785 → 3777, Aave 111 →
+    parent#aave), so a snapshot's protocol is found in today's file by its id, else its ticker, else its CoinGecko id, else its
+    name; one found by none keeps its own id (it is no longer in the file)."""
+    t = fin.drop_duplicates("pid")
+    by = [dict(zip(t["pid"], t["pid"])), {k: p for p, k in zip(t["pid"], t["symbol"]) if k}, {k: p for p, k in zip(t["pid"], t["gecko_id"]) if k},
+          {k.lower(): p for p, k in zip(t["pid"], t["name"]) if k}]
+    key = asof["pid"].map(by[0]).fillna(asof["symbol"].map(by[1])).fillna(asof["gecko_id"].map(by[2])).fillna(asof["name"].str.lower().map(by[3])).fillna(asof["pid"])
+    return asof.assign(pid=key)
+
+
+def fill_symbols(fin: pd.DataFrame, asof: pd.DataFrame) -> pd.DataFrame:
+    """Today's file names a ticker only where it has a price; a protocol without one takes the ticker its latest snapshot gave it.
+    `asof` aligned."""
+    last = asof[asof["symbol"] != ""].sort_values("asof").drop_duplicates("pid", keep="last").set_index("pid")["symbol"]
+    return fin.assign(symbol=fin["symbol"].where(fin["symbol"] != "", fin["pid"].map(last).fillna("")))
+
+
 def _match(ev: pd.DataFrame, pool: pd.DataFrame) -> pd.Series:
     """Each event of `ev` (pid, day, tokens) against the `pool` of the same protocol: `same` (a cliff within ±1 day and ±5 % of
     the size), `amount` (within ±1 day, another size), `moved` (the size within ±45 days), `absent`."""
@@ -166,24 +185,29 @@ def _match(ev: pd.DataFrame, pool: pd.DataFrame) -> pd.Series:
 def known_at(asof: pd.DataFrame, final: pd.DataFrame, windows=((0, 30), (30, 90)), min_pct: float = MIN_PCT) -> pd.DataFrame:
     """Per snapshot and window of days after it, on the protocols the snapshot covers: the cliffs of today's schedule dated in
     the window, and how the snapshot had them; and the reverse — the cliffs the snapshot dated there that today's schedule
-    does not have as dated (`snap_unmatched`: announced, then moved, resized or dropped). `asof`, `final`: cliff_days tables,
-    `asof` with the snapshot's time. Pure: no network."""
+    does not have as dated (`snap_unmatched`: announced, then moved, resized or dropped). A window the page does not reach is
+    left out: from 2025-05-26 the page carries only the next 30 days, before that the whole schedule. `asof`, `final`:
+    cliff_days tables, `asof` with the snapshot's time. Pure: no network."""
     rows = []
     for at, snap in asof.groupby("asof", sort=True):
         fin = final[final["pid"].isin(set(snap["pid"]))]
+        reach = (snap["day"].max() - at) / pd.Timedelta(days=1)
         for lo, hi in windows:
+            if reach < hi - 2:
+                continue
             a, b = at + pd.Timedelta(days=lo), at + pd.Timedelta(days=hi)
             f = fin[(fin["day"] > a) & (fin["day"] <= b) & (fin["pct_max"] >= min_pct)]
             s = snap[(snap["day"] > a) & (snap["day"] <= b) & (snap["pct_max"] >= min_pct)]
             st = _match(f, snap).value_counts() if len(f) else pd.Series(dtype=int)
             rows.append({"asof": at, "window": f"{lo}-{hi}d", "protocols": snap["pid"].nunique(), "final": len(f), **{k: int(st.get(k, 0)) for k in ("same", "amount", "moved", "absent")},
                          "snap": len(s), "snap_unmatched": int((_match(s, fin) != "same").sum()) if len(s) else 0})
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=["asof", "window", "protocols", "final", "same", "amount", "moved", "absent", "snap", "snap_unmatched"])
 
 
 def point_in_time(asof: pd.DataFrame, final: pd.DataFrame, covered: dict, lead: pd.Timedelta = LEAD) -> pd.Series:
     """Each cliff of today's schedule against the LAST snapshot taken at least `lead` before it: `same` / `amount` / `moved` /
-    `absent` as in `_match`, `uncovered` when that snapshot does not list the protocol, `no_snapshot` when none is that old.
+    `absent` as in `_match`, `uncovered` when that snapshot does not list the protocol, `out_of_reach` when the event lies
+    beyond the last day that page dates anything (a page of 2025-05-26 or later carries 30 days), `no_snapshot` when none is that old.
     `covered`: snapshot time → the protocols on that page (a protocol can be listed with no cliff)."""
     stamps = pd.DatetimeIndex(sorted(covered))
     out = pd.Series("no_snapshot", index=final.index, dtype=object)
@@ -193,11 +217,23 @@ def point_in_time(asof: pd.DataFrame, final: pd.DataFrame, covered: dict, lead: 
     for i in np.unique(pos[pos >= 0]):
         at = stamps[i]
         ev = final[pos == i]
+        snap = asof[asof["asof"] == at]
         cov = ev["pid"].isin(covered[at])
+        far = cov & (ev["day"] > snap["day"].max() + pd.Timedelta(days=1)) if len(snap) else cov & False
         out.loc[ev.index[~cov]] = "uncovered"
-        if cov.any():
-            out.loc[ev.index[cov]] = _match(ev[cov], asof[asof["asof"] == at])
+        out.loc[ev.index[far]] = "out_of_reach"
+        if (cov & ~far).any():
+            out.loc[ev.index[cov & ~far]] = _match(ev[cov & ~far], snap)
     return out
+
+
+def promised(acd: pd.DataFrame, stamps, lead: pd.Timedelta = LEAD) -> pd.DataFrame:
+    """The point-in-time event table: each cliff as the LAST snapshot taken at least `lead` before it dated it — what a feature
+    would have been built from, whatever today's schedule says. `acd`: cliff_days by snapshot; `stamps`: every snapshot's time."""
+    st = pd.DatetimeIndex(sorted(stamps))
+    nxt = pd.Series([*st[1:], pd.Timestamp("2200-01-01", tz="UTC")], index=st)
+    cut = acd["day"] - lead
+    return acd[(cut >= acd["asof"]) & (cut < acd["asof"].map(nxt))]
 
 
 # ---- Binance's announcements --------------------------------------------------------------------------------------------------
@@ -295,28 +331,43 @@ def fetch_llama() -> Path:
 
 
 def wayback_list() -> list[str]:
-    return [x[0] for x in json.loads(_get(CDX, timeout=180))[1:]]
+    return [x[0] for x in json.loads(_get(CDX, timeout=180, headers=WB_UA))[1:]]
 
 
-def fetch_wayback(pause: float = 12.0) -> dict:
-    """Every listed snapshot of the page (one a day at most) → WAYBACK/<ts>.html.gz; cached; a snapshot that is not the page is skipped."""
+def by_month_first(stamps: list[str]) -> list[str]:
+    """The first snapshot of each calendar month, then the rest: a throttled fetch that is cut short still spans the years."""
+    first = list({ts[:6]: ts for ts in sorted(stamps, reverse=True)}.values())[::-1]
+    return first + [ts for ts in sorted(stamps) if ts not in set(first)]
+
+
+def fetch_wayback(pause: float = 10.0, cool: float = 300.0, reverse: bool = False) -> dict:
+    """The listed snapshots of the page (one a day at most) → WAYBACK/<ts>.html.gz; cached; a snapshot that is not the page is
+    skipped. Measured 2026-10-05: with a browser's User-Agent the Wayback Machine served 6 pages in 90 minutes and answered 429
+    to the rest, from two addresses; with a plain one (`WB_UA`) each page comes in two seconds. A 429 is still not retried: the
+    fetch waits `cool` seconds and goes on; a second run picks up what was skipped. `reverse`: the months from the newest."""
     WAYBACK.mkdir(parents=True, exist_ok=True)
-    n = {"ok": 0, "skip": 0, "err": 0}
-    for ts in wayback_list():
+    n = {"ok": 0, "skip": 0, "err": 0, "throttled": 0}
+    stamps = by_month_first(wayback_list())
+    k = len({ts[:6] for ts in stamps})
+    for ts in (stamps[:k][::-1] + stamps[k:] if reverse else stamps):
         dest = WAYBACK / f"{ts}.html.gz"
         if dest.exists():
             n["skip"] += 1
             continue
         try:
-            body = _get(SNAP.format(ts=ts), timeout=180, retries=3)
+            body = _get(SNAP.format(ts=ts), timeout=180, retries=1, headers=WB_UA)
             parse_page(body)
             tmp = dest.with_suffix(".part")
             tmp.write_bytes(gzip.compress(_text(body).encode()))
             tmp.rename(dest)
             n["ok"] += 1
+            print(f"  ok {ts}", flush=True)
         except Exception as e:  # noqa: BLE001
-            print(f"  err {ts}: {e!r}"[:300], file=sys.stderr, flush=True)
-            n["err"] += 1
+            hot = "429" in repr(e)
+            n["throttled" if hot else "err"] += 1
+            print(f"  {'429' if hot else 'err'} {ts}" + ("" if hot else f": {e!r}"[:300]), file=sys.stderr, flush=True)
+            if hot:
+                time.sleep(cool)
         time.sleep(pause)
     print(f"wayback: {n}", flush=True)
     return n
@@ -449,6 +500,9 @@ def _order(t: pd.DataFrame) -> pd.DataFrame:
 
 def inventory(pairs: list[str], out: Path = REPORT, network: bool = True) -> str:
     fin, asof, bn, mem = pd.read_parquet(UNLOCKS), pd.read_parquet(ASOF), pd.read_parquet(BINANCE), members()
+    n_blank = int((fin.groupby("pid")["symbol"].first() == "").sum())
+    asof = align(asof, fin)
+    fin = fill_symbols(fin, asof)
     now = pd.Timestamp.now("UTC")
     md = ["# Scheduled and announced per-name events as fetched (`ft2 events inventory`)\n",
           f"generated {now:%Y-%m-%d %H:%M} UTC · {UNLOCKS}, {ASOF}, {BINANCE} · no price is read here: events are counted and dates compared\n"]
@@ -457,7 +511,7 @@ def inventory(pairs: list[str], out: Path = REPORT, network: bool = True) -> str
     cd = cliff_days(fin)
     big = cd[cd["pct_max"] >= MIN_PCT]
     md += ["\n## 1. Unlock schedules today (DefiLlama `emissionsIndex`)\n",
-           f"\n{fin['pid'].nunique()} protocols, {int((fin.groupby('pid')['symbol'].first() != '').sum())} with a ticker; {len(fin):,} events "
+           f"\n{fin['pid'].nunique()} protocols, {int((fin.groupby('pid')['symbol'].first() != '').sum())} with a ticker ({n_blank} have none in the file; a snapshot's ticker fills what it can); {len(fin):,} events "
            f"({int((fin['kind'] == 'cliff').sum()):,} cliffs, {int((fin['kind'] == 'linear').sum()):,} linear-rate changes), {fin['ts'].min():%Y-%m-%d} → {fin['ts'].max():%Y-%m-%d}. "
            f"A protocol's cliffs on one UTC day are one event: {len(cd):,} cliff days, {len(big):,} of at least {MIN_PCT} % of the maximum supply.\n",
            "\nCliff days by size (% of the maximum supply) and year:\n",
@@ -479,9 +533,18 @@ def inventory(pairs: list[str], out: Path = REPORT, network: bool = True) -> str
     on12 = big[big["key"].isin({base(p) for p in pairs})]
     t3 = _order(pd.concat([pd.crosstab(onm["universe"], onm["fold"]), pd.crosstab(pd.Series("twelve (any time)", index=on12.index), on12["fold"])]).fillna(0).astype(int))
     one = onm[onm["pct_max"] >= 1]
+    first = fetch_first_months() if network else (pd.read_csv(FIRST, dtype=str).fillna("") if FIRST.exists() else None)
+    if first is not None:                                          # a wider universe than the screener's: any USDT perpetual the archive holds, from its first month
+        arch = first[first["symbol"].str.fullmatch(r"[A-Z0-9]+USDT") & (first["first_month"] != "")].assign(key=lambda x: x["symbol"].map(base), since=lambda x: pd.to_datetime(x["first_month"] + "-01", utc=True))
+        arch = arch.rename(columns={"symbol": "perp"})[["key", "perp", "since"]]
+        anyp = big.merge(arch, on="key")
+        anyp = anyp[anyp["day"] >= anyp["since"] + BLOCK].drop_duplicates(["pid", "day"])
+        t3 = _order(pd.concat([t3, pd.crosstab(pd.Series("any USDT perpetual, 30 d after its first month began", index=anyp.index), anyp["fold"])]).fillna(0).astype(int))
     md += [f"\n## 3. Cliff days of at least {MIN_PCT} % of the maximum supply on our names, by fold (today's schedule)\n",
            "\nOn a member while it is a member (the 30 days of its block); the twelve at any time:\n", t3.to_markdown(), "\n",
-           f"\n- of the members' {len(onm)}: {len(one)} are at least 1 % of the maximum supply; {onm['perp'].nunique()} names; median {onm['pct_max'].median():.2f} %\n"]
+           f"\n- of the members' {len(onm)}: {len(one)} are at least 1 % of the maximum supply; {onm['perp'].nunique()} names, the ten with the most hold {int(onm.groupby('perp').size().nlargest(10).sum())}; median {onm['pct_max'].median():.2f} %\n"]
+    if first is not None:
+        md += [f"- on any USDT perpetual: {len(anyp)} on {anyp['perp'].nunique()} names, {int((anyp['pct_max'] >= 1).sum())} of at least 1 % (the archive keeps flat bars after a delisting, so a few fall on a contract that had stopped)\n"]
 
     # 4 — known-at on the Wayback Machine's snapshots
     if len(asof):
@@ -490,17 +553,23 @@ def inventory(pairs: list[str], out: Path = REPORT, network: bool = True) -> str
         k = known_at(acd, cd)
         k.to_csv(out.with_name("events_known_at.csv"), index=False)
         snaps = pd.Series({at: len(p) for at, p in covered.items()}).sort_index()
+        reach = ((acd.groupby("asof")["day"].max() - acd.groupby("asof")["day"].max().index) / pd.Timedelta(days=1)).round()
+        short = reach[reach < 60]
         md += [f"\n## 4. Known-at: the schedule as the Wayback Machine saw it ({len(snaps)} snapshots of defillama.com/unlocks, {snaps.index.min():%Y-%m-%d} → {snaps.index.max():%Y-%m-%d})\n",
                "\nProtocols on the page, by the snapshot's year (snapshots; fewest → most): " +
                "; ".join(f"{y}: {len(g)} snapshots, {g.min()} → {g.max()}" for y, g in snaps.groupby(snaps.index.year)) + "\n",
+               f"\nHow far ahead a page dates its cliffs: {int((reach >= 60).sum())} snapshots carry the whole schedule (years); {len(short)} carry about 30 days"
+               + (f", every one from {short.index.min():%Y-%m-%d} on" if len(short) and short.index.min() > reach[reach >= 60].index.max() else "") + " — a window a page does not reach is not counted for it.\n",
                f"\nFor each snapshot, on the protocols it lists: the cliffs (≥ {MIN_PCT} %) that today's schedule dates in the days after it, and how the snapshot had them — "
                f"`same` (±{DAY_TOL} day, ±{AMT_TOL:.0%} size), `amount` (the day, another size), `moved` (the size within ±{MOVE_DAYS} days), `absent`; "
                "and the reverse, the cliffs the snapshot dated there that today's schedule does not have as dated. Pooled over the snapshots, by year:\n"]
-        cols = ["final", "same", "amount", "moved", "absent", "snap", "snap_unmatched"]
+        k.insert(k.columns.get_loc("amount") + 1, "day_known", k["same"] + k["amount"])
+        cols = ["final", "same", "amount", "day_known", "moved", "absent", "snap", "snap_unmatched"]
         k["year"] = k["asof"].dt.year.astype(str)
         ky = pd.concat([pd.concat([g.groupby("year")[cols].sum(), g[cols].sum().rename("all").to_frame().T]).assign(window=w) for w, g in k.groupby("window", sort=False)])
         ky = ky.rename_axis("snapshots of").reset_index()[["window", "snapshots of", *cols]]
         ky["same %"] = (100 * ky["same"] / ky["final"]).round(1)
+        ky["day known %"] = (100 * ky["day_known"] / ky["final"]).round(1)
         ky["snap unmatched %"] = (100 * ky["snap_unmatched"] / ky["snap"]).round(1)
         md += [ky.to_markdown(index=False), "\n"]
 
@@ -511,8 +580,15 @@ def inventory(pairs: list[str], out: Path = REPORT, network: bool = True) -> str
         usable = ", ".join(f"{f} {int(t5.loc['same', f]) if 'same' in t5.index else 0}" for f in t5.columns)
         md += [f"\n## 5. Point-in-time: the members' cliffs against the last snapshot at least {LEAD.days} days before each\n",
                "\n`same` is an event a feature could have used as it happened; `uncovered` = the protocol was not on the page yet (added later, its history filled in); "
-               "`no_snapshot` = before the first snapshot:\n", t5.to_markdown(), "\n",
+               "`out_of_reach` = that page dates nothing so far ahead (from 2025-05-26 it carries 30 days); `no_snapshot` = before the first snapshot:\n", t5.to_markdown(), "\n",
                f"\n- usable (`same`) per fold: {usable}\n"]
+        pr = promised(acd[acd["pct_max"] >= MIN_PCT], covered).assign(key=lambda x: x["symbol"], fold=lambda x: fold_of(x["day"]))
+        prm = in_blocks(pr, "day", mem).drop_duplicates(["pid", "day"]).reset_index(drop=True)
+        if len(prm):
+            prm["today"] = _match(prm, cd).replace({"moved": "not as dated", "absent": "not as dated"})
+            md += ["\nThe other side — what a feature would have been built from: the cliffs on a member as the last snapshot at least "
+                   f"{LEAD.days} days before dated them, and whether today's schedule has them as dated:\n", _order(pd.crosstab(prm["today"], prm["fold"], margins=True, margins_name="promised").drop(columns="promised")).to_markdown(), "\n",
+                   f"\n- {prm['perp'].nunique()} names; the ten with the most hold {int(prm.groupby('perp').size().nlargest(10).sum())} of {len(prm)}\n"]
         gaps = snaps.index.to_series().diff().dt.days.dropna()
         if len(gaps):
             md += [f"- days between snapshots: median {gaps.median():.0f}, 90 % under {gaps.quantile(0.9):.0f}, longest {gaps.max():.0f} (ending {gaps.idxmax():%Y-%m-%d})\n"]
@@ -530,7 +606,6 @@ def inventory(pairs: list[str], out: Path = REPORT, network: bool = True) -> str
     md += ["\nTickers named, by kind and fold of the release:\n", _order(pd.crosstab(ev["kind"], ev["fold"])).to_markdown(), "\n"]
 
     # 7 — the launches against the archive
-    first = fetch_first_months() if network else (pd.read_csv(FIRST, dtype=str).fillna("") if FIRST.exists() else None)
     if first is not None:
         fm = first[first["symbol"].str.fullmatch(r"[A-Z0-9]+USDT") & (first["first_month"] != "")].assign(b=lambda x: x["symbol"].str[:-4])
         fm["y"], fm["mo"] = fm["first_month"].str[:4].astype(int), fm["first_month"].str[:4].astype(int) * 12 + fm["first_month"].str[5:7].astype(int)
@@ -539,10 +614,13 @@ def inventory(pairs: list[str], out: Path = REPORT, network: bool = True) -> str
         j["hit"] = (j["mo"] - j["rmo"]).between(0, 1)                # it began in the month of the announcement or the next
         byc = j.groupby("symbol").agg(y=("y", "first"), announced=("release", lambda s: s.notna().any()), hit=("hit", "any"))
         byc = byc[byc["y"] >= 2020]
+        conf = j[j["hit"]].drop_duplicates("symbol").assign(fold=lambda x: fold_of(x["release"]))
+        nf = _order(conf.groupby("fold").size().rename("contracts").to_frame().T)
         ty = byc.groupby("y").agg(contracts=("hit", "size"), with_announcement=("announced", "sum"), in_the_launch_month=("hit", "sum"))
         md += ["\n## 7. Launches against the archive (the first monthly 1d file of every USDT perpetual)\n",
                "\nA contract by the year it begins in the archive; whether any launch announcement names its base; whether one was released in the month it began or the month before:\n",
                pd.concat([ty, ty.sum().rename("all").to_frame().T]).to_markdown(), "\n",
+               "\nThe population of a new-listing question — USDT perpetuals whose launch announcement the archive confirms, by fold of the release:\n", nf.to_markdown(index=False), "\n",
                f"\n- contracts with no announcement at all: {', '.join(byc.index[~byc['announced']][:60])}{' …' if (~byc['announced']).sum() > 60 else ''}\n"]
         try:
             fb = data.load("candles_5m_archive", columns=["symbol", "open_time"]).groupby("symbol", observed=True)["open_time"].min()
@@ -564,16 +642,21 @@ def inventory(pairs: list[str], out: Path = REPORT, network: bool = True) -> str
         md += ["\n## 8. Announcements on a member while it is a member, by fold of the release\n",
                "\nA perpetual's delisting by its contract; a spot listing, a spot delisting and a monitoring tag by the ticker (the name already trades as a perpetual):\n",
                _order(pd.crosstab(on["kind"], on["fold"])).to_markdown(), "\n"]
+    if first is not None and len(ev8):
+        e2 = ev8.assign(key=lambda x: x["symbol"].where(x["kind"] != "perp_delist", x["symbol"].map(lambda b: base(b + "USDT")))).merge(arch, on="key")
+        e2 = e2[e2["release"] >= e2["since"] + BLOCK].drop_duplicates(["id", "perp"])
+        md += ["\nThe same on any USDT perpetual the archive holds, from 30 days after its first month began (tickers; a delisted contract's flat bars make a few of these late):\n",
+               _order(pd.crosstab(e2["kind"], e2["fold"])).to_markdown(), "\n"]
     out.parent.mkdir(parents=True, exist_ok=True)
     text = "\n".join(md)
     out.write_text(text)
     return text
 
 
-def main(action: str, pairs: list[str], sources: list[str] | None = None, cached: bool = False) -> None:
+def main(action: str, pairs: list[str], sources: list[str] | None = None, cached: bool = False, reverse: bool = False) -> None:
     if action == "fetch":
         for s in sources or ["llama", "binance", "wayback"]:
-            {"llama": fetch_llama, "binance": fetch_binance, "wayback": fetch_wayback}[s]()
+            {"llama": fetch_llama, "binance": fetch_binance, "wayback": lambda: fetch_wayback(reverse=reverse)}[s]()
     elif action == "ingest":
         ingest()
     elif action == "inventory":

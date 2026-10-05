@@ -131,7 +131,8 @@ def test_known_at_classifies_what_followed_a_snapshot_and_what_the_snapshot_prom
     snap = _cd([("1", "2024-03-11", 51.0),        # the 10th: a day off, 2 % off → same
                 ("1", "2024-03-20", 20.0),        # the 20th: the day, another size → amount
                 ("1", "2024-04-05", 30.0),        # the 25 Apr cliff stood at 5 Apr → moved (it is in the 30–90 d window of today's schedule)
-                ("1", "2024-03-18", 99.0)],       # promised, and not in today's schedule as dated
+                ("1", "2024-03-18", 99.0),        # promised, and not in today's schedule as dated
+                ("1", "2024-07-01", 0.5)],        # dust far ahead: the page reaches beyond 90 days
                asof="2024-03-01")
     k = events.known_at(snap, final).set_index("window")
     a = k.loc["0-30d"]
@@ -139,6 +140,8 @@ def test_known_at_classifies_what_followed_a_snapshot_and_what_the_snapshot_prom
     assert (a["snap"], a["snap_unmatched"]) == (3, 2)                                                            # the 20-token and the 99-token cliffs are not in today's schedule as dated
     b = k.loc["30-90d"]
     assert (b["final"], b["moved"], b["snap"], b["snap_unmatched"]) == (1, 1, 1, 1)
+    short = events.known_at(snap[snap["day"] < D("2024-04-06")], final)                                         # a page that dates nothing beyond 30 days is not asked about days 30–90
+    assert short["window"].tolist() == ["0-30d"]
 
 
 def test_point_in_time_uses_the_last_snapshot_a_week_before_the_event():
@@ -148,6 +151,8 @@ def test_point_in_time_uses_the_last_snapshot_a_week_before_the_event():
     covered = {D("2024-02-01"): {"1"}, D("2024-03-08"): {"1", "3"}}
     st = events.point_in_time(asof, final, covered)
     assert st.tolist() == ["same", "uncovered", "no_snapshot", "same", "moved"]
+    late = _cd([("1", "2024-05-30", 60.0)])
+    assert events.point_in_time(asof, late, covered).tolist() == ["out_of_reach"]                                # the 8 Mar page dates nothing after 2 Apr
     assert events.point_in_time(asof, final, covered, lead=pd.Timedelta(days=1)).tolist() == ["absent", "uncovered", "no_snapshot", "same", "moved"]   # a day's lead reads the 8 Mar page for the 10th, which no longer lists it as coming
 
 
@@ -158,3 +163,25 @@ def test_events_on_a_member_count_only_inside_its_block():
     assert j[["key", "day", "perp"]].values.tolist() == [["PEPE", D("2024-03-05"), "1000PEPEUSDT"], ["ARB", D("2024-04-29"), "ARBUSDT"]]
     assert len(events.in_blocks(ev.assign(key="1000PEPEUSDT"), "day", mem, on="perp")) == 2                      # by the contract: the two days inside PEPE's block
     assert events.fold_of(pd.Series([D("2019-01-01"), D("2023-06-01"), D("2024-09-01"), D("2026-10-01")])).tolist() == ["before FP", "F1", "F3", "after F5"]
+
+
+def test_a_throttled_fetch_takes_one_snapshot_a_month_first():
+    st = ["20230331190630", "20230406055432", "20230413040516", "20230502100019", "20240104231805", "20240127145536"]
+    assert events.by_month_first(st[::-1]) == ["20230331190630", "20230406055432", "20230502100019", "20240104231805", "20230413040516", "20240127145536"]
+
+
+def test_a_snapshots_protocol_is_found_in_todays_file_under_its_new_id():
+    fin = pd.DataFrame({"pid": ["3777", "parent#aave", "9", "10"], "name": ["Arbitrum Foundation", "Aave", "Nine", "Pudgy"], "symbol": ["ARB", "AAVE", "NIN", ""], "gecko_id": ["arbitrum", "aave", "", "pengu"]})
+    asof = pd.DataFrame({"pid": ["2785", "111", "9", "77", "old", "55"], "name": ["Arbitrum", "AAVE", "x", "nine", "Gone", "Pudgy Penguins"], "symbol": ["ARB", "", "", "", "GONE", "PENGU"],
+                         "gecko_id": ["", "aave", "", "", "", "pengu"], "asof": D("2024-03-24")})
+    a = events.align(asof, fin)
+    assert a["pid"].tolist() == ["3777", "parent#aave", "9", "9", "old", "10"]                    # by ticker, by CoinGecko id, by id, by name, by nothing, by CoinGecko id
+    assert events.fill_symbols(fin, a)["symbol"].tolist() == ["ARB", "AAVE", "NIN", "PENGU"]      # today's blank ticker from the snapshot
+
+
+def test_promised_is_each_cliff_as_the_last_snapshot_a_week_before_dated_it():
+    acd = pd.concat([_cd([("1", "2024-03-05", 50.0), ("1", "2024-03-10", 50.0), ("1", "2024-04-10", 50.0)], asof="2024-02-01"),
+                     _cd([("1", "2024-03-12", 50.0), ("1", "2024-04-10", 55.0)], asof="2024-03-02")])
+    p = events.promised(acd, [D("2024-02-01"), D("2024-03-02")])
+    got = sorted((r.asof.strftime("%m-%d"), r.day.strftime("%m-%d"), r.tokens) for r in p.itertuples())
+    assert got == [("02-01", "03-05", 50.0), ("03-02", "03-12", 50.0), ("03-02", "04-10", 55.0)]   # 5 Mar: the March page is too late; 10 Mar as February dated it is superseded — the March page no longer has it

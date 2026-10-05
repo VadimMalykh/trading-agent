@@ -76,7 +76,7 @@ def cmd_etf(args):
 
 def cmd_events(args):
     from . import events
-    events.main(args.action, PAIRS, args.source, args.cached)
+    events.main(args.action, PAIRS, args.source, args.cached, args.reverse)
 
 
 def cmd_universe(args):
@@ -294,6 +294,7 @@ def main(argv=None):
     ev = sub.add_parser("events", help="P8 (PLAN §9 #8): token unlock schedules (DefiLlama, with the Wayback Machine's snapshots as the known-at) and Binance's listing / delisting announcements → data/unlock_events.parquet, data/unlock_asof.parquet, data/binance_events.parquet, output/events_inventory.md (see ft2/events.py)")
     ev.add_argument("action", choices=["fetch", "ingest", "inventory"])
     ev.add_argument("--source", nargs="*", choices=["llama", "binance", "wayback"], default=None, help="fetch: which sources (default all three; binance answers from the work VM, not from every network)")
+    ev.add_argument("--reverse", action="store_true", help="fetch --source wayback: the months from the newest (a second machine working towards the first; the archive throttles per address)")
     ev.add_argument("--cached", action="store_true", help="inventory: no network — the archive's first-month listing is read from its cached copy")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
