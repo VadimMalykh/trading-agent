@@ -1031,7 +1031,7 @@ on average — a small book by construction: it can only be as large as the numb
 |---|---|---|
 | 1 | registration R29, committed before anything else | ✅ 2026-10-05 |
 | 2 | build and tests (`listing.confirm`, `--universe launch34`, the fingerprint's tag, `scripts/r29_check_r28.py`), committed before any fetch | ✅ 2026-10-05: 178 pass |
-| 3 | the launch list of F3+F4 frozen as `ft2/launches_f34.csv`, committed before any fetch | — |
+| 3 | the launch list of F3+F4 frozen as `ft2/launches_f34.csv`, committed before any fetch | ✅ 2026-10-05: 304 contracts (147 released in F3, 157 in F4) |
 | 4 | fingerprint, fetch, ingest, the two input checks, R28 re-run and compared | — |
 | 5 | the run, as registered, once | — |
 | 6 | the read: validity first, then the gate | — |
