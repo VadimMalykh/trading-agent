@@ -55,11 +55,14 @@ def _symbols(args) -> list[str]:
     if u == "launch":                                         # R28: the contracts launched in F1+F2 (frozen from Binance's announcements)
         from .listing import launch_symbols
         return launch_symbols()
+    if u == "launch34":                                       # R29: the contracts launched in F3+F4
+        from .listing import LAUNCHES34_CSV, launch_symbols
+        return launch_symbols(LAUNCHES34_CSV)
     if u == "all":                                            # the archive slices are rewritten whole: ingest every name they have ever held
-        from .listing import LAUNCHES_CSV, launch_symbols
+        from .listing import LAUNCHES34_CSV, LAUNCHES_CSV, launch_symbols
         from .universe import F34_MEMBERS_CSV, PRE_MEMBERS_CSV, WIDE, screen_symbols
         more = [x for f in (PRE_MEMBERS_CSV, F34_MEMBERS_CSV) if f.exists() for x in screen_symbols(f)]
-        return list(dict.fromkeys([*PAIRS, *WIDE, *screen_symbols(), *more, *(launch_symbols() if LAUNCHES_CSV.exists() else [])]))
+        return list(dict.fromkeys([*PAIRS, *WIDE, *screen_symbols(), *more, *(launch_symbols() if LAUNCHES_CSV.exists() else []), *(launch_symbols(LAUNCHES34_CSV) if LAUNCHES34_CSV.exists() else [])]))
     return args.symbols or PAIRS
 
 
@@ -85,7 +88,7 @@ def cmd_events(args):
 
 def cmd_listing(args):
     from . import listing
-    listing.main(args.action)
+    listing.main(args.action, args.folds, args.name, args.registration)
 
 
 def cmd_universe(args):
@@ -197,7 +200,7 @@ def main(argv=None):
                                       "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
     i.add_argument("--symbols", nargs="*", help="archive slices only: which pairs (default the twelve)")
-    i.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
+    i.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "launch34", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
     a.add_argument("kinds", nargs="+", help="bookDepth metrics aggTrades fundingRate klines/1m …")
@@ -205,7 +208,7 @@ def main(argv=None):
     a.add_argument("--start", default="2023-01-01")
     a.add_argument("--end", default=None, help="inclusive; default: two days ago")
     a.add_argument("--monthly", action="store_true", help="klines/<interval>: the archive's monthly files for the months of [start, end] instead of daily ones")
-    a.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "all"])
+    a.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "launch34", "all"])
     u = sub.add_parser("universe", help="R10: rank every USDT perpetual the archive lists by median daily quote volume over the four months before F0 → output/universe_wide.md; "
                                         "--screen (R18): the members per block and what a screener could rank them by → output/universe_screen.md")
     u.add_argument("--n", type=int, default=None, help="default 40; with --screen 60 a block")
@@ -215,7 +218,7 @@ def main(argv=None):
     u.add_argument("--folds", nargs="*", default=["F1", "F2"], help="--screen: the folds whose blocks get a membership")
     cw = sub.add_parser("costwide", help="R10: spread + impact for pairs without a tape (one pooled candle proxy fitted on the twelve) → data/cost_daily_wide.parquet, output/cost_wide.md")
     cw.add_argument("--symbols", nargs="*")
-    cw.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "all"])
+    cw.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "launch34", "all"])
     cw.add_argument("--start", default="2023-01-01")
     t = sub.add_parser("tape", help="P1: stream archive aggTrades into data/tape/<symbol>.parquet (per-minute summary); zips are not kept")
     t.add_argument("--symbols", nargs="*")
@@ -306,7 +309,10 @@ def main(argv=None):
     ev.add_argument("--reverse", action="store_true", help="fetch --source wayback: the months from the newest (a second machine working towards the first; the archive throttles per address)")
     ev.add_argument("--cached", action="store_true", help="inventory: no network — the archive's first-month listing is read from its cached copy")
     ls = sub.add_parser("listing", help="P8, R28: the new listing — `select` freezes the launches of F1+F2 from Binance's announcements and the archive's first files → output/listing/launches_f12.csv; `run` reads what a new contract earns against the screener's members over 1, 3, 7, 30 days → output/listing/r28/ (see ft2/listing.py)")
-    ls.add_argument("action", choices=["select", "run"])
+    ls.add_argument("action", choices=["select", "run", "confirm"])
+    ls.add_argument("--folds", nargs="*", default=None, help="select: F1 F2 (default) or F3 F4 → output/listing/launches_f12.csv / launches_f34.csv")
+    ls.add_argument("--name", default=None, help="run / confirm: the output directory under output/listing/ (default r28 / r29)")
+    ls.add_argument("--registration", default=None, help="confirm: R29 — a guarded read of F3+F4, made once and logged")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")

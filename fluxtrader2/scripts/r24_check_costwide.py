@@ -21,10 +21,11 @@ m = old.merge(new, on=k, how="left", suffixes=("", "_new"), indicator=True)
 num = [c for c in old.columns if c not in k and pd.api.types.is_numeric_dtype(old[c])]
 diff = {c: float(np.nanmax(np.abs(m[c] - m[c + "_new"]))) if m[c].notna().any() else 0.0 for c in num}
 nan_same = bool(all((m[c].isna() == m[c + "_new"].isna()).all() for c in num))
-if TAG == "r28":                                             # R28: the names are the launches of F1+F2, the days F1+F2's from each contract's first day
+if TAG in ("r28", "r29"):                                    # R28 / R29: the names are the launches of F1+F2 / F3+F4, the days those folds' from each contract's first day
     from ft2 import listing
     from ft2.__main__ import PAIRS
-    mem, (lo, hi) = [x for x in listing.launch_symbols() if x not in PAIRS], listing.window()      # 1000PEPE and WLD are of the twelve: priced from the tape (cost_daily), never in the wide file
+    csv, fl = (listing.LAUNCHES_CSV, listing.FOLDS) if TAG == "r28" else (listing.LAUNCHES34_CSV, listing.CONF_FOLDS)
+    mem, (lo, hi) = [x for x in listing.launch_symbols(csv) if x not in PAIRS], listing.window(fl)      # a launch that is one of the twelve is priced from the tape (cost_daily), never in the wide file
 else:
     mem = universe.screen_symbols(universe.PRE_MEMBERS_CSV if TAG == "r24" else universe.F34_MEMBERS_CSV)
     lo, hi = (pd.Timestamp("2021-12-10", tz="UTC"), universe.PRE_END) if TAG == "r24" else (pd.Timestamp("2024-09-03", tz="UTC"), pd.Timestamp("2026-01-01", tz="UTC"))

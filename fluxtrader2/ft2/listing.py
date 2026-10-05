@@ -10,9 +10,15 @@ label      a = what a long earns before trading costs, funding paid on the posit
            here at the launch's own row (`label_at`; the run checks the two are the same on the real market);
            b = the mean of the same over the members of the screener's block that holds t; y = a − b.
 statistic  M = the mean of y per hold; its noise by a moving-block bootstrap over calendar weeks; family-wise over the holds.
+
+R29 — `ft2 listing confirm`: the confirmation read of R28's candidate on the launches of F3+F4 (PLAN §8 R29). One rule: sold at
+the same entry, held 2,016 bars, bought back at the bar after the first close at or above 1.9 × the entry; priced by
+`backtest.price` (a leg on the entry day at twice the contract's proxy row), hedged with the block's members, the hedge's round
+trips paid. H = own + hedge; M = its mean; u on the larger of the bootstrap's and the week-clustered se. A guarded read: once.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -38,9 +44,21 @@ BTC = "BTCUSDT"
 OWN = ("1000PEPEUSDT", "WLDUSDT")      # the two of the twelve that began in F1: described with and without
 CHECKS = {"fingerprint": OUT / "r28_fingerprint_check.json", "costwide": Path("output/backtest/r28_costwide_check.json")}
 
+# R29, the confirmation read
+CONF_FOLDS = ("F3", "F4")
+LAUNCHES34_CSV = Path(__file__).with_name("launches_f34.csv")      # frozen from OUT / launches_f34.csv, once, and committed
+HOLD = 2016                            # 7 days: R28's candidate
+STOP = 1.9                             # a close at or above this × the entry price closes the sold position at the next bar
+ENTRY_MULT = 2.0                       # a leg on the entry day: this × the contract's proxy row (the proxy has none for a first day)
+HEAVY = (4.0, 2.0)                     # the heavy reading: the entry day × 4, every other proxy cost × 2
+SEED_CONFIRM = 29
+MIN_CONFIRM = 200
+CHECKS29 = {"fingerprint": OUT / "r29_fingerprint_check.json", "costwide": Path("output/backtest/r29_costwide_check.json"), "r28_comes_back": OUT / "r29_r28_check.json"}
+TAGS = {FOLDS: "f12", CONF_FOLDS: "f34"}
 
-def window() -> tuple[pd.Timestamp, pd.Timestamp]:
-    return folds.bounds(FOLDS[0], embargoed=False)[0], folds.bounds(FOLDS[-1], embargoed=False)[1]
+
+def window(fold_names=FOLDS) -> tuple[pd.Timestamp, pd.Timestamp]:
+    return folds.bounds(fold_names[0], embargoed=False)[0], folds.bounds(fold_names[-1], embargoed=False)[1]
 
 
 # ---- the launch list (no price) -----------------------------------------------------------------------------------------------
@@ -56,13 +74,15 @@ def launch_list(bn: pd.DataFrame, first: pd.DataFrame, a: pd.Timestamp, b: pd.Ti
     return j[["contract", "release", "first_month", "id"]].sort_values(["release", "contract"]).reset_index(drop=True)
 
 
-def select() -> pd.DataFrame:
+def select(fold_names=FOLDS) -> pd.DataFrame:
+    fold_names = tuple(fold_names)
     bn, first = pd.read_parquet(events.BINANCE), pd.read_csv(events.FIRST, dtype=str).fillna("")
-    L = launch_list(bn, first, *window())
+    L = launch_list(bn, first, *window(fold_names))
     OUT.mkdir(parents=True, exist_ok=True)
-    L.to_csv(OUT / "launches_f12.csv", index=False)
+    dest = OUT / f"launches_{TAGS[fold_names]}.csv"
+    L.to_csv(dest, index=False)
     by = events.fold_of(L["release"]).value_counts().to_dict()
-    print(f"{len(L)} launches, release {L['release'].min():%Y-%m-%d} → {L['release'].max():%Y-%m-%d}, by fold {by} → {OUT / 'launches_f12.csv'}")
+    print(f"{len(L)} launches, release {L['release'].min():%Y-%m-%d} → {L['release'].max():%Y-%m-%d}, by fold {by} → {dest}")
     return L
 
 
@@ -307,9 +327,196 @@ def run(name: str = "r28", taker_bps: float = 5.0) -> str:
     return text
 
 
-def main(action: str) -> None:
+# ---- R29: the sold position, its stop, its costs and its hedge ---------------------------------------------------------------------
+def stop_exit(c: np.ndarray, e: int, hold: int = HOLD, level: float = STOP) -> tuple[int, bool]:
+    """One contract's closes, the entry row → (the exit row, stopped). The trigger is the first bar after the entry and before
+    the full-hold exit whose close is at or above `level` × the entry price; the exit is the bar after it. A missing close
+    triggers nothing."""
+    last = e + hold
+    with np.errstate(invalid="ignore"):
+        hit = np.flatnonzero(c[e + 1:last] >= level * c[e])
+    return (e + 2 + int(hit[0]), True) if len(hit) else (last, False)
+
+
+def entry_day_legs(leg: np.ndarray, days: pd.DatetimeIndex, entry_days, own: np.ndarray, mult: float) -> np.ndarray:
+    """The cost legs (day × pair) with, for each trade, its contract's leg on the day of the entry set to `mult` × that day's
+    row if it has one, else `mult` × the contract's first row after it."""
+    out = leg.copy()
+    for p, j in zip(days.get_indexer(pd.DatetimeIndex(entry_days)), own):
+        if p < 0:
+            continue
+        col = leg[p:, j]
+        ok = np.flatnonzero(np.isfinite(col))
+        out[p, j] = mult * col[ok[0]] if len(ok) else np.nan
+    return out
+
+
+def hedge(close: np.ndarray, fv: np.ndarray, leg: np.ndarray, days: pd.DatetimeIndex, idx: pd.DatetimeIndex, e: np.ndarray, x: np.ndarray,
+          mask: np.ndarray, taker_bps: float) -> pd.DataFrame:
+    """Per trade: one unit spread equally over the masked members, bought at row e and sold at row x — the mean of what a long
+    earns, funding paid on the value, and the mean of the members' own taker round trips (the exit leg on the value), over the
+    members that have both."""
+    de, dx = days.get_indexer(idx[e].floor("D")), days.get_indexer(idx[x].floor("D"))
+    rows = []
+    for i in range(len(e)):
+        m = np.flatnonzero(mask[i])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            r = close[x[i], m] / close[e[i], m]
+            gain = (r - 1.0) * 1e4 - (fv[x[i], m] - fv[e[i], m]) / close[e[i], m]
+            cost = (taker_bps + (leg[de[i], m] if de[i] >= 0 else np.nan)) + (taker_bps + (leg[dx[i], m] if dx[i] >= 0 else np.nan)) * r
+        ok = np.isfinite(gain) & np.isfinite(cost)
+        rows.append({"hedge_gain": gain[ok].mean() if ok.any() else np.nan, "hedge_cost": cost[ok].mean() if ok.any() else np.nan, "n_b": int(ok.sum())})
+    return pd.DataFrame(rows)
+
+
+def sold_trades(M: bt.Market, C: bt.Costs, E: pd.DataFrame, mask: np.ndarray, taker_bps: float, entry_mult: float = ENTRY_MULT, other_mult: float = 1.0,
+                hold: int = HOLD, level: float = STOP, shift: int = 0) -> pd.DataFrame:
+    """One sold unit per launch of E (its decision row `row`, + `shift` bars), by the rule; `C` as loaded (cost × 1). The
+    scenario's legs are `other_mult` × the proxy, the entry day `entry_mult` × it."""
+    close, idx = M.close.to_numpy(), M.index
+    own = M.columns.get_indexer(E["contract"])
+    rows = E["row"].to_numpy() + shift
+    e = rows + bt.LATENCY
+    ex = [stop_exit(close[:, j], int(a), hold, level) for a, j in zip(e, own)]
+    x, stopped = np.array([v[0] for v in ex]), np.array([v[1] for v in ex])
+    legs = entry_day_legs(other_mult * C.taker_leg, C.days, idx[e].floor("D"), own, entry_mult / other_mult)
+    Cs = dataclasses.replace(C, taker_leg=legs)
+    dec = pd.DataFrame({"t": idx[rows], "symbol": E["contract"].to_numpy(), "side": -1, "hold": x - e, "size": 1.0, "fold": E["fold"].to_numpy(), "accepted": True})
+    f = bt.price(dec, M, Cs, "taker", taker_bps, 2.0)
+    m = mask.copy()
+    m[np.arange(len(own)), own] = False
+    h = hedge(close, C.fundval, other_mult * C.taker_leg, C.days, idx, e, x, m, taker_bps)
+    out = pd.DataFrame({"contract": E["contract"].to_numpy(), "fold": E["fold"].to_numpy(), "t": idx[rows], "e": e, "x": x, "stopped": stopped, "entry_t": f["entry_t"].to_numpy(), "exit_t": f["exit_t"].to_numpy(),
+                        "entry_px": f["entry_px"].to_numpy(), "exit_px": f["exit_px"].to_numpy(), "gross": f["gross_bps"].to_numpy(), "funding": f["funding_bps"].to_numpy(), "fee": f["fee_bps"].to_numpy(),
+                        "spread_impact": f["other_cost_bps"].to_numpy(), "own": f["net_bps"].to_numpy(), "leg_entry": legs[C.days.get_indexer(idx[e].floor("D")), own], "leg_exit": legs[C.days.get_indexer(idx[x].floor("D")), own]})
+    out = pd.concat([out, h], axis=1)
+    out["hedge"] = out["hedge_gain"] - out["hedge_cost"]
+    out["H"] = out["own"] + out["hedge"]
+    return out
+
+
+def verdict_confirm(m: float, se: float, m_heavy: float) -> str:
+    if m > 0 and m / se >= 2 and m_heavy > 0:
+        return "CONFIRMED"
+    if m + 1.96 * se < 0:
+        return "CLOSED"
+    return "NOT CONFIRMED"
+
+
+def noise(h: np.ndarray, t: pd.DatetimeIndex, seed: int = SEED_CONFIRM) -> dict:
+    wk, W = weeks(t)
+    b = bootstrap(h[:, None], wk, W, seed=seed)
+    r = {"n": int(b["n"][0]), "M": float(b["m"][0]), "se_bootstrap": float(b["se"][0]), "se_week": float(b["se_week"][0]), "se_plain": float(b["se_plain"][0]), "weeks": W}
+    r["se"] = max(r["se_bootstrap"], r["se_week"])                # the gate's: the larger of the two
+    r["u"] = r["M"] / r["se"]
+    return r
+
+
+def confirm(registration: str, name: str = "r29", taker_bps: float = 5.0) -> str:
+    conf = bt._guard(CONF_FOLDS, registration)                    # a confirmation read: registered, and once
+    a0, end = window(CONF_FOLDS)
+    L = launches(LAUNCHES34_CSV)
+    mem = universe.members(universe.F34_MEMBERS_CSV)
+    syms = list(dict.fromkeys([*L["contract"], *universe.screen_symbols(universe.F34_MEMBERS_CSV), BTC]))
+    M = bt.market(syms, end, a0 - pd.Timedelta(days=1))
+    C = bt.load_costs(M.index, M.columns, end, close=M.close)
+    close, idx = M.close.to_numpy(), M.index
+    E_all = entries(M, L, end, mem["block"].min(), longest=HOLD)
+    E_all["fold"] = events.fold_of(E_all["t"].fillna(pd.Timestamp("1970-01-01", tz="UTC")))
+    E = E_all[E_all["eligible"]].reset_index(drop=True)
+    own = M.columns.get_indexer(E["contract"])
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    mask = member_mask(mem, M.columns, E["t"])
+    T = sold_trades(M, C, E, mask, taker_bps)
+    TH = sold_trades(M, C, E, mask, taker_bps, entry_mult=HEAVY[0], other_mult=HEAVY[1])
+
+    # validity, read first
+    could = E_all[E_all["release"] + T0_WINDOW[0] + (WAIT + bt.LATENCY + HOLD) * BAR < end]
+    span = [np.isfinite(close[r:r + bt.LATENCY + HOLD + 1, c]).mean() for r, c in zip(E["row"], own)]
+    e, x = T["e"].to_numpy(), T["x"].to_numpy()
+    pe, px_ = close[e, own], close[x, own]
+    r = px_ / pe
+    mine = {"gross": -(r - 1.0) * 1e4, "funding": (C.fundval[x, own] - C.fundval[e, own]) / pe, "fee": taker_bps + taker_bps * r, "spread_impact": T["leg_entry"].to_numpy() + T["leg_exit"].to_numpy() * r}
+    mine["own"] = mine["gross"] - mine["fee"] - mine["spread_impact"] + mine["funding"]
+    d6 = {k: float(np.nanmax(np.abs(v - T[k].to_numpy()))) for k, v in mine.items()}
+    full = horizon.labels(M, C, HOLD, bt.LATENCY)[1].to_numpy()[E["row"].to_numpy(), own]
+    free = ~T["stopped"].to_numpy()
+    d6["unstopped_vs_horizon_labels"] = float(np.nanmax(np.abs((T["gross"] + T["funding"]).to_numpy()[free] + full[free]))) if free.any() else 0.0
+    del full
+    again = [stop_exit(close[:, j], int(a)) for a, j in zip(e, own)]
+    early = [bool(np.nanmax(close[a + 1:b - 1, j], initial=-np.inf) >= STOP * close[a, j]) if b - 1 > a + 1 else False for a, b, j in zip(e, x, own)]
+    outside = {k: (json.loads(p.read_text()).get("status") if p.exists() else "MISSING") for k, p in CHECKS29.items()}
+    fp = json.loads(CHECKS29["fingerprint"].read_text()) if CHECKS29["fingerprint"].exists() else {}
+    V = {"1_latest_bar_in_the_slice": fp.get("latest_bar", "MISSING"), "2_3_fingerprint_costwide_r28": outside,
+         "4_frozen": len(L), "4_could_be_eligible": len(could), "4_t0_ok_share": float(could["t0_ok"].mean()) if len(could) else 0.0, "4_eligible": len(E),
+         "5_launches_under_95pct_bars": int(sum(v < MIN_BARS for v in span)), "5_H_share": float(T["H"].notna().mean()), "5_min_members": int(T["n_b"].min()),
+         "6_identity_max_abs_diff": d6, "7_stop_recomputed_same": bool(all(a[0] == b and a[1] == c for a, b, c in zip(again, x, T["stopped"]))), "7_close_over_the_level_before_the_trigger": int(sum(early)),
+         "7_exits_at_or_after_end": int((T["exit_t"] >= end).sum())}
+    V["status"] = "PASS" if (all(v == "PASS" for v in outside.values()) and str(V["1_latest_bar_in_the_slice"]) < "2026-01-01" and V["4_t0_ok_share"] >= MIN_T0_SHARE and len(E) >= MIN_CONFIRM
+                             and V["5_launches_under_95pct_bars"] == 0 and V["5_H_share"] >= MIN_LABELS and V["5_min_members"] >= MIN_MEMBERS and max(d6.values()) <= 1e-9
+                             and V["7_stop_recomputed_same"] and V["7_close_over_the_level_before_the_trigger"] == 0 and V["7_exits_at_or_after_end"] == 0) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(V, indent=1))
+    E_all.to_csv(out / "launches_all.csv", index=False)
+    md = [f"# R29 — the confirmation read of the new listing, sold, 7 days (`ft2 listing confirm`)\n",
+          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · unit {bt.UNIT}, charged on {bt.CHARGED} · market {idx[0]:%Y-%m-%d} → {idx[-1]:%Y-%m-%d %H:%M}, {len(M.columns)} names\n",
+          f"\n## Validity: {V['status']}\n", "\n```\n" + json.dumps(V, indent=1) + "\n```\n",
+          "\nLaunches by what became of them:\n", E_all["why"].replace("", "eligible").value_counts().rename("launches").to_frame().to_markdown(), "\n"]
+    if V["status"] != "PASS":
+        md += ["\n**VOID — the number is not computed, and the read is not logged.**\n"]
+        (out / "confirm.md").write_text("\n".join(md))
+        return "\n".join(md)
+
+    # the number
+    ok = T["H"].notna().to_numpy()
+    t = pd.DatetimeIndex(T["t"])
+    N = noise(T["H"].to_numpy()[ok], t[ok])
+    m_heavy = float(TH["H"].mean())
+    N.update({"M_heavy": m_heavy, "MDE": 2.8 * N["se"], "verdict": verdict_confirm(N["M"], N["se"], m_heavy)})
+    (out / "confirm.json").write_text(json.dumps(N, indent=1))
+    T.to_csv(out / "trades.csv", index=False)
+    TH.to_csv(out / "trades_heavy.csv", index=False)
+    pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": conf, "strategy": "listing_sold_7d",
+                  "params": json.dumps({"hold": HOLD, "stop": STOP, "wait": WAIT, "entry_mult": ENTRY_MULT})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    md += [f"\n## The number — H = own + hedge, bps of the position; {N['n']} trades in {N['weeks']} weeks\n",
+           pd.DataFrame([{k: N[k] for k in ("n", "M", "se", "u", "MDE", "M_heavy", "se_bootstrap", "se_week", "se_plain", "verdict")}]).round(3).to_markdown(index=False), "\n"]
+
+    # described — decides nothing
+    parts = ["gross", "funding", "fee", "spread_impact", "own", "hedge_gain", "hedge_cost", "hedge", "H"]
+    by = pd.concat([T[parts].mean().rename("all"), *[T.loc[T["fold"] == f, parts].mean().rename(f) for f in CONF_FOLDS], TH[parts].mean().rename("heavy")], axis=1).T
+    by.insert(0, "n", [len(T), *[int((T["fold"] == f).sum()) for f in CONF_FOLDS], len(TH)])
+    No = noise(T["own"].to_numpy()[ok], t[ok])
+    q = T.assign(q=t.tz_localize(None).to_period("Q").astype(str)).groupby("q")["H"].agg(["size", "mean", "median"])
+    st = T[T["stopped"]]
+    unst = sold_trades(M, C, E[T["stopped"].to_numpy()].reset_index(drop=True), mask[T["stopped"].to_numpy()], taker_bps, level=np.inf) if len(st) else st
+    late = E[E["row"].to_numpy() + LATE + bt.LATENCY + HOLD < len(idx)].reset_index(drop=True)
+    TL = sold_trades(M, C, late, member_mask(mem, M.columns, pd.DatetimeIndex(late["t"]) + LATE * BAR), taker_bps, shift=LATE)
+    y7 = label_at(close, C.fundval, E["row"].to_numpy(), HOLD)
+    a7, b7, _ = excess(y7, own, mask)
+    hype = T["contract"] != "HYPEUSDT"
+    md += ["\n## Described — decides nothing\n", "\nM's parts (means; `heavy` = the entry day at four times the proxy, every other proxy cost doubled):\n", by.round(1).to_markdown(), "\n",
+           f"\n- the sold position alone (own): mean {No['M']:.1f}, se {No['se']:.1f} (bootstrap {No['se_bootstrap']:.1f}, week {No['se_week']:.1f}), u {No['u']:.2f}\n",
+           f"- H: median {T['H'].median():.1f}, share of trades above zero {(T['H'] > 0).mean():.3f}; quantiles 5/25/75/95 % {', '.join(f'{v:.0f}' for v in T['H'].quantile([0.05, 0.25, 0.75, 0.95]))}; worst {T['H'].min():.0f}, best {T['H'].max():.0f}\n",
+           f"- trades stopped: {len(st)} of {len(T)}" + (f"; their H: mean {st['H'].mean():.0f}, worst {st['H'].min():.0f}; the same trades unstopped: mean {unst['H'].mean():.0f}, worst {unst['H'].min():.0f}" if len(st) else "") + "\n",
+           f"- without HYPE: M {T.loc[hype, 'H'].mean():.1f} ({int(hype.sum())} trades)\n",
+           f"- the entry a day later, the same stop and costs (reference): mean H {TL['H'].mean():.1f}, median {TL['H'].median():.1f} ({len(TL)} trades)\n",
+           f"- R28's own number on these launches (y at 7 days: no stop, no trading cost; a − the members' mean): mean {np.nanmean(a7 - b7):.1f}, median {np.nanmedian(a7 - b7):.1f} — R28 on F1+F2: −673.8, −1,183.3\n",
+           "\nBy calendar quarter of the entry (trades, mean H, median H):\n", q.round(1).to_markdown(), "\n",
+           "\nThe trades stopped:\n", (st[["contract", "entry_t", "exit_t", "gross", "funding", "own", "hedge", "H"]].round(0).to_markdown(index=False) if len(st) else "none"), "\n",
+           "\nThe five best and the five worst trades:\n", pd.concat([T.nlargest(5, "H"), T.nsmallest(5, "H")])[["contract", "entry_t", "stopped", "gross", "funding", "own", "hedge", "H"]].round(0).to_markdown(index=False), "\n"]
+    (out / "meta.json").write_text(json.dumps({"registration": registration, "unit": bt.UNIT, "charged": bt.CHARGED, "hold": HOLD, "stop": STOP, "wait": WAIT, "entry_mult": ENTRY_MULT, "heavy": HEAVY,
+                                                "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": SEED_CONFIRM, "launches": len(L), "eligible": len(E), "taker_bps": taker_bps}, indent=1))
+    text = "\n".join(md)
+    (out / "confirm.md").write_text(text)
+    return text
+
+
+def main(action: str, fold_names=None, name: str | None = None, registration: str | None = None) -> None:
     if action == "select":
-        select()
+        select(tuple(fold_names) if fold_names else FOLDS)
     elif action == "run":
-        print(run())
-        print(f"wrote {OUT / 'r28'}/")
+        print(run(name or "r28"))
+        print(f"wrote {OUT / (name or 'r28')}/")
+    elif action == "confirm":
+        print(confirm(registration, name or "r29"))
+        print(f"wrote {OUT / (name or 'r29')}/")

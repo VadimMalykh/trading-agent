@@ -139,3 +139,63 @@ def test_the_fingerprint_passes_what_came_back_and_fails_a_changed_name():
     assert r["status"] == "PASS" and r["names_compared_on_their_old_extent"] == 1 and r["new_names"] == 1
     assert fp.compare(old, grown, old.iloc[:1].assign(rows=9))["status"] == "FAIL"                               # … unless an old row is gone
     assert len(fp.extended(old, grown.assign(rows=lambda x: x["rows"].where(x.index != 0, 5)))) == 0             # fewer rows is never an extension
+
+
+# ---- R29: the sold position, its stop, its costs, its hedge -----------------------------------------------------------------------
+def test_the_stop_buys_back_at_the_bar_after_the_first_close_at_the_level():
+    c = np.array([100.0, 100, 150, 189.9, np.nan, 190, 400, 120, 110, 100, 100, 100])
+    assert listing.stop_exit(c, 1, hold=8, level=1.9) == (6, True)                   # the close of 190 at row 5 is the trigger; a missing close is none; the exit is the next bar, whatever it is
+    assert listing.stop_exit(c, 1, hold=4, level=1.9) == (5, False)                  # the trigger bar is the full-hold exit itself: the hold ends there, not stopped
+    assert listing.stop_exit(c, 1, hold=5, level=1.9) == (6, True)                   # the trigger is the last bar before the exit: the exit is the full hold's bar
+    assert listing.stop_exit(c, 6, hold=5, level=1.9) == (11, False) and listing.stop_exit(c, 1, hold=8, level=np.inf) == (9, False)
+    assert listing.stop_exit(c, 0, hold=3, level=1.5) == (3, True)                   # the entry bar itself never triggers: row 2's 150 does
+
+
+def test_a_leg_on_the_entry_day_is_twice_that_days_row_or_the_first_row_after():
+    days = pd.date_range("2024-10-01", periods=4, freq="D", tz="UTC")
+    leg = np.array([[np.nan, 5.0], [np.nan, 6.0], [8.0, 7.0], [9.0, 7.5]])
+    out = listing.entry_day_legs(leg, days, [days[0], days[1]], np.array([0, 1]), 2.0)
+    assert out[0, 0] == 16.0 and out[1, 1] == 12.0                                   # no row on the first day: twice the first row after; a row that day: twice it
+    assert np.isnan(out[1, 0]) and out[2, 0] == 8.0 and out[0, 1] == 5.0             # nothing else is touched
+    assert np.isnan(listing.entry_day_legs(leg[:2], days[:2], [days[0]], np.array([0]), 2.0)[0, 0])   # a contract with no row at all stays unpriced
+
+
+def test_the_sold_trade_is_the_harness_fill_with_its_stop_and_a_hedge_that_pays_its_costs():
+    n = 80
+    idx = pd.date_range("2024-10-01 00:05", periods=n, freq="5min", tz="UTC", name="t")
+    close = pd.DataFrame({"NEW": 100.0, "UP": 100.0, "M1": 50.0, "M2": 20.0}, index=idx)
+    close.loc[idx[30:], "NEW"] = 80.0                                                 # NEW falls 20 %: a sold position earns 2,000
+    close.loc[idx[20:], "UP"] = 250.0                                                 # UP more than doubles at row 20: stopped at row 21
+    close.loc[idx[40:], "M1"] = 55.0                                                  # the members: +10 % and flat → a hedge of +500 on NEW's bars
+    M = bt.Market(close, close, close, close * 0 + 1e6)
+    z = np.zeros((n, 4))
+    fund = z.copy()
+    fund[35:, 0] = 2.0                                                                # NEW: one payment of 2 bps at row 35 — the seller receives it, on the value (80)
+    C = bt.Costs(pd.DatetimeIndex([idx[0].floor("D")]), np.array([[3.0, 4.0, 1.0, np.nan]]), z[:1], z[:1] + 1, fund, fund * close.to_numpy())
+    E = pd.DataFrame({"contract": ["NEW", "UP"], "row": [9, 9], "fold": "F3"})
+    mask = np.array([[True, False, True, True], [False, False, True, True]])          # NEW's mask wrongly holds NEW itself: never its own hedge
+    T = listing.sold_trades(M, C, E, mask, taker_bps=5.0, hold=60, level=1.9)
+    a, b = T.iloc[0], T.iloc[1]
+    assert (a["e"], a["x"], bool(a["stopped"])) == (10, 70, False) and (b["e"], b["x"], bool(b["stopped"])) == (10, 21, True)
+    assert np.isclose(a["gross"], 2000.0) and np.isclose(a["funding"], 2.0 * 80 / 100) and np.isclose(a["fee"], 5 + 5 * 0.8)
+    assert np.isclose(a["leg_entry"], 6.0) and np.isclose(a["spread_impact"], 6.0 + 6.0 * 0.8)      # the entry day is the only day here: both legs at twice the row
+    assert np.isclose(a["own"], 2000 + 1.6 - 9 - 10.8)
+    assert a["n_b"] == 1 and np.isclose(a["hedge_gain"], 1000.0) and np.isclose(a["hedge_cost"], (5 + 1) + (5 + 1) * 1.1)   # M2 has no cost row: left out of the hedge; M1 +10 %
+    assert np.isclose(a["H"], a["own"] + 1000.0 - 12.6)
+    assert np.isclose(b["gross"], -15000.0) and np.isclose(b["fee"], 5 + 5 * 2.5) and np.isclose(b["hedge_gain"], 0.0)       # the stop cannot undo the jump it saw: −150 % of the size
+    heavy = listing.sold_trades(M, C, E, mask, taker_bps=5.0, entry_mult=4.0, other_mult=2.0, hold=60, level=1.9).iloc[0]
+    assert np.isclose(heavy["leg_entry"], 12.0) and np.isclose(heavy["hedge_cost"], (5 + 2) + (5 + 2) * 1.1) and heavy["H"] < a["H"]
+    late = listing.sold_trades(M, C, E.iloc[:1], mask[:1], taker_bps=5.0, hold=40, level=1.9, shift=25).iloc[0]
+    assert (late["e"], late["x"]) == (35, 75) and np.isclose(late["gross"], 0.0)                     # entered after the fall: nothing left
+
+
+def test_the_confirmation_gate_and_its_noise():
+    v = listing.verdict_confirm
+    assert v(400, 150, 300) == "CONFIRMED" and v(400, 150, -5) == "NOT CONFIRMED" and v(250, 150, 200) == "NOT CONFIRMED"
+    assert v(-400, 150, -500) == "CLOSED" and v(-200, 150, -300) == "NOT CONFIRMED"
+    rng = np.random.default_rng(5)
+    t = pd.DatetimeIndex(pd.Timestamp("2024-09-02", tz="UTC") + pd.to_timedelta(np.sort(rng.integers(0, 60 * 7, 200)), unit="D"))
+    h = rng.normal(300, 2000, 200)
+    r = listing.noise(h, t)
+    assert r["n"] == 200 and np.isclose(r["M"], h.mean()) and r["se"] == max(r["se_bootstrap"], r["se_week"]) and np.isclose(r["u"], r["M"] / r["se"])
+    assert 0.6 < r["se"] / r["se_plain"] < 1.6

@@ -65,11 +65,12 @@ def compare(old: pd.DataFrame, new: pd.DataFrame, on_old_extent: pd.DataFrame | 
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
+    TAG = sys.argv[2] if len(sys.argv) > 2 else "r28"           # r29: the same check before and after R29's ingest
     if sys.argv[1] == "save":
-        fingerprint().to_csv(OUT / "r28_fingerprint_before.csv", index=False)
-        print(f"saved {OUT / 'r28_fingerprint_before.csv'}")
+        fingerprint().to_csv(OUT / f"{TAG}_fingerprint_before.csv", index=False)
+        print(f"saved {OUT / f'{TAG}_fingerprint_before.csv'}")
     else:
-        old = pd.read_csv(OUT / "r28_fingerprint_before.csv")
+        old = pd.read_csv(OUT / f"{TAG}_fingerprint_before.csv")
         new = fingerprint()
         for d in (old, new):
             for c in ("first", "last"):
@@ -77,5 +78,6 @@ if __name__ == "__main__":
         ext = extended(old, new)
         r = compare(old, new, fingerprint(ext) if len(ext) else None)
         r["extended"] = sorted(f"{a}:{b}" for a, b in ext[["slice", "symbol"]].to_numpy())
-        (OUT / "r28_fingerprint_check.json").write_text(json.dumps(r, indent=1))
+        r["latest_bar"] = str(new.loc[new["slice"] == "candles_5m_archive", "last"].max())
+        (OUT / f"{TAG}_fingerprint_check.json").write_text(json.dumps(r, indent=1))
         print(json.dumps(r, indent=1))
