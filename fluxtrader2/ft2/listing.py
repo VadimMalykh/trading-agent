@@ -481,7 +481,23 @@ def confirm(registration: str, name: str = "r29", taker_bps: float = 5.0) -> str
     md += [f"\n## The number — H = own + hedge, bps of the position; {N['n']} trades in {N['weeks']} weeks\n",
            pd.DataFrame([{k: N[k] for k in ("n", "M", "se", "u", "MDE", "M_heavy", "se_bootstrap", "se_week", "se_plain", "verdict")}]).round(3).to_markdown(index=False), "\n"]
 
-    # described — decides nothing
+    (out / "confirm.md").write_text("\n".join(md))                # the read is on disk before anything is described
+    try:
+        md += _describe_confirm(M, C, E, T, TH, mem, mask, own, ok, t, taker_bps)
+    except Exception as exc:  # noqa: BLE001 — a description that fails must not take the logged read with it; `trades.csv` holds every trade
+        import traceback
+        md += ["\n## Described — FAILED (the read above stands; describe from trades.csv)\n", "\n```\n" + "".join(traceback.format_exception(exc)) + "\n```\n"]
+    (out / "meta.json").write_text(json.dumps({"registration": registration, "unit": bt.UNIT, "charged": bt.CHARGED, "hold": HOLD, "stop": STOP, "wait": WAIT, "entry_mult": ENTRY_MULT, "heavy": HEAVY,
+                                                "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": SEED_CONFIRM, "launches": len(L), "eligible": len(E), "taker_bps": taker_bps}, indent=1))
+    text = "\n".join(md)
+    (out / "confirm.md").write_text(text)
+    return text
+
+
+def _describe_confirm(M, C, E, T, TH, mem, mask, own, ok, t, taker_bps) -> list[str]:
+    """R29's described tables — decide nothing."""
+    close, idx = M.close.to_numpy(), M.index
+    md = []
     parts = ["gross", "funding", "fee", "spread_impact", "own", "hedge_gain", "hedge_cost", "hedge", "H"]
     by = pd.concat([T[parts].mean().rename("all"), *[T.loc[T["fold"] == f, parts].mean().rename(f) for f in CONF_FOLDS], TH[parts].mean().rename("heavy")], axis=1).T
     by.insert(0, "n", [len(T), *[int((T["fold"] == f).sum()) for f in CONF_FOLDS], len(TH)])
@@ -504,11 +520,7 @@ def confirm(registration: str, name: str = "r29", taker_bps: float = 5.0) -> str
            "\nBy calendar quarter of the entry (trades, mean H, median H):\n", q.round(1).to_markdown(), "\n",
            "\nThe trades stopped:\n", (st[["contract", "entry_t", "exit_t", "gross", "funding", "own", "hedge", "H"]].round(0).to_markdown(index=False) if len(st) else "none"), "\n",
            "\nThe five best and the five worst trades:\n", pd.concat([T.nlargest(5, "H"), T.nsmallest(5, "H")])[["contract", "entry_t", "stopped", "gross", "funding", "own", "hedge", "H"]].round(0).to_markdown(index=False), "\n"]
-    (out / "meta.json").write_text(json.dumps({"registration": registration, "unit": bt.UNIT, "charged": bt.CHARGED, "hold": HOLD, "stop": STOP, "wait": WAIT, "entry_mult": ENTRY_MULT, "heavy": HEAVY,
-                                                "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": SEED_CONFIRM, "launches": len(L), "eligible": len(E), "taker_bps": taker_bps}, indent=1))
-    text = "\n".join(md)
-    (out / "confirm.md").write_text(text)
-    return text
+    return md
 
 
 def main(action: str, fold_names=None, name: str | None = None, registration: str | None = None) -> None:
