@@ -688,7 +688,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, F3+F4 untouched; R24, the score as a priced book at a 7-day hold on both samples read for it, read 2026-09-29: CANDIDATE by the gate — +17 bps a trade after costs on 5,054 trades, flip p 0.025, but one times its noise and all of it the short side; R25, the confirmation read of that book on the outside names of F3+F4, read 2026-09-29: passed its gate on a defective number — the harness measured profit in log returns, which flatters shorts of violent names; **R22–R25 RE-EXECUTED in actual returns 2026-09-30 (Vadim's decision): R22 nothing clears and the lean mostly gone (+21 a leg, 0.7 times its noise), R23 does not clear (+20, 1.1 times its noise), R24 NOT FUNDED (net −14), R25 NOT CONFIRMED (net −39) — the book is parked; nothing outside the twelve clears its costs; P8 PARKED on Vadim's "(A1) (B1)", 2026-09-30; **R26, the (B3) ceiling audit of the US index as per-name information, read 2026-10-01: 0 of 10 clear — six CLOSED, four NOT DETECTABLE, the one lean a reversal on closed hours at half of break-even; the index is closed at one day on both universes; **R27, the ETF flows as per-name information on F2, read 2026-10-02: 0 of 7 clear, seven NOT DETECTABLE — half a year of flows can neither find nor close a per-name effect at one day**; **the source audit of scheduled per-name events (§9 #8), done 2026-10-05, no price read: token unlocks can be used only as archived pages dated them, and so used they are few (90 on F1+F2, 22 names); Binance's announcements are a clean point-in-time source whose one populous event is a contract's launch (119 on F1+F2) — nothing registered, the next question is Vadim's choice ("What next" (C))**)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, F3+F4 untouched; R24, the score as a priced book at a 7-day hold on both samples read for it, read 2026-09-29: CANDIDATE by the gate — +17 bps a trade after costs on 5,054 trades, flip p 0.025, but one times its noise and all of it the short side; R25, the confirmation read of that book on the outside names of F3+F4, read 2026-09-29: passed its gate on a defective number — the harness measured profit in log returns, which flatters shorts of violent names; **R22–R25 RE-EXECUTED in actual returns 2026-09-30 (Vadim's decision): R22 nothing clears and the lean mostly gone (+21 a leg, 0.7 times its noise), R23 does not clear (+20, 1.1 times its noise), R24 NOT FUNDED (net −14), R25 NOT CONFIRMED (net −39) — the book is parked; nothing outside the twelve clears its costs; P8 PARKED on Vadim's "(A1) (B1)", 2026-09-30; **R26, the (B3) ceiling audit of the US index as per-name information, read 2026-10-01: 0 of 10 clear — six CLOSED, four NOT DETECTABLE, the one lean a reversal on closed hours at half of break-even; the index is closed at one day on both universes; **R27, the ETF flows as per-name information on F2, read 2026-10-02: 0 of 7 clear, seven NOT DETECTABLE — half a year of flows can neither find nor close a per-name effect at one day**; **the source audit of scheduled per-name events (§9 #8), done 2026-10-05, no price read: token unlocks can be used only as archived pages dated them, and so used they are few (90 on F1+F2, 22 names); Binance's announcements are a clean point-in-time source whose one populous event is a contract's launch (119 on F1+F2) — Vadim chose (C1) the same day: **R28, the new-listing ceiling audit, REGISTERED 2026-10-05, not read**)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -700,8 +700,8 @@ things known about each before the month starts: how young it is, how violent, h
 how liquid. The model fitted on the twelve forecasts all of them. Then: is the forecast right more often on, say, the
 youngest third than on the oldest third — by more than a meaningless split of the names would give?
 
-**Needed from Vadim: one choice — "What next" decision C below (2026-10-05), after the source audit of per-name events he
-chose that day. Until then nothing of P8 runs.** Before it: parked on his decisions of 2026-09-30 (the re-execution done, §3;
+**Needed from Vadim: nothing now. On 2026-10-05 he chose the events source audit and then "(C1)" of "What next" decision C
+below: R28, the new-listing ceiling audit on F1+F2, is registered (§8) and is the phase's open read.** Before it: parked on his decisions of 2026-09-30 (the re-execution done, §3;
 R23's stage 2 not run; the search on outside names parked until a new question is chosen).
 Commands, gates and numbers: §8 R18–R25. Code: `ft2/screen.py`, `ft2/universe.py`, `ft2/audit.py`,
 `ft2/horizon.py`, `tests/test_p8_*.py`.
@@ -972,7 +972,18 @@ the first stage. It was meant for months nobody had read; since then R25 has rea
 - **(B3) new information** (PLAN §9: ETF flows, US indices, events) — a ceiling audit first, as P2 did; its own
   registration.
 
-**Decision C (2026-10-05) — after the events audit. OPEN, Vadim's choice.**
+**R28 — steps** (the registration: §8; the read's result goes there and, in plain words, here):
+
+| step | what | state |
+|---|---|---|
+| 1 | registration R28, committed before anything else | ✅ 2026-10-05 |
+| 2 | build and tests (`ft2/listing.py`, `--universe launch`, `scripts/r28_fingerprint.py`), committed before any fetch | — |
+| 3 | the launch list frozen as `ft2/launches_f12.csv`, committed before any fetch | — |
+| 4 | fingerprint, fetch, ingest, fingerprint check, `costwide` and its check | — |
+| 5 | the run, as registered | — |
+| 6 | the read: validity first, then the gate | — |
+
+**Decision C (2026-10-05) — after the events audit. DECIDED 2026-10-05: "C1" — R28 (§8).** The options as they were put:
 - **(C1) — recommended: one ceiling audit of the new-listing question.** What does a new USDT perpetual do against the
   market over its first 1, 3, 7 and 30 days, from a fixed hour after its first bar — the mean as a position earns it
   (bought and sold, funding on the position's value), and the median beside it. Exploration F1+F2 (119 launches),
@@ -3287,6 +3298,108 @@ Result:        **Read 2026-10-02 (the run 21:53 → 21:54 UTC on the work VM, un
                one, R20's twelve, R22's twelve, R26's five, these three; on the twelve: R26's five, these four. The flows
                stay fetched (`ft2 etf`); their use as a MARKET-direction or sizing input (§9 #7's other reading) is not
                a per-name question and is not opened by this block. What follows is Vadim's decision.
+
+### R28 — the new listing: what a new USDT perpetual does against the other names over its first 1, 3, 7 and 30 days (registered 2026-10-05 on Vadim's "C1", before the launch list was frozen, before any 5m bar or funding file of a launch was fetched for it and before the code was written; read —)
+Question:      The events audit of 2026-10-05 (P8; DATA.md `binance_events`) found one populous, point-in-time event:
+               the launch of a USDT perpetual, 119 announcements in F1+F2. A contract's first 30 days are held by no
+               read of this project — the screener takes a name once it has 30 daily bars. Bought an hour after it
+               begins to trade and held, does a new contract earn more or less than the names already trading? A
+               ceiling audit (Principle 2): no model, no book, no signal — a population mean per hold. NO direction is
+               fixed: nothing measured here has chosen one.
+Launches:      from `data/binance_events.parquet` as ingested 2026-10-05 and the archive's first monthly 1d file per
+               contract (`data/raw/external/binance/um_first_month.csv`, listed 2026-10-05) — no price: every ticker of
+               kind `perp_launch` whose contract <ticker>USDT begins in the archive in the calendar month of the
+               announcement's release or the next; per contract the earliest such release; release inside F1+F2
+               (2023-05-01 ≤ release < 2024-09-01). Frozen as `ft2/launches_f12.csv` (contract, release, first_month,
+               article id) and committed BEFORE any kline or funding file is fetched for this read. The twelve are
+               NOT left out (1000PEPE and WLD began in F1): leaving out names for what they became later would be a
+               choice by hindsight.
+Entry:         t0 = the open of the contract's first 5m bar with volume in the archive. The decision bar is the one
+               that closes at t = t0 + 60 minutes; the position is entered at the close one bar later (the harness's
+               latency of one bar): 65 minutes after trading began. One entry in the family.
+Eligible:      a launch whose t0 lies between its release − 1 h and its release + 14 days (else the announcement and
+               the contract are not the same event: dropped, counted), with t ≥ 2023-05-03 00:00 UTC (F1 after its
+               embargo; the first block of the members) and whose 30-day exit bar is before 2024-09-01 00:00 UTC — the
+               same launches at every hold. The market is loaded with its end at 2024-09-01: nothing of F3 can be read.
+Holds:         four, the family: 288, 864, 2,016 and 8,640 bars (1, 3, 7, 30 days).
+Label:         per launch and hold, bps of the position's size at entry, by `horizon.labels` (unchanged; the unit of
+               §3): a = what a long earns before trading costs — exit ÷ entry − 1, minus the funding it pays, each
+               payment on the position's value. b = the mean of the same number, same two bars, over the members of
+               the screener's block that holds t (`ft2/screen_members.csv`, R18's point-in-time 60, none of them
+               younger than 30 days) that have both prices. y = a − b. A sold position earns −y; in this unit the two
+               sides are mirror images, so one number says both.
+Statistic:     M_H = the mean of y over the eligible launches, per hold. Its noise: a moving-block bootstrap over
+               calendar weeks (Monday 00:00 UTC, by t; a week with no launch stays in the sequence), blocks of 6
+               consecutive weeks (longer than the longest hold), circular, 10,000 draws, seed 28; each draw's M* is
+               the sum of y over its weeks ÷ the number of launches in them. se_H = the standard deviation of M*_H;
+               u_H = M_H ÷ se_H. Family-wise p, two-sided: the share of draws in which max over the four holds of
+               |M*_H − M_H| ÷ se_H is at least max_H |u_H|. The plain se (launches as independent) and the
+               week-clustered se are reported beside and decide nothing.
+Bar:           B = 46 bps: twice the round trip of a typical member (DATA.md: ≈ 23 bps as a taker at 10,000 USDT).
+               Twice, because nothing measures what trading a contract costs in its first days. Weakness, stated now.
+Validity:      read first, or the run is void:
+               (1) every fetch ends with 0 errors and 0 bad checksums;
+               (2) the slices are rewritten whole by the ingest: a fingerprint of every name they held before (rows,
+               first and last bar, the sums of close and volume; rows and the sum of rates for funding) is saved
+               before the ingest and is identical after (`scripts/r28_fingerprint.py`); `costwide` re-run: every
+               row of the cost file as it was is in the new one, unchanged (`scripts/r24_check_costwide.py`);
+               (3) at least 90 % of the frozen launches with a release that could be eligible ARE eligible by the t0
+               rule (the list is the event), and at least 80 launches are eligible;
+               (4) every eligible launch has a close on ≥ 95 % of the 5m bars from t to its 30-day exit, and y exists
+               for ≥ 95 % of the eligible launches at every hold;
+               (5) b is the mean of ≥ 40 members for every launch at every hold;
+               (6) the module's a equals `horizon.labels` at the same cells to 1e-9 on the real market, every launch,
+               every hold; and a launch's a equals `backtest.price`'s gross + funding of a long taken at the same t.
+Described:     decides nothing. Per hold: the median of y, the share of launches with y < 0, the quantiles; a and b
+               apart, and funding's part of a; M_H per fold (F1, F2) and per calendar quarter; M_H with the three
+               largest and the three smallest y left out; the five best and the five worst launches; the money of a
+               SOLD position — the mean of −y, the same with each loss capped at the position's size, the largest
+               single loss; each position priced by the harness as a taker, bought and sold, with `costwide`'s proxy
+               and with it doubled (net, the contract's own legs only); the launches per week; M_H without 1000PEPE and
+               WLD; the launches dropped, by reason. Reference rows, no verdict: the same four holds with the entry a
+               day later (t + 288 bars); y against BTCUSDT instead of the members; a alone.
+Commands:      on the work VM, in this order —
+                 `vm.sh run listing select` → `vm.sh pull` → copy output/listing/launches_f12.csv to
+                   ft2/launches_f12.csv, commit
+                 on the VM: `python scripts/r28_fingerprint.py save`; `cp data/cost_daily_wide.parquet data/cost_daily_wide_before_r28.parquet`
+                 `vm.sh bg r28_klines archive klines/5m fundingRate --universe launch --monthly --start 2023-05-01 --end 2024-08-31`
+                 `vm.sh run ingest klines funding_archive --universe all` (`all` now holds the launches too)
+                 on the VM: `python scripts/r28_fingerprint.py check`
+                 `vm.sh run costwide --universe all --start 2021-12-01`, then `scripts/r24_check_costwide.py r28`
+                 `vm.sh bg r28 listing run` → output/listing/r28/listing.md
+Folds read:    F1+F2, exploration, the first 31 days of each eligible launch and the members' bars beside them. What
+               was read of these names before: the later days of the launches that became members (R18–R22, from their
+               31st day on); the first days of 1000PEPE and WLD as two of the twelve (R12–R16). No read has held a
+               population of first days. F3, F4, F5: no bar of a launch of those folds is fetched.
+Gate:          validity PASS, then per hold, two-sided:
+               CLEARS if |M_H| > B AND |u_H| ≥ 2 AND the family-wise p ≤ 0.05 AND M_H has the same sign in F1's and
+               in F2's launches AND M_H with the three largest and the three smallest y left out keeps its sign and
+               stays beyond B. If more than one hold clears, the candidate is the one with the largest |u_H|. A
+               candidate on the folds that showed it: it licenses no trade. Next registration, on Vadim's go: the
+               confirmation read on the launches of F3+F4 of ONE rule — that side and that hold, every launch taken,
+               priced through the harness (the proxy and its double) — with, for a sold side, its stop or its cap
+               on size written there before any bar of an F3+F4 launch is fetched.
+               CLOSED at a hold if |M_H| + 1.96·se_H < B: whatever is there cannot pay the round trip.
+               NOT DETECTABLE otherwise, with its MDE (2.8·se_H) — not "no effect" (Principle 5).
+               Whatever the verdict: no variant on these launches — no other entry hour, hold, benchmark, subset,
+               weighting or side-specific re-read; a described number or a reference row licenses nothing.
+Power:         stated before the read, and it is weak. About 105–115 launches in 65 weeks is some eleven independent
+               6-week blocks. A new contract's move against its peers is expected to have a standard deviation of
+               about 12–18 % over a day, 25–40 % over a week and 50–80 % over 30 days, with a long right tail; so
+               se_H about 150–250, 300–500 and 600–1,000 bps at 1, 7 and 30 days, and to CLEAR the mean must be about
+               3–5 % at a day, 7–12 % at a week, 15–25 % at 30 days (the family asks a little more than 2 se). If
+               new contracts lose 10 % against their peers in the first week, it clears about one time in two; if
+               5 %, one in six; if nothing is there, one in twenty over the family. CLOSED needs an se under 12:
+               out of reach — the read can find a large drift or say NOT DETECTABLE.
+Expectation:   validity PASS; 112–119 launches frozen, 100–112 eligible (the August 2024 launches and any of
+               2023-05-01/02 fall out by the calendar; under 5 % by the t0 rule); b from 55–60 members. The median y
+               negative at every hold (−1 … −4 % at a day, −5 … −15 % at a week, −15 … −35 % at 30 days) and 55–70 %
+               of launches below zero; M_H nearer zero than the median and possibly positive, a few launches that rise
+               many-fold deciding it; the entry a day later and the BTC benchmark much the same picture. Funding's
+               part of a small against the moves (within ±100 bps at a week). Verdict: NOT DETECTABLE at every hold
+               the likeliest (six chances in ten), a CLEARS on the sold side at 7 or 30 days three in ten, on the
+               bought side one in twenty.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
