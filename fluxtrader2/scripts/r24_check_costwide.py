@@ -21,8 +21,12 @@ m = old.merge(new, on=k, how="left", suffixes=("", "_new"), indicator=True)
 num = [c for c in old.columns if c not in k and pd.api.types.is_numeric_dtype(old[c])]
 diff = {c: float(np.nanmax(np.abs(m[c] - m[c + "_new"]))) if m[c].notna().any() else 0.0 for c in num}
 nan_same = bool(all((m[c].isna() == m[c + "_new"].isna()).all() for c in num))
-mem = universe.screen_symbols(universe.PRE_MEMBERS_CSV if TAG == "r24" else universe.F34_MEMBERS_CSV)
-lo, hi = (pd.Timestamp("2021-12-10", tz="UTC"), universe.PRE_END) if TAG == "r24" else (pd.Timestamp("2024-09-03", tz="UTC"), pd.Timestamp("2026-01-01", tz="UTC"))
+if TAG == "r28":                                             # R28: the names are the launches of F1+F2, the days F1+F2's from each contract's first day
+    from ft2 import listing
+    mem, (lo, hi) = listing.launch_symbols(), listing.window()
+else:
+    mem = universe.screen_symbols(universe.PRE_MEMBERS_CSV if TAG == "r24" else universe.F34_MEMBERS_CSV)
+    lo, hi = (pd.Timestamp("2021-12-10", tz="UTC"), universe.PRE_END) if TAG == "r24" else (pd.Timestamp("2024-09-03", tz="UTC"), pd.Timestamp("2026-01-01", tz="UTC"))
 w = new[(new["day"] >= lo) & (new["day"] < hi) & new["symbol"].isin(mem)]
 leg = w["spread_cal_bps"] / 2 + w["imp_10000"]
 r = {"rows_before": len(old), "rows_after": len(new), "first_day_before": str(old["day"].min()), "first_day_after": str(new["day"].min()), "names_before": int(old["symbol"].nunique()),

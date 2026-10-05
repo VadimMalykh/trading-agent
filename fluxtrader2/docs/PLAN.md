@@ -977,7 +977,7 @@ the first stage. It was meant for months nobody had read; since then R25 has rea
 | step | what | state |
 |---|---|---|
 | 1 | registration R28, committed before anything else | ✅ 2026-10-05 |
-| 2 | build and tests (`ft2/listing.py`, `--universe launch`, `scripts/r28_fingerprint.py`), committed before any fetch | — |
+| 2 | build and tests (`ft2/listing.py`, `--universe launch`, `scripts/r28_fingerprint.py`), committed before any fetch | ✅ 2026-10-05: `tests/test_p8_listing.py`, 174 pass |
 | 3 | the launch list frozen as `ft2/launches_f12.csv`, committed before any fetch | — |
 | 4 | fingerprint, fetch, ingest, fingerprint check, `costwide` and its check | — |
 | 5 | the run, as registered | — |
