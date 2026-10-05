@@ -200,6 +200,57 @@ close, 1 of 2 at 5–6 h, and **24 of 24 final from 9 h on**. Rule for any featu
 next calendar day** (12 h after the close); the all-data table is the final value and must not be read earlier. A fetch on
 a holiday or before the US close sees a blank last row (the day in progress), which the parser drops.
 
+### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
+
+A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
+time; `tokens` = the block) or `linear` (a change of a release rate; `tokens` = the new weekly rate). `ft2 events
+fetch|ingest|inventory` (`ft2/events.py`; raw under `data/raw/external/defillama/`). **Source:** the free dataset bucket's
+`emissionsIndex` (one JSON, every covered token; the API's own `emissions` routes answer 402, paid). **Measured 2026-10-05
+(`output/events_inventory.md`; no price is read by this module):** 359 protocols, 54,262 events (42,065 cliffs); a protocol's
+cliffs on one UTC day are one event — 25,116 cliff days, 8,270 of at least 0.1 % of the maximum supply. A perpetual is joined
+by its ticker (`events.base`: 1000PEPEUSDT → PEPE): 70 of the 188 F1+F2 members have a schedule, 88 of the 216 F3+F4 members,
+41 of the 141 before F1, 7 of the twelve (not BTC, XRP, ADA, ZEC, PEPE).
+
+**Today's file is NOT the history — `unlock_events` must not be read as what was known.** `unlock_asof` holds the same list as
+defillama.com/unlocks published it, from 81 Wayback Machine snapshots 2023-03-31 → 2026-10-05 (37 protocols on the page in
+2023-03, 124 by the end of 2023, 179 by the end of 2024, 274 by the end of 2025, 369 now; 7 more listed snapshots are not the page). Measured on them
+(`events.known_at`, `output/events_known_at.csv`): of the cliffs today's file dates in the 30 days after a snapshot, on the
+protocols that snapshot lists, the snapshot had **42–50 % with the same day (±1) and size (±5 %)** and 57–62 % with the day
+(snapshots of 2023, 2024, 2025); of the cliffs a snapshot dated there, **38–46 % are not in today's file as dated**. On the
+snapshots of 2026 the same numbers are 85 % and 1.6 %: the file is rewritten as it ages (a schedule re-modelled, a token re-keyed
+— `events.align` finds a snapshot's protocol under today's id by ticker, CoinGecko id or name: Arbitrum 2785 → 3777, Aave 111
+→ parent#aave). **A page until 2025-04 carries the whole schedule, years ahead; from 2025-05-26 only the next 30 days.**
+**Rule for any feature: an unlock is used as the last snapshot at least 7 days before it dated it (`events.promised`), never
+from today's file.** That table holds, on a member while it is a member, 36 cliff days in F1, 54 in F2, 58 in F3, 20 in F4, 5
+in F5 — 22 names, the ten with the most holding 157 of 176 (a few large names, each once a month); today's file would
+have said 70, 96, 110, 101 (there SUI, OP, APT, ARB and APE lead). F4 and F5 cannot be rebuilt: five snapshots between 2025-05-26 and 2025-12-19, each reaching 30 days, and 2026 has none
+before 02-21.
+
+### binance_events (Binance's announcements; P8, §9 #8) — `data/binance_events.parquet`: `(catalog, id, code, release, title, kind, symbol, effective)`, one row a ticker
+
+The exchange's own announcement lists with each article's publication time (`release`, UTC, to the millisecond): catalog 48
+"New Cryptocurrency Listing" (2,276 articles, 2017-07-21 →), 161 "Delisting" (439, 2022-02-17 →), 49 "Latest Binance News"
+(4,439; read for the monitoring-tag notices only). Raw under `data/raw/external/binance_cms/`. **www.binance.com answers from
+the work VM and resets the connection from Vadim's network.** `events.parse_title` reads a title into `kind` —
+`perp_launch`, `perp_delist` (USDT-quoted perpetuals; `symbol` is the contract's base as written), `perp_other` (BUSD, USDC,
+coin-margined), `spot_list`, `spot_delist`, `monitoring`, `other` — and where a title says "Multiple" the article's summary is
+read (21 articles). Of 660 perpetual launch / delisting articles 2 stay without a contract; three contracts with non-ASCII
+names and the TradFi / equity / index contracts of 2026 are left out on purpose. **Checked against the archive** (the first
+monthly 1d file of each of 895 USDT perpetuals): a launch announcement released in the month a contract began or the month
+before exists for 98 of 99 contracts of 2023, 128 of 131 of 2024, 229 of 241 of 2025 (76 of 81 of 2020, 38 of 59 of 2021, 23
+of 26 of 2022; 2026 is mostly the equity contracts). On the 235 contracts whose 5m bars we hold from their first day the first
+bar comes **3.5 h after the announcement at the median** (10 % under 0.8 h, 90 % under 48 h); one begins before it.
+**Per fold of the release:** launches confirmed by the archive F1 66, F2 53, F3 147, F4 157, F5 69; on a USDT perpetual
+already trading for 30 days — delisted F1 0, F2 15, F3 7, F4 29, F5 28; spot delisting of its token 3, 8, 11, 11, 34;
+monitoring tag 1, 14, 28, 25, 54; spot listing of a token whose perpetual already trades 2, 5, 4, 18, 15. On a screener
+member while it is a member these kinds number 24 in all folds together (10 monitoring tags, 8 spot listings, 6 delistings). A release time is point-in-time by
+construction (the article's own clock; `lastUpdateTime` is separate and not used).
+
+**The Wayback Machine and a script's User-Agent (measured 2026-10-05):** with a browser's User-Agent it served 6 pages in 90
+minutes and answered 429 to the rest, from two addresses; with a plain one each page comes in two seconds (75 in 18 minutes).
+`ft2/etf.py` still sends the browser string — its "the archive throttles to a few an hour" (above) was this, so the ETF
+known-at could be re-measured on every snapshot if it is ever needed.
+
 ### Archive tables as measured (`ft2 inventory`, 2026-09-15)
 
 | table | pairs | window (UTC) | rows | integrity (`output/inventory.md` has the per-pair tables) |
@@ -217,6 +268,8 @@ a holiday or before the US close sees a blank last row (the day in progress), wh
 | `premium` (archive `premiumIndexKlines/5m`) — `data/premium.parquet`: `(symbol, open_time) → premium`, the bar's last premium index (perpetual over the spot index, minus one) (R20, 2026-09-28) | the 188 members; **not the twelve** (not fetched: R20's cells leave them out) | 2023-04-01 (or listing) → 2024-08-31, monthly archive files | 22,763,516 | 188 fetches, 0 errors, 0 bad checksums, 0 duplicates; up to 17 monthly files a name, fewer for names listed inside the window. Covers 100 % of R20's cells |
 | `etf_flows` (Farside, daily; P8 B3′, 2026-10-01) | BTC (12 funds), ETH (11) | BTC 2024-01-11 → 2026-09-30, ETH 2024-07-23 → | 15,794 (BTC 698 days × 13, ETH 560 × 12) | funds = total to 1e-13 on every row; the holiday calendar as the US exchanges'; known-at measured on 36 Wayback snapshots: final from 9 h after the close (24 of 24), partial before — a flow is known from 09:00 UTC the next day |
 | `index_1m` (HistData, 1 min; P8 B3, 2026-10-01) | US500, US100 | 2020-01-01 → 2026-09-24 (yearly zips 2020–2025, monthly 2026-01 → 09; the current month is not offered) | 4,482,652 (US100 2,257,516; US500 2,225,136) | 30 fetches, 0 errors; 388 rows swapped by a minute in the current year's files (sorted, the later kept). Hours (UTC): the week opens Sunday 22:00 in European summer / 23:00 in winter and closes Friday 20:15 / 21:15; a daily break 20:15–22:00 / 21:15–23:00; 1,070–1,080 traded minutes a weekday; US holidays closed or thin (Christmas Eve → the 27th, Good Friday). **Thin: 2023-02 → 2023-07 holds 19–24k rows a month against 27–30k elsewhere — whole hours missing inside sessions; 658 of the 1,501 gaps over 30 min are in 2023.** A feature read from it must say what it does on a stale minute |
+| `unlock_events`, `unlock_asof` (DefiLlama; P8 §9 #8, 2026-10-05) | 359 protocols today; 81 snapshots of the page | events 2011 → 2102; snapshots 2023-03-31 → 2026-10-05 | 54,262 events today; 2,402,171 rows in the snapshots | a snapshot had 42–50 % of the cliffs that followed with the same day and size, and 38–46 % of what it dated is not in today's file as dated — only `unlock_asof` through `events.promised` is point-in-time; pages from 2025-05-26 reach 30 days |
+| `binance_events` (Binance announcements; P8 §9 #8, 2026-10-05) | catalogs 48, 161, 49 | 2017-07-02 → 2026-10-02 (delistings from 2022-02-17) | 7,630 rows, 7,154 articles | 658 of 660 perpetual launch / delisting articles read into contracts; launches confirmed by the archive's first files for 98–99 % of 2023–2025 contracts; first bar 3.5 h after the release at the median |
 | `ladder` (collector `orderbook_levels`, ~12 s, P1) | 12 | 2026-08-05 (ADA/AVAX/LINK/XRP 08-14) → 2026-09-13 | 3,388,622 | 40 per-day raw exports (3.5 GB gz, kept); 0 duplicates; the 100 levels reach only 1.7 bps from mid on BTC (4 on ETH, 13 on ZEC/HYPE) versus 70–480 bps on the thin pairs, so BTC/ETH ladders hold ~1–3 % of the archive's ±1 % notional and the archive band is what scales impact back in time |
 
 ## Folds (fixed 2026-09-15; `ft2/folds.py` is the code, this is the record)
