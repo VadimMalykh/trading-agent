@@ -74,6 +74,11 @@ def cmd_etf(args):
     etf.main(args.action, args.no_wayback, args.hours, args.per_hour, args.cached)
 
 
+def cmd_events(args):
+    from . import events
+    events.main(args.action, PAIRS, args.source, args.cached)
+
+
 def cmd_universe(args):
     from . import universe
     if args.screen:
@@ -286,6 +291,10 @@ def main(argv=None):
     et.add_argument("--cached", action="store_true", help="inventory: the known-at measurement on the snapshots already under data/raw/external/farside/wayback/, no fetch")
     et.add_argument("--per-hour", type=int, default=3, help="inventory: at most this many snapshots per UTC hour, spread over the archive (0 = all; the Wayback Machine throttles)")
     ix.add_argument("--workers", type=int, default=None, help="fetch --source dukascopy: concurrent requests (default 3; the feed throttles)")
+    ev = sub.add_parser("events", help="P8 (PLAN §9 #8): token unlock schedules (DefiLlama, with the Wayback Machine's snapshots as the known-at) and Binance's listing / delisting announcements → data/unlock_events.parquet, data/unlock_asof.parquet, data/binance_events.parquet, output/events_inventory.md (see ft2/events.py)")
+    ev.add_argument("action", choices=["fetch", "ingest", "inventory"])
+    ev.add_argument("--source", nargs="*", choices=["llama", "binance", "wayback"], default=None, help="fetch: which sources (default all three; binance answers from the work VM, not from every network)")
+    ev.add_argument("--cached", action="store_true", help="inventory: no network — the archive's first-month listing is read from its cached copy")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
@@ -295,7 +304,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon}[args.cmd](args)
+            "costwide": cmd_costwide, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "events": cmd_events, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon}[args.cmd](args)
 
 
 if __name__ == "__main__":
