@@ -656,7 +656,7 @@ line, no grid; the stale snapshot accepted. Command (existing code, nothing chan
   script green at the requested gate, `/predict` ceiling fix live, old ledgers backed up and
   cleared, **forward clock's fourth start 08:15:10 UTC**, health `checkpoint_bound: true` with
   twelve served. R0–R5's per-checkpoint constants restated in M3_5 §4.3 with the ledger empty.
-  Still owed: the `accept_76.py` replay of the new start (BACKLOG row 1).
+  Accepted 2026-09-21 by the `accept_76.py` replay (BACKLOG row 1).
 - **Rule carried forward:** no registration may name "serve eight" as a failure branch, and an
   acceptance bar's power on the incumbent is checked before it is registered.
 
@@ -1098,7 +1098,9 @@ forward clock's fifth start**; `/api/health`: `checkpoint_bound: true`, `frozen_
 open. R0–R5's per-checkpoint constants restated in M3_5 §4.3 before the new ledger held a row.
 The inference image was not rebuilt: `serve.py` is bind-mounted and identical between
 `117836a` and `0ee28f5`, and a rebuild would re-resolve unpinned dependencies (§0.5 trap 13).
-Still owed: the `accept_76.py` replay of the new start (BACKLOG row 1).
+Accepted 2026-10-07 by the `accept_76.py` replay: 8,846 of 8,846 identified rows exact, every row
+at or above the cut among them; two rows of the second tick unidentifiable (the restart-backfill
+artefact outlasting the 300-s boot grace), recorded as a deviation for Vadim's word (BACKLOG row 1).
 
 #### X8′ — the same recipe with open interest as serving supplies it today. RUN 2026-09-24→25, READ 2026-09-27: **FLAT**
 
