@@ -157,6 +157,12 @@ def cmd_costpre(args):
 
 def cmd_ceiling(args):
     from . import ceiling, market
+    if args.target == "basket" and args.family:                 # R30: the index / the ETF flows as market-direction and sizing information
+        from . import market_ext
+        market_ext.run(args.family, args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.folds, args.draws)
+        return print("wrote {} and {}/".format(*market_ext.out_paths(args.family)))
+    if args.family:
+        raise SystemExit("--family is for --target basket")
     if args.target == "basket":
         market.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.folds, args.draws)
         return print(f"wrote {market.OUT_MD} and {market.OUT_DIR}/")
@@ -246,6 +252,9 @@ def main(argv=None):
     g.add_argument("--target", choices=["pairs", "basket"], default="pairs",
                    help="basket: P5's audit of the market factor, per year → output/market.md (see ft2/market.py)")
     g.add_argument("--folds", nargs="*", help="--target basket only: exploration folds to read (default FP F0 F1 F2)")
+    g.add_argument("--family", choices=["index", "etf"], default=None,
+                   help="--target basket only (R30): `index` — the Nasdaq 100's moves, the basket's lag behind it, open/closed and its volatility → output/market_index.md; "
+                        "`etf` — the spot-ETF flows, F2 only → output/market_etf.md (see ft2/market_ext.py)")
     b = sub.add_parser("backtest", help="P3: a strategy through the harness → output/backtest/<name>/ (see ft2/backtest.py)")
     b.add_argument("strategy", help="a name in backtest.STRATEGIES / rules.STRATEGIES, e.g. coin")
     b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")

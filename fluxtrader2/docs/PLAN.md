@@ -3746,9 +3746,17 @@ Family A —     the INDEX, on R6's bars (FP+F0+F1+F2, 2020-05-03 → 2024-08-31
                  ix_gap    read only when CLOSED at t: the index's move over its last 240 traded minutes before the close in
                            force / (σ_ix·√4) — what it did going into the break; open hours NaN
                  lag_4h    how far crypto has LAGGED the index over the last 4 h: b·ix_4h − mret_4h, where mret_4h is R6's
-                           (the basket's 4h move in its own σ units) and b = the least-squares slope of the basket's hourly
-                           σ-unit move on the index's over the last 30 days of hours open at both ends (≥ 200 h, else NaN);
-                           positive = the basket is behind the index. Read where ix_4h is read.
+                           (the basket's 4h move in its own σ units) and b = the least-squares slope of the basket's 24-hour
+                           σ-unit move (R6's mret_1d) on the index's 24-hour σ-unit move (ix_24h's number), at hourly steps
+                           over the last 30 days of hours with the index open (≥ 200 such hours, else NaN); positive = the
+                           basket is behind the index. Read where ix_4h is read.
+                           AMENDED 2026-10-08, before the code read any real bar (commit after 1168642): as first written, b
+                           was the slope of the basket's 1-HOUR move on the index's 1-hour move. The registered test on
+                           made-up bars (a basket that follows the index over several hours) read lag_4h with the WRONG sign
+                           under that b — a contemporaneous hourly slope sees only the part of the response that arrives
+                           within the hour, so a basket still catching up on older moves looks "ahead". The 24-hour slope
+                           is the response the basket eventually makes; under it the planted follower reads positive and an
+                           instantaneous follower reads zero. The family, the gate and the expectation are unchanged.
                  lag_24h   the same at 24 h: b·ix_24h − mret_1d. Read where ix_24h is read.
                sizing (levels, read only against the |move| target):
                  ix_open   1 if the index is OPEN at t, else 0
