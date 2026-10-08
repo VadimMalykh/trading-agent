@@ -22,9 +22,10 @@ Everything up to here is committed. Nothing is running on the work VM (`fluxtrad
 (`fluxtrader2-serve`) runs P7 by itself (health 2026-10-05 02:05 UTC: green — 2,712 decisions, 40 taken, 3 open, 0 late,
 0 missing bars, `check True`, `err None`, model `model_2026-09-30`, 5.1 days old).
 
-**No question is open.** R28 (the new-listing audit on F1+F2) found a candidate and R29 (its confirmation read on the
-launches of F3+F4) did not confirm it, both on 2026-10-05; the rule is parked (PLAN §7). The mode: measure, with P7's clock
-running in the background — the wait forbids only touching R14 or the serve path.
+**One question is open: R30** (registered 2026-10-08 on Vadim's "1", PLAN §8 and P8 decision E) — the US index and the ETF
+flows as MARKET-direction and sizing information on the equal-weight basket, in R6's frame; the code is written after the
+registration, the run is on the work VM, the read not made. R28 / R29 (the new listing) parked 2026-10-05 (PLAN §7). The
+mode: measure, with P7's clock running in the background — the wait forbids only touching R14 or the serve path.
 
 In this order:
 

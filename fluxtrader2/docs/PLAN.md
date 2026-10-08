@@ -1073,6 +1073,13 @@ the sum.
     first available row, doubled, and the read is shown at that and at four times.
 - **(D2) do not spend F3+F4 on it.** The candidate stays a candidate; P7 alone.
 
+**Decision E (2026-10-08) — the next P8 question, after R29. DECIDED 2026-10-08: "1" — R30 (§8).** The options as they
+were put (the handoff of 2026-10-05): **(1) — recommended: the index or the ETF flows as a MARKET-direction or sizing
+input** (§9 #7's other reading; data in hand from R26 / R27; one registration, a ceiling audit in R6's frame, no new
+scope); (2) a spot-hedged funding carry (not in the plan — adds a spot leg, a scope decision); (3) the unlock read
+(decision C's C2: 90 events on 22 names, sees only a large effect); (4) F5's 69 launches for the listing rule (R29's MDE
+was 792 bps on 301 launches — 69 can hardly decide anything); (5) P7 alone.
+
 The decision of 2026-09-29 → 2026-09-30, for the record — how to correct the record after R25; **Vadim chose (1)**:
 
 - **(1) — recommended. Fix the measure, then re-execute R22, R23, R24 and R25 exactly as registered.** The harness and
@@ -3706,6 +3713,130 @@ Result:        **Read 2026-10-05 (the run 14:26 → 14:36 UTC on the work VM, on
 
 
 
+### R30 — the US index and the ETF flows as MARKET-direction and sizing information: what the Nasdaq 100's recent move, crypto's lag behind it, and yesterday's ETF flow say about the equal-weight basket's next 1h, 4h and 1d, and what the index's session and volatility say about the SIZE of that move (registered 2026-10-08 on Vadim's "1", before the code was written and before any basket bar was read against the index or the flows; read —)
+Question:      R26 and R27 asked the index and the flows PER NAME (which name beats its peers) and found nothing. §9 #7's
+               other reading is the market itself: one number a day or an hour for the whole market against one series.
+               Does what the Nasdaq 100 just did, or how far crypto has lagged behind it, say which way the WHOLE market
+               goes over the next hour, four hours or day (direction)? And does the index's session (open / closed) or its
+               own volatility say how BIG the basket's next move is, beyond what crypto's own recent volatility already
+               says (sizing)? A ceiling audit in R6's frame (Principle 2): no model, no book, no confirmation fold, no
+               download — the index is `data/index_1m.parquet` (DATA.md `index_1m`), the flows `data/etf_flows.parquet`
+               (`etf_flows`), both on the work VM since R26 / R27.
+Frame:         R6's, exactly (`ft2/market.py`): the equal-weight basket of the pairs present (≥ 5) on the 5-minute grid;
+               the label at h = the basket's forward log move over h divided by its trailing 1-week σ·√h, clipped at ±5
+               (R6's; a standardised label, not money — the money is the described view below, in actual returns); the
+               statistic = the whole-sample uncentred correlation Σf·y/√(Σf²Σy²) with the HAC t of the daily sums
+               (`market.ic_stats`), per calendar year beside; the null = 200 circular shifts of the label series by a
+               whole number of days, 60 ≤ k ≤ days − 60, the SAME draws (seed 0) for every number; signed features enter
+               clipped at ±5, level features as their rank − ½ (`market.encode`); horizons 1h, 4h, 1d. The |move| target
+               for sizing = R6's "vol" bet: the rank of |label|, against the rank of the feature.
+               Family-wise p: per family, per draw the largest |t| over ALL its rows (features × the three horizons) — one
+               bar for the family, stricter than R6's per-horizon one.
+Index rules:   R26's, unchanged: US100 (the Nasdaq 100 CFD); a minute stamped ts is known from ts + 1 min; the value at an
+               instant s is the close of the last known minute; OPEN at s if that minute is within 15 min of s, CLOSED
+               otherwise (weekends, the daily break 21:00–22:59 UTC, holidays, and a missing hour — 2023-02 → 07 is thin);
+               nothing interpolated. m_h = the index's log move from its value at t − h to its value at t, bps; σ_ix = the
+               sd of its 1-hour moves over its last 30 days of hours open at both ends (≥ 200 such hours, else NaN).
+Family A —     the INDEX, on R6's bars (FP+F0+F1+F2, 2020-05-03 → 2024-08-31, 1,578 days, 454,464 bars). Eight features,
+               fixed here, each known strictly before t:
+               direction (signed, in units of σ_ix·√h so the ±5 clip is R6's):
+                 ix_1h     m_1h / (σ_ix·√1), read when the index is OPEN at t and at t − 1 h, else NaN
+                 ix_4h     m_4h / (σ_ix·√4), OPEN at t and at t − 4 h
+                 ix_24h    m_24h / (σ_ix·√24), OPEN at t (the start whatever its age: on Monday morning, Friday's close)
+                 ix_gap    read only when CLOSED at t: the index's move over its last 240 traded minutes before the close in
+                           force / (σ_ix·√4) — what it did going into the break; open hours NaN
+                 lag_4h    how far crypto has LAGGED the index over the last 4 h: b·ix_4h − mret_4h, where mret_4h is R6's
+                           (the basket's 4h move in its own σ units) and b = the least-squares slope of the basket's hourly
+                           σ-unit move on the index's over the last 30 days of hours open at both ends (≥ 200 h, else NaN);
+                           positive = the basket is behind the index. Read where ix_4h is read.
+                 lag_24h   the same at 24 h: b·ix_24h − mret_1d. Read where ix_24h is read.
+               sizing (levels, read only against the |move| target):
+                 ix_open   1 if the index is OPEN at t, else 0
+                 ix_vol    the sd of the index's 1-hour moves over its last 24 traded hours (≥ 12) over σ_ix, a ratio like
+                           R6's volratio; read when OPEN at t
+               Family A-direction = 6 × 3 horizons = 18 numbers; family A-sizing = 2 × 3 = 6 numbers (its own family).
+               The sizing PARTIAL, per number: the same IC with the |move| rank replaced by its residual on the rank of
+               R6's volratio_4h (one coefficient fitted over the scored bars) — what the index adds to what the basket's
+               own recent volatility already says. Reported with its HAC t.
+Family B —     the FLOWS, on F2 alone (2024-01-03 → 2024-08-31, 242 days; F1 holds no flow; R27's F(t), F5(t), the
+               known-at d + 1 09:00 UTC, the 300 US$m cut — unchanged). Three signed features, scaled so the clip is ±5
+               at five sd: flow = F(t)/300; flow_5d = F5(t)/(300·√5); flow_big = F(t)/300 where |F(t)| ≥ 300, else NaN.
+               Family B = 3 × 3 = 9 numbers. The shift null on 242 days: 60 ≤ k ≤ 182, 200 draws. ETH's flows not read.
+Validity:      read first or the run is void. (1) The frame is R6's: R6's 17 features computed in the same run on the same
+               bars with the same 200 shifts reproduce `output/market/screen.parquet` (the VM's, written 2026-09-21) —
+               the directional and vol IC, t and per-year IC of every feature × horizon to 1e-6, and every draw's t at 4h
+               to 1e-6. (2) No index minute is used before it is known and no flow before d + 1 09:00 UTC (asserted in the
+               code on every bar: the minute in force has ts + 1 min ≤ t; the flow's day + 33 h ≤ t). (3) The scored bars
+               are R6's for A (454,464; 1,578 days) and F2's for B (242 whole days); 161 flow days known inside F2 (R27).
+               (4) Coverage per month of every feature, reported.
+Gate:          validity PASS, then per number of A-direction and B:
+               CLEARS if family-wise p ≤ 0.05 AND the IC has one sign in every calendar year of the read (A: 2020, 2021,
+               2022, 2023, 2024; B: the two halves of F2, split 2024-05-01 as in R27) AND |IC| ≥ the BAR at its horizon —
+               R6's #7 bar, the smaller of "maker, all bars" and "taker, most volatile tenth", recomputed by the run from
+               the same table (R6's values: 1h 0.046, 4h 0.034, 1d 0.013).
+               CLOSED if |IC| + 1.96·ic_se < the bar: cannot pay a round trip on the basket even if real.
+               NOT DETECTABLE otherwise, with its MDE (2.8·ic_se).
+               Per number of A-sizing: CLEARS if family-wise p ≤ 0.05 (within the six) AND one sign in every year AND the
+               partial IC ≥ 0.05 with its HAC t ≥ 2.8 — the index adds a fifth of what R6's volatility features carry
+               (0.16–0.24); NOT ADDING if the partial's |IC| + 1.96·se < 0.05; NOT DETECTABLE otherwise.
+               What a clear licenses. A-direction or B: a HYPOTHESIS on seen data (FP+F0+F1+F2 were read for every
+               market-wide rule; F2 for the flows), not a trade and not a fold — the next registration, on Vadim's go, is
+               the smallest priced rule on the basket through the harness (the twelve bought or sold equally at the
+               feature's sign, held h, costed), explored on the same bars and confirmed only on F3+F4, which no
+               market-factor question has read; the serving lag (Dukascopy's hour file lands after the hour; Farside's
+               total is final 9 h after the close) is part of that registration. A-sizing: a described sizing row in a
+               future rule's registration, nothing more — P7 and R14 are not touched.
+               None clears → nothing is licensed; what follows is Vadim's decision. Whatever the verdict: no variant on
+               these bars under this registration — no other index (US500 is a reference row), window, scaling, horizon,
+               threshold, sum, hour-of-week cut or lag construction.
+Described:     decides nothing. The R6 reproduction table (validity (1)); per number the IC per year and the share of months
+               with its sign; the family bar (the null's largest |t| at its 95th percentile); US500 in place of US100 for
+               the six direction and two sizing features (reference rows, no null); the money view in ACTUAL returns —
+               the basket's mean next-4h and next-1d simple return, bps before costs, with its day-clustered se, after
+               the index rose / fell ≥ 1σ_ix over the last 4 h (open bars), after a gap up / down ≥ 1σ_ix·√4 (closed
+               bars), after crypto lagged the index by ≥ 1σ over 4 h, on open and on closed bars, every bar, each by year;
+               for B after an inflow day, an outflow day, a large inflow, a large outflow, by half; for sizing, the mean
+               |next-1h move| of the basket in bps on open and on closed bars by year, and the vol ICs of ix_open and
+               ix_vol beside volratio_4h's and dvol_1h's (R6's); the coverage per month; the age of the index minute in
+               force per hour of the week.
+Commands:      on the work VM, in this order —
+                 `vm.sh bg r30a ceiling --target basket --family index`              → output/market_index.md, output/market_index/
+                 `vm.sh bg r30b ceiling --target basket --family etf --folds F2`     → output/market_etf.md,   output/market_etf/
+               The code: `ft2/market_ext.py` — the features on the 5m grid from `audit_index.Minutes` and `etf.totals`,
+               R6's `screen` under a family-wise p over horizons, the partial IC, the money view in actual returns, the R6
+               reproduction check — written AFTER this block is committed; its tests on made-up bars: the known-from rule on
+               the 5m grid, open / closed, the lag's sign (a basket built to follow the index with a delay returns a
+               positive IC on lag_4h), the flow's known-at, the family-wise p across horizons, and a planted index-led
+               market coming back with its sign through the screen and the null.
+Folds read:    A: FP+F0+F1+F2 (R6's read; all seen for market-wide rules). B: F2 (exploration). No confirmation fold, no
+               download; every source cut at 2024-09-01.
+Power:         stated before the read. R6's screen on the same bars: ic_mde 0.013–0.016 at 1h, 0.022–0.030 at 4h,
+               0.03–0.07 at 1d, on all bars. The index's direction features are read on open bars (≈ 55–60 %: R26 measured
+               61 % of hourly cells) or on closed ones (≈ 40 %), so se × 1.3–1.6: MDE ≈ 0.02 at 1h, 0.03–0.045 at 4h,
+               0.05–0.10 at 1d. Against the bars 0.046 / 0.034 / 0.013: at 1h and 4h the read can both find and CLOSE; at
+               1d it can only find a large effect — a real 0.02 at 1d, enough to pay, would read NOT DETECTABLE. B: 242
+               days → se ≈ 2.5 × R6's: MDE ≈ 0.04 at 1h, 0.06–0.08 at 4h, 0.10–0.17 at 1d, above every bar — B can find
+               only a large effect and can close nothing. The family bar: 18 correlated numbers → the largest |t| of noise
+               ≈ 2.6–2.9; nine → 2.4–2.7; six (sizing) → 2.3–2.6. Sizing: R6's vol ICs are 0.1–0.24 with t 15–28, so a
+               session effect clears p trivially if it is there; the partial decides.
+Expectation:   validity PASS (the same code path, seed and bars as R6: the reproduction to the digit). Coverage: open
+               ≈ 58 % of bars, ix_gap ≈ 42 %, lower in 2023-02 → 07; ix_vol ≈ 55 %; flow ≈ 95 % of F2's bars, flow_big
+               ≈ 18 %. DIRECTION: crypto moves with the index within minutes, so a move already made says little —
+               ix_1h and ix_4h inside ±0.010 at every horizon (R6's own mret_1h reads −0.014 at 1h, a small reversal;
+               the index's past move may carry a little continuation into crypto: 0 … +0.010); ix_24h inside ±0.010;
+               ix_gap 0 … +0.020 at 4h and 1d (the move into the weekend carried on Sunday night — the likeliest place
+               for an effect; R26's per-name lean there was the opposite sign); lag_4h and lag_24h the likeliest to lean,
+               +0.010 … +0.030 (crypto catches up), one sign in 4 of 5 years. B: flow and flow_5d 0 … +0.030 at 1d
+               (institutional demand persists a little), inside noise; flow_big no larger. About one chance in five that
+               a direction number clears the family bar; one in ten that one also holds one sign in every year and pays
+               its bar. SIZING: ix_open +0.05 … +0.15 against |move| at 1h, positive in every year, p_fw ≤ 0.05 —
+               crypto is more volatile in the US session, well known; the partial given volratio_4h +0.02 … +0.06 (half
+               of it is already in crypto's own recent volatility): even odds that it clears 0.05. ix_vol +0.10 … +0.20
+               raw, partial under 0.05 (what the index's volatility knows, crypto's own volatility knows). Likeliest
+               verdict: direction — 27 numbers, nothing clears, lag_4h or ix_gap the nearest; sizing — ix_open clears or
+               misses the partial bar narrowly: a fact to carry into a future rule's sizing, nothing for P7.
+Result:        —
+
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
 Contrast:      A vs B, per <trade | unit notional>, bps
@@ -3728,7 +3859,7 @@ built here in P2 and needs no download.
 | 4 | **Same pairs on a second venue** (Bybit / OKX perps, 1m klines) | their public archives | Cross-venue lead-lag at short horizons; only relevant if P2 funds a sub-15m horizon | parked |
 | 5 | On-chain, news, sentiment | various | Low prior at these horizons, high engineering cost; not now | parked |
 | 6 | **Open interest, funding and positioning as SCREENER characteristics** (Vadim's question 2026-09-27: "new features?") | the archive's `metrics` and `fundingRate`, every symbol, free | R15 found they add nothing as model inputs on the twelve. Not tested: as things a screener ranks names by (open interest over volume = crowded, funding at an extreme). Per name, so it has breadth. **Read directly against the next day's move in R20 (2026-09-28): funding closed; open interest over volume and open-interest change NOT DETECTABLE and the nearest (IC +0.033, −0.019, −0.016)**; `metrics` for the 188 members is on the work VM | R20 ✅ as a ceiling audit; as screens of a forecast still parked (the forecast has nothing to sort, R18) |
-| 7 | **Market-wide daily series: spot-ETF net flows (BTC from 2024-01-11, ETH from 2024-07-23), stablecoin supply, Deribit implied volatility (DVOL), macro dates (FOMC, CPI)** (Vadim, 2026-09-27) | Farside tables (scrape), DefiLlama, Deribit API, a calendar; all free | One number a day for the whole market: ≈ 650 days of ETF history, so only an IC ≥ 0.1 is detectable, and it is a market-direction input where our surviving signal is pair-vs-peers. Best uses: (a) BTC/ETH against the alts the day after a large flow; (b) a regime switch or a size multiplier. Known-at time matters: a day's flow is published after the US close, usable from ≈ 03:00 UTC the next day. **US stock indices (S&P 500, Nasdaq; Vadim, 2026-09-27)** belong to this family with two differences: index futures trade almost round the clock on weekdays, so the series is intraday and covers all folds, and it is closed at weekends (a regime of its own). Still one number for the whole market: to reach pair-vs-peers it enters as EACH NAME'S trailing sensitivity to the index × the index's recent move, which is per name and has breadth — the same construction applies to the ETF flows. Source to audit: free minute history of the index ETFs or futures, and a live feed the serve host can read. **Source audit DONE 2026-10-01 (`ft2 index`; DATA.md `index_1m`): the S&P 500 and the Nasdaq 100 as round-the-clock CFDs, one-minute bars 2020-01 → 2026-09, from HistData.com (free, keyless; its clock is not the fixed EST it states — measured and converted) and identical to Dukascopy's feed, whose hourly tick files (up within the hour after the hour closes) are the live-feed candidate beside Yahoo's ES=F (ten minutes behind); 2023-02 → 2023-07 is thin. ETF flows: Farside's HTML table is the only free route (a scrape), not fetched.** **ETF flows fetched 2026-10-01 (`ft2 etf`; DATA.md `etf_flows`): BTC 682 trading days from 2024-01-11 (F2 161, F3 165, F4 167, F5 174; F1 none), ETH from 2024-07-23 (F2 29 — not explorable); the funds sum to the total, the holiday calendar is the exchanges'; known-at measured on 36 Wayback snapshots of the live page: the total is partial the same evening and final from 9 h after the 21:00 UTC close — a flow is known from 09:00 UTC the next day.** **R27 READ 2026-10-02: NOT DETECTABLE as per-name information at one day** (§8): on F2's 161 flow days — a name's sensitivity to BTC × the last known flow, × the five-day sum, × a large flow, and BTC itself against the alts, on 188 outside names and on the twelve: 0 of 7 clear, seven NOT DETECTABLE (MDE 0.03–0.14, at or above break-even), the largest number 1.3 se with its halves of opposite sign; no F3+F4 read licensed. The flows stay fetched; a market-direction or sizing use would be its own registration | **R26 READ 2026-10-01: CLOSED as per-name information at one day** (§8): five per-name features — a name's 30-day sensitivity to US100, and that sensitivity × the index's move over 1, 4, 24 h and into a close — on R20's 188 outside names and on the twelve, R22's shift null, one family of ten: 0 of 10 clear, six CLOSED (upper bound under 0.02), four NOT DETECTABLE; the nearest is a REVERSAL on closed hours (bx_gap outside −0.015, u −2.0, family p 0.31), half of break-even even if real. US500 no stronger. The minute data stays (`ft2 index`) for a market-direction or sizing use if one is ever registered; the ETF flows (a scrape) are the row's open item |
+| 7 | **Market-wide daily series: spot-ETF net flows (BTC from 2024-01-11, ETH from 2024-07-23), stablecoin supply, Deribit implied volatility (DVOL), macro dates (FOMC, CPI)** (Vadim, 2026-09-27) | Farside tables (scrape), DefiLlama, Deribit API, a calendar; all free | One number a day for the whole market: ≈ 650 days of ETF history, so only an IC ≥ 0.1 is detectable, and it is a market-direction input where our surviving signal is pair-vs-peers. Best uses: (a) BTC/ETH against the alts the day after a large flow; (b) a regime switch or a size multiplier. Known-at time matters: a day's flow is published after the US close, usable from ≈ 03:00 UTC the next day. **US stock indices (S&P 500, Nasdaq; Vadim, 2026-09-27)** belong to this family with two differences: index futures trade almost round the clock on weekdays, so the series is intraday and covers all folds, and it is closed at weekends (a regime of its own). Still one number for the whole market: to reach pair-vs-peers it enters as EACH NAME'S trailing sensitivity to the index × the index's recent move, which is per name and has breadth — the same construction applies to the ETF flows. Source to audit: free minute history of the index ETFs or futures, and a live feed the serve host can read. **Source audit DONE 2026-10-01 (`ft2 index`; DATA.md `index_1m`): the S&P 500 and the Nasdaq 100 as round-the-clock CFDs, one-minute bars 2020-01 → 2026-09, from HistData.com (free, keyless; its clock is not the fixed EST it states — measured and converted) and identical to Dukascopy's feed, whose hourly tick files (up within the hour after the hour closes) are the live-feed candidate beside Yahoo's ES=F (ten minutes behind); 2023-02 → 2023-07 is thin. ETF flows: Farside's HTML table is the only free route (a scrape), not fetched.** **ETF flows fetched 2026-10-01 (`ft2 etf`; DATA.md `etf_flows`): BTC 682 trading days from 2024-01-11 (F2 161, F3 165, F4 167, F5 174; F1 none), ETH from 2024-07-23 (F2 29 — not explorable); the funds sum to the total, the holiday calendar is the exchanges'; known-at measured on 36 Wayback snapshots of the live page: the total is partial the same evening and final from 9 h after the 21:00 UTC close — a flow is known from 09:00 UTC the next day.** **R27 READ 2026-10-02: NOT DETECTABLE as per-name information at one day** (§8): on F2's 161 flow days — a name's sensitivity to BTC × the last known flow, × the five-day sum, × a large flow, and BTC itself against the alts, on 188 outside names and on the twelve: 0 of 7 clear, seven NOT DETECTABLE (MDE 0.03–0.14, at or above break-even), the largest number 1.3 se with its halves of opposite sign; no F3+F4 read licensed. The flows stay fetched; a market-direction or sizing use would be its own registration | **R26 READ 2026-10-01: CLOSED as per-name information at one day** (§8): five per-name features — a name's 30-day sensitivity to US100, and that sensitivity × the index's move over 1, 4, 24 h and into a close — on R20's 188 outside names and on the twelve, R22's shift null, one family of ten: 0 of 10 clear, six CLOSED (upper bound under 0.02), four NOT DETECTABLE; the nearest is a REVERSAL on closed hours (bx_gap outside −0.015, u −2.0, family p 0.31), half of break-even even if real. US500 no stronger. The minute data stays (`ft2 index`) for a market-direction or sizing use if one is ever registered; the ETF flows (a scrape) are the row's open item. **R30 registered 2026-10-08 (§8): both series as MARKET-direction and sizing information on the basket, R6's frame — Vadim's "1" (P8 decision E)** |
 | 8 | **Scheduled per-name events: token unlocks, listings and delistings, exchange "monitoring" tags** | DefiLlama unlocks, Binance announcements | Known in advance, per name, and about exactly the young names R14's money sits in. Risk: the history of announcements is hard to reconstruct without hindsight. **Source audit DONE 2026-10-05 (`ft2 events`; DATA.md `unlock_events`, `binance_events`; P8 "Source audit of per-name events"; no price read):** *unlocks* — DefiLlama's free file (359 tokens; 70 of 188 and 88 of 216 members have a schedule) is rewritten as it ages: a 2023–2025 snapshot of the page had 42–50 % of the cliffs that followed with the same day and size, and 38–46 % of what it dated is not in today's file as dated; built only from the snapshots (the rule), a member's cliffs number 36 (F1), 54 (F2), 58 (F3), 20 (F4), 5 (F5) on 22 names, ten of them holding 157 of 176 — and F4, F5 cannot be rebuilt (pages reach 30 days from 2025-05-26). *Binance's announcements* — release times to the millisecond, launches confirmed by the archive for 98–99 % of 2023–2025 contracts, the first bar 3.5 h after the release at the median; on contracts already trading the kinds are few (F1+F2: 15 delistings, 11 spot delistings, 15 monitoring tags, 7 spot listings); the populous event is a contract's launch: 66 (F1), 53 (F2), 147 (F3), 157 (F4), 69 (F5) | **audited 2026-10-05; nothing registered.** Unlocks: a read is possible on F1+F2 (90 events, 22 names) with F3 (58) the only fold left to confirm on — it could see only a large effect (P8). Launches: a new population (a contract's first 30 days; no read of this project has held them) — Vadim's choice (P8 "What next" (C)) |
 
 Rule for adding any of them: a raw download lands under `data/raw/external/<source>/`, is
