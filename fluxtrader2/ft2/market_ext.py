@@ -92,6 +92,19 @@ def features_index(idx: pd.DatetimeIndex, F6: dict[str, pd.Series], mi: Minutes)
     return F, own
 
 
+def ix_1h_frame(idx: pd.DatetimeIndex, end: pd.Timestamp, mi: Minutes | None = None) -> pd.DataFrame:
+    """R31 (`rules.IndexHour`, attached by `backtest.EXTRAS["ix_1h"]`): R30's `ix_1h` alone, on the harness's bar index `idx`,
+    from the minutes known before `end` — the same three lines as `features_index` (σ_ix on the hourly grid, the move over the
+    last hour where the index is open at t and at t − 1 h), so the rule trades the number R30 screened. One column, `ix_1h`."""
+    mi = load_minutes(INDEX, end) if mi is None else mi
+    hidx = pd.date_range(idx[0].floor("h"), idx[-1], freq="1h")
+    sigma = pd.Series(_hourly(mi, hidx)["sigma"], index=hidx).reindex(idx, method="ffill").to_numpy()
+    now, back = mi.at(idx), mi.at(idx - HOUR)
+    m1 = (now["lc"] - back["lc"]) * 1e4
+    f = np.where(now["open"] & back["open"], m1, np.nan) / sigma
+    return pd.DataFrame({"ix_1h": f}, index=idx).replace([np.inf, -np.inf], np.nan)
+
+
 def check_known_index(idx: pd.DatetimeIndex, mi: Minutes, own: dict) -> dict:
     """Validity (2): on every bar the minute in force was known at t (ts + 1 min ≤ t)."""
     row = own["row"]

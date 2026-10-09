@@ -138,8 +138,15 @@ def _oi(M: Market, end: pd.Timestamp) -> pd.DataFrame:
     return pd.concat(F, axis=1, names=["feature", "symbol"])
 
 
+def _ix_1h(idx: pd.DatetimeIndex, cols: list[str], end: pd.Timestamp) -> pd.DataFrame:
+    """R30's `ix_1h` (the US index's last-hour move in its own hourly sigmas, where it is open) on the market's bar index,
+    from the minutes known before `end` — R31's rule reads it through `Market.extra["ix_1h"]`."""
+    from . import market_ext                                   # imported here: it imports this module through audit_index
+    return market_ext.ix_1h_frame(idx, end)
+
+
 EXTRAS = {"depth_imb_1": lambda idx, cols, end: ceiling.depth_frames(idx, cols, end)[0],
-          "external": _external}
+          "external": _external, "ix_1h": _ix_1h}
 EXTRAS_M = {"oi": _oi}       # builders that need the market itself (its dollar volume), not only its index
 
 

@@ -47,7 +47,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .backtest import Market, Strategy, decisions_from
+from .backtest import BAR, Market, Strategy, decisions_from
 from .ceiling import MIN_PAIRS, W, basket
 
 WARMUP = pd.Timedelta(days=9)            # σ_1w needs a week of bars, the 1d return a day more
@@ -166,6 +166,27 @@ class TrendFall(Strategy):
                               why=f"basket fell ≥{self.fall:g}σ in 4h, {self.trend_days}d trend up")
 
 
+class IndexHour(Strategy):
+    """R31: the US index's last hour, traded at its sign on the whole basket. At a bar t = H + `lag` bars, where H is an hour's
+    close, f = R30's ix_1h at H (`Market.extra["ix_1h"]`, NaN unless the index was open at H and at H − 1 h); |f| ≥ `theta` →
+    side = sign(f), every pair present at t, one unit each, `hold` bars. Nothing fitted. The value used at t is the value at H —
+    nothing after H enters (the lag is the serving lag: the hour's close is known some minutes after the hour)."""
+    name = "ixhour4h"
+    needs = ("ix_1h",)
+
+    def __init__(self, theta: float = 1.0, lag: int = 3, hold: int = 48):
+        self.theta, self.lag, self.hold = float(theta), int(lag), int(hold)
+
+    def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        s = M.extra["ix_1h"]["ix_1h"]
+        tH = s.index - self.lag * BAR                                               # the hour the value is read at
+        f = pd.Series(s.reindex(tH).to_numpy(), index=s.index).where((tH.minute == 0) & (tH.second == 0))
+        on = f.abs() >= self.theta - 1e-12
+        side = M.close.notna().astype(float).mul(np.sign(f).fillna(0.0), axis=0).where(on, 0.0, axis=0)
+        return decisions_from(side, a, b, signal=pd.DataFrame({c: f for c in M.columns}),
+                              why=f"index's last hour ≥{self.theta:g}σ_ix at its close, read {self.lag} bars later")
+
+
 class BookImbalance(Strategy):
     name = "bookimb1d"
     needs = ("depth_imb_1",)
@@ -191,4 +212,4 @@ class BookImbalance(Strategy):
         return decisions_from(side.where(on, 0.0), a, b, signal=-x, why=f"{what} (q{self.q_sig:g}), against it")
 
 
-STRATEGIES = {BookImbalance.name: BookImbalance, TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
+STRATEGIES = {IndexHour.name: IndexHour, BookImbalance.name: BookImbalance, TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
