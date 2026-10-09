@@ -14,61 +14,47 @@ otherwise knows nothing about this folder.
 
 | date | where we are | needed from Vadim |
 |---|---|---|
-| 2026-10-09 | **fluxtrader2: the paper test running (green 2026-10-05); the screener phase (P8) has read its last source in hand — R30 (2026-10-08, Vadim's "1"): the US index and the ETF flows as MARKET-direction and sizing information on the whole basket, in R6's frame. Direction: 0 of 27 clear. The Nasdaq 100's last hour carries into crypto's next one to four hours in each of five years (one time in two hundred among eighteen numbers, the same on the S&P 500) but is worth less than a round trip on the basket pays — closed by cost; the day's move, the move into a close and crypto's lag over a day say nothing; yesterday's ETF flow says nothing half a year can see. Sizing: the index's session clears at 4h — the basket moves a quarter more while the US index is open, every year, a fifth of it beyond crypto's own volatility — a described row for whatever rule comes next, nothing for P7. Not shown to trade profitably yet.** **(1) P7 — paper trading of R14, LIVE since 2026-09-25 17:00 UTC on `fluxtrader2-serve`.** R14 is a simple model on price-bar features that forecasts a pair's next-day move against the other pairs; on data nobody had looked at (R16) it earned +33 USDT a trade on 10,000 after costs, 3.6 trades a day, and failed one of five criteria — the one that sample could not pass. Vadim funded the paper test by override. Health 2026-10-05 02:05 UTC: green (2,712 decisions, 40 taken, 3 open, 0 late, 0 missing bars, model `model_2026-09-30`); the first refit on the host PASSED (2026-09-30); the first monthly identity check (2026-10-01) PASSED (`checks/check_2026-10-01.md`). Claude reads `vm.sh serve-status` monthly, next on or after 2026-11-01 01:30 UTC. The money is read once (R17): at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25. **(2) P8 — the screener: thirteen reads, nothing clears its costs** (PLAN P8 and §8): the twelve's model carries nothing to outside names (R18, R19); the exchange's own numbers per name — funding, premium, open interest, long/short, taker flow — nothing at one day (R20, R21) and nothing at 3 and 7 days once counted in actual returns (R22–R25, re-executed 2026-09-30); the US index (R26) and the ETF flows (R27) nothing per name; a new perpetual sold at launch and held a week (R28) did not confirm on F3+F4 (R29, −176 USDT a trade); the index and the flows as market direction (R30) closed by cost. Parked rows and their revival triggers: PLAN §7. **(3) Data in hand, all audited:** the archive's depth, metrics, funding and tape summaries; 40 wide-universe pairs; the premium index; US500/US100 one-minute bars 2020 → 2026-09; Farside ETF flows; DefiLlama unlock snapshots; Binance announcements. | **fluxtrader2 needs from Vadim: nothing now.** Decision F decided 2026-10-09, "go as recommended" — (F1): P7 alone; the index's session (R30) goes in as a described sizing row of whichever rule is registered next. The screener phase is closed on everything in hand; the other options (the spot-hedged carry — a scope decision; the unlock read; F5's launches; a maker-priced one-shot reading of the index's last hour on F3+F4) stay listed under PLAN P8 decision F for a later session. Earlier, 2026-10-08, "1": R30 (read). 2026-10-05, "D1 a": R29 (read, parked); "C1": R28. 2026-09-30, "(A1) (B1)": R23's second stage not run, the outside-names search parked. |
+| 2026-10-09 | **fluxtrader2: the paper test running (green 2026-10-05); the screener phase's last item in hand, R31 (Vadim's F5, registered, built, tested and read stage 1 the same day): the US index's last hour traded at its sign on the whole basket as a maker, when the hour's move is at least one of the index's own hourly sigmas, held four hours, with a 15-minute serving lag. Stage 1 on the seen bars (2020-05 → 2024-08) PASSED the gate as written — maker net +2.05 bps a trade [−6.24, +10.34], both nulls p 0.010, no calendar year under −5 — and says what R30 said in money: the gross is real (+6 … +9 bps a trade, every year), the costs take it back, the net is about zero; the long side nets +8 [−3, +18] and carries the basket's drift, the short side −4; the lag and a tighter threshold change nothing the sample can see. F5's premise as written on 2026-10-08 was corrected in the block before any number: the 4h bar R30 missed was already the maker bar, so the room was a threshold, not a price. Stage 2 (F3+F4, the only confirmation cells no market-wide question has read) is P8 decision G: with the measured noise it could confirm a true +2 about one time in twenty-five — recommended NOT to run. Not shown to trade profitably yet.** **(1) P7 — paper trading of R14, LIVE since 2026-09-25 17:00 UTC on `fluxtrader2-serve`.** R14 is a simple model on price-bar features that forecasts a pair's next-day move against the other pairs; on data nobody had looked at (R16) it earned +33 USDT a trade on 10,000 after costs, 3.6 trades a day, and failed one of five criteria — the one that sample could not pass. Vadim funded the paper test by override. Health 2026-10-05 02:05 UTC: green (2,712 decisions, 40 taken, 3 open, 0 late, 0 missing bars, model `model_2026-09-30`); the first refit on the host PASSED (2026-09-30); the first monthly identity check (2026-10-01) PASSED (`checks/check_2026-10-01.md`). Claude reads `vm.sh serve-status` monthly, next on or after 2026-11-01 01:30 UTC. The money is read once (R17): at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25. **(2) P8 — the screener: fourteen reads, nothing clears its costs** (PLAN P8 and §8): the twelve's model carries nothing to outside names (R18, R19); the exchange's own numbers per name — funding, premium, open interest, long/short, taker flow — nothing at one day (R20, R21) and nothing at 3 and 7 days once counted in actual returns (R22–R25, re-executed 2026-09-30); the US index (R26) and the ETF flows (R27) nothing per name; a new perpetual sold at launch and held a week (R28) did not confirm on F3+F4 (R29, −176 USDT a trade); the index and the flows as market direction (R30) closed by cost; the index's last hour as a maker-priced basket rule (R31) +2 bps a trade net on seen bars, inside its noise. Parked rows and their revival triggers: PLAN §7. **(3) Data in hand, all audited:** the archive's depth, metrics, funding and tape summaries; 40 wide-universe pairs; the premium index; US500/US100 one-minute bars 2020 → 2026-09; Farside ETF flows; DefiLlama unlock snapshots; Binance announcements. | **fluxtrader2 needs from Vadim: P8 decision G — stage 2 of R31 on F3+F4, (G1) recommended: do not run it, R31 parked as "stage 1 passed, not confirmed, F3+F4 unspent"; (G2) run it as registered, the cells spent whatever it says (a true +2 confirmed about one time in twenty-five).** Earlier the same day: decision F revised, "let's go with F5" → R31. 2026-10-08, "1": R30 (read). 2026-10-05, "D1 a": R29 (read, parked); "C1": R28. 2026-09-30, "(A1) (B1)": R23's second stage not run, the outside-names search parked. |
 
-### Handoff — where the next session starts (written 2026-10-09; rewritten, not appended to, at each handoff)
+### Handoff — where the next session starts (written 2026-10-09, after R31's stage 1; rewritten, not appended to, at each handoff)
 
 Everything up to here is committed. Nothing is running on the work VM (`fluxtrader2-work`, stopped); the serve host
 (`fluxtrader2-serve`) runs P7 by itself (health 2026-10-05 02:05 UTC: green — 2,712 decisions, 40 taken, 3 open, 0 late,
 0 missing bars, `check True`, `err None`, model `model_2026-09-30`).
 
-**No question is open.** P8 decision F was decided 2026-10-09, "go as recommended" — (F1): P7 alone, the screener phase
-closed on everything in hand; the other options stay listed under PLAN P8 decision F for a later session. R30 (the index and the ETF flows as market-direction and sizing information on the
-basket) was registered, amended once before any real bar was read (the lag's b: the 24-hour slope, recorded in the block),
-run and read on 2026-10-08: direction 0 of 27 clear, the index's last hour a certified but sub-cost continuation (parked,
-PLAN §7, revival = F5 above); the session a sizing fact (ix_open CLEARS at 4h) carried as a described row into the next
-rule. The mode: measure, with P7's clock running in the background — the wait forbids only touching R14 or the serve path.
+**One question is open — P8 decision G (R31's block, PLAN §8): run R31's stage 2 on F3+F4 or not.** R31 (`ixhour4h`, Vadim's
+F5 of 2026-10-09: the index's last hour ≥ 1σ_ix at its sign on the basket, 4h, maker, lag 15 min) passed stage 1 on the seen
+bars by the gate as written — maker net +2.05 bps a trade [−6.24, +10.34], both nulls p 0.010, no calendar year under −5 — which
+says the gross R30 certified is real and the costs take it back. The measured se (4.2 on 1,578 days) makes F3+F4 (487 days,
+se ≈ 7.6, MDE ≈ 21) unable to confirm a net of that size: a true +2 confirmed about one time in twenty-five, a true +10 one in
+four, and the cells — the only confirmation cells no market-wide question has read — are spent whatever the read says.
+Recommended: **(G1) do not run it**; R31 parked as "stage 1 passed, not confirmed, F3+F4 unspent". (G2) runs it as registered.
+The mode: measure, with P7's clock running in the background — the wait forbids only touching R14 or the serve path.
 
 In this order:
 
-1. **P7.** Claude runs `./fluxtrader2/scripts/vm.sh serve-status` once a month, next on or after 2026-11-01 01:30 UTC:
+1. **Decision G.** On "G1": write it into R31's block and §7, nothing runs. On "G2": start the work VM, then
+   `./fluxtrader2/scripts/vm.sh bg r31b backtest ixhour4h --folds F3 F4 --registration R31 --execs taker maker maker_ev`
+   (the guard refuses a second read of F3/F4 under R31 and any read without the block), `vm.sh pull`, read with
+   `scripts/r31_read.py` (the per-year table), fill R31's stage-2 Result, stop the VM. Confirmed → a serving-path registration
+   is the next decision; otherwise parked, F3+F4 spent for the market factor.
+2. **P7.** Claude runs `./fluxtrader2/scripts/vm.sh serve-status` once a month, next on or after 2026-11-01 01:30 UTC:
    `check True`, `err None`, `late 0`, `missing24h 0`, model age < 30 d. The money is read once (R17), earliest 2027-03-25.
-2. **Nothing else runs.** Nothing is registered. Whatever is registered next (only on Vadim's say, in a fresh session) carries R30's sizing
-   row (the basket's |move| a quarter larger while the US index is open; partial +0.059 on volratio_4h at 4h) as a
-   described row, and the market-factor confirmation folds F3+F4 are unread — one shot for any market-wide rule.
-3. **A thing to carry into any next idea on young names** (R21–R25, R28–R29): the typical case and the mean part ways
-   there — register the statistic that a real position earns (the mean, in actual returns, with the tail in it), expect
-   the share of names that explode to differ between periods, and do not read a stop as a cure.
-4. **A thing to carry into any next ceiling audit** (R30): a planted test on made-up bars is run BEFORE the real bars and
-   can amend a registration — R30's lag feature was mis-specified (the hourly contemporaneous slope misses a slow follower)
-   and the test caught it; the amendment is in the block with its reason. And a feature with a time-of-day pattern
-   (ix_open) gets a hard null from whole-day shifts, which keep the time of day: the family bar read 7.85, not ~2.5.
+3. **Nothing else runs.** Whatever is registered next (only on Vadim's say, in a fresh session) carries R30's sizing row (the
+   basket's |move| a quarter larger while the US index is open; on R31's entry hours a tenth more again) as a described row.
+4. **A thing to carry into any next basket rule** (R31): the harness's nulls sit at the COST, not at zero — a random sign pays
+   the round trip — so a p of 0.01 certifies the gross, not the net; read the interval on the net. And state the power from
+   baskets a day, not trades a day: one basket is one bet, and the book rule leaves one basket per four to five open hours.
+5. **A thing to carry into any next idea on young names** (R21–R25, R28–R29): the typical case and the mean part ways there —
+   register the statistic that a real position earns (the mean, in actual returns, with the tail in it), expect the share of
+   names that explode to differ between periods, and do not read a stop as a cure.
+6. **A thing to carry into any next ceiling audit** (R30): a planted test on made-up bars is run BEFORE the real bars and can
+   amend a registration; a feature with a time-of-day pattern gets a hard null from whole-day shifts, which keep the time of day.
 
-Where the outputs are (pulled, not in git): R30 — `output/market_index.md`, `output/market_index/` (`screen.parquet` the
-direction rows with verdicts, `screen_sizing.parquet`, `screen_all.parquet` R6's rows beside, `screen_null.parquet` every
-draw, `reference.parquet` US500 and R6's features, `money_view.parquet`, `size_view.parquet`, `coverage.parquet`,
-`minute_age.parquet`, `validity.json`), `output/market_etf.md`, `output/market_etf/` (the same less the sizing), the logs
-`output/logs/r30a.log`, `r30b.log`; R29 — `output/listing/r29/`, `output/listing/r28_recheck/`, `output/listing/r29_*check*.json`,
-`output/backtest/r29_costwide_check.json`; R28 — `output/listing/r28/`; the events audit — `output/events_inventory.md`,
-`output/events_known_at.csv`, `output/events_binance_unparsed.csv`; R27 — `output/audit/r18_transferbook_1d_etf`,
-`output/audit/twelve_etf`; R26 — `output/audit/r18_transferbook_1d_index`, `output/audit/twelve_index`; the re-execution of
-R22–R25 — `output/horizon/*_actual`, `output/backtest/r24_pool_actual`, `output/backtest/r25_read_actual`,
-`output/backtest/actual_table.md`; R6 — `output/market.md`, `output/market/` (R30's validity reproduces it to the digit).
-
-Things learned the hard way: money is counted as a position earns it — a shortcut (a log, a cost in bps of the entry size)
-is measured against the exact figure before a gate reads it (`scripts/actual_describe.py`); a result far outside its
-expected band is checked trade by trade before it is believed (R25: the unit of profit was wrong); a check that merges two
-whole slices does not fit the work VM's 16 GB (compare name by name); `vm.sh bg …` with its output piped or redirected
-does not return until the job ends (the job itself is detached and safe) — run it bare and watch the log; a history
-published today is not the history that was published — measure it against archived copies before a feature reads it
-(the unlock schedules: half of them re-drawn); DefiLlama re-keys a token over the years, so a comparison across copies
-goes by ticker, not by id (`events.align`); and the Wayback Machine answers 429 to a browser's User-Agent sent by a
-script and serves a plain one at once (`events.WB_UA`; `ft2/etf.py` still sends the browser string); a check of the
-inputs is itself code written the same day — when it says FAIL, describe what it counted before touching anything (R28: a
-name that had gained months, two launches priced from another file), fix the check, keep the first output; a noise
-estimate that decides a gate is read beside plainer ones (R28: the block bootstrap's se was the smallest of three); and a
-number quoted into a registration from another table is checked against the rule that defines it (R30 quoted R6's 1h
-bar as 0.046 — the registered rule gives 0.061; the run recomputes, nothing hinged on it).
+Where the outputs are (pulled, not in git): R31 — `output/backtest/ixhour4h/` (`report.md`, `results.parquet`, `decisions.parquet`,
+`fills_taker.parquet`, `fills_maker.parquet`, `null.parquet`, `meta.json`), the described rows `output/backtest/r31_lag0/`,
+`r31_lag12/`, `r31_theta2/` (F1+F2 only), the log `output/logs/r31.log`; R30 — `output/market_index.md`, `output/market_index/`,
+`output/market_etf.md`, `output/market_etf/`.
 
 ## The boundary with the first project
 
