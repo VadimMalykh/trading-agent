@@ -1094,6 +1094,44 @@ but sub-cost continuation; the session is a sizing fact. The options as they sta
   execution on the basket and its serving lag (the hour file lands after the hour), would say whether it pays. Forbidden
   on R30's bars by R30's own rule; the confirmation folds are the only cells left for it, so it is one shot.
 
+**Decision H (2026-10-09) — the brainstorm after R31, Vadim's "let's brainstorm": what to register next, in parallel with P7. OPEN.**
+Ground rule for every candidate: a mechanism, the cells it can be confirmed on, and why it escapes what thirty-one reads
+found (the one real per-name signal lives in young names at 1d; the market factor is real and sub-cost at 1–4h; short-horizon
+per-name effects measured 0.01–0.02 against bars of 0.03–0.09). A structural fact first: a MARKET-WIDE rule is one series —
+on F3+F4 (487 days) a basket position has se ≈ 8 bps a trade at 4h and ≈ 18 a day at 1d, so the money gate (lower bound > 0)
+can confirm only an effect of +15 … +50; a Sharpe-0.8 rule is by nature unconfirmable on 487 days. Per-name rules have breadth
+and can be confirmed. Ranked:
+- **(H1) The basket's 30-day trend at a ONE-DAY horizon — a time-series-momentum rule.** R6's own 1d screen (output/market.md,
+  never acted on): `mret_30d` IC +0.070 (t 2.9), positive in each of 2020 → 2024 (+0.02, +0.14, +0.03, +0.08, +0.06), p_fw
+  0.0498 — against a 1d bar of 0.013 maker / 0.019 taker, five times over; `fall_x_trend30d` +0.051 (5 of 5, p_fw 0.035) is
+  the same trend. R6's gate recorded only the 4h row; R8 traded the 4h bounce, not the trend; the 1d trend was never registered
+  — a miss of the record, fair game. One parameter (30 days, R6's longest window, fixed before any read). Rule: each day at a
+  fixed hour, long every pair if the basket's 30-day return > 0, short if < 0 (or flat: both reported), one unit, held a day;
+  stage 1 pays a round trip every day (conservative; a held position that re-enters only on a flip is the described row —
+  a harness change, `hold` until the sign flips). Expected gross ≈ IC × 0.8 × the 1d sd (≈ 390 bps) ≈ +20 bps a day, net
+  +12 maker, funding −2 … −8 a day on the long side. The catch is confirmation: se ≈ 18 a day on F3+F4 → NOT DETECTABLE almost
+  surely; the evidence it can ever have is "5 of 5 seen years and the literature" — a paper test by override (R14's route),
+  or nothing. Half a day on seen bars; no fold spent.
+- **(H2) The demeaned ±1 % book imbalance at 1d, per name — §7 (b), open since R11.** P2's "most interesting cell": the raw
+  imbalance IC 0.039 at 1d (p_fw 0.005, 88 % of months) above the bar, and the rule (R9, R11) lost because the IC lives in the
+  slow per-pair level. Demeaned (today minus the pair's trailing-month mean) it asks whether the within-pair variation carries
+  any of it — a ceiling screen on the twelve first (archive `bookDepth` 2023-01 →, in hand), and if it clears, breadth: the
+  archive holds depth for every name (~0.5 MB a day a name; the 40 wide names ≈ 10 GB) — a per-name rule F3+F4 CAN confirm.
+  R15 says book features add nothing to the RELATIVE bet held out; this is the directional own-pair bet, unread demeaned.
+- **(H3) The forced-flow signature at 1–4h, per name, with breadth:** open interest falling while price moves far and the
+  taker ratio is extreme within the hour — a liquidation cascade's footprint (the archive has no liquidation file; `metrics`
+  at 5m on 199 names is in hand) — followed by a reversal. P2 read OI change alone at 1h on the twelve: 0.011, a fifth of the
+  bar; the interaction is unread, and the "most volatile tenth" bar at 1h is 0.046 taker / 0.025 maker at 4h. Prior modest:
+  every short-horizon per-name number so far was 0.01–0.02.
+- **(H4) The premium's reversion into and after the 8-hour funding settlement, per name** (premium index at 5m on the 188,
+  in hand; not the twelve): R20 read the premium at 1d (closed); the settlement hour is a different question. Prior modest.
+- **(H5) Hour-of-day / day-of-week seasonality on the basket:** cheap screen, market-wide, the power problem of (H1). Low.
+- **(H6) F2, the spot-hedged carry** — stays a scope decision, not a forecast.
+- Not on the list: a sizing overlay from the volatility forecast (IC 0.2, the one strong forecast) — no instrument of its own;
+  it enters a future rule's registration as a described sizing row, with R30's session.
+Recommended: (H1) and (H2)'s ceiling screen registered together, both on seen bars, neither spending a fold, each half a day;
+the decision on what (H1)'s evidence can license is written into its block before the read.
+
 The decision of 2026-09-29 → 2026-09-30, for the record — how to correct the record after R25; **Vadim chose (1)**:
 
 - **(1) — recommended. Fix the measure, then re-execute R22, R23, R24 and R25 exactly as registered.** The harness and
