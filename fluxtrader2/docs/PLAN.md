@@ -1080,7 +1080,7 @@ scope); (2) a spot-hedged funding carry (not in the plan — adds a spot leg, a 
 (decision C's C2: 90 events on 22 names, sees only a large effect); (4) F5's 69 launches for the listing rule (R29's MDE
 was 792 bps on 301 launches — 69 can hardly decide anything); (5) P7 alone.
 
-**Decision F (2026-10-08) — after R30. OPEN.** R30 read: nothing clears for a trade; the index's last hour is a certified
+**Decision F (2026-10-08) — after R30. DECIDED 2026-10-09: "go as recommended" — (F1): P7 alone; the index's session (R30) is written as a described sizing row into whichever rule is registered next; nothing registered, F3+F4 unread for the market factor.** R30 read: nothing clears for a trade; the index's last hour is a certified
 but sub-cost continuation; the session is a sizing fact. The options as they stand (none registered):
 - **(F1) — recommended: P7 alone**, and a sizing row (the index's session, R30) written into whichever rule is registered
   next. The screener phase has thirteen reads on three universes and every per-name and market-wide source in hand; what is
@@ -3949,7 +3949,7 @@ Result:        **Read 2026-10-08 (the index run 18:0x → 18:13 UTC on the work 
                on new cells). Sizing — ix_open at 4h is a described sizing row for any future rule's registration, nothing
                more; P7 and R14 are untouched (R14 holds a day and is pair-vs-peers, where the session does not enter). §9 #7
                is now read both ways (per name: R26, R27; the market: R30); the minute data and the flows stay. What follows is
-               Vadim's decision (P8 decision F).
+               Vadim's decision (P8 decision F) — DECIDED 2026-10-09: (F1), P7 alone.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
