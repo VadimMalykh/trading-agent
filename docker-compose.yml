@@ -50,6 +50,12 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-only-secret-key-base-that-is-at-least-64-bytes-long-for-phoenix-to-start}
+      # Web sign-in (FluxTraderWeb.Auth): empty = open UI (local); set on the VM. With it set,
+      # SECRET_KEY_BASE above must be a real secret or nobody can sign in.
+      AUTH_ALLOWED_EMAILS: ${AUTH_ALLOWED_EMAILS:-}
+      AUTH_BASE_URL: ${AUTH_BASE_URL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-}
     depends_on:
       postgres:
         condition: service_healthy

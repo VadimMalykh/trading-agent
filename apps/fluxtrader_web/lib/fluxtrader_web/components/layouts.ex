@@ -121,6 +121,11 @@ defmodule FluxTraderWeb.Layouts do
       <.link navigate={~p"/settings"} style="color:#ccc;text-decoration:none;">
         Settings
       </.link>
+      <%!-- A plain GET: a connected LiveView has no session CSRF token for a form, and a forged
+           sign-out costs nothing. --%>
+      <span :if={assigns[:auth_email]} style="margin-left:auto;color:#888;font-size:13px;">
+        <%= @auth_email %> · <a href={~p"/logout"} style="color:#ccc;">Sign out</a>
+      </span>
     </header>
 
     <main style="padding:24px;background:#0f0f23;min-height:calc(100vh - 52px);color:#e0e0e0;">

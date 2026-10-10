@@ -7,6 +7,7 @@ defmodule FluxTraderWeb.Application do
     children = [
       FluxTraderWeb.Telemetry,
       {Phoenix.PubSub, name: FluxTraderWeb.PubSub},
+      FluxTraderWeb.Auth.TokenStore,
       FluxTraderWeb.Endpoint
     ]
 

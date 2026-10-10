@@ -12,17 +12,40 @@ defmodule FluxTraderWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    # Only so a browser signed in on the VM can open /api/* too.
+    plug :fetch_session
+  end
+
+  # Both no-ops unless AUTH_ALLOWED_EMAILS is set — see FluxTraderWeb.Auth.
+  pipeline :require_auth do
+    plug FluxTraderWeb.Auth, :browser
+  end
+
+  pipeline :require_api_auth do
+    plug FluxTraderWeb.Auth, :api
   end
 
   scope "/", FluxTraderWeb do
     pipe_through :browser
 
-    live "/", DashboardLive, :index
-    live "/settings", SettingsLive, :index
+    get "/login", AuthController, :new
+    post "/login", AuthController, :create
+    post "/login/confirm", AuthController, :confirm
+    get "/login/:token", AuthController, :show
+    get "/logout", AuthController, :delete
+  end
+
+  scope "/", FluxTraderWeb do
+    pipe_through [:browser, :require_auth]
+
+    live_session :authenticated, on_mount: {FluxTraderWeb.Auth, :require_auth} do
+      live "/", DashboardLive, :index
+      live "/settings", SettingsLive, :index
+    end
   end
 
   scope "/api", FluxTraderWeb do
-    pipe_through :api
+    pipe_through [:api, :require_api_auth]
 
     get "/positions", PositionController, :index
     get "/signals", SignalController, :index

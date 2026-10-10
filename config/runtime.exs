@@ -120,6 +120,35 @@ if config_env() != :test do
   config :fluxtrader, :policy_boot_grace_s, pilot_int.("POLICY_BOOT_GRACE_S", 300)
 end
 
+# Magic-link sign-in for the web UI (`FluxTraderWeb.Auth`). On iff AUTH_ALLOWED_EMAILS is
+# non-empty: the VM sets it (port 4000 is public there), local compose leaves it unset and the
+# UI open. The container runs MIX_ENV=dev, so SECRET_KEY_BASE was never read before (dev.exs
+# hard-codes the public dev secret); it is read here now, and Auth refuses every sign-in while
+# the secret is still that dev default — a known secret would let anyone forge the session.
+if config_env() != :test do
+  blank_to_nil = fn name ->
+    case System.get_env(name, "") |> String.trim() do
+      "" -> nil
+      v -> v
+    end
+  end
+
+  if secret = blank_to_nil.("SECRET_KEY_BASE") do
+    config :fluxtrader_web, FluxTraderWeb.Endpoint, secret_key_base: secret
+  end
+
+  config :fluxtrader_web, :auth,
+    allowed_emails:
+      System.get_env("AUTH_ALLOWED_EMAILS", "")
+      |> String.split(",", trim: true)
+      |> Enum.map(&(&1 |> String.trim() |> String.downcase()))
+      |> Enum.reject(&(&1 == "")),
+    # Where the mailed link points, e.g. http://34.18.165.230:4000 — never the request's Host.
+    base_url: blank_to_nil.("AUTH_BASE_URL"),
+    resend_api_key: blank_to_nil.("RESEND_API_KEY"),
+    from: blank_to_nil.("AUTH_EMAIL_FROM")
+end
+
 # Ecto query logging — every environment, resolved at boot rather than at compile time so
 # the always-on VM can flip it with an env var and a restart.
 #

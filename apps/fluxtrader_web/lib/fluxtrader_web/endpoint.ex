@@ -5,7 +5,10 @@ defmodule FluxTraderWeb.Endpoint do
     store: :cookie,
     key: "_fluxtrader_web_key",
     signing_salt: "fluxtrader",
-    same_site: "Lax"
+    same_site: "Lax",
+    # The magic-link session (FluxTraderWeb.Auth) lasts 30 days; without this the cookie
+    # would end with the browser session.
+    max_age: 30 * 24 * 3600
   ]
 
   # Serve from source priv/static (bind-mounted), not _build volume copy.
