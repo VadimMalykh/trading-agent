@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-11): L1 running; E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 next.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-11): L1 running; E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 REGISTERED, export queued behind L1's.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
@@ -284,11 +284,80 @@ M3_ERA=repaired M3_EXPORT_DIR=/workspace/train/output/book_era \
 
 ---
 
-## D1 — book dynamics (F6): placeholder
+## D1 — book dynamics (F6): the registration — 🟡 REGISTERED 2026-10-11, after E1's read
 
-Registered after E1 reads, with E1's verdict written into its prior. The shape, so the later
-registration cannot drift: order-flow imbalance over 1 / 5 / 15 min from the ~8 s snapshots,
-the book delta over the same windows, within-bar mean / sd of `imbalance`, max `spread_bps`,
-and the microprice drift — run through `bookaudit`'s bps gate (held-out halves, drift-adjusted,
-day-clustered) at 15 / 60 / 240 m on the 86-day era, cell count fixed in advance, 5m as the
-registered fee-wall control. Needs one snapshot re-export (2026-09-10 → today). Not before E1.
+### In plain terms
+
+Every one of the eleven served scalars is a *level* — the book as it stands at one instant —
+and the 5m grid keeps one snapshot of the ~35 the collector takes in five minutes. F6 (2026-08)
+said the obvious thing and was never built: the information, if any, is in how the book
+*moves* — order flow at the touch, the imbalance's drift and its churn, the spread's spikes —
+not in where it sits. D1 builds those from the ~8.6 s snapshots the VM already holds and asks
+B1's exact question of them, with B1's exact gate.
+
+**Prior, written after E1.** E1 found that the book's instantaneous lean carries nothing an
+entry could use at the minute scale (every book arm below its blind control). That lowers, and
+does not settle, the dynamics question — E1 read signs at one instant; D1 reads flows over
+windows. The expectation below is written with that in mind.
+
+### Data, fixed now
+
+A B0 rebuild on the full era: `scripts/gcp_m3_export.sh` with `FROM=2026-07-17` to the export
+date (≈ 87 days, 12 pairs) into `ml/train/output/book_era2/`, then `m3 bookera` there — the same
+alignment, acceptance and staleness caps as B0 (the 240m rebuild must equal the X8″ dumps
+exactly). The dynamic columns are computed from `snapshots.parquet` (receipt clock `ts`,
+median gap 8.6 s) onto the 5m grid, using only snapshots **at or before the bar's open**.
+
+### The features — the list is the registration (12)
+
+For a trailing window W minutes ending at the bar's open, over the snapshots inside it
+(masked `has_dyn_W` = 0 when fewer than two snapshots fall in W or the bar's `has_book` is 0):
+
+| column | definition |
+|---|---|
+| `ofi_1`, `ofi_5`, `ofi_15` | Σ over consecutive snapshots of Δ(`bid_depth_near` − `ask_depth_near`), divided by the window's mean (`bid_depth_near` + `ask_depth_near`) — order flow at the top five levels |
+| `dflow_5` | the same with the 20-level `bid_volume` / `ask_volume` |
+| `dimb_1`, `dimb_5`, `dimb_15` | `imbalance` at the window's last snapshot minus at its first |
+| `imb_mean_5`, `imb_sd_5` | mean and sd of `imbalance` over the window |
+| `spread_max_5` | max of spread/mid in bps over the window |
+| `micro_mean_5`, `micro_mean_15` | mean of (`microprice` − `mid`) / `mid` over the window |
+
+Horizons 5 (the fee-wall control), 15, 60, and 240 (the drift control), coverages 1/2/5/10 %.
+Everything goes through `bookaudit.score` unchanged: direction and percentile map fitted on
+half 1, every number from half 2, day-clustered, drift subtracted, DIRECTIONAL / VOL-PROXY
+measured apart. **36 gate cells** (12 features × {5, 15, 60} m at cov 5 %); the gate takes the
+max, and the reader is told so.
+
+### The gate — §4.1 of BOOK_ERA_PLAN, verbatim
+
+Some feature, on half 2, at a horizon ≤ 60 m, with a top-5 % mean signed return **above +5 bps**
+(the maker line), **n ≥ 2,000**, sign agreeing between halves. Reported next to it, not deciding:
+the excess over the period's drift with its day-clustered 95 % interval. 🔴 Not negotiated
+downward after the read.
+
+### What each outcome licenses
+
+* **Pass** → one registration, later: a 15m GBT arm of B3c's exact shape with the passing
+  column(s) added (B3d), run after B3c reads on or after 2026-11-02; nothing served.
+* **Fail** → book dynamics on the scalar snapshots are **closed**: 🔴 no other window,
+  normalisation, feature or horizon. Dynamics from the raw ladder (per-level OFI) are a
+  separate question that depends on L1's reading and on the ladder's disk fate.
+
+### Expectation, recorded before the run
+
+At 5 m and 15 m nothing clears +5 raw (the fee wall, measured twice already). At 60 m the best
+cell between +2 and +6 raw with the excess interval including zero; sign agreement on about half
+the cells; `spread_max_5` and `imb_sd_5` VOL-PROXY. The gate more likely **not passed**. A pass
+at 60 m on an `ofi_*` column would be the surprising reading.
+
+### Commands
+
+```sh
+# after the L1 export has finished (one export at a time on the VM; ≈ 1.5 h for the snapshots)
+OUT=ml/train/output/book_era2 FROM=2026-07-17 TO=$(date -u +%F) \
+  ONLY=snapshots,trades,candles_5m,candles_1m,funding,oi ./scripts/gcp_m3_export.sh
+M3_EXPORT_DIR=/workspace/train/output/book_era2 M3_ERA=repaired ./scripts/m3.sh -m m3 bookera 2>&1 | tee logs/d1_bookera_$(date +%Y%m%d).log
+M3_EXPORT_DIR=/workspace/train/output/book_era2 ./scripts/m3.sh -m m3 bookdyn 2>&1 | tee logs/d1_bookdyn_$(date +%Y%m%d).log
+```
+
+**Needed from Vadim: nothing** until the gate is read.

@@ -14,6 +14,7 @@
     ./scripts/m3.sh -m m3 bookregime          # B2: does it work as an M3 regime observable?
     ./scripts/m3.sh -m m3 ladderspan report   # BOOK_WAVE2 L1: the ladder's reach, archive band identity
     ./scripts/m3.sh -m m3 bookentry --stage explore   # BOOK_WAVE2 E1: book-timed entry, paired
+    ./scripts/m3.sh -m m3 bookdyn             # BOOK_WAVE2 D1: book dynamics through B1's gate
     ./scripts/m3.sh -m m3 fidelity            # is the SERVED rule the one that was scored?
 
     M3_ERA=walkforward ./scripts/m3.sh -m m3 validate   # C3: every fold reproduces its log
@@ -1788,6 +1789,9 @@ def main() -> int:
     _archiveoi.add_parser(sub)
     from . import ladderspan as _ladderspan
     _ladderspan.add_parser(sub)
+    sub.add_parser("bookdyn", help="BOOK_WAVE2_PLAN §D1: twelve book-dynamics columns from the "
+                   "snapshot stream through B1's gate (§4.1 verbatim); M3_EXPORT_DIR=book_era2"
+                   ).set_defaults(fn=lambda a: __import__("m3.bookdyn", fromlist=["report"]).report())
 
     sub.add_parser("bookregime", help="B2: book features as M3 regime observables, "
                    "marginal and conditional on btc_absret_1d (gate §4.2)"
