@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-11): REGISTERED, nothing run.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-11): L1 running; E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 next.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
@@ -94,8 +94,11 @@ apart and a book changes in 15 s; the distribution is printed so a reader can ju
 
 ```sh
 # 1. export (≈300 MB; the ladder rows are index-ranged by day, the filter is cheap)
-OUT=ml/train/output/ladder_span LEVELS=100 ONLY=book_top100 \
-  BOOK_FILTER="AND ts::date IN ('2026-08-06','2026-08-20','2026-09-03','2026-09-17','2026-10-01','2026-10-10') AND (extract(epoch from ts)::bigint % 30) < 10" \
+# (amended 2026-10-11 before any row was read: the 400-column projection ran at ~1 MB/min on
+#  the VM and was cancelled after 11 MB; the raw-jsonb slice and per-day ranges replace it —
+#  same rows, same sample, parsed on the analysis side)
+OUT=ml/train/output/ladder_span ONLY=book_raw \
+  BOOK_FILTER="AND ((ts >= '2026-08-06' AND ts < '2026-08-07') OR (ts >= '2026-08-20' AND ts < '2026-08-21') OR (ts >= '2026-09-03' AND ts < '2026-09-04') OR (ts >= '2026-09-17' AND ts < '2026-09-18') OR (ts >= '2026-10-01' AND ts < '2026-10-02') OR (ts >= '2026-10-10' AND ts < '2026-10-11')) AND (extract(epoch from ts)::bigint % 30) < 10" \
   ./scripts/gcp_m3_export.sh
 # 2. archive + measurement + identity
 ./scripts/m3.sh -m m3 ladderspan fetch
@@ -106,7 +109,59 @@ OUT=ml/train/output/ladder_span LEVELS=100 ONLY=book_top100 \
 
 ---
 
-## E1 — book-timed entry: the registration
+## E1 — book-timed entry: the registration — 🟢 READ 2026-10-11, GATE NOT PASSED
+
+**RESULT, read 2026-10-11** (`logs/e1_bookentry_explore_20261011.log`; every harness check PASS:
+1,241 / 1,241 trades rebuilt exact at float32, `null0` = incumbent to 1e-8, identical trades and
+sizes in every arm, fallbacks 0–1). Population: the three X8″ seeds, 143,569 bars × 12 pairs,
+2026-07-18 21:15 → 09-09 20:05; cov 0.05 → 1,241 trades (389 / 446 / 406 a seed), 52 exit days.
+
+**In plain language.** Letting the entry wait for the book to agree did nothing the book can take
+credit for. All six book arms sit within ±1.4 bps of the incumbent with intervals of about ±1.5
+to ±3 — this test resolved at the scale it was built for — and **every one of them is below its
+own fixed-delay control** (−0.2 to −3.8 bps). Whatever the book said, waiting the fixed K minutes
+without reading it did at least as well. The gate fails on condition (iii), the one that asks
+whether the result is about the book rather than about waiting.
+
+| arm (cov 0.05) | vs incumbent | 95 % CI | s1 / s2 / s3 | median seed | vs control | delay mean / p90 |
+|---|---:|---|---|---:|---:|---|
+| `imb5` | +1.29 | [−0.20, +2.79] | −1.38 / +2.36 / +2.64 | +2.36 | −1.85 | 2.5 / 5 |
+| `imb15` | +1.08 | [−0.82, +2.97] | −1.27 / +1.52 / +2.80 | +1.52 | −0.48 | 3.7 / 11 |
+| `micro5` | −0.62 | [−3.57, +2.32] | −1.84 / −0.73 / +0.64 | −0.73 | −3.77 | 1.9 / 4 |
+| `micro15` | −0.72 | [−3.69, +2.24] | −1.34 / −1.00 / +0.16 | −1.00 | −2.28 | 2.0 / 4 |
+| `both5` | +1.19 | [−1.19, +3.56] | −2.20 / +1.65 / +3.87 | +1.65 | −1.96 | 3.1 / 5 |
+| **`both15`** (chosen) | **+1.36** | [−1.51, +4.24] | +0.32 / −0.25 / +4.12 | +0.32 | **−0.19** | 4.9 / 14 |
+| `fixed5` (control) | +3.14 | [−0.26, +6.55] | −1.84 / +4.48 / +6.36 | +4.48 | — | 5 / 5 |
+| `fixed15` (control) | +1.55 | [−4.92, +8.03] | +3.38 / +2.97 / −1.73 | +2.97 | — | 15 / 15 |
+| `coin15` (null) | +2.81 | [−2.99, +8.60] | −1.06 / +0.66 / +8.81 | +0.66 | — | 8.3 / 14 |
+
+Gate: (i) best > 0 ✓ (ii) median seed > 0 ✓ (iii) above its control ✗ → **NOT PASSED.** Forecast
+confirmation MDE on the served seed: 2.56 bps per notional — the design would have been
+confirmable; the effect is not there. At cov 0.02 (556 trades, information only) the same
+picture: book arms −1.2 to +2.7, every one 2.7–7.8 below its control.
+
+**Disposition.** Book-timed entry on `imbalance` / `micro_mid` at K ≤ 15 is **closed on these
+bars** (🔴 no other scalar, threshold, K or exit convention on them). Nothing served changes.
+The 2027-03-10 confirmation row for E1 is **not** added. D1's prior is lowered as §D1 says.
+
+🟡 **The side-finding — plain waiting.** The *controls* came out positive: entering five minutes
+after the decision rather than at once reads **+3.14 [−0.26, +6.55]** at cov 0.05 (two seeds of
+three) and **+3.95 [−0.60, +8.50]** at the served cov 0.02 with **all three seeds positive**
+(+3.99 / +4.40 / +3.55). Read it with the discipline it deserves: the controls were registered as
+controls, not as hypotheses; the intervals include zero; a fifteen-minute wait is wider and
+noisier (+1.55 / +6.58) and the coin arm sits between. The mechanism it would point to is
+mundane and plausible — the model's signal is computed at a bar's close and the first minutes
+after a signal bar partly revert, so an immediate taker entry buys the bar's own extreme. It is
+**a hypothesis for the forward look, not a result**: `fixed5` is registered now as a **second arm
+of the 2027-03-10 confirmation**, read in the same look as X7's key, on the served checkpoint's
+forward `policy_bars` rebuilt from forward 1m candles — two pre-registered hypotheses in one look
+on untouched bars, stated here so the multiplicity is on the record. CONFIRMED iff its 95 % lower
+bound vs the incumbent is > 0 at cov 0.02; it would license *writing* a serving registration for a
+five-minute entry delay in the executor (M3_PROTOCOL §8.3), not a change to the model or the rule.
+Expectation, written now: +1 to +4, interval including zero at 180 days (MDE ≈ 2.6 on 1,241
+trades over 52 days; the forward trade count is a few hundred).
+
+*The registration as written on 2026-10-11, before the run:*
 
 ### In plain terms
 

@@ -114,6 +114,14 @@ FROM orderbook_levels WHERE ts >= '$FROM' AND ts < '$TO' ${BOOK_FILTER:-}"
 # row per 30 s with LEVELS=100 — a full 100-level export would be 18 GB). The clause is pasted
 # verbatim, so it must begin with AND.
 
+# 1b. The ladder as raw jsonb text. BOOK_WAVE2_PLAN §L1 needs all 100 levels on a sampled set of
+#     rows; projecting 400 `(bids->i->>k)::float8` columns per row ran at ~1 MB/min on the VM
+#     (every path extraction re-walks the toasted jsonb), while shipping the two arrays as text
+#     costs one detoast per row. Parsed on the analysis side (m3/ladderspan.py).
+Q_book_raw="SELECT symbol, ts, event_time, transaction_time, last_update_id, depth, \
+bids::text AS bids, asks::text AS asks \
+FROM orderbook_levels WHERE ts >= '$FROM' AND ts < '$TO' ${BOOK_FILTER:-}"
+
 # 2. Derived scalar features, joined 1:1 to the ladder on (symbol, ts).
 Q_snapshots="SELECT symbol, ts, mid, spread, microprice, imbalance, bid_volume, ask_volume, \
 bid_depth_near, ask_depth_near, bid_depth_far, ask_depth_far \
@@ -254,10 +262,11 @@ wanted() {
   [[ ",$ONLY," == *",$1,"* ]]
 }
 
-for slice in "book_top${LEVELS}" snapshots trades candles_5m candles_1m funding oi; do
+for slice in "book_top${LEVELS}" book_raw snapshots trades candles_5m candles_1m funding oi; do
   wanted "$slice" || continue
   case "$slice" in
     book_top*)  dump "$slice" "$Q_book" ;;
+    book_raw)   dump "$slice" "$Q_book_raw" ;;
     snapshots)  dump "$slice" "$Q_snapshots" ;;
     trades)     dump "$slice" "$Q_trades" ;;
     candles_5m) dump "$slice" "$Q_candles_5m" ;;

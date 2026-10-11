@@ -148,9 +148,48 @@ def ladder_cols(levels: int = LEVELS) -> list[str]:
     return [f"{s}{i}{k}" for s in ("b", "a") for i in range(levels) for k in ("p", "q")]
 
 
+def _parse_side(txt: pd.Series, letter: str, levels: int) -> dict[str, np.ndarray]:
+    """'[[price, qty], ...]' text -> b{i}p / b{i}q columns, NaN beyond the row's depth."""
+    import json
+    n = len(txt)
+    p = np.full((n, levels), np.nan)
+    q = np.full((n, levels), np.nan)
+    for r, t in enumerate(txt.to_numpy()):
+        lv = json.loads(t) if isinstance(t, str) and t else []
+        m = min(len(lv), levels)
+        if m:
+            arr = np.asarray(lv[:m], dtype=np.float64)
+            p[r, :m] = arr[:, 0]
+            q[r, :m] = arr[:, 1]
+    out = {}
+    for i in range(levels):
+        out[f"{letter}{i}p"] = p[:, i]
+        out[f"{letter}{i}q"] = q[:, i]
+    return out
+
+
 def load_ladder(export_dir: str | None = None) -> pd.DataFrame:
-    return _csv(SLICE, ["ts", "event_time", "transaction_time"], export_dir=export_dir or EXPORT_DIR,
-                float_cols=ladder_cols())
+    """The sampled ladder as a wide frame (b0p..b99q, a0p..a99q), cached as parquet next to the
+    export. Reads `book_raw` (two jsonb text columns) and falls back to a `book_top100` wide slice."""
+    base = export_dir or EXPORT_DIR
+    pq = os.path.join(base, "ladder_wide.parquet")
+    if os.path.exists(pq):
+        return pd.read_parquet(pq)
+    raw_csv = os.path.join(base, "book_raw.csv.gz")
+    if not os.path.exists(raw_csv):
+        return _csv(SLICE, ["ts", "event_time", "transaction_time"], export_dir=base, float_cols=ladder_cols())
+    frames = []
+    for chunk in pd.read_csv(raw_csv, chunksize=20_000):
+        for c in ("ts", "event_time", "transaction_time"):
+            chunk[c] = pd.to_datetime(chunk[c], utc=True, format="ISO8601")
+        cols = {c: chunk[c].to_numpy() for c in ("symbol", "ts", "event_time", "transaction_time",
+                                                 "last_update_id", "depth")}
+        cols.update(_parse_side(chunk["bids"], "b", LEVELS))
+        cols.update(_parse_side(chunk["asks"], "a", LEVELS))
+        frames.append(pd.DataFrame(cols))
+    wide = pd.concat(frames, ignore_index=True)
+    wide.to_parquet(pq, index=False)
+    return wide
 
 
 def arrays(book: pd.DataFrame, levels: int = LEVELS) -> dict[str, np.ndarray]:
