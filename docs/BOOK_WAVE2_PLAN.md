@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-11): L1 running; E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 REGISTERED, export queued behind L1's.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-11): L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 REGISTERED, its export running.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
@@ -27,7 +27,81 @@ one look for both).
 
 ---
 
-## L1 — the ladder's reach, and the archive band identity
+## L1 — the ladder's reach, and the archive band identity — 🟢 READ 2026-10-11
+
+**RESULT, read 2026-10-11** (`logs/l1_ladderspan_20261011.log`, `logs/l1_export_20261011.log`,
+`logs/l1_archive_fetch_20261011.log`). Sample as registered: 178,586 ladder rows × 12 pairs on
+the six days, one row per 30 s slot (p50 spacing 30 s), no crossed touch; 207,360 archive rows.
+
+**1. What the ladder reaches** (distance of level 100 from the mid, p50, bps; "levels to …"
+are the registered estimate, span ÷ 100, not a measurement of a deeper book):
+
+| pair | L100 span p50 | reaches ±0.2 % | reaches ±1 % | est. levels to 20 bps / 100 bps |
+|---|---:|---|---|---|
+| BTC | 1.7 | no | no | ~1,190 / ~5,900 |
+| ETH | 4.1 | no | no | ~490 / ~2,400 |
+| ZEC | 10.4 | 10 % of rows | no | ~190 / ~960 |
+| HYPE | 12.3 | no | no | ~160 / ~810 |
+| 1000PEPE | 28.5 | **yes** | no | 71 / 350 |
+| XRP | 71 | **yes** | no | 29 / 140 |
+| LINK | 86 | **yes** | no | 24 / 120 |
+| SOL | 99 | **yes** | 37 % of rows | 21 / 100 |
+| DOGE | 121 | **yes** | **yes** | 17 / 83 |
+| AVAX | 131 | **yes** | 58 % of rows | 16 / 77 |
+| WLD | 265 | **yes** | **yes** | 8 / 38 |
+| ADA | 459 | **yes** | **yes** | 5 / 22 |
+
+The 20-level basis of the served scalars reaches ±0.2 % on ADA, DOGE, WLD only. So: the
+±0.2 % band is computable live from the collector as it stands on **8 of 12 pairs**, the ±1 %
+band on **3** (ADA, DOGE, WLD; AVAX and SOL part of the time). On the majors the top 100 levels
+are a few bps deep. Binance's REST depth stops at 1,000 levels, which by the estimate covers
+ETH, HYPE, ZEC and 1000PEPE at ±0.2 % and leaves **BTC out of reach from REST at any limit**;
+±1 % on the majors is a `@depth`-stream-and-local-book question (B4.3 proved the stream
+reachable).
+
+**2. The identity, by the bar: DIFFERENT on all 12 reachable pair-bands, IDENTICAL on none**
+(medians 3.7–7.1 % at ±0.2 %, 1.2–1.8 % at ±1 %; p99 far over 10 % everywhere; the two clocks
+and the two references give the same picture; the mid reference is the better one on every
+pair-band). **Read with the structure of the miss, which the log's follow-up describes:**
+
+* the **central quantity is the same number** — the ratio ladder-sum ÷ archive has a median of
+  **1.000 (0.995–1.005)** on every reachable pair-band, both sides, both bands;
+* the miss lives in the **tails**, and the tails are **day-shaped**: on 2026-09-03 50–73 % of
+  rows disagree by more than 10 % on every pair, on 2026-10-01 20–57 %, on the other four days
+  10–30 % at ±0.2 % and **0.3–6 % at ±1 %** (SOL ±1 %: 2–3 % overall). The worst rows show the
+  archive's ask band **frozen at 869 DOGE for ninety minutes** (12:53–14:21 on 09-03) while the
+  ladder held 13–18 million — stale archive rows, not a definitional difference;
+* at ±0.2 % on the clean days the residual 10–15 % is what 15 s of clock jitter does to a
+  20-bps-wide band on a pair whose touch moves every second.
+
+So the outcome is (c) by the letter and closer to (a) in substance: the archive's band **is**
+the ladder's band summed from the mid, carried with stale stretches the archive itself does not
+flag. Not registered here and written down as the next step if the family is ever built: a
+stale-row filter (a value unchanged across consecutive 30 s stamps is dropped), then the
+identity re-read on the filtered rows under the same bar — that is a new registration, not a
+re-run of this one.
+
+**3. What it means, written against the outcome paragraph below.**
+
+* **The M2 reopening condition for a book family is now met in substance on 8 pairs at ±0.2 %
+  and 3 at ±1 %**, with the archive-quality caveat above; it is **not met on BTC, ETH, HYPE,
+  ZEC** from the collector as it stands. A depth-band family is **admissible to register** on the
+  reachable pairs (masked elsewhere, `has_*`), after the stale-row identity re-read; it is not
+  registered here and it is a GPU item (X8's shape). 🟡 **Needed from Vadim: the collector
+  decision**, with these numbers — (i) nothing, serve the band where 100 levels reach it;
+  (ii) REST `limit=500` or `1000` (request weight 10 / 20 a poll a pair, against the current 5;
+  the twelve-pair poll loop would spend ≈ 840 / 1,700 weight a minute of the 2,400 ceiling,
+  before the other polls), which brings ETH/HYPE/ZEC/PEPE to ±0.2 % and nothing to BTC;
+  (iii) the `@depth` stream with a local full book, the only route to BTC and to ±1 % on the
+  majors — a real collector build. In every option the thing worth **storing** is the band sums
+  (twelve floats a snapshot), not a deeper ladder: a 500-level ladder would grow the disk at
+  ≈ 5× today's 14 GB/month.
+* **The disk decision (2026-11-01)** gets its fact: the 100-level ladder has one reader (this
+  module) and its content for a served feature is the band sums. A rolling-window prune (e.g.
+  30 days) plus band scalars written by the collector loses nothing L1 found useful.
+* The "collector cannot compute those bands" sentence in BACKLOG is replaced by this table.
+
+*The registration as written on 2026-10-11, before the run:*
 
 ### In plain terms
 
