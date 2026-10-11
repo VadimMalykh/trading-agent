@@ -109,7 +109,10 @@ book_cols() {
 Q_book="SELECT symbol, ts, event_time, transaction_time, last_update_id, depth, \
 $(book_cols bids b)$(book_cols asks a)\
 jsonb_array_length(bids) AS n_bid, jsonb_array_length(asks) AS n_ask \
-FROM orderbook_levels WHERE ts >= '$FROM' AND ts < '$TO'"
+FROM orderbook_levels WHERE ts >= '$FROM' AND ts < '$TO' ${BOOK_FILTER:-}"
+# BOOK_FILTER appends to the ladder slice's WHERE (BOOK_WAVE2_PLAN §L1 samples six days at one
+# row per 30 s with LEVELS=100 — a full 100-level export would be 18 GB). The clause is pasted
+# verbatim, so it must begin with AND.
 
 # 2. Derived scalar features, joined 1:1 to the ladder on (symbol, ts).
 Q_snapshots="SELECT symbol, ts, mid, spread, microprice, imbalance, bid_volume, ask_volume, \

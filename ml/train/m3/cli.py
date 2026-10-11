@@ -12,6 +12,8 @@
     ./scripts/m3.sh -m m3 bookera             # B0: the book-era table, same alignment
     ./scripts/m3.sh -m m3 bookaudit           # B1: is there tradeable information? (bps)
     ./scripts/m3.sh -m m3 bookregime          # B2: does it work as an M3 regime observable?
+    ./scripts/m3.sh -m m3 ladderspan report   # BOOK_WAVE2 L1: the ladder's reach, archive band identity
+    ./scripts/m3.sh -m m3 bookentry --stage explore   # BOOK_WAVE2 E1: book-timed entry, paired
     ./scripts/m3.sh -m m3 fidelity            # is the SERVED rule the one that was scored?
 
     M3_ERA=walkforward ./scripts/m3.sh -m m3 validate   # C3: every fold reproduces its log
@@ -1141,6 +1143,13 @@ def cmd_pathexits(args) -> int:
                             exploration_recorded=args.exploration_recorded, config=args.config)
 
 
+def cmd_bookentry(args) -> int:
+    """BOOK_WAVE2_PLAN §E1 — book-timed entry, paired on the incumbent's trades."""
+    from . import bookentry
+    return bookentry.report(WINNER_SPEC, stage=args.stage,
+                            exploration_recorded=args.exploration_recorded, config=args.config)
+
+
 def cmd_bookladder(args) -> int:
     """BOOK_ERA_PLAN §R.4 — X7: a book observable as the size-ladder key."""
     from . import bookladder
@@ -1746,6 +1755,16 @@ def main() -> int:
     bl.add_argument("--config", default=None, help="--stage confirm only: the key from §R.4")
     bl.set_defaults(fn=cmd_bookladder)
 
+    be = sub.add_parser("bookentry", help="BOOK_WAVE2_PLAN §E1: the incumbent's trades with the entry "
+                        "waiting ≤ K min for the 1m book state to agree with the side; explore on the "
+                        "book era (M3_EXPORT_DIR=book_era, the X8″ dumps), confirm once on forward "
+                        "policy_bars on or after 2027-03-10")
+    be.add_argument("--stage", choices=["explore", "confirm"], required=True)
+    be.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: the exploration table and arm are in §E1")
+    be.add_argument("--config", default=None, help="--stage confirm only: the arm from §E1")
+    be.set_defaults(fn=cmd_bookentry)
+
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")
     fid.add_argument("--universe", default="8", choices=["8", "12"],
@@ -1767,6 +1786,8 @@ def main() -> int:
     _forward.add_parser(sub)
     from . import archiveoi as _archiveoi
     _archiveoi.add_parser(sub)
+    from . import ladderspan as _ladderspan
+    _ladderspan.add_parser(sub)
 
     sub.add_parser("bookregime", help="B2: book features as M3 regime observables, "
                    "marginal and conditional on btc_absret_1d (gate §4.2)"
