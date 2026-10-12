@@ -122,6 +122,10 @@ def cmd_audit(args):
     if args.book:                                             # R21: the validity of an `oibook` run, read before its money
         v = audit.book_check(args.run)
         return print(f"book check {v['status']}: {v}")
+    if args.family == "flow":                                 # R37: the forced-flow signature at 1h and 4h, R26's frame, the twelve beside the members
+        from . import audit_flow
+        print(audit_flow.run(args.run, pairs=PAIRS, twelve=args.twelve, jobs=args.jobs))
+        return print(f"wrote {audit_flow.OUT / (args.run + '_flow')}/")
     if args.family in ("index", "etf"):                       # R26 / R27: the US index / the ETF flows as per-name information, the shift null, the twelve beside the members
         from . import audit_index
         print(audit_index.run(args.run, pairs=PAIRS, twelve=args.twelve, jobs=args.jobs, family=args.family))
@@ -311,7 +315,7 @@ def main(argv=None):
     au.add_argument("--beside", nargs="*", help="--pool --confirm: the exploration runs pooled beside the confirmation's (default: R24's two as first read)")
     au.add_argument("--draws", type=int, default=200)
     au.add_argument("--book", action="store_true", help="R21: check an `oibook` run's decisions (hourly grid, members only, whole dollar-neutral units) → <run>/book_check.json")
-    au.add_argument("--family", choices=["exchange", "index", "etf"], default="exchange", help="R26: `index` — the US index family (beta, beta × the index's move) with R22's shift null → output/audit/<run>_index/; R27: `etf` — the ETF flows, F2 only → <run>_etf/")
+    au.add_argument("--family", choices=["exchange", "index", "etf", "flow"], default="exchange", help="R37: `flow` — the forced-flow signature at 1h and 4h (open interest left, a far move, the takers with it → a reversal), R26's frame → <run>_flow/; R26: `index` — the US index family (beta, beta × the index's move) with R22's shift null → output/audit/<run>_index/; R27: `etf` — the ETF flows, F2 only → <run>_etf/")
     au.add_argument("--twelve", action="store_true", help="--family index: the twelve on the same grid as a second universe (one family of ten) → output/audit/twelve_index/")
     au.add_argument("--jobs", type=int, default=4)
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
