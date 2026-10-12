@@ -162,6 +162,11 @@ def cmd_tape(args):
     tape.run(args.symbols or PAIRS, args.start, args.end, workers=args.workers, keep_zip=args.keep_zip)
 
 
+def cmd_makercost(args):
+    from . import makercost
+    makercost.run(args.start, args.end, args.symbols or PAIRS, name=args.name)
+
+
 def cmd_cost(args):
     from . import cost
     print(cost.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS))
@@ -250,6 +255,11 @@ def main(argv=None):
     cw.add_argument("--symbols", nargs="*")
     cw.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "launch", "launch34", "all"])
     cw.add_argument("--start", default="2023-01-01")
+    mc = sub.add_parser("makercost", help="R39: the maker cost at the trade level — a resting order at the touch, last in its queue, filled FIFO by the archive's trades → output/makercost/<start>_<end>/ (see ft2/makercost.py)")
+    mc.add_argument("--start", required=True, help="first day (UTC)")
+    mc.add_argument("--end", required=True, help="last day, inclusive")
+    mc.add_argument("--symbols", nargs="*")
+    mc.add_argument("--name", help="output directory under output/makercost/ (default <start>_<end>)")
     t = sub.add_parser("tape", help="P1: stream archive aggTrades into data/tape/<symbol>.parquet (per-minute summary); zips are not kept")
     t.add_argument("--symbols", nargs="*")
     t.add_argument("--start", default="2023-01-01")
@@ -359,7 +369,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon}[args.cmd](args)
 
 
 if __name__ == "__main__":
