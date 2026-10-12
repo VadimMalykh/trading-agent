@@ -435,7 +435,8 @@ BOOK_HOLDS = (864, 2016)
 BOOK_REF = 288
 BOOK_COST = 15.0
 BOOK_WINDOW_DAYS = 30                 # the slow level's window: the null's gap = this + the longest hold in days + 1
-BOOK_MIN_CELLS_ONE = 8                # the described rows on one universe at a time (the eleven: one name a side)
+BOOK_MIN_CELLS_ONE = 8                # the described rows on one part of the universe at a time (the eleven: one name a side)
+WINSOR = 1000.0                       # R36, described: M with every label clipped at ±WINSOR bps (the young-name tail's weight)
 FUND_COVER = 0.95
 
 
@@ -450,12 +451,15 @@ def book_verdict(r: dict, cost: float = BOOK_COST) -> str:
 
 
 def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: float = BOOK_COST, universe: str = "both", jobs: int = 4,
-             name: str | None = None, twelve: list[str] | None = None, md5_file: Path = Path("output/logs/r34_md5_after.txt")) -> str:
+             name: str | None = None, twelve: list[str] | None = None, md5_file: Path | None = None,
+             split: tuple[str, list[str]] | None = None) -> str:
     import hashlib
     from joblib import Parallel, delayed
     from . import book_ext, ceiling, data
     from .ceiling import END, W
     fam, described = _book_signals()
+    if md5_file is None:                                                  # the chain's md5s of the depth files in hand before the fetch: R34's for the 43, R36's for the members
+        md5_file = Path("output/logs/r36_md5_after.txt" if universe == "screen" else "output/logs/r34_md5_after.txt")
     holds = [int(h) for h in holds]
     every = [ref, *holds]
     fold_names = list(folds.EXPLORATION)
@@ -526,8 +530,11 @@ def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: fl
 
     # the cells' actual taker round trip on the extreme tenths (the proxy for a name the tape never priced)
     ct = ceiling.bar_cost(idx, names, 5.0, 2.0)[0].loc[grid].to_numpy()
-    twelve = set(twelve or [])
-    j11 = np.array([c in twelve for c in names])
+    if split is None:                                                     # the described split: the twelve vs the rest (R35); in R10's forty vs the rest (R36)
+        from .universe import NEW
+        split = ("twelve", list(twelve or [])) if universe != "screen" else ("r10", list(NEW))
+    label_a, part_a = split[0], set(split[1])
+    j11 = np.array([c in part_a for c in names])
     fold_of = np.full(nd, "", dtype=object)
     days = pd.DatetimeIndex(grid[::PER_DAY]).floor("D")
     for f in fold_names:
@@ -554,12 +561,13 @@ def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: fl
             rt_ext = float(np.nanmean(np.where(ext, ct, np.nan))) if ext.any() else np.nan
             m11 = float(np.nanmean(_tenths(s[:, j11], Y[h][:, j11], BOOK_MIN_CELLS_ONE))) if j11.sum() >= BOOK_MIN_CELLS_ONE else np.nan
             m32 = float(np.nanmean(_tenths(s[:, ~j11], Y[h][:, ~j11], BOOK_MIN_CELLS_ONE))) if (~j11).sum() >= BOOK_MIN_CELLS_ONE else np.nan
+            m_w = float(np.nanmean(_tenths(s, np.clip(Y[h], -WINSOR, WINSOR))))
             row = {"signal": k, "hold": h, "family": k in fam and h in holds, "cells": int(ok.sum()), "days": n_days, "m": m, "centre": c, "m_c": m - c, "se": e,
                    "u": (m - c) / e if e else np.nan, "se_hac": se_hac, "lo": m - c - 1.96 * e, "hi": m - c + 1.96 * e, "mde": MDE_K * e,
                    "p_single": (1 + int((own["u"].abs() >= abs((m - c) / e)).sum())) / (len(own) + 1), "p_family": (1 + int((mx >= abs((m - c) / e)).sum())) / (len(mx) + 1),
                    **{f"m_{f}": per_fold[f] for f in fold_names}, "folds_same_sign": bool(all(np.sign(per_fold[f]) == np.sign(m - c) for f in fold_names if np.isfinite(per_fold[f])) and any(np.isfinite(per_fold[f]) for f in fold_names)),
                    "m_after_first": after, "after_same_sign": bool(np.sign(after) == np.sign(m - c)), "funding_part": m - float(np.nanmean(_tenths(s, G[h]))),
-                   "m_twelve": m11, "m_new": m32, "rt_extreme_tenths": rt_ext, "ic": m_ic, "ic_t": m_ic / se_ic if se_ic else np.nan, "move": move,
+                   f"m_{label_a}": m11, "m_rest": m32, "m_winsorised": m_w, "rt_extreme_tenths": rt_ext, "ic": m_ic, "ic_t": m_ic / se_ic if se_ic else np.nan, "move": move,
                    "ic_needed": cost / (Z_TOP * 1.2533 * move) if move else np.nan}
             rows.append({**row, "verdict": book_verdict(row, cost) if row["family"] else "reference"})
             tenth.append(_by_tenth(s, Y[h]).reset_index().assign(signal=k, hold=h))
@@ -569,13 +577,13 @@ def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: fl
     wide = lambda c: tenth.pivot(index=["signal", "hold"], columns="tenth", values=c).reindex(pd.MultiIndex.from_frame(tab[["signal", "hold"]])).reset_index()      # noqa: E731
     show = lambda df, k=2: df.round(k).to_markdown(index=False)                         # noqa: E731
     main = ["signal", "hold", "cells", "m", "centre", "m_c", "se", "u", "lo", "hi", "mde", "p_single", "p_family", "verdict"]
-    more = ["signal", "hold", *(f"m_{f}" for f in fold_names), "folds_same_sign", "m_after_first", "after_same_sign", "funding_part", "m_twelve", "m_new",
+    more = ["signal", "hold", *(f"m_{f}" for f in fold_names), "folds_same_sign", "m_after_first", "after_same_sign", "funding_part", f"m_{label_a}", "m_rest", "m_winsorised",
             "rt_extreme_tenths", "se_hac", "ic", "ic_t", "move", "ic_needed"]
     md = head + [
         "\nWords: *m*: what one leg of a book earns before trading costs that buys the tenth of names the signal ranks highest and sells the tenth it ranks lowest, in bps "
         "of the position, funding paid, against the bar's peers; NEGATIVE is the registered direction (a bid-heavy month → the worse week, so the book sells the top tenth). "
         "*centre*: the same book on moves taken from other weeks; *m_c* = m − centre; *se*: its spread over those weeks; *u* = m_c / se; *p (family)*: the share of shifts "
-        "in which the best of the four did at least as well. *m_twelve*, *m_new*: the eleven and the 32 apart (one and three names a side; described). *rt_extreme_tenths*: "
+        "in which the best of the four did at least as well. *m_<part>*, *m_rest*: the universe's two parts apart (the twelve vs the rest, or the names in R10's forty vs the rest; described). *m_winsorised*: M with every label clipped at ±1,000 bps. *rt_extreme_tenths*: "
         "the cells' own taker round trip on the tenths traded (the proxy for the 32), against the fixed cost.\n",
         f"\n## The family — two signals × two holds: **{len(clears)} of {len(fam_tab)} clear** (|m_c| > {cost:g}, |u| ≥ {U_BAR:g}, family-wise p ≤ {P_BAR:g}, m of m_c's "
         f"sign in every fold and after the first day; the registered sign negative)"

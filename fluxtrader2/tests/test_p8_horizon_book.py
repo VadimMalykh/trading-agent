@@ -73,7 +73,7 @@ def test_a_planted_slow_book_clears_at_a_week_with_the_registered_sign(tmp_path)
         g = tab.loc[(LVL, h)]
         assert bool(g["family"]) and g["m_c"] < -15 and g["u"] <= -2 and g["p_family"] <= 0.05 and g["verdict"] == "CLEARS", (h, dict(g))
         assert g["m_F1"] < 0 and bool(g["folds_same_sign"]) and g["m_after_first"] < 0 and bool(g["after_same_sign"])
-        assert np.isfinite(g["m_twelve"]) and np.isfinite(g["m_new"]) and 10 < g["rt_extreme_tenths"] < 16   # the tape's 12 and the proxy's 15 mixed
+        assert np.isfinite(g["m_twelve"]) and np.isfinite(g["m_rest"]) and np.isfinite(g["m_winsorised"]) and 10 < g["rt_extreme_tenths"] < 16   # the tape's 12 and the proxy's 15 mixed
         assert np.isfinite(g["funding_part"]) and g["funding_part"] != 0.0                                   # funding is inside the label
     assert tab.loc[(LVL, 288), "verdict"] == "reference" and (tab.loc[DM]["verdict"] == "reference").all() and (tab.loc[DM]["family"] == False).all()  # noqa: E712
     assert "## Validity — read first: **PASS**" in md and "clear**" in md

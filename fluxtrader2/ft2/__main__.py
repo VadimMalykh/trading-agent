@@ -320,7 +320,7 @@ def main(argv=None):
     hz.add_argument("--holds", nargs="*", type=int, default=None, help="in 5m bars (default 864 2016; with --pre 2016)")
     hz.add_argument("--pre", action="store_true", help="R23: the open-interest score on the months before F1 (ft2/screen_members_pre.csv) → output/horizon/pre/horizon.md")
     hz.add_argument("--book", action="store_true", help="R35: the month-mean of the ±1 % imbalance and the raw imbalance at 3 and 7 days on the names whose book is in hand → output/horizon/book_<universe>/horizon.md")
-    hz.add_argument("--universe", choices=["both", "new"], default=None, help="--book only: `both` — the twelve and universe.NEW (default); `new` — the 32 alone")
+    hz.add_argument("--universe", choices=["both", "new", "screen"], default=None, help="--book only: `both` — the twelve and universe.NEW (default, R35); `new` — the 32 alone; `screen` — the 188 screener members (R36)")
     hz.add_argument("--name", help="output directory under output/horizon/ (default: the run's name; with --pre, pre)")
     hz.add_argument("--reexecute", metavar="TAG", help="--pre: R23's read made again after a defect in the measurement (PLAN §3), logged as R23/TAG")
     ix = sub.add_parser("index", help="P8 (B3, PLAN §9 #7): the US index CFDs from Dukascopy's public datafeed → data/raw/external/dukascopy/, data/index_1m.parquet, output/index_inventory.md (see ft2/index.py)")
