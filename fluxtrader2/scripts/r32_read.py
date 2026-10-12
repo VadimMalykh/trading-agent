@@ -52,7 +52,7 @@ except Exception:
     pass
 
 for ex in ("taker", "maker", "maker_ev"):
-    f = fills(ex)
+    f = fills(ex).dropna(subset=["net_bps"])          # an unpriced trade (the last day cannot exit) carries the index's first bar as its entry_t
     f["year"] = pd.DatetimeIndex(f["entry_t"]).year
     print(f"\n=== by calendar year — {ex} (the gate's condition on taker: net ≥ −5 in each) ===")
     print(pd.DataFrame([row(g, days_all[days_all.year == y], str(y)) for y, g in f.groupby("year")]).to_string(index=False))
