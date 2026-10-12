@@ -41,6 +41,11 @@ P5's two hypotheses, found on F1+F2 by taking R1 and R2 apart (registrations R4,
     No candle feature enters; the harness attaches the book through `needs`.
     `side=long` (registration R11): the ask-heavy book as its own question — long only, when −imb is at or above the
     pair's q_sig quantile of −imb (the top decile of ask-heaviness itself, not of |imb|), everything else unchanged.
+`trend1d` (R6's one-day row, registration R32): the basket's 30-day SIGN, traded on every pair for a day. At the one decision
+    bar a day whose stamp is `hour`:00 UTC, s = sign(blr(t) − blr(t − trend_days·288)) with blr R6's basket (the equal-weight mean
+    of the pairs' 5m log returns, ≥ MIN_PAIRS, cumulated — the line `market.derive` and `trendfall4h` use); s = 0 or NaN → no
+    trade; else side = s on every pair with a close at t, one unit each, `hold` = 288 bars. Three numbers, nothing fitted; the
+    next day's decision is accepted by the book rule, so a round trip is paid every day.
 """
 from __future__ import annotations
 
@@ -212,4 +217,31 @@ class BookImbalance(Strategy):
         return decisions_from(side.where(on, 0.0), a, b, signal=-x, why=f"{what} (q{self.q_sig:g}), against it")
 
 
-STRATEGIES = {IndexHour.name: IndexHour, BookImbalance.name: BookImbalance, TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
+class Trend1d(Strategy):
+    """R32: the basket's `trend_days`-day sign, traded on every pair for a day. At the one decision bar a day stamped `hour`:00 UTC,
+    s = sign(blr(t) − blr(t − trend_days·288)) where blr is R6's basket (`ceiling.basket` on the pairs' 5m log returns, ≥ MIN_PAIRS
+    pairs else NaN, cumulated — `market.derive`'s and `trendfall4h`'s line); s = 0 or NaN → no trade; else side = s on every pair
+    with a close at t, one unit each, `hold` bars. Nothing fitted. The signal recorded is the basket's trend_days return in bps."""
+    name = "trend1d"
+
+    def __init__(self, trend_days: int = 30, hour: int = 0, hold: int = 288):
+        self.trend_days, self.hour, self.hold = int(trend_days), int(hour), int(hold)
+
+    def trend(self, close: pd.DataFrame) -> pd.Series:
+        """blr(t) − blr(t − k) in bps on `close`'s index — the sum of the basket's 5m returns over the last k bars, NaN where the
+        basket had fewer than MIN_PAIRS pairs at t or at t − k (the start of the window must be a defined basket bar too)."""
+        b1 = basket(np.log(close).diff() * 1e4)
+        blr = b1.fillna(0.0).cumsum().where(b1.notna())
+        return blr - blr.shift(self.trend_days * 288)
+
+    def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        close = M.close.loc[a - pd.Timedelta(days=self.trend_days + 1):]                   # the window plus a day: the first diff is NaN
+        tr = self.trend(close)
+        at = (close.index.hour == self.hour) & (close.index.minute == 0) & (close.index.second == 0)
+        s = np.sign(tr).where(at & (tr != 0)).fillna(0.0)
+        side = close.notna().astype(float).mul(s, axis=0)
+        return decisions_from(side, a, b, signal=pd.DataFrame({c: tr for c in close.columns}),
+                              why=f"basket's {self.trend_days}d return at its sign, at {self.hour:02d}:00 UTC, every pair")
+
+
+STRATEGIES = {Trend1d.name: Trend1d, IndexHour.name: IndexHour, BookImbalance.name: BookImbalance, TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
