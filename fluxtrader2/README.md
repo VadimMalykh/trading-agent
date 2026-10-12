@@ -55,17 +55,20 @@ running in the background — the wait forbids only touching R14 or the serve pa
 
 In this order:
 
-1. **R40's code and tests, before any read is made again** — `backtest.Costs` gains the three per-name constants from `ft2/maker_trade.csv`
-   (NaN for a name without a row), `backtest.price` gains the `maker_trade` branch (the EV form of `maker_ev` with the constants), the
-   `--execs` choices gain it, `report` names it; tests: the old execs bit for bit on made-up bars, the new leg's cost equal to the constants'
-   arithmetic to 1e-9, a name without a row unpriced, the csv equal to R39's summary; `scripts/r40_chain.sh` (the three re-executions with
-   `--execs taker maker maker_ev maker_trade` and `--name <run>_maker_trade`, `--registration R31 / R32 --reexecute maker_trade` on the
-   guarded ones, then `actual_check.py trades <first> <re-executed>` on each); one commit.
-2. **The chain on the work VM:** `vm.sh bgsh r40 'bash scripts/r40_chain.sh'` (≈ 1.5 h: the ridge's noise floor is the slow one); `vm.sh
-   pull`; stop the VM.
-3. **The read** into R40's Result (the three rules' maker_trade nets beside maker and maker_ev, the correction per trade, the checks), a
-   "Re-executed under `maker_trade`" line under R31's, R38's and R32's Results, the P8 header, this README, one commit. Then decision R:
-   the list under decision Q with Q1 struck (the settlement premium; BTC's last hour; P7 alone).
+0. **R40's chain was launched on the work VM on 2026-10-13 (`vm.sh bgsh r40 'bash scripts/r40_chain.sh'`, log `output/logs/r40.log`, ≈ 1.5 h;
+   the code and tests are committed, 564ff28).** If this handoff is what you read, the read is not yet recorded: check `vm.sh ssh 'cat
+   ~/fluxtrader2/output/logs/r40.log'` — `R40_CHAIN_DONE` means the three re-executions and their three `same` checks ended well
+   (`output/logs/r40_r31_check.log`, `r40_r38_check.log`, `r40_r32_check.log` each end in `"status": "PASS"`); a step without a `.done`
+   marker is re-run by launching the same chain again. Then `vm.sh pull`, **stop the VM** (`vm.sh stop`), and write the read (step 2).
+1. **What R40 measures:** the three rules' `maker_trade` nets beside their `maker` and `maker_ev` nets (`output/backtest/ixhour4h_maker_trade/`,
+   `r38_ridgebook_4h_ho12_vol_maker_trade/`, `trend1d_maker_trade/`, each `report.md` and `results.parquet`), the correction per trade
+   (maker_trade − maker_ev; expected 1.6 … 1.8 bps a round trip), and the checks (`same_as_first_read.json` in each: the decisions and every
+   old exec's fills identical to the first read's). No verdict is expected to change (R31 ≈ +0.3, R38 ≈ +18.4, R32's maker row ≈ +12.6).
+   One clerical point for the Result: the block names the check `actual_check.py trades`; the mode written for R40 is `same` (the `trades`
+   mode is `actual`'s and requires the unit to change) — the substance of the check is as the block says.
+2. **The read** into R40's Result, a "Re-executed under `maker_trade`" line under R31's, R38's and R32's Results, the P8 header, this README,
+   one commit. Then decision R for Vadim: the list under decision Q with Q1 struck — (R1) the settlement premium per name (H4, a day), (R2)
+   BTC's last hour per name, (R3) P7 alone.
 2. **P7.** Claude runs `./fluxtrader2/scripts/vm.sh serve-status` once a month, next on or after 2026-11-01 01:30 UTC:
    `check True`, `err None`, `late 0`, `missing24h 0`, model age < 30 d. The money is read once (R17), earliest 2027-03-25.
 3. **A thing to carry into any next book rule** (R33, R34): the imbalance's one-day lean is found twice (eleven names, then 32) but the part that travels is the SLOW one; the demeaned book is a strong SIZE signal on all 43 (vol IC
