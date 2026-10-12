@@ -23,7 +23,33 @@ defmodule FluxTrader.MarketData.OrderbookSnapshot do
     field :ask_depth_near, :float
     field :bid_depth_far, :float
     field :ask_depth_far, :float
+    # Archive-style depth bands over the whole fetched ladder (migration 20261012000001,
+    # BOOK_WAVE2_PLAN §L1): quantity within x % of the mid per side, the deepest level's
+    # distance from the mid (bps) per side — a band is valid only where reach >= its width —
+    # and how many levels the poll returned. NULL on rows collected before the migration.
+    field :bid_band_0_2, :float
+    field :ask_band_0_2, :float
+    field :bid_band_1, :float
+    field :ask_band_1, :float
+    field :bid_band_2, :float
+    field :ask_band_2, :float
+    field :bid_band_3, :float
+    field :ask_band_3, :float
+    field :bid_band_4, :float
+    field :ask_band_4, :float
+    field :bid_band_5, :float
+    field :ask_band_5, :float
+    field :bid_reach_bps, :float
+    field :ask_reach_bps, :float
+    field :depth_fetched, :integer
   end
+
+  @band_fields [
+    :bid_band_0_2, :ask_band_0_2, :bid_band_1, :ask_band_1, :bid_band_2, :ask_band_2,
+    :bid_band_3, :ask_band_3, :bid_band_4, :ask_band_4, :bid_band_5, :ask_band_5,
+    :bid_reach_bps, :ask_reach_bps, :depth_fetched
+  ]
+  def band_fields, do: @band_fields
 
   def changeset(row, attrs) do
     row
@@ -43,6 +69,7 @@ defmodule FluxTrader.MarketData.OrderbookSnapshot do
       :ask_depth_near,
       :bid_depth_far,
       :ask_depth_far
+      | @band_fields
     ])
     |> validate_required([:symbol, :ts, :mid, :spread, :bid_volume, :ask_volume, :imbalance])
   end

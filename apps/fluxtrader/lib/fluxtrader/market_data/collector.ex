@@ -49,7 +49,12 @@ defmodule FluxTrader.MarketData.Collector do
   # (OrderbookLevel); the compressed scalar features stay pinned to the top 20 in
   # BookFeatures to preserve the served model's semantics. Tunable via config
   # :fluxtrader, :book_depth_limit. See docs/archive/DATA_COLLECTION_AUDIT.md.
-  @default_book_depth_limit 100
+  # 2026-10-12 (BOOK_WAVE2_PLAN §L1, option 2): 500, not 100. The deeper poll feeds the
+  # archive-style band sums in BookFeatures.bands/3; the stored ladder stays at 100 levels
+  # (BookFeatures.stored_levels/0) and the scalars at 20. Request weight per poll: 100 -> 5,
+  # 500 -> 10, 1000 -> 20 (Binance USDⓈ-M /fapi/v1/depth); 1000 would put the twelve-pair
+  # loop over the 2,400/min ceiling together with the tape sweep, so 500.
+  @default_book_depth_limit 500
 
   # aggTrades to fetch per 5s tape poll. Binance returns the *most recent* N, so a limit
   # below the pair's actual 5s trade count silently discards the OLDEST trades and the

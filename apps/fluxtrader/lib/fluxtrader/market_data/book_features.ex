@@ -14,6 +14,22 @@ defmodule FluxTrader.MarketData.BookFeatures do
   # collector may now pull far more levels for the raw ladder.
   @scalar_levels 20
 
+  # The archive-style depth bands (docs/BOOK_WAVE2_PLAN.md §L1, Vadim's option 2, 2026-10-12):
+  # quantity resting within x % of the MID on each side, for the same x Binance's public
+  # bookDepth archive publishes (±0.2, ±1, ±2, ±3, ±4, ±5 %). L1 measured the archive's number
+  # to be exactly this sum (median ratio 1.000 on every reachable pair-band), so a feature
+  # trained on the archive's history can be served from these columns. Computed over the WHOLE
+  # fetched ladder (the deep poll), never the scalar top-20.
+  @band_pcts [0.2, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+  # The raw ladder stored in `orderbook_levels` stays at 100 levels whatever the poll fetches:
+  # the deeper poll exists for the band sums above, and a 500-level ladder would grow the disk
+  # at ~5x (BACKLOG "Disk budget"). The band sums are what the ladder was for.
+  @stored_levels 100
+
+  def band_pcts, do: @band_pcts
+  def stored_levels, do: @stored_levels
+
   @doc """
   Parse Binance depth response into feature map.
 
@@ -27,8 +43,10 @@ defmodule FluxTrader.MarketData.BookFeatures do
   These are additions — no existing scalar changes value.
   """
   def from_depth(symbol, depth) when is_map(depth) do
-    bids = depth |> Map.get("bids", []) |> parse_levels() |> Enum.take(@scalar_levels)
-    asks = depth |> Map.get("asks", []) |> parse_levels() |> Enum.take(@scalar_levels)
+    all_bids = depth |> Map.get("bids", []) |> parse_levels()
+    all_asks = depth |> Map.get("asks", []) |> parse_levels()
+    bids = Enum.take(all_bids, @scalar_levels)
+    asks = Enum.take(all_asks, @scalar_levels)
 
     if bids == [] or asks == [] do
       {:error, :empty_book}
@@ -77,11 +95,56 @@ defmodule FluxTrader.MarketData.BookFeatures do
          ask_depth_near: ask_near,
          bid_depth_far: bid_far,
          ask_depth_far: ask_far
-       }}
+       }
+       |> Map.merge(bands(all_bids, all_asks, mid))}
     end
   end
 
   def from_depth(_, _), do: {:error, :invalid_depth}
+
+  @doc """
+  The archive-style band sums over the whole fetched ladder, plus the two numbers that say
+  whether the ladder REACHES a band: the distance of the deepest level from the mid on each
+  side, in bps. A band is covered iff that distance is at least the band's width — a reader
+  must mask a band the ladder did not reach rather than take its partial sum as the depth.
+
+  Keys: `bid_band_0_2`, `ask_band_0_2`, `bid_band_1` … `ask_band_5`, `bid_reach_bps`,
+  `ask_reach_bps`, `depth_fetched`. Bids are `price >= mid * (1 - x)`, asks `price <= mid * (1 + x)`.
+  """
+  def bands(bids, asks, mid) when is_list(bids) and is_list(asks) and is_number(mid) do
+    base =
+      Enum.reduce(@band_pcts, %{}, fn pct, acc ->
+        x = pct / 100.0
+        lo = mid * (1.0 - x)
+        hi = mid * (1.0 + x)
+        b = bids |> Enum.filter(&(&1.price >= lo)) |> Enum.reduce(0.0, fn l, a -> a + l.qty end)
+        k = asks |> Enum.filter(&(&1.price <= hi)) |> Enum.reduce(0.0, fn l, a -> a + l.qty end)
+
+        acc
+        |> Map.put(band_key(:bid, pct), b)
+        |> Map.put(band_key(:ask, pct), k)
+      end)
+
+    deepest_bid = bids |> Enum.map(& &1.price) |> Enum.min(fn -> mid end)
+    deepest_ask = asks |> Enum.map(& &1.price) |> Enum.max(fn -> mid end)
+
+    Map.merge(base, %{
+      bid_reach_bps: (mid - deepest_bid) / mid * 10_000.0,
+      ask_reach_bps: (deepest_ask - mid) / mid * 10_000.0,
+      depth_fetched: max(length(bids), length(asks))
+    })
+  end
+
+  @doc "`:bid_band_0_2`, `:ask_band_1`, … — the column name for a side and a band percent."
+  def band_key(side, pct) do
+    tag =
+      pct
+      |> :erlang.float_to_binary(decimals: 1)
+      |> String.replace(~r/\.0$/, "")
+      |> String.replace(".", "_")
+
+    String.to_atom("#{side}_band_#{tag}")
+  end
 
   @doc """
   Extract the FULL raw ladder + exchange metadata from a Binance depth response,
@@ -89,12 +152,14 @@ defmodule FluxTrader.MarketData.BookFeatures do
   row shares the exact timestamp of its paired `orderbook_snapshots` row (1:1 join
   on symbol+ts). Returns `{:ok, attrs}` or `{:error, reason}`.
 
-  Levels are `[price, qty]` numeric pairs, best-first, with NO top-N truncation —
-  this is the lossless capture the scalar features intentionally discard.
+  Levels are `[price, qty]` numeric pairs, best-first. Since 2026-10-12 the stored ladder is
+  truncated to `stored_levels/0` (100) — the poll goes deeper for the band sums in
+  `bands/3`, and `depth` records how many levels THIS ROW holds, not how many were fetched
+  (that is `orderbook_snapshots.depth_fetched`).
   """
   def raw_levels(symbol, depth, ts) when is_map(depth) do
-    bids = depth |> Map.get("bids", []) |> parse_pairs()
-    asks = depth |> Map.get("asks", []) |> parse_pairs()
+    bids = depth |> Map.get("bids", []) |> parse_pairs() |> Enum.take(@stored_levels)
+    asks = depth |> Map.get("asks", []) |> parse_pairs() |> Enum.take(@stored_levels)
 
     if bids == [] or asks == [] do
       {:error, :empty_book}
