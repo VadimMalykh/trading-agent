@@ -5069,7 +5069,13 @@ Result:        **Stage 1, read 2026-10-13 (commit b0e3bd2 holds this block as wr
                spread is ±87 a trade). R14's lesson holds at 4h: per-trade money on a few wild names is a weak statistic; and the
                forecast's IC at 4h is a third of its 1d one. PARKED by (iii) and (v); no other q_vol, min_bps, hold, cap or feature set is
                read on these cells; stage 2 is not licensed and was not worth its cells (a true +20 with se 16 would need F3+F4 to be
-               twice this size to confirm). The described twins (a) the ungated rule and (b) the in-pair reference are read below.
+               twice this size to confirm). The described twins, read 2026-10-13 (`r38_ridgebook_4h_ho12_all`, `r38_ridgebook_4h_inpair_vol`):
+               (a) WITHOUT the vol gate: 889 trades (1.8 a day), maker net +6.3 [−13.8, +26.3], gross +11.2, hedged net −0.6; the gate
+               removed half the trades and tripled the net per trade, and the entry cells' mean |move| went from 279 to 320 bps — the
+               |f| ≥ 10 threshold already picks wild bars, the gate picks the wilder half of them. (b) IN PAIR at hold 48 with the gate: IC
+               0.0209 (t 2.5) against 0.0132 held out — holding a name out costs 0.008 of IC at 4h (R14 at one day: 0.001), i.e. a third of
+               the in-pair IC at 4h is a name learning about itself; maker net +30.4 [−9.6, +70.3] on 451 trades, hedged net +19.7. Neither
+               changes the verdict.
 
 ### R39 — the maker cost at the trade level on the twelve: a resting order at the touch, its queue position from the ladder, filled by the trades that follow — is the maker round trip the 7 bps every maker verdict in §8 stands on, or 4, or 10? (registered 2026-10-13 on Vadim's "P1" (P8 decision P), before any trade file of the window was fetched and before the code was written; read —)
 Question:      P1 measured the maker's cost at the MINUTE level (`cost.maker`): an order resting at the minute's last traded bid (a buy) or ask
