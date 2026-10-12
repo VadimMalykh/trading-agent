@@ -79,9 +79,14 @@ class RidgeBook(Strategy):
     uses_labels = True
 
     def __init__(self, hold: int = 288, min_bps: float = 15.0, cap: float = 2.0, groups: int = 4, grid: int = 12, min_pairs: int = 5, holdout: bool = True,
-                 features: str = "candle"):
+                 features: str = "candle", q_vol: float | None = None, vol_window_days: int = 120):
         self.hold, self.min_bps, self.cap, self.groups, self.grid, self.min_pairs = int(hold), float(min_bps), float(cap), int(groups), int(grid), int(min_pairs)
         self.holdout = holdout in (True, 1, "true", "True", "1")      # False (R13): every pair's model is fitted on all pairs, itself included
+        # R38: the vol gate — a cell trades only if the pair's realised 4h volatility (the sd of its last 48 five-minute returns, R1's `v`) is at
+        # or above the pair's q_vol quantile of it over the `vol_window_days` before the block (fit-time; nothing inside the block). None = R14.
+        self.q_vol = None if q_vol in (None, "None", "none", "") else float(q_vol)
+        self.vol_window_days = int(vol_window_days) if self.q_vol is not None else None     # None keeps R14's `params()` (and its meta) unchanged
+        self._vol_cut: pd.Series | None = None
         if features not in FEATURE_SETS:
             raise ValueError(f"features must be one of {sorted(FEATURE_SETS)}, not {features!r}")
         self.features = str(features)
@@ -142,6 +147,10 @@ class RidgeBook(Strategy):
             self._walks += 1                                # the harness started another walk (a noise-floor draw)
         self._last_now = now
         self._ensure(M)
+        if self.q_vol is not None:                       # R38: the vol cut from the window before the block (M is the market strictly before `now`)
+            a = now - pd.Timedelta(days=self.vol_window_days)
+            v = (np.log(M.close.loc[a - pd.Timedelta(days=1):]).diff() * 1e4).rolling(W["4h"], min_periods=int(W["4h"] * 0.8)).std().loc[a:]
+            self._vol_cut = v.quantile(self.q_vol).where(v.notna().sum() >= 0.5 * self.vol_window_days * 288)
         ts = y.index[self._grid(y.index)]
         ts = ts[np.array([t in self._pos for t in ts], dtype=bool)]
         self._models = {g: None for g in range(self.groups)}
@@ -213,6 +222,10 @@ class RidgeBook(Strategy):
         ts, f, sig_h, f_ref = self._forecast(M, a, b)
         with np.errstate(invalid="ignore", divide="ignore"):
             on = np.abs(f) >= self.min_bps
+            if self.q_vol is not None and len(ts):           # R38: only the cells whose realised 4h volatility is at or above the pair's cut
+                v = (np.log(M.close.loc[a - pd.Timedelta(days=1):]).diff() * 1e4).rolling(W["4h"], min_periods=int(W["4h"] * 0.8)).std()
+                cut = self._vol_cut.reindex(M.columns).to_numpy() if self._vol_cut is not None else np.full(len(M.columns), np.nan)
+                on &= v.reindex(ts).to_numpy() >= cut           # a NaN cut (no window yet) or a NaN vol compares False
             size = np.clip((np.abs(f) / self.min_bps) * (self._sigma_ref / sig_h) ** 2, 0.25, self.cap)
         side = pd.DataFrame(np.where(on, np.sign(f) * size, 0.0), index=ts, columns=M.columns)
         sig = pd.DataFrame(f, index=ts, columns=M.columns)
