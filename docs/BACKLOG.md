@@ -118,6 +118,25 @@ inference `/health`: `n_features: 19`, `align_age_fix: false`, `oi_join_at_close
 nothing open. Ledgers backed up (`~/paper_trades_u12s2_20261004.csv`, 108 rows;
 `~/policy_bars_u12s2_20261004.csv`, 49,392 rows) and cleared.
 
+🔵 **HANDOFF, written 2026-10-12 (supersedes the 10-07 one below it). Needed from Vadim: the
+GPU launch when told — nothing before.** Dated steps, in order:
+1. **Automatic, in flight:** the bookDepth archive's 5m reduction and upload
+   (`logs/X8c_reduce_20261012.log`, prints the stale-drop rate per pair and the parquet's
+   sha8 = `ARCHIVE_DEPTH`); D1's book-era rebuild and gate read on the VM export
+   (`logs/d1_bookera_*.log`, `logs/d1_bookdyn_*.log`) — Claude writes both results into
+   BOOK_WAVE2_PLAN §D1 / NEXT_TRAINING_PLAN §2 X8c.
+2. **2026-10-14 (Claude):** X8c prerequisite 1, `./scripts/archive_depth_check.sh` — the
+   collector's live ±0.2 % bands (since 2026-10-12 02:18 UTC) against the archive's files for
+   10-12 and 10-13 (each publishes the next day; two days of overlap as registered, one would
+   already clear the row floor). PASS → Claude hands Vadim the launch block from
+   NEXT_TRAINING_PLAN §2 X8c with the sha8 filled in; FAIL on any pair → X8c is void, reason
+   written. **Vadim launches the three runs** (serial, ≈ $1.5 and 2.5 h each); Claude fetches
+   the logs and reads the gate against X8″.
+3. `./scripts/gcp_forward_ledger.sh` at every 50 closed policy trades (8 closed as of 10-07).
+4. **2026-11-01:** the disk decision (row below; L1's fact: prune the 100-level ladder to a
+   rolling window, keep the band columns). **2026-11-02:** B3c. **2027-03-10:** X7's key and
+   E1's `fixed5` arm, one look.
+
 🔵 **HANDOFF, written 2026-10-07. Needed from Vadim: nothing.** Row 1's deviation (two rows
 of the second tick scored on a stale bar, both far below the cut, no decision on them) was put
 to Vadim the same day; his word: **the start stands, the deviation recorded.** Sub-$100 BTC
