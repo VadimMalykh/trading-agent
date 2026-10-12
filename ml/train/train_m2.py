@@ -599,6 +599,8 @@ def main():
     meta["archive_oi"] = archive_oi_sha()
     meta["archive_oi_shift_min"] = float(ARCHIVE_OI_SHIFT_MIN)
     meta["archive_flow_account_shift_min"] = float(ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN)
+    from data.db import archive_depth_sha
+    meta["archive_depth"] = archive_depth_sha()
     from config import ALIGN_AGE_FIX
     import pandas as _pd
     meta["align_age_fix"] = bool(ALIGN_AGE_FIX)

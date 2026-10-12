@@ -39,7 +39,7 @@ def test_groups():
     assert features.ALL_FEATURE_COLS[:30] == (features.LEGACY_FEATURE_COLS
                                               + features.OWN_PAIR_MULTISCALE_COLS
                                               + features.MARKET_CONTEXT_COLS)
-    assert features.ALL_FEATURE_COLS[30:] == features.FLOW_COLS
+    assert features.ALL_FEATURE_COLS[30:34] == features.FLOW_COLS   # append-only: X8c's depth group follows
     print("PASS groups: legacy,flow -> 23 columns, legacy prefix intact")
 
 

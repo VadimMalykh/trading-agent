@@ -438,6 +438,8 @@ FEATURE_DIM = int(os.environ.get("FEATURE_DIM", "30"))
 #   legacy      the 19 frozen columns (LEGACY_FEATURE_COLS) - always required
 #   multiscale  own-pair ret_1h/4h/1d + vol_1h/4h/1d         (6)
 #   market      cross-pair context, incl. has_market         (5)
+#   flow        the positioning ratios (X8b)                  (4)
+#   depth       the ±0.2 % depth band (X8c; archive + live)   (4)
 #
 # The default reproduces the 30-column set exactly, so this knob is a no-op unless
 # it is set. features.FEATURE_DIM_EFFECTIVE is DERIVED from the selected groups;

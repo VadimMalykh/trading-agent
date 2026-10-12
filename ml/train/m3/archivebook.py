@@ -11,11 +11,13 @@ feature columns belong to the registration (NEXT_TRAINING_PLAN §2) and are buil
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 
 from . import ladderspan as L
@@ -58,11 +60,165 @@ def fetch(pairs: list[str], start: str, end: str, cache: str = L.ARCHIVE_CACHE,
               flush=True)
 
 
+# --------------------------------------------------------------------------------------
+# reduce — the stale rule and the 5m grid (X8c prerequisite 2)
+# --------------------------------------------------------------------------------------
+
+BAND_TAGS = {"0.2": "0_2", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5"}
+REDUCED_OUT = "output/archive/bookdepth_5m.parquet"
+GRID_MIN = 5
+MAX_AGE_MIN = 5.0
+
+
+def to_collector_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """d_bid_0.2 … d_ask_5 -> bid_band_0_2 … ask_band_5, the collector's names."""
+    ren = {f"d_{side}_{a}": f"{side}_band_{b}" for a, b in BAND_TAGS.items() for side in ("bid", "ask")}
+    return df.rename(columns={k: v for k, v in ren.items() if k in df.columns})
+
+
+def stale_mask(df: pd.DataFrame) -> np.ndarray:
+    """The registered rule: a row whose six values on the bid side, or on the ask side, all
+    equal the previous row's on that side (db.depth_stale_mask, same rule, archive names)."""
+    from data.db import depth_stale_mask
+    return depth_stale_mask(to_collector_columns(df))
+
+
+def reduce_pair(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Drop stale rows, then keep, for every 5-minute grid point, the last row at or before
+    it within MAX_AGE_MIN — the row keeps its own timestamp so the loader's age logic sees the
+    archive exactly as it sees the collector."""
+    df = df.sort_values("ts").reset_index(drop=True)
+    st = stale_mask(df)
+    kept = df[~st].reset_index(drop=True)
+    t0 = kept["ts"].min().floor(f"{GRID_MIN}min")
+    t1 = kept["ts"].max().ceil(f"{GRID_MIN}min")
+    grid = pd.date_range(t0, t1, freq=f"{GRID_MIN}min", tz="UTC")
+    idx = np.searchsorted(kept["ts"].to_numpy(), grid.to_numpy(), side="right") - 1
+    ok = idx >= 0
+    rows = kept.iloc[idx[ok]].copy()
+    age = (grid[ok].tz_convert(None).to_numpy() - rows["ts"].dt.tz_convert(None).to_numpy()) \
+        / np.timedelta64(1, "m")
+    rows = rows[age <= MAX_AGE_MIN]
+    rows = rows.drop_duplicates(subset=["ts"]).reset_index(drop=True)
+    stats = {"rows": len(df), "stale": int(st.sum()), "stale_pct": float(st.mean()) if len(df) else 0.0,
+             "grid": int(ok.sum()), "kept": len(rows)}
+    return to_collector_columns(rows), stats
+
+
+def reduce(pairs: list[str], in_dir: str = OUT_DIR, out: str = REDUCED_OUT) -> str:
+    frames = []
+    print(f"{'symbol':<14}{'rows':>10}{'stale':>9}{'stale%':>8}{'5m rows':>9}  first .. last")
+    for sym in pairs:
+        p = os.path.join(in_dir, f"{sym}.parquet")
+        if not os.path.exists(p):
+            print(f"{sym:<14} missing {p}")
+            continue
+        df = pd.read_parquet(p)
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        red, st = reduce_pair(df)
+        red.insert(0, "symbol", sym)
+        frames.append(red)
+        print(f"{sym:<14}{st['rows']:>10,}{st['stale']:>9,}{st['stale_pct']:>8.2%}{st['kept']:>9,}  "
+              f"{str(red['ts'].min())[:16]} .. {str(red['ts'].max())[:16]}")
+    if not frames:
+        raise SystemExit("reduce: nothing to reduce")
+    allr = pd.concat(frames, ignore_index=True).sort_values(["symbol", "ts"]).reset_index(drop=True)
+    tmp = out + ".tmp"
+    allr.to_parquet(tmp, index=False)
+    sha = hashlib.sha256(open(tmp, "rb").read()).hexdigest()[:8]
+    root, ext = os.path.splitext(out)
+    final = f"{root}_{sha}{ext}"
+    os.replace(tmp, final)
+    print(f"\nwrote {final}  sha8={sha}  rows {len(allr):,}  ({os.path.getsize(final) / 1e6:.1f} MB)")
+    return final
+
+
+# --------------------------------------------------------------------------------------
+# check — X8c prerequisite 1: the archive vs the collector's live band columns
+# --------------------------------------------------------------------------------------
+
+CHECK_TOL_S = 15.0
+CHECK_MED_MAX, CHECK_P99_MAX = 0.02, 0.10
+CHECK_MIN_MATCHED = 500
+
+
+def check(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = None) -> int:
+    from data.db import depth_stale_mask
+    from data.features import DEPTH_SERVED_PAIRS
+    c = pd.read_csv(collector_csv)
+    c["ts"] = pd.to_datetime(c["ts"], utc=True)
+    pairs = pairs or sorted(DEPTH_SERVED_PAIRS)
+    lo, hi = c["ts"].min(), c["ts"].max()
+    print(f"archive bookDepth vs collector band columns: overlap {lo:%Y-%m-%d %H:%M} -> {hi:%Y-%m-%d %H:%M} UTC, "
+          f"nearest row within {CHECK_TOL_S:.0f} s, stale rows removed on both sides, served-depth pairs only; "
+          f"PASS = median < {CHECK_MED_MAX:.0%} and p99 < {CHECK_P99_MAX:.0%} on every pair and side")
+    print(f"{'symbol':<14}{'side':<6}{'archive':>8}{'matched':>9}{'median':>9}{'p99':>9}{'max':>9}  verdict")
+    fails = 0
+    tol = pd.Timedelta(seconds=CHECK_TOL_S)
+    for s in pairs:
+        p = os.path.join(in_dir, f"{s}.parquet")
+        if not os.path.exists(p):
+            print(f"{s:<14}{'—':<6}{'—':>8}{0:>9}  FAIL (no archive parquet)")
+            fails += 1
+            continue
+        a = pd.read_parquet(p)
+        a["ts"] = pd.to_datetime(a["ts"], utc=True)
+        a = a[(a["ts"] >= lo - tol) & (a["ts"] <= hi + tol)].sort_values("ts").reset_index(drop=True)
+        a = to_collector_columns(a)
+        a = a[~depth_stale_mask(a)].reset_index(drop=True)
+        g = c[c["symbol"] == s].sort_values("ts").reset_index(drop=True)
+        g = g[~depth_stale_mask(g)].reset_index(drop=True)
+        if a.empty or g.empty:
+            print(f"{s:<14}{'—':<6}{len(a):>8}{0:>9}  FAIL (no overlap rows)")
+            fails += 1
+            continue
+        m = pd.merge_asof(a[["ts", "bid_band_0_2", "ask_band_0_2"]],
+                          g[["ts", "bid_band_0_2", "ask_band_0_2", "bid_reach_bps", "ask_reach_bps"]]
+                          .rename(columns={"bid_band_0_2": "c_bid", "ask_band_0_2": "c_ask"}),
+                          on="ts", direction="nearest", tolerance=tol).dropna(subset=["c_bid"])
+        for side in ("bid", "ask"):
+            sub = m[(m[f"{side}_reach_bps"] >= 20.0) & (m[f"c_{side}"] > 0)]
+            if len(sub) < CHECK_MIN_MATCHED:
+                print(f"{s:<14}{side:<6}{len(a):>8}{len(sub):>9}{'—':>9}{'—':>9}{'—':>9}  FAIL (< {CHECK_MIN_MATCHED} matched)")
+                fails += 1
+                continue
+            rel = (sub[f"{side}_band_0_2"] - sub[f"c_{side}"]).abs() / sub[f"c_{side}"]
+            med, p99, mx = rel.median(), rel.quantile(0.99), rel.max()
+            ok = med < CHECK_MED_MAX and p99 < CHECK_P99_MAX
+            fails += 0 if ok else 1
+            print(f"{s:<14}{side:<6}{len(a):>8}{len(sub):>9}{med:>9.3%}{p99:>9.2%}{mx:>9.1%}  {'ok' if ok else 'FAIL'}")
+    if fails:
+        print(f"\nIDENTITY FAILED on {fails} pair-side(s) — X8c is void before it runs (NEXT_TRAINING_PLAN §2 X8c, prerequisite 1).")
+        return 2
+    print("\nIDENTITY PASS — the archive's ±0.2 % band and the collector's live band are the same series; X8c may be launched.")
+    return 0
+
+
 def add_parser(sub) -> None:
-    ap = sub.add_parser("archivebook", help="fetch Binance's public bookDepth archive, whole history, "
-                        "one parquet per pair at 30 s (the training-side source for a depth-band feature)")
-    ap.add_argument("--pairs", default=",".join(L.PAIRS))
-    ap.add_argument("--start", default=DEFAULT_START)
-    ap.add_argument("--end", default=(date.today() - timedelta(days=1)).isoformat())
-    ap.add_argument("--threads", type=int, default=16)
-    ap.set_defaults(fn=lambda a: fetch(a.pairs.split(","), a.start, a.end, threads=a.threads) or 0)
+    ap = sub.add_parser("archivebook", help="X8c: Binance's public bookDepth archive — fetch the whole history "
+                        "(one parquet per pair at 30 s), reduce it to the 5m grid with the registered stale "
+                        "rule (sha8-named), and run the identity acceptance against the collector's live bands")
+    s2 = ap.add_subparsers(dest="job", required=False)
+    f = s2.add_parser("fetch")
+    f.add_argument("--pairs", default=",".join(L.PAIRS))
+    f.add_argument("--start", default=DEFAULT_START)
+    f.add_argument("--end", default=(date.today() - timedelta(days=1)).isoformat())
+    f.add_argument("--threads", type=int, default=16)
+    r = s2.add_parser("reduce")
+    r.add_argument("--pairs", default=",".join(L.PAIRS))
+    r.add_argument("--out", default=REDUCED_OUT, help="the sha8 is inserted before the extension")
+    c = s2.add_parser("check")
+    c.add_argument("--collector", required=True, help="CSV of orderbook_snapshots band rows (scripts/archive_depth_check.sh)")
+    c.add_argument("--pairs", default=None)
+    ap.set_defaults(fn=_main)
+
+
+def _main(args) -> int:
+    job = getattr(args, "job", None) or "fetch"
+    if job == "fetch":
+        fetch(args.pairs.split(","), args.start, args.end, threads=args.threads)
+        return 0
+    if job == "reduce":
+        reduce(args.pairs.split(","), out=args.out)
+        return 0
+    return check(args.collector, pairs=args.pairs.split(",") if args.pairs else None)

@@ -110,13 +110,33 @@ FLOW_COLS = [
     "has_flow",      # presence mask: 1 where the ratios are fresh, else 0
 ]
 
+# X8c (NEXT_TRAINING_PLAN §2 X8c): the resting depth within ±0.2 % of the mid, the one book
+# quantity whose history reaches inside the training window (Binance's bookDepth archive,
+# 2024-05 →) and that the collector now computes live (500-level poll, 2026-10-12). Only the
+# pairs whose live ladder reaches the band carry it — BTC (7 bps) and ETH (20 bps) do not, and
+# are masked in TRAINING as well as in serving so the model never learns a value serving cannot
+# supply. Registered before any run; the list of columns and pairs is the registration.
+DEPTH_COLS = [
+    "depth_imb_0_2",       # (bid − ask) / (bid + ask) within ±0.2 % of the mid
+    "depth_imb_0_2_d1h",   # the same minus its value 60 minutes earlier (0 when either is masked)
+    "depth_rel_0_2",       # log(bid + ask) minus its trailing one-day median (0 until the day exists)
+    "has_depth",           # 1 where the band row is present, fresh, reached, not stale, on a served pair
+]
+DEPTH_SERVED_PAIRS = frozenset([
+    "SOLUSDT", "DOGEUSDT", "WLDUSDT", "HYPEUSDT", "ZECUSDT", "1000PEPEUSDT",
+    "ADAUSDT", "AVAXUSDT", "LINKUSDT", "XRPUSDT",
+])
+DEPTH_BAND_BPS = 20.0          # the band's width; a row whose reach is under it is masked
+DEPTH_REL_MIN_PERIODS = 144    # half a day of 5m bars inside the one-day median window
+
 _FEATURE_GROUPS = {
     "legacy": LEGACY_FEATURE_COLS,
     "multiscale": OWN_PAIR_MULTISCALE_COLS,
     "market": MARKET_CONTEXT_COLS,
     "flow": FLOW_COLS,
+    "depth": DEPTH_COLS,
 }
-_GROUP_ORDER = ["legacy", "multiscale", "market", "flow"]
+_GROUP_ORDER = ["legacy", "multiscale", "market", "flow", "depth"]
 
 
 def resolve_feature_groups(spec: str):
@@ -152,7 +172,7 @@ def resolve_feature_groups(spec: str):
 # canonical order — not whatever subset this process happens to be configured for, or
 # a 30-column checkpoint would be rebuilt from a 25-column list.
 ALL_FEATURE_COLS = (
-    LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS + FLOW_COLS
+    LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS + FLOW_COLS + DEPTH_COLS
 )
 
 ACTIVE_FEATURE_GROUPS, FEATURE_COLS = resolve_feature_groups(FEATURE_GROUPS)
@@ -276,6 +296,48 @@ def flow_features(ratios: pd.DataFrame, grid: pd.Index,
         out[name] = x
         fresh_any |= ok
     out["has_flow"] = fresh_any.astype(np.float32)
+    return out
+
+
+def depth_features(bands: pd.DataFrame, grid: pd.Index, max_age_min: float,
+                   served: bool, bars_1h: int, bars_1d: int) -> pd.DataFrame:
+    """X8c: the four `depth` columns on the candle grid.
+
+    `bands` has columns ts, bid_band_0_2, ask_band_0_2, bid_reach_bps, ask_reach_bps
+    (db.load_depth_bands; the stale rule already applied). A bar is masked when the pair is
+    not a served-depth pair, when no band row exists or it is older than `max_age_min`, when
+    either side's reach is under the band's width, or when bid + ask is not positive.
+    Masked -> all four columns 0 (has_depth 0), the funding/OI convention.
+    """
+    out = pd.DataFrame(index=grid)
+    n = len(grid)
+    if not served or bands is None or bands.empty:
+        for c in DEPTH_COLS:
+            out[c] = 0.0
+        return out
+    src = bands.set_index("ts").sort_index()
+    aligned, age = _align_with_age(src, grid)
+    stale = _stale_mask(age, max_age_min)
+    bid = pd.to_numeric(aligned["bid_band_0_2"], errors="coerce").to_numpy(np.float64)
+    ask = pd.to_numeric(aligned["ask_band_0_2"], errors="coerce").to_numpy(np.float64)
+    rb = pd.to_numeric(aligned["bid_reach_bps"], errors="coerce").to_numpy(np.float64)
+    ra = pd.to_numeric(aligned["ask_reach_bps"], errors="coerce").to_numpy(np.float64)
+    tot = bid + ask
+    ok = (np.isfinite(tot) & (tot > 0) & ~stale
+          & np.isfinite(rb) & np.isfinite(ra) & (rb >= DEPTH_BAND_BPS) & (ra >= DEPTH_BAND_BPS))
+    imb = np.zeros(n)
+    imb[ok] = (bid[ok] - ask[ok]) / tot[ok]
+    imb_s = pd.Series(np.where(ok, imb, np.nan), index=grid)
+    d1h = (imb_s - imb_s.shift(bars_1h)).to_numpy(np.float64)
+    d1h = np.where(np.isfinite(d1h), d1h, 0.0)
+    logd = pd.Series(np.where(ok, np.log(np.where(ok, tot, 1.0)), np.nan), index=grid)
+    med = logd.rolling(bars_1d, min_periods=min(DEPTH_REL_MIN_PERIODS, bars_1d)).median()
+    rel = (logd - med).to_numpy(np.float64)
+    rel = np.where(np.isfinite(rel), rel, 0.0)
+    out["depth_imb_0_2"] = imb
+    out["depth_imb_0_2_d1h"] = np.where(ok, d1h, 0.0)
+    out["depth_rel_0_2"] = np.where(ok, rel, 0.0)
+    out["has_depth"] = ok.astype(np.float32)
     return out
 
 
@@ -458,6 +520,19 @@ def build_feature_frame(
         flow = flow_features(ratios, feat.index, FUNDING_OI_MAX_AGE_MIN)
         for c in FLOW_COLS:
             feat[c] = flow[c].to_numpy()
+    # X8c: the depth group, likewise only on request. The served-pair gate is applied here,
+    # identically in training and serving; BOOK_MAX_AGE_MIN is the cap (the band rows come
+    # from the same snapshots as the book scalars).
+    if any(c in DEPTH_COLS for c in cols):
+        served = symbol in DEPTH_SERVED_PAIRS
+        bands = db.load_depth_bands(symbol, since=min_time) if served else None
+        if not served and db.ARCHIVE_DEPTH:
+            print(f"Archive depth: {symbol} not a served-depth pair — the four depth columns are 0")
+        depth = depth_features(bands, feat.index, BOOK_MAX_AGE_MIN, served,
+                               bars_for_minutes(candle_interval, 60),
+                               bars_for_minutes(candle_interval, 1440))
+        for c in DEPTH_COLS:
+            feat[c] = depth[c].to_numpy()
     missing = [c for c in cols if c not in feat.columns]
     if missing:
         raise ValueError(f"build_feature_frame: unknown feature columns {missing}")

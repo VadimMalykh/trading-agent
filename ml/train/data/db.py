@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine, text
 
@@ -333,6 +334,101 @@ def load_long_short_ratios(
           f"{'—' if a.empty else a['ts'].iloc[-1].strftime('%Y-%m-%d %H:%M')}, "
           f"collector from {'—' if df.empty else df['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} "
           f"({len(df)} rows), sha8={archive_oi_sha()}, account_shift_min={ARCHIVE_FLOW_ACCOUNT_SHIFT_MIN:g}")
+    return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
+
+
+# X8c (NEXT_TRAINING_PLAN §2 X8c): the ±0.2 % depth bands for the `depth` feature group.
+# Serving reads the collector's `orderbook_snapshots` band columns (500-level poll since
+# 2026-10-12 02:17 UTC; NULL before); training additionally takes the archive's reduced rows
+# (`m3 archivebook reduce`: Binance's public bookDepth, stale rows dropped, one row per 5m bar)
+# for every timestamp BEFORE the collector's first band row — X8's union. The archive rows come
+# from the exchange's full book, so their reach is recorded as unbounded; the collector's rows
+# carry the deepest level's distance, which the feature uses to mask a band the ladder did not
+# reach. The registered stale rule is applied to the collector's rows here (the archive's were
+# filtered at reduce time): a row whose six band values on either side equal the previous
+# row's on that side is dropped.
+ARCHIVE_DEPTH = os.environ.get("ARCHIVE_DEPTH", "").strip()
+_archive_depth_cache: Optional[pd.DataFrame] = None
+DEPTH_BAND_TAGS = ["0_2", "1", "2", "3", "4", "5"]
+DEPTH_COLLECTOR_COLS = [f"{side}_band_{t}" for t in DEPTH_BAND_TAGS for side in ("bid", "ask")]
+DEPTH_REACH_UNBOUNDED = 1.0e6
+
+
+def archive_depth_sha() -> Optional[str]:
+    if not ARCHIVE_DEPTH:
+        return None
+    stem = os.path.splitext(os.path.basename(ARCHIVE_DEPTH))[0]
+    return stem.rsplit("_", 1)[-1]
+
+
+def depth_stale_mask(df: pd.DataFrame) -> np.ndarray:
+    """True on a row whose six band values on the bid side, or on the ask side, all equal the
+    previous row's — the registered stale rule (X8c). The first row is never stale."""
+    if df.empty:
+        return np.zeros(0, dtype=bool)
+    out = np.zeros(len(df), dtype=bool)
+    for side in ("bid", "ask"):
+        cols = [f"{side}_band_{t}" for t in DEPTH_BAND_TAGS if f"{side}_band_{t}" in df.columns]
+        if not cols:
+            continue
+        v = df[cols].to_numpy(np.float64)
+        same = np.all(v[1:] == v[:-1], axis=1)
+        out[1:] |= same
+    return out
+
+
+def _archive_depth() -> pd.DataFrame:
+    global _archive_depth_cache
+    if _archive_depth_cache is None:
+        if not os.path.exists(ARCHIVE_DEPTH):
+            raise FileNotFoundError(f"ARCHIVE_DEPTH={ARCHIVE_DEPTH!r} does not exist in the container")
+        df = pd.read_parquet(ARCHIVE_DEPTH)
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        _archive_depth_cache = df.sort_values(["symbol", "ts"]).reset_index(drop=True)
+    return _archive_depth_cache
+
+
+def load_depth_bands(
+    symbol: str,
+    since: Optional[str] = None,
+) -> pd.DataFrame:
+    """(ts, bid_band_0_2, ask_band_0_2, …, bid_reach_bps, ask_reach_bps) for one pair: the
+    collector's rows (stale rule applied), preceded by the archive's when ARCHIVE_DEPTH is set."""
+    params: dict = {"symbol": symbol}
+    clauses = ["symbol = :symbol", "bid_band_0_2 IS NOT NULL"]
+    if since:
+        clauses.append("ts >= :since")
+        params["since"] = since
+    sql = f"""
+        SELECT ts, {', '.join(DEPTH_COLLECTOR_COLS)}, bid_reach_bps, ask_reach_bps
+        FROM orderbook_snapshots
+        WHERE {' AND '.join(clauses)}
+        ORDER BY ts ASC
+    """
+    df = _read_sql(sql, params)
+    n_raw = len(df)
+    if not df.empty:
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        df = df[~depth_stale_mask(df)].reset_index(drop=True)
+    if not ARCHIVE_DEPTH:
+        return df
+    arch = _archive_depth()
+    a = arch[arch["symbol"] == symbol].drop(columns=["symbol"])
+    if since:
+        a = a[a["ts"] >= pd.Timestamp(since, tz="UTC")]
+    if not df.empty:
+        a = a[a["ts"] < df["ts"].iloc[0]]
+    a = a.copy()
+    for c in ("bid_reach_bps", "ask_reach_bps"):
+        if c not in a.columns:
+            a[c] = DEPTH_REACH_UNBOUNDED
+    print(f"Archive depth: {symbol} {len(a)} archive rows "
+          f"{'—' if a.empty else a['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} -> "
+          f"{'—' if a.empty else a['ts'].iloc[-1].strftime('%Y-%m-%d %H:%M')}, "
+          f"collector from {'—' if df.empty else df['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} "
+          f"({len(df)} rows, {n_raw - len(df)} stale dropped), sha8={archive_depth_sha()}")
+    cols = ["ts", *DEPTH_COLLECTOR_COLS, "bid_reach_bps", "ask_reach_bps"]
+    a = a[[c for c in cols if c in a.columns]]
     return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
 
 
