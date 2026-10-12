@@ -1610,6 +1610,138 @@ as an M2 lever on measurement (§5: added external columns — X1's row — now 
 positioning ratios tested too). Not licensed: a fourth seed, the position-ratio variant, a
 different staleness cap, or the ratios "on the folds".
 
+#### X8c — the depth bands as a feature group. WRITTEN 2026-10-12, before any archive row was reduced or any run launched
+
+**The question.** Does the order book's *resting depth near the mid* — the one book quantity whose
+history reaches inside the training window — move the M2 score? Binance's public bookDepth
+archive carries, every 30 s from 2024-05-16/17 (1000PEPE 2024-09-16, WLD 2024-12-04, HYPE
+2025-05-30), the quantity resting within ±0.2 % … ±5 % of the mid on each side. BOOK_WAVE2_PLAN
+§L1 measured it to be the same number the collector's ladder sums (median ratio 1.000 on every
+reachable pair-band), and since **2026-10-12 02:17 UTC** the collector writes that number live
+(`orderbook_snapshots.bid/ask_band_0_2 …`, 500-level poll, Vadim's option 2). This is the M2
+freeze's reopening condition — "history inside the *training* window" — met for a book
+quantity by the archive, as X8 met it for open interest; it is X8b's shape (an added group).
+
+**Why one group and which columns — the list is the registration.** `FEATURE_GROUPS=legacy,depth`,
+a new group `depth` of four columns appended after `flow` in `_GROUP_ORDER`, all from the
+**±0.2 % band only** (the one computable live on ten pairs; see "served pairs" below):
+
+| column | definition (per pair, on the 5m grid, from the last band row at or before the bar's open, `BOOK_MAX_AGE_MIN` cap) |
+|---|---|
+| `depth_imb_0_2` | (bid − ask) / (bid + ask) within ±0.2 % of the mid |
+| `depth_imb_0_2_d1h` | `depth_imb_0_2` now minus 12 bars ago (zero when either is masked) |
+| `depth_rel_0_2` | log(bid + ask) minus the trailing 288-bar median of the same (the pair's own day; zero until 288 bars exist) |
+| `has_depth` | 1 where the band row is present, fresh, not stale (below) and the pair is a served-depth pair |
+
+Nothing from ±1 % (seven live pairs only), nothing from the notional, no second window. One
+change per run (§0.2); the control's recipe is otherwise untouched.
+
+**Served pairs, fixed now from the deploy's own reach numbers.** A pair carries the group iff the
+live ladder's deepest level sits at least **30 bps** from the mid at p50 (1.5× the band's width:
+BOOK_WAVE2_PLAN status, 2026-10-12): all twelve **except BTC (7 bps) and ETH (20 bps)**. On BTC
+and ETH the four columns are zero and `has_depth` is 0 **in training as well as in serving** —
+the archive rows for those two pairs are discarded — so the model never learns a value serving
+cannot supply. (A served-depth pair whose reach later falls under 20 bps on a row is masked on
+that row by `reach_bps`.) Rows before 2024-05 (and before each listing) are zero with
+`has_depth` 0, as `has_flow` was before 2022-12 on the top-trader ratio.
+
+**The stale-row rule, fixed now.** L1 found the archive frozen for stretches (a DOGE ask band
+stuck at one value for ninety minutes on 2026-09-03). A 30 s archive row is **stale** when either
+side's six band values are all identical to that side's values on the previous row; stale rows
+are dropped before the 5m reduction and the drop rate per pair is printed and recorded. The same
+rule is applied to the collector's rows at serve time (consecutive snapshots with an identical
+band side), so the two sources are cleaned alike. No other filter.
+
+**Control: X8″**, banked and reused — the certified recipe, three full-window seeds
+(`20261001T155917Z`, `20261002T053534Z`, `20261003T191545Z`; plateau means 0.5334 / 0.5363 /
+0.5350, family **0.5349**; cov-0.02 gross **+21.4** over 2,558). Both arms carry `ARCHIVE_OI` with
+`ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1`; `SPLIT_EMBARGO` and `ALIGN_AGE_FIX` stay **off** on
+both (the control pairing, as X8b).
+
+**Recipe = X8″ plus exactly one thing:** `FEATURE_GROUPS=legacy,depth` and
+`ARCHIVE_DEPTH=gs://fluxtrader-train-artifacts/archive/bookdepth_5m_<sha8>.parquet`, the
+reduced archive (one row per pair per 5m bar, the two ±0.2 % sums plus the stale flag), named by
+its sha8 as X8's parquet is, copied to the training VM by the launcher like `ARCHIVE_OI`.
+
+**Prerequisites, all before launch, none shaped by a result:**
+1. 🔴 **The identity acceptance on the live columns.** Archive ±0.2 % band vs the collector's
+   `bid/ask_band_0_2` over **2026-10-12 02:18 → 2026-10-13 23:59 UTC** (the archive's files for
+   those days publish the next day), nearest row within 15 s, stale rows removed on both sides by
+   the rule above, served-depth pairs only. **PASS = median relative difference < 2 % and p99
+   < 10 % on every served pair and side** (L1's bar; wider than X8's 0.5 % / 2 % because the two
+   clocks are up to 15 s apart on a band twenty bps wide). FAIL on any pair → X8c is **void
+   before it runs** and the pair list may not be trimmed to make it pass.
+2. The archive fetched whole (`m3 archivebook`, sha256-verified, 12 parquets at 30 s), reduced
+   to the 5m grid by `m3 archivebook reduce` with the stale rule, sha8-named, uploaded with the
+   `ARCHIVE_OI` script's pattern; the launcher forwards `ARCHIVE_DEPTH` (env key, recipe-drift
+   line, copy block).
+3. `db.load_depth_bands` (collector SQL + archive rows before the collector's first row, the
+   X8 union), `features.depth_features` (the four columns, masks, served-pair list), group
+   `depth` in `_GROUP_ORDER`, serve path unchanged in shape (`feature_cols` from meta,
+   `n_features` 23); tests: the four columns on a made-up band series (imbalance, the 1h delta,
+   the 288-bar relative depth, the masks on BTC/ETH, stale rows, the staleness cap), and the
+   serve-side layout `LEGACY_FEATURE_COLS == FEATURE_COLS[:19]`.
+4. Acceptance lines in every log: `Feature groups: legacy,depth -> 23 columns (…, has_funding_oi,
+   depth_imb_0_2, depth_imb_0_2_d1h, depth_rel_0_2, has_depth)`; twelve `Archive OI:` lines
+   (`sha8=83c85bd7, shift_min=5`); **ten** `Archive depth:` lines (one per served-depth pair,
+   `sha8=<the reduced parquet's>`, with the stale drop rate) and two `Archive depth: … not a
+   served-depth pair` lines for BTC and ETH; X8″'s `Split` line exactly
+   (`train=3724724 val=931182 | val [2025-12-14 09:35 → 2026-09-09 20:05 UTC]`,
+   `DUMP_MAX_AGE_MIN=100000` on the pinned snapshot); `OI join: OI_JOIN_AT_CLOSE=1`;
+   `Align age: ALIGN_AGE_FIX=0`; none of the four depth columns in any CONSTANT list except
+   `has_depth` on the pairs where it is constant 1 or 0 (recorded, not a void). A run missing any
+   of these is void.
+
+**The statistic, fallback, gate and secondary: X8's, unchanged.** Per run the plateau-restricted
+mean of the per-epoch cov-0.05 Wilson-LB on the 240m head; per family the mean of three seeds.
+Fallback: any plateau under 15 epochs → both families on the all-epoch mean, said so. **Gate:**
+X8c − X8″ ≥ **+0.008** *and* every X8c seed above 0.5349 → **MOVED**; in (−0.008, +0.008), or
+≥ +0.008 with a seed below → **FLAT**; ≤ −0.008 → **WORSE**. **Secondary:** pooled cov-0.02 gross
+bps/trade on the 240m head against +21.4; MOVED more than 5 bps under it is MOVED-BUT-NOT-EARNING
+and licenses nothing.
+
+**What each outcome licenses.** MOVED → the fold certification under `ALLOW_RECIPE_DRIFT=1`
+(X8-F's shape, twelve runs) before anything is served; nothing served changes on this read.
+FLAT with plateaus ≥ 15 → a decision for Vadim (the group stays admissible on a different
+band or window only by a new registration). FLAT with a short plateau, or WORSE → the depth
+group is closed as an M2 lever and §5's added-columns row carries it. 🔴 Not licensed by any
+outcome: a fourth seed, the ±1 % band, a different reach threshold, a different stale rule, a
+trimmed pair list, or re-reading on the folds.
+
+**Recorded expectation: FLAT.** Every added group so far read WORSE (X1, five external
+columns) or FLAT (X8b, four ratios); only a *filled* existing column ever moved (X8). The one
+thing in this group's favour is that it is the first added column whose history reaches 2024
+*and* whose live value the collector now supplies; the one thing against it is B3's O5 reading
+that the book block carried under its uniform share of a tree model's gain. A MOVED here would
+be the surprising reading and goes straight to the folds.
+
+**Commands.**
+```sh
+# prerequisites 1–2 (laptop, ml_analysis; after the 2026-10-13 archive file publishes, i.e. on 2026-10-14)
+./scripts/m3.sh -m m3 archivebook                                   # whole history, 12 parquets (running 2026-10-12)
+./scripts/m3.sh -m m3 archivebook reduce 2>&1 | tee logs/X8c_reduce_$(date +%Y%m%d).log   # stale rule + 5m grid, sha8-named
+./scripts/archive_depth_check.sh 2>&1 | tee logs/X8c_identity_$(date +%Y%m%d).log          # prerequisite 1, exit 2 = void
+./scripts/fetch_archive_depth.sh                                    # upload; prints ARCHIVE_DEPTH=gs://…
+# the three runs, strictly serial, X8″'s recipe plus the group
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export DUMP_MAX_AGE_MIN=100000
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet
+export ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1
+export ARCHIVE_DEPTH=gs://fluxtrader-train-artifacts/archive/bookdepth_5m_<sha8>.parquet
+unset VAL_OFFSET VAL_FRACTION TRAIN_FRACTION ALLOW_RECIPE_DRIFT SPLIT_EMBARGO ALIGN_AGE_FIX   # not a fold
+FEATURE_GROUPS=legacy,depth SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # then SEED=2, SEED=3 after DONE
+./scripts/gcp_logs.sh <run_id> > logs/X8c_s1.log                          # never --save
+```
+Go/no-go on the launcher's own lines: `recipe differs from the incumbent (T1) in:` lists exactly
+`FEATURE_GROUPS: incumbent='legacy' this run='legacy,depth'`, the `ARCHIVE_OI` and
+`ARCHIVE_OI_SHIFT_MIN` and `OI_JOIN_AT_CLOSE` items, and `ARCHIVE_DEPTH: … bookdepth_5m_<sha8>`;
+no `fold drift accepted` line. Cost: ≈ $1.5 and ~2.5 h a run, ≈ $4.5 and ~8 h serial.
+
+**Needed from Vadim: nothing** — asked for 2026-10-12 ("why wait"); the only calendar item is
+prerequisite 1's two days of overlap, read on 2026-10-14.
+
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 
 `logs/b3b_gbt_5m_20260911.log`, `logs/b3b_gbt_15m_20260911.log`; reading in
