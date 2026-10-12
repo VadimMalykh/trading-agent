@@ -688,7 +688,7 @@ backfill ✅, replay check ✅, `serve-run start` + `serve-install` ✅ (Vadim, 
 ✅ 2026-09-25 19:10 UTC (Claude): green; 5 taken of 36 in three grid bars is a fresh-ledger burst on a 22%-signal day, inside the replay's daily range (README status). Step 2 complete. 3 (monthly): health, causal check (`ft2-check` timer, 1st of the month), refit log. 4 (R17's read): as registered.
 5 (money): a new registration.
 
-### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, F3+F4 untouched; R24, the score as a priced book at a 7-day hold on both samples read for it, read 2026-09-29: CANDIDATE by the gate — +17 bps a trade after costs on 5,054 trades, flip p 0.025, but one times its noise and all of it the short side; R25, the confirmation read of that book on the outside names of F3+F4, read 2026-09-29: passed its gate on a defective number — the harness measured profit in log returns, which flatters shorts of violent names; **R22–R25 RE-EXECUTED in actual returns 2026-09-30 (Vadim's decision): R22 nothing clears and the lean mostly gone (+21 a leg, 0.7 times its noise), R23 does not clear (+20, 1.1 times its noise), R24 NOT FUNDED (net −14), R25 NOT CONFIRMED (net −39) — the book is parked; nothing outside the twelve clears its costs; P8 PARKED on Vadim's "(A1) (B1)", 2026-09-30; **R26, the (B3) ceiling audit of the US index as per-name information, read 2026-10-01: 0 of 10 clear — six CLOSED, four NOT DETECTABLE, the one lean a reversal on closed hours at half of break-even; the index is closed at one day on both universes; **R27, the ETF flows as per-name information on F2, read 2026-10-02: 0 of 7 clear, seven NOT DETECTABLE — half a year of flows can neither find nor close a per-name effect at one day**; **the source audit of scheduled per-name events (§9 #8), done 2026-10-05, no price read: token unlocks can be used only as archived pages dated them, and so used they are few (90 on F1+F2, 22 names); Binance's announcements are a clean point-in-time source whose one populous event is a contract's launch (119 on F1+F2) — Vadim chose (C1) the same day: **R28, the new-listing ceiling audit, read 2026-10-05: CLEARS on the sold side at 7 days — a new perpetual sold an hour after it begins and held a week fell 6.7 % behind the screener's names (105 launches of F1+F2, both folds, every quarter; 2.4–3.2 times its noise); a candidate; **R29, its confirmation read on the 301 launches of F3+F4 (Vadim's "D1 a"), read 2026-10-05: NOT CONFIRMED — −176 bps a trade after costs (u −0.6): the typical launch still falls behind, but one in six nearly doubled within its week and the stopped positions eat what the others earn; parked, F3+F4 spent for this question; nothing outside the twelve trades profitably yet; **R30, the index and the ETF flows as MARKET-direction and sizing information on the basket (R6's frame), read 2026-10-08: direction 0 of 27 clear — the Nasdaq 100's last hour carries into the basket's next 1–4 h in every year (+0.025 / +0.028, family-wise p 0.005) but is worth less than a round trip (CLOSED at 1h, NOT DETECTABLE at 4h); the flows nothing on F2; the index's session CLEARS as a sizing input at 4h (the basket moves a quarter more while the index is open; a fifth of that beyond crypto's own volatility) — a described row for a future rule, nothing for P7**; **R31 REGISTERED 2026-10-09 (Vadim's F5): `ixhour4h`, the hour's move traded at its sign on the basket as a maker with a 15-min serving lag — stage 1 on R30's bars, F3+F4 only on a pass and Vadim's go; stage 1 READ the same day: PASSED as written, maker net +2.05 [−6.24, +10.34], both p 0.010 — a real gross, a net of about zero; stage 2 = decision G, DECIDED 2026-10-09 "G1": not run, R31 PARKED, F3+F4 unspent**)
+### P8 — The screener (🟡 R18 read 2026-09-27: not detectable — the twelve's model carries nothing to outside names, no screen finds a group where it does; R19, the hindsight diagnostic, read 2026-09-27: not detectable either; R20, a ceiling audit of new per-name information on the point-in-time universe, read 2026-09-28: nothing clears — funding and the spot–perpetual gap closed, open interest not detectable and the nearest; R21, the open-interest numbers as a priced book on the same names, read 2026-09-28: CLOSED — it loses 17 USDT a trade on 10,000; R22, the same signals at a 3-day and a 7-day hold, read 2026-09-28: not detectable — nothing certified, nothing ruled out; R23, the one open-interest score at 7 days on the unread months 2021-12 → 2023-04, stage 1 of two, read 2026-09-29: CLEARS — +67 bps a leg against a round trip of 17.6, 2.4 times its noise, on cells that did not choose it; a candidate, F3+F4 untouched; R24, the score as a priced book at a 7-day hold on both samples read for it, read 2026-09-29: CANDIDATE by the gate — +17 bps a trade after costs on 5,054 trades, flip p 0.025, but one times its noise and all of it the short side; R25, the confirmation read of that book on the outside names of F3+F4, read 2026-09-29: passed its gate on a defective number — the harness measured profit in log returns, which flatters shorts of violent names; **R22–R25 RE-EXECUTED in actual returns 2026-09-30 (Vadim's decision): R22 nothing clears and the lean mostly gone (+21 a leg, 0.7 times its noise), R23 does not clear (+20, 1.1 times its noise), R24 NOT FUNDED (net −14), R25 NOT CONFIRMED (net −39) — the book is parked; nothing outside the twelve clears its costs; P8 PARKED on Vadim's "(A1) (B1)", 2026-09-30; **R26, the (B3) ceiling audit of the US index as per-name information, read 2026-10-01: 0 of 10 clear — six CLOSED, four NOT DETECTABLE, the one lean a reversal on closed hours at half of break-even; the index is closed at one day on both universes; **R27, the ETF flows as per-name information on F2, read 2026-10-02: 0 of 7 clear, seven NOT DETECTABLE — half a year of flows can neither find nor close a per-name effect at one day**; **the source audit of scheduled per-name events (§9 #8), done 2026-10-05, no price read: token unlocks can be used only as archived pages dated them, and so used they are few (90 on F1+F2, 22 names); Binance's announcements are a clean point-in-time source whose one populous event is a contract's launch (119 on F1+F2) — Vadim chose (C1) the same day: **R28, the new-listing ceiling audit, read 2026-10-05: CLEARS on the sold side at 7 days — a new perpetual sold an hour after it begins and held a week fell 6.7 % behind the screener's names (105 launches of F1+F2, both folds, every quarter; 2.4–3.2 times its noise); a candidate; **R29, its confirmation read on the 301 launches of F3+F4 (Vadim's "D1 a"), read 2026-10-05: NOT CONFIRMED — −176 bps a trade after costs (u −0.6): the typical launch still falls behind, but one in six nearly doubled within its week and the stopped positions eat what the others earn; parked, F3+F4 spent for this question; nothing outside the twelve trades profitably yet; **R30, the index and the ETF flows as MARKET-direction and sizing information on the basket (R6's frame), read 2026-10-08: direction 0 of 27 clear — the Nasdaq 100's last hour carries into the basket's next 1–4 h in every year (+0.025 / +0.028, family-wise p 0.005) but is worth less than a round trip (CLOSED at 1h, NOT DETECTABLE at 4h); the flows nothing on F2; the index's session CLEARS as a sizing input at 4h (the basket moves a quarter more while the index is open; a fifth of that beyond crypto's own volatility) — a described row for a future rule, nothing for P7**; **R31 REGISTERED 2026-10-09 (Vadim's F5): `ixhour4h`, the hour's move traded at its sign on the basket as a maker with a 15-min serving lag — stage 1 on R30's bars, F3+F4 only on a pass and Vadim's go; stage 1 READ the same day: PASSED as written, maker net +2.05 [−6.24, +10.34], both p 0.010 — a real gross, a net of about zero; stage 2 = decision G, DECIDED 2026-10-09 "G1": not run, R31 PARKED, F3+F4 unspent**; **R32 and R33 REGISTERED 2026-10-12 (decision H, Vadim's "as recommended"): `trend1d`, the basket's 30-day sign on every pair for a day, stage 1 on R6's bars, no stage 2 (a pass → decision I: a paper read by override, or parked); and the demeaned ±1 % imbalance as a ceiling screen on P2's cells (a clear → a breadth step as a new registration) — no fold spent, nothing read yet**)
 
 **Why now.** §0's goal has two halves — a screener that picks names, and a model that trades names it was not trained on.
 P5 measured the second half among the twelve: the signal transfers, but only to some names, and which names changes from one
@@ -1094,7 +1094,7 @@ but sub-cost continuation; the session is a sizing fact. The options as they sta
   execution on the basket and its serving lag (the hour file lands after the hour), would say whether it pays. Forbidden
   on R30's bars by R30's own rule; the confirmation folds are the only cells left for it, so it is one shot.
 
-**Decision H (2026-10-09) — the brainstorm after R31, Vadim's "let's brainstorm": what to register next, in parallel with P7. OPEN.**
+**Decision H (2026-10-09) — the brainstorm after R31, Vadim's "let's brainstorm": what to register next, in parallel with P7. DECIDED 2026-10-12, Vadim's "let's go as recommended": (H1) REGISTERED as R32 (§8, `trend1d` — the basket's 30-day sign traded on every pair for a day, stage 1 on R6's bars, no stage 2: what a pass licenses is decision I, written into R32 before the read) and (H2)'s ceiling screen REGISTERED as R33 (§8, `ft2 ceiling --target pairs --family depth` — the imbalance demeaned by its trailing month, on P2's cells; a clear licenses a breadth step, not a trade). Neither spends a fold. H3 → H6 stay listed below for a later session.**
 Ground rule for every candidate: a mechanism, the cells it can be confirmed on, and why it escapes what thirty-one reads
 found (the one real per-name signal lives in young names at 1d; the market factor is real and sub-cost at 1–4h; short-horizon
 per-name effects measured 0.01–0.02 against bars of 0.03–0.09). A structural fact first: a MARKET-WIDE rule is one series —
@@ -1201,7 +1201,7 @@ The decision of 2026-09-29 → 2026-09-30, for the record — how to correct the
 | **The new listing, sold and held 7 days (R28, R29)** — **PARKED 2026-10-05: R29 NOT CONFIRMED** | Needed from Vadim: nothing. R28 (105 launches of F1+F2): a new USDT perpetual fell 674 bps behind the screener's members over its first week, before trading costs (u −3.2 by the gate's se, −2.4 by plainer ones) — a candidate. R29 (301 launches of F3+F4, the rule priced, stopped at 90 % above the entry, hedged): M −176 a trade [se 283], heavy −246; the median trade +1,246 and 62 % above zero, but 47 positions stopped at about −96 % of their size (3 of 105 stood that high in F1+F2). F3 +83, F4 −418 | none proposed. No variant on the launches of F1…F4 (another entry — a day later reads +225 as a reference row and licenses nothing —, another stop, a subset). What is left unread: F5's 69 launches and what accrues — a new registration, Vadim's decision, and it would have to say beforehand how it lives with one launch in six doubling. The source (`binance_events`, `ft2 events`) and the launches' bars stay |
 | **The US index's last hour as market direction (R30)** — **CLOSED by cost 2026-10-08** | Needed from Vadim: nothing. On R6's bars (FP+F0+F1+F2, 1,578 days) the Nasdaq 100's move over its last hour carries into the basket's next 1–4 h: IC +0.025 at 1h and +0.028 at 4h, positive in each of five years, family-wise p 0.005 among eighteen numbers, the same on US500 — and under what a taker round trip on the basket needs (0.061 at 1h, 0.034 at 4h; the 4h interval reaches 0.041). The flows (F2): nothing. The session is a sizing fact (ix_open CLEARS at 4h): a described row for a future rule | **REGISTERED as R31 on 2026-10-09** (Vadim's F5) — **stage 1 READ the same day: PASSED by the gate as written, maker net +2.05 [−6.24, +10.34], both p 0.010, no year under −5; the money about zero, the gross real; stage 2 = P8 decision G, DECIDED 2026-10-09 "G1": NOT RUN — R31 PARKED, F3+F4 unspent for the market factor (they could confirm a true +2 about one time in twenty-five)**: `ixhour4h`, the hour's move ≥ 1σ_ix at its sign on the basket, 4h, maker, lag 15 min — stage 1 a mechanical gate on R30's bars (R30's gate paragraph licenses it; it can stop the read, not change the rule), stage 2 F3+F4 once on Vadim's go. Two corrections of F5's premise are in R31's Question: the 4h bar R30 missed is already the maker bar, so the room is the threshold, not the price; the harness's maker fill is adverse for a continuation rule |
 | learned decision layer / end-to-end model | capacity not yet earned (P6) | registered P5-vs-oracle contrast shows money left on the table |
-| **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
+| **±1 % book imbalance as a rule (`bookimb1d`, R9; long-only R11)** — PARKED by their own stage-1 gates 2026-09-22 | Needed from Vadim: nothing. R9 (both sides, top decile of \|imb\|): −2.2 taker [−25, +21], gross +8, 9 trades a day. R11 (long only, top decile of ask-heaviness): +5.1 taker [−25, +35], gross +20.7 but hedged +2.0 [−4, +8], flip p 0.12 — the long side earns with the market, not against it. The screen's pooled IC lives in the slow per-pair level of the imbalance, which neither a daily short nor a daily long collects at 12 bps a round trip | (b) a demeaned imbalance (today's minus the pair's trailing-month mean) as a new ceiling screen, not a rule — **REGISTERED as R33 on 2026-10-12 (decision H), read —**; (c) book features inside P5's ridge, which is where a slow level belongs (all 24 features beat the 11 candle ones: 1d 0.067 vs 0.048) — **READ as R15 2026-09-25: out of pair on the residual the gain is +0.001 (t 0.1); parked**. The screen's IC on these columns was the in-pair own-move reading of a slow level, and neither a rule nor the ridge collects it. No further fixed rule on the raw imbalance; (b) stays open as a screen |
 | sequence / deep models | P2 #5 (2026-09-20): a depth-2 tree never beats ridge (equal at best, t −3 to −5 on short windows) and the curve falls with more history | a registered contrast in P5 where the tree beats ridge outside the noise floor |
 | 1m candles over the full history | 23M rows, not needed for horizons ≥ 15m | P1 or P2 asks for sub-15m horizons |
 | ~~relative (pair-vs-basket) *reversal* at 4h~~ — **CLOSED 2026-09-21 (R2)** | the rank rule loses −20.6 bps per leg [−31.7, −9.5] in all six quarters; do not re-open as a reversal bet | none. The opposite sign (tail continuation) is a new hypothesis, H2 in P5, not a revival of this row |
@@ -4141,6 +4141,152 @@ Result:        **Stage 1, read 2026-10-09 (the run 05:0x → 05:13 UTC on the wo
                (the long side's +7.6 is a described row, and it is the drift's), index, hour-block cut, cap or size; a long-only
                basket rule or an hour-block rule would be a new registration on cells that do not exist for it. P7 and R14 are
                untouched.
+
+### R32 — trend1d: the basket's 30-day trend, traded at its sign on every pair for a day — does R6's one-day row pay a round trip? (registered 2026-10-12 on Vadim's "let's go as recommended" (P8 decision H: H1 + H2), before the rule was written and before it saw any real bar; stage 1 read —)
+Question:      R6's screen (2026-09-21, `output/market.md`) carries a one-day row that was reported and never gated or acted on:
+               the basket's trailing 30-day return (`mret_30d`) against the basket's NEXT DAY — IC +0.0705 (t 2.9), positive in
+               each of 2020 → 2024 (+0.021, +0.136, +0.032, +0.081, +0.056), family-wise p 0.0498 among seventeen features, against
+               a 1d bar of 0.0131 (maker, all bars) / 0.0188 (taker). R6's gate was written for 4h only; at 4h the same feature
+               read +0.030 with p_fw 0.075 and was not recorded, and R8 traded the 4h BOUNCE conditional on the trend, not the
+               trend. The row met the letter of R6's gate paragraph ("a single feature with family-wise p ≤ 0.05 AND one sign in
+               all five years is recorded as a hypothesis for a new registration") at a horizon the gate did not look at — a miss
+               of the record, written down here as what it is: a hypothesis on seen bars. The question: the basket's 30-day sign,
+               read once a day and traded on every pair for a day, one unit each — does it make money after costs through the
+               harness, in actual returns, with funding charged on the position's value, and what can that evidence license?
+Rule:          `ft2/rules.py::Trend1d`, name `trend1d`, fixed here, nothing fitted, nothing searched. On the 5-minute grid, at
+               the one decision bar a day t whose stamp is 00:00 UTC (the bar that closes at midnight):
+                 blr(t)  = R6's basket: the equal-weight mean over the pairs with a bar of their 5m log returns (≥ MIN_PAIRS = 5
+                           pairs, else NaN), cumulated — `ceiling.basket` on `log(close).diff()`, the same line `market.derive`
+                           and `trendfall4h` (R8) use; nothing after t enters (the harness's causal check, and a test).
+                 s(t)    = sign(blr(t) − blr(t − 8,640 bars)): the 30-day return's sign, R6's `mret_30d` without its
+                           volatility scaling (a positive scale; the sign is the same). s = 0 or NaN → no trade.
+                 trade     side = s on EVERY pair with a close at t, one unit each, held 288 bars (one day); executed one bar later
+                           (LATENCY: the 00:05 close), so the position stands 00:05 → 00:05 and the next day's 00:00 decision is
+                           accepted by the book rule (one position per pair; p = p_prev + hold is not blocked): a round trip is
+                           paid EVERY day, which is the conservative count — a position held until the sign flips is a described
+                           row below, read from the saved fills, not a rule the harness runs.
+                 why 00:00 the UTC day's boundary, the one the harness's day-clustered interval and R6's per-day statistics
+                           use; a funding settlement instant, so a position opened after it pays the 08:00, the 16:00 and the next
+                           00:00 — three settlements a day, as any one-day hold on these contracts. No hour was looked at or
+                           searched; R6's screen read every bar of the day, this rule reads one.
+               Three numbers: trend_days = 30 (R6's longest window, the one the screen reported), hour = 0, hold = 288. Both sides
+               symmetric (R6's IC is one number). The pre-history is in the rule's reach: the archive's klines start
+               2019-12-31, FP's first scored bar is 2020-05-03, and five pairs have bars from 2020-01-31, so blr and its 30-day lag
+               exist from FP's first day.
+Contrast:      mean net bps per unit of notional vs zero and vs both nulls (the day-shuffled price path, 200 draws; the flip
+               null: every day's sides × one random sign); PRIMARY execution `taker` — path-independent, R8's and R9's primary;
+               a trend rule buys what has risen, so the harness's maker fill is adverse for it in the way R31 found (the resting
+               order fills when the basket comes back) — `maker` and `maker_ev` are reported beside, the gap between them being
+               the rule's own adverse selection. Per calendar year (`scripts/r32_read.py`, the scored days of each year as the
+               denominator, as the harness counts), per fold, long and short apart. `hedged` is zero by construction on a basket
+               rule; the basket's drift (+1.9 bps a 4h bar on R6's bars, so about +11 a day) sits in the long-and-short-apart
+               table — the long side collects it, the short side pays it — and is read there, not gated.
+Folds read:    stage 1 — FP+F0+F1+F2, the bars R6 read (FP and F0 logged under R32 by the guard, as R8's and R31's were). ALL SEEN:
+               the feature was found on these bars, so stage 1 is a MECHANICAL gate (costs, fills, funding on a one-day hold, the
+               book rule, the day-clustered se), NOT evidence — the evidence this rule can ever have on cells in hand is R6's "five
+               of five years", and this read says only whether the harness's costs leave any of it.
+                 `vm.sh bg r32 backtest trend1d --folds FP F0 F1 F2 --registration R32 --execs taker maker maker_ev`
+               NO stage 2 in this registration. F3+F4 are NOT read for R32, whatever stage 1 says — the Power paragraph, written
+               before any number, says they cannot confirm an effect of the size this rule can have, and they are the only
+               confirmation cells no market-wide question has read (R31's decision G kept them so). A later registration may ask
+               for them only with a stated power of at least one in two at the effect stage 1 measured. F5 is frozen for R17.
+Gate:          stage 1 passes if, on `taker`: net > 0 AND the larger of shuffle p and flip p ≤ 0.05 AND net ≥ −5 bps in each calendar
+               year 2020 → 2024 (every day trades, so every year has its days; R6's IC held one sign in every year, and a year under
+               −5 means the costs eat what the screen saw). Fail → PARKED with R6's row, NO variant on these bars: no other window,
+               hour, hold, threshold on the trend's size, cap, size, long-only or short-only version acted on (the long side apart
+               is READ as a described row; a long-only rule would be a new registration, and these bars are spent for it).
+               Pass → the rule is a CANDIDATE on seen bars and nothing more; what that licenses is written here, not after the
+               number: **P8 decision I for Vadim — (I1) a paper read by override, R14's route: a NEW registration for a serving
+               path (a basket rule beside P7 with its own ledger, its own identity check and its own read at a stated count of
+               days; R14, the P7 ledger and the serve host's model are not touched); (I2) parked as "a certified gross on seen
+               bars, unconfirmable on the cells in hand".** Neither option reads F3+F4.
+Expectation:   gross +15 … +25 bps a trade (R6's money view on the same bars: every bar, trend up +5.6 bps a 4h bar → about +34 a
+               day for the long; trend down −2.2 → about +13 a day for the short; the IC's own arithmetic 0.07 × 0.8 × 385 ≈ +20);
+               taker net +3 … +12 after a 12.8-bps round trip and funding (the long side pays about 1 bps a settlement in a calm
+               market, 3 a day; the short side receives it); maker net +8 … +18 if the resting order fills as P1 measured, and
+               less by the adverse selection R31 found (5.5 bps of gross on R8). About 1,578 trade-days × 6–11 pairs ≈ 13,000
+               trades, ONE basket bet a day (the power is in baskets a day, R31's lesson, not in trades): the basket's 1d sd ≈ 385
+               bps → se ≈ 385 / √1,578 ≈ 10 bps a trade, MDE ≈ 28. The nulls sit at the COST (−12.8 taker), so a p of 0.05
+               certifies a gross of about +5 … +8 above the null's spread, not a net: the gate's p condition is likelier passed
+               than not; the per-year condition is the risk — 2022 (IC +0.03, the smallest; a falling year where the short side
+               has to carry it) and the partial years at both ends. Likeliest: taker net +5 ± 10, the larger p 0.01 … 0.10, the
+               gate about a coin flip; the long side above the short by the drift. Whatever the verdict, the point estimate is
+               inside its noise — expected, and the reason this registration spends no confirmation fold.
+Power:         written before any number, from R6's 1d |move| (mean 308 bps → sd ≈ 385). F3+F4 are 487 scored days and one basket a
+               day: se ≈ 385 / √487 ≈ 17.5 bps a trade, MDE ≈ 49. A true net of +10 (the upper half of the expectation) is confirmed
+               (lower bound > 0) about one time in eleven; a true +5 about one time in twenty. That is why no stage 2 is
+               registered: a market-wide rule of a Sharpe near 0.8 is unconfirmable on 487 days (P8 decision H's structural
+               fact), and the only route to money for such a rule is a paper read, which is decision I's.
+Described:     decides nothing; licenses nothing on any fold. (a) The HELD position, from the saved taker and maker fills: the daily
+               gross chained, funding every day, the round trip's legs charged only on the days the sign flips (and on the first
+               and last day) — what a position held until the flip would have netted, and how many flips there were (the
+               harness runs no such rule; this is arithmetic on its fills). (b) The long side apart — which IS the "long when up,
+               flat when down" variant's per-trade mean — and the short side apart, with the basket's drift on the same days.
+               (c) R30's sizing row, carried as R31's handoff said the next registration would: the basket's mean |1d move| and
+               the net per trade on entries whose day holds a US session (Monday → Friday 00:00 UTC) against the weekend's
+               (Saturday, Sunday) — the session as a size, not a verdict. (d) `maker_ev` beside `maker`: the rule's own adverse
+               selection. (e) Per calendar year on both executions, from `scripts/r32_read.py`.
+Result:        —
+
+### R33 — the demeaned ±1 % book imbalance as a ceiling screen on the twelve: does the within-pair, within-month variation of the book carry any of P2's one-day IC, or was it all the slow level R9 and R11 could not trade? (registered 2026-10-12 on Vadim's "let's go as recommended" (P8 decision H: H1 + H2), before the code was written and before any book row was read demeaned; read —)
+Question:      P2's screen found one per-pair directional signal at one day: the ±1 % book imbalance, IC −0.039 (t −4.3,
+               family-wise p 0.005, 88 % of months the same sign; relative −0.032, p_fw 0.015) — "the most interesting cell".
+               Two rules on the raw imbalance lost (R9 both sides, R11 long only), and R9's reading was that the pooled IC is
+               carried by the LEVEL of a pair's imbalance over weeks (a persistently bid-heavy book while the pair drifts down),
+               which a daily trade at 12 bps a round trip cannot collect; §7 (b) left one question open since 2026-09-22: the
+               imbalance DEMEANED by the pair's own trailing month — does the part of the imbalance that changes from day to day
+               predict the pair's next day at all? R15 says book features add nothing to the RELATIVE bet held out among the
+               twelve; this is the directional own-pair bet, and it has never been read demeaned. A ceiling screen, not a rule:
+               it spends no fold and licenses, at most, a breadth step.
+Audit:         `ft2/book_ext.py` (its docstring is the specification), `ft2 ceiling --target pairs --family depth`. P2's frame
+               exactly (`ceiling.panel` on the twelve, `derive`, F1+F2 embargoed as the scored sample, `ic_screen`'s three
+               statistics: the directional pooled IC on per-pair ranks, the relative cross-sectional Spearman, the vol IC), on
+               three bar × pair features built from ONE source, `ceiling.depth_frames`' imb1 — the ±1 % imbalance from the archive
+               book's last ~30 s sample strictly before t, the definition the screen and the rules share:
+                 depth_imb_1        the raw imbalance, P2's feature — the VALIDITY row (below), not a question;
+                 depth_imb_1_lvl30  its trailing-month mean: the mean over the 8,640 bars ending at t (≥ 4,320 of them present), the
+                                    SLOW part — described, not gated (a feature this slow is flattered by a day-shuffle null; R6);
+                 depth_imb_1_dm     = depth_imb_1 − depth_imb_1_lvl30, the FAST part — THE registered feature. raw = lvl30 + dm
+                                    exactly wherever both exist (asserted). The month (30 days) is §7 (b)'s "trailing month",
+                                    fixed here; nothing else is tried.
+               Horizons 1h, 4h, 1d (P2's null horizons); PRIMARY 1d, directional. Two nulls on the registered feature, 200 draws
+               each: P2's day shuffles (`ceiling._shuffle_days`, seed 0 — the same draws P2 made, so the raw row's null
+               reproduces) and R6's circular shifts of the labels by whole days (≥ 60 days, as `market.shifts`); the family-wise
+               p is, per null, the share of draws whose largest |t| over the feature's three horizons is at or above the real
+               |t|, and p_family is the LARGER of the two nulls' p_fw. Parts: F1 and F2 apart (one sign in both), months the same
+               sign reported (P2's 88 % for the raw).
+Folds read:    F1+F2 — the exploration folds, the cells P2 screened (the archive book starts 2023-01-01, so F0 holds four months
+               of it and FP none; the trailing month needs 30 days before F1's first scored bar, 2023-05-03, which the book has).
+               Seen cells for the raw feature; the demeaned feature is a new question on them, and whatever it finds is a
+               HYPOTHESIS. No confirmation fold is read: the guard is not involved (`ceiling` refuses them).
+                 `vm.sh bg r33 ceiling --target pairs --family depth --draws 200`
+Gate:          on `depth_imb_1_dm`, directional, 1d: CLEARS if p_family ≤ 0.05 AND the IC is NEGATIVE (P2's sign: a bid-heavy book
+               precedes a fall; the registered sign) AND the same sign in F1 and in F2 AND |IC| ≥ the 1d maker bar of P2's #7,
+               recomputed in the run (`ic_needed_maker`, 0.0106 as saved; the taker bar 0.0182 is reported beside — a clear at
+               the maker bar alone is a maker rule, resting on the thin side of a lopsided book, R9's caveat). CLOSED if
+               |IC| + 1.96 se < that bar. Else NOT DETECTABLE with its MDE. A p_family ≤ 0.05 with the OPPOSITE sign is recorded
+               as "clears with the opposite sign" — a hypothesis of its own, nothing licensed.
+               CLEARS → licenses ONE thing: a breadth step as a NEW registration — the archive's `bookDepth` for names outside the
+               twelve (the universe, the months and the disk fixed in that registration before any file is fetched; the disk is
+               Vadim's decision — about 0.5 MB a day a name), the same screen on their exploration cells, and only then a priced
+               per-name rule confirmed on F3+F4 (unread for this question). Nothing here reads a confirmation fold and nothing
+               here is a trade. CLOSED or NOT DETECTABLE → §7 (b) is closed: the twelve's book imbalance is the slow level and
+               nothing else; the slow level stays a described fact and is not registered as a rule (R9, R11 are what it does
+               in money).
+Validity:      read FIRST, before any number of the registered feature is computed (R29's lesson: validity written, then the
+               number): (1) the raw row — `depth_imb_1`'s ic and t on every bet × horizon of P2's screen (1h, 4h, 1d; directional,
+               relative, vol) — reproduces `output/ceiling/ic.parquet` to 1e-6, and its day-shuffle null's t per draw reproduces
+               `output/ceiling/noise_ic.parquet` (draws 1 → 200, the three horizons, both bets) to 1e-6; (2) raw = lvl30 + dm on
+               every cell where both exist; (3) the panel is P2's (the same scored bars and pairs). FAIL on any → `validity.json`
+               says so, the run exits 2, no row of `depth_imb_1_dm` is written, and the read is VOID (a fix, then the same command).
+Expectation:   R9's reading, if right: the demeaned feature at 1d carries little — IC −0.005 … −0.020, p_family 0.1 … 0.6, se ≈
+               0.009 (P2's se on the raw row) → NOT DETECTABLE the likeliest verdict (MDE ≈ 0.025), CLOSED if the IC sits near
+               zero; the slow level −0.03 … −0.04, carrying P2's number, and flattered by the day-shuffle null. At 4h the fast part
+               may be a larger share of the raw −0.017 than at 1d (a book that just turned lopsided is what the next hours see) —
+               reported inside the family-wise p, not gated. The relative bet on the demeaned feature near zero (R15). Against this
+               expectation, a CLEAR at 1d would be the one per-name directional signal on the twelve that a daily trade can reach,
+               and the breadth step would be worth its disk.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …

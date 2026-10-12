@@ -14,35 +14,39 @@ otherwise knows nothing about this folder.
 
 | date | where we are | needed from Vadim |
 |---|---|---|
+| 2026-10-12 | **fluxtrader2: two registrations written and committed before any bar is read (P8 decision H, Vadim's "let's go as recommended"): R32 `trend1d` — the basket's 30-day sign (R6's one-day row, IC +0.070, five of five years, never acted on) traded on every pair for a day, stage 1 on R6's bars FP+F0+F1+F2, taker primary; NO stage 2 — F3+F4 cannot confirm an effect of its size (MDE ≈ 49 against +5 … +12 expected), so a pass licenses only decision I (a paper read by override, or parked); and R33 — the ±1 % book imbalance demeaned by the pair's trailing month, as a ceiling screen on P2's cells (F1+F2, the twelve), gated at 1d on the larger of two nulls' family-wise p and the maker bar; a clear licenses a breadth step as a new registration, nothing else. Neither spends a fold. Code, tests and the runs on the work VM follow in this order: R32's rule and R33's module with their tests (commit), then `vm.sh bg r32 …` and `vm.sh bg r33 …` (serial), then the reads. The paper test (P7) runs by itself; last health 2026-10-05 green.** The rest of the status (P7, the fourteen screener reads, data in hand) is the 2026-10-09 row below. | **fluxtrader2 needs from Vadim: nothing until R32 and R33 are read.** If R32 passes its mechanical gate, decision I (in R32's block) is his: (I1) a paper read by override — a new registration for a basket ledger beside P7; (I2) parked. If R33 clears, the breadth step's disk is his decision (a new registration fixes the universe before any file is fetched). |
 | 2026-10-09 | **fluxtrader2: the paper test running (green 2026-10-05); the screener phase's last item in hand, R31 (Vadim's F5, registered, built, tested and read stage 1 the same day): the US index's last hour traded at its sign on the whole basket as a maker, when the hour's move is at least one of the index's own hourly sigmas, held four hours, with a 15-minute serving lag. Stage 1 on the seen bars (2020-05 → 2024-08) PASSED the gate as written — maker net +2.05 bps a trade [−6.24, +10.34], both nulls p 0.010, no calendar year under −5 — and says what R30 said in money: the gross is real (+6 … +9 bps a trade, every year), the costs take it back, the net is about zero; the long side nets +8 [−3, +18] and carries the basket's drift, the short side −4; the lag and a tighter threshold change nothing the sample can see. F5's premise as written on 2026-10-08 was corrected in the block before any number: the 4h bar R30 missed was already the maker bar, so the room was a threshold, not a price. Stage 2 (F3+F4, the only confirmation cells no market-wide question has read) is P8 decision G, DECIDED 2026-10-09 (Vadim's "G1"): NOT RUN — with the measured noise it could confirm a true +2 about one time in twenty-five; R31 parked, F3+F4 unspent for the market factor. Not shown to trade profitably yet.** **(1) P7 — paper trading of R14, LIVE since 2026-09-25 17:00 UTC on `fluxtrader2-serve`.** R14 is a simple model on price-bar features that forecasts a pair's next-day move against the other pairs; on data nobody had looked at (R16) it earned +33 USDT a trade on 10,000 after costs, 3.6 trades a day, and failed one of five criteria — the one that sample could not pass. Vadim funded the paper test by override. Health 2026-10-05 02:05 UTC: green (2,712 decisions, 40 taken, 3 open, 0 late, 0 missing bars, model `model_2026-09-30`); the first refit on the host PASSED (2026-09-30); the first monthly identity check (2026-10-01) PASSED (`checks/check_2026-10-01.md`). Claude reads `vm.sh serve-status` monthly, next on or after 2026-11-01 01:30 UTC. The money is read once (R17): at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25. **(2) P8 — the screener: fourteen reads, nothing clears its costs** (PLAN P8 and §8): the twelve's model carries nothing to outside names (R18, R19); the exchange's own numbers per name — funding, premium, open interest, long/short, taker flow — nothing at one day (R20, R21) and nothing at 3 and 7 days once counted in actual returns (R22–R25, re-executed 2026-09-30); the US index (R26) and the ETF flows (R27) nothing per name; a new perpetual sold at launch and held a week (R28) did not confirm on F3+F4 (R29, −176 USDT a trade); the index and the flows as market direction (R30) closed by cost; the index's last hour as a maker-priced basket rule (R31) +2 bps a trade net on seen bars, inside its noise. Parked rows and their revival triggers: PLAN §7. **(3) Data in hand, all audited:** the archive's depth, metrics, funding and tape summaries; 40 wide-universe pairs; the premium index; US500/US100 one-minute bars 2020 → 2026-09; Farside ETF flows; DefiLlama unlock snapshots; Binance announcements. | **fluxtrader2 needs from Vadim: P8 decision H — the brainstorm's pick (PLAN P8 decision H): recommended (H1) the basket's 30-day trend at a one-day horizon (R6's own 1d row, IC +0.070, 5 of 5 years, never acted on) and (H2) the demeaned ±1 % book imbalance at 1d as a ceiling screen, registered together on seen bars; (H3) the forced-flow signature at 1–4h, (H4) the funding-settlement premium, (H5) seasonality, (H6) the carry.** Decision G decided 2026-10-09, "G1": R31's stage 2 not run, R31 parked with F3+F4 unspent. Earlier the same day: decision F revised, "let's go with F5" → R31. 2026-10-08, "1": R30 (read). 2026-10-05, "D1 a": R29 (read, parked); "C1": R28. 2026-09-30, "(A1) (B1)": R23's second stage not run, the outside-names search parked. |
 
-### Handoff — where the next session starts (written 2026-10-09, after R31's stage 1; rewritten, not appended to, at each handoff)
+### Handoff — where the next session starts (written 2026-10-12, after R32 and R33 were registered; rewritten, not appended to, at each handoff)
 
 Everything up to here is committed. Nothing is running on the work VM (`fluxtrader2-work`, stopped); the serve host
 (`fluxtrader2-serve`) runs P7 by itself (health 2026-10-05 02:05 UTC: green — 2,712 decisions, 40 taken, 3 open, 0 late,
 0 missing bars, `check True`, `err None`, model `model_2026-09-30`).
 
-**One question is open — P8 decision H, the brainstorm's pick (PLAN P8 decision H; recommended: H1 + H2's screen, both on seen bars, no fold spent).** P8 decision G was decided 2026-10-09, Vadim's "G1": R31's stage 2 is not run. R31 (`ixhour4h`, his F5
-of the same day: the index's last hour ≥ 1σ_ix at its sign on the basket, 4h, maker, lag 15 min) passed stage 1 on the seen bars by
-the gate as written — maker net +2.05 bps a trade [−6.24, +10.34], both nulls p 0.010, no calendar year under −5 — which says the
-gross R30 certified is real and the costs take it back; F3+F4 (se ≈ 7.6, MDE ≈ 21) could confirm a net of that size about one
-time in twenty-five, so they stay unread for the market factor. R31 is parked (PLAN §7); the screener phase is closed on
-everything in hand; the other options of decision F (the spot-hedged carry — a scope decision; the unlock read; F5's launches)
-stay listed under PLAN P8 decision F for a later session. The mode: measure, with P7's clock running in the background — the wait forbids only touching R14 or the serve path.
+**No question is open. Two registrations are written and not yet run — R32 (`trend1d`) and R33 (the demeaned imbalance screen),
+PLAN §8, decision H DECIDED 2026-10-12 ("let's go as recommended").** Neither spends a fold; neither has code yet. The mode:
+build and measure, with P7's clock running in the background — the wait forbids only touching R14 or the serve path.
 
 In this order:
 
-1. **P7.** Claude runs `./fluxtrader2/scripts/vm.sh serve-status` once a month, next on or after 2026-11-01 01:30 UTC:
+1. **R32's and R33's code and tests, before any real bar is read** — `ft2/rules.py::Trend1d` (`trend1d`), `ft2/book_ext.py`
+   (`ft2 ceiling --target pairs --family depth`), `scripts/r32_read.py`; tests on made-up bars; one commit. The registration
+   blocks are the specification; nothing in them changes after the read.
+2. **The runs, serial, on the work VM:** `vm.sh bg r32 backtest trend1d --folds FP F0 F1 F2 --registration R32 --execs taker maker
+   maker_ev` (log `output/logs/r32.log`), then `vm.sh bg r33 ceiling --target pairs --family depth --draws 200` (log
+   `output/logs/r33.log`); `vm.sh pull`; stop the VM. R33 writes `validity.json` first and exits 2 on a reproduction failure
+   (the read is void, nothing of the registered feature is written).
+3. **The reads**, each into its block's Result, the §7 rows, this README (status and handoff) and a commit per read. R32's pass
+   opens decision I for Vadim (in R32's Gate); R33's clear opens the breadth step (its disk is his decision).
+4. **P7.** Claude runs `./fluxtrader2/scripts/vm.sh serve-status` once a month, next on or after 2026-11-01 01:30 UTC:
    `check True`, `err None`, `late 0`, `missing24h 0`, model age < 30 d. The money is read once (R17), earliest 2027-03-25.
-2. **Nothing else runs.** Whatever is registered next (only on Vadim's say, in a fresh session) carries R30's sizing row (the
-   basket's |move| a quarter larger while the US index is open; on R31's entry hours a tenth more again) as a described row.
-3. **A thing to carry into any next basket rule** (R31): the harness's nulls sit at the COST, not at zero — a random sign pays
+5. **A thing to carry into any next basket rule** (R31): the harness's nulls sit at the COST, not at zero — a random sign pays
    the round trip — so a p of 0.01 certifies the gross, not the net; read the interval on the net. And state the power from
    baskets a day, not trades a day: one basket is one bet, and the book rule leaves one basket per four to five open hours.
-4. **A thing to carry into any next idea on young names** (R21–R25, R28–R29): the typical case and the mean part ways there —
+6. **A thing to carry into any next idea on young names** (R21–R25, R28–R29): the typical case and the mean part ways there —
    register the statistic that a real position earns (the mean, in actual returns, with the tail in it), expect the share of
    names that explode to differ between periods, and do not read a stop as a cure.
-5. **A thing to carry into any next ceiling audit** (R30): a planted test on made-up bars is run BEFORE the real bars and can
+7. **A thing to carry into any next ceiling audit** (R30): a planted test on made-up bars is run BEFORE the real bars and can
    amend a registration; a feature with a time-of-day pattern gets a hard null from whole-day shifts, which keep the time of day.
 
 Where the outputs are (pulled, not in git): R31 — `output/backtest/ixhour4h/` (`report.md`, `results.parquet`, `decisions.parquet`,
