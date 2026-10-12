@@ -4488,7 +4488,10 @@ Result:        **Read 2026-10-12 (commit 463dff0 holds this block as written bef
                but by half as much as on the twelve and not beyond chance; what repeats is the slower fact R9 and R11 already
                failed to turn into money, and the size fact. Per the gate: PARKED as "the twelve's, not shown to travel"; §7 (b)
                closes; no priced rule on the demeaned imbalance is licensed on any universe; the 32's book stays on disk as data in
-               hand (DATA.md). Pooled 43 names (described, `--universe both`, `output/ceiling_depth_both.md`): see the line below.
+               hand (DATA.md). Pooled 43 names (described, decides nothing; `--universe both`, `output/ceiling_depth_both.md`, validity PASS):
+               the demeaned imbalance at 1d −0.0151 (t −2.24, se 0.0068), F1 −0.018 / F2 −0.013, p_family 0.080 (shuffles 0.055, shifts
+               0.080) — would not pass R33's gate on the pooled cells either; the raw −0.0365 (t −3.7, p 0.01) and the slow part
+               −0.0555 (t −2.8, p 0.035) hold on 43 names; the size signal +0.037 at 15m (t 19.7), +0.018 at 1d (t 6.3), every month.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
