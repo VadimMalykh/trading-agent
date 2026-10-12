@@ -66,6 +66,7 @@ def test_a_planted_slow_book_clears_at_a_week_with_the_registered_sign(tmp_path)
     _world(tmp_path)
     md = hz.run_book([*TWELVE, *NEW], jobs=1, twelve=TWELVE, md5_file=Path("none.txt"))
     v = json.loads(Path("output/horizon/book_both/validity.json").read_text())
+    assert v["registration"] == "R35" and v["cost_bps"] == 15.0 and hz.BOOK_COST_BY_UNIVERSE["screen"] == 25.0 and hz.BOOK_REG_BY_UNIVERSE["screen"] == "R36"
     assert v["status"] == "PASS" and v["names"] == 20 and v["whole_days"] and v["shifts"] == v["shifts_expected"] == v["days"] - 2 * 38 + 1 >= 20
     assert v["max_abs_d_frames"] == 0.0 and v["max_abs_d_label_288"] <= 1e-9 and v["names_under_funding_cover"] == [] and v["depth_md5_vs_r34"] == {}
     tab = pd.read_csv("output/horizon/book_both/signals.csv").set_index(["signal", "hold"])

@@ -433,7 +433,9 @@ def run_pre(holds=PRE_HOLDS, refs=PRE_REFS, members=None, days=None, end=None, c
 # registered NEGATIVE (a bid-heavy month precedes the worse week): a clear with M_c > 0 is recorded as "with the opposite sign".
 BOOK_HOLDS = (864, 2016)
 BOOK_REF = 288
-BOOK_COST = 15.0
+BOOK_COST = 15.0                      # R35: the 43 names
+BOOK_COST_BY_UNIVERSE = {"screen": 25.0}   # R36: the 188 screener members (their proxy round trip 23.2, rounded up) — fixed in the registration
+BOOK_REG_BY_UNIVERSE = {"screen": "R36"}
 BOOK_WINDOW_DAYS = 30                 # the slow level's window: the null's gap = this + the longest hold in days + 1
 BOOK_MIN_CELLS_ONE = 8                # the described rows on one part of the universe at a time (the eleven: one name a side)
 WINSOR = 1000.0                       # R36, described: M with every label clipped at ±WINSOR bps (the young-name tail's weight)
@@ -450,7 +452,7 @@ def book_verdict(r: dict, cost: float = BOOK_COST) -> str:
     return ("CLEARS" if r["m_c"] < 0 else "CLEARS WITH THE OPPOSITE SIGN") if v == "CLEARS" else v
 
 
-def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: float = BOOK_COST, universe: str = "both", jobs: int = 4,
+def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: float | None = None, universe: str = "both", jobs: int = 4,
              name: str | None = None, twelve: list[str] | None = None, md5_file: Path | None = None,
              split: tuple[str, list[str]] | None = None) -> str:
     import hashlib
@@ -458,6 +460,8 @@ def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: fl
     from . import book_ext, ceiling, data
     from .ceiling import END, W
     fam, described = _book_signals()
+    cost = BOOK_COST_BY_UNIVERSE.get(universe, BOOK_COST) if cost is None else cost      # the registered cost of the universe read
+    reg = BOOK_REG_BY_UNIVERSE.get(universe, "R35")
     if md5_file is None:                                                  # the chain's md5s of the depth files in hand before the fetch: R34's for the 43, R36's for the members
         md5_file = Path("output/logs/r36_md5_after.txt" if universe == "screen" else "output/logs/r34_md5_after.txt")
     holds = [int(h) for h in holds]
@@ -501,14 +505,14 @@ def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: fl
         for p, h in want.items():
             f = Path(p)
             md5s[f.stem] = "same" if f.exists() and hashlib.md5(f.read_bytes()).hexdigest() == h else "DIFFERENT"
-    v = {"registration": "R35", "universe": universe, "names": len(names), "pairs": names, "folds": fold_names, "days": nd, "rows": n_rows, "whole_days": whole,
+    v = {"registration": reg, "universe": universe, "names": len(names), "pairs": names, "folds": fold_names, "days": nd, "rows": n_rows, "whole_days": whole,
          "gap_days": gap, "shifts": len(ks), "shifts_expected": nd - 2 * gap + 1, "max_abs_d_frames": d_frames, "max_abs_d_label_288": d_label,
          "funding_cover_by_name": {k: round(x, 4) for k, x in fund_cover.items()}, "names_under_funding_cover": [k for k, x in fund_cover.items() if x < FUND_COVER],
          "depth_md5_vs_r34": md5s, "cells": {str(h): int((~np.isnan(Y[h])).sum()) for h in every}, "cost_bps": cost, "unit": bt.UNIT, "charged": bt.CHARGED}
     v["status"] = "PASS" if (whole and len(ks) == v["shifts_expected"] and len(ks) >= 20 and d_frames == 0.0 and np.isfinite(d_label) and d_label <= 1e-9
                              and not v["names_under_funding_cover"] and "DIFFERENT" not in md5s.values()) else "FAIL"
     (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
-    head = [f"# R35 — the slow book at a longer hold: the cells of `{universe}` ({len(names)} names) (`ft2 horizon --book --universe {universe}`)\n",
+    head = [f"# {reg} — the slow book at a longer hold: the cells of `{universe}` ({len(names)} names) (`ft2 horizon --book --universe {universe}`)\n",
             f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · folds {'+'.join(fold_names)} · {nd} days · holds {holds} bars (reference {ref}) · {len(ks)} shifts "
             f"(gap {gap} days) · cost {cost:g} bps a leg · the registered sign negative\n",
             f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n"]
@@ -598,5 +602,5 @@ def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: fl
     tenth.to_csv(out / "tenths.csv", index=False)
     d.to_parquet(out / "shifts.parquet", index=False)
     (out / "validity.json").write_text(json.dumps({**v, "null_max_u_p95": float(mx.quantile(0.95))}, indent=1, default=str))
-    print(f"R35: {len(clears)} of {len(fam_tab)} clear; wrote {out}/", flush=True)
+    print(f"{reg}: {len(clears)} of {len(fam_tab)} clear; wrote {out}/", flush=True)
     return "\n".join(md)
