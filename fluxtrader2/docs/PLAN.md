@@ -1214,7 +1214,7 @@ them and what they cost:
 Needed from Vadim: the pick. On M1 Claude registers (the three ingredients' exact definitions, the horizons, the universe, both nulls,
 the gate, what a clear licenses), commits, runs on the work VM and reads — nothing in money before the read.
 
-**Decision N (2026-10-13) — after R37. OPEN, Vadim's.** The screener phase has now read every per-name source in hand at every horizon
+**Decision N (2026-10-13) — after R37. DECIDED 2026-10-13, Vadim's "N2": the brainstorm first — written below as decision O, nothing registered.** The screener phase has now read every per-name source in hand at every horizon
 it can reach: the candles (R18, R19), funding / premium / open interest / long-short / taker flow at one day (R20, R21) and at 3 and 7
 days (R22–R25), the US index and the ETF flows (R26, R27), the launches (R28, R29), the book at one day (R33, R34) and at a week (R35,
 R36), the forced-flow hour (R37); on the market side the index (R30, R31) and the trend (R32). What stands as FACTS, none money: the
@@ -1234,6 +1234,61 @@ long side (refuted by 2022). The candidates left, each with its grounding and co
 - **(N4) P7 alone** — the paper test's clock to 2027-03-25; the mode becomes wait.
 Needed from Vadim: the pick. On N1 Claude registers (the premium's definition and its demeaning, the settlement hours, the horizons, the
 universe, the null, the gate, what a clear licenses), commits, runs and reads — nothing in money before the read.
+
+**Decision O (2026-10-13) — the brainstorm after R37, Vadim's "N2": what to register next, in parallel with P7. OPEN, Vadim's.**
+Ground rule as under decision H: a mechanism, the cells it can be confirmed on, its power, and why it escapes what thirty-seven reads
+found. First the structural facts the thirty-seven reads leave, because the list is built from them and not from taste:
+- **(i) Signal is where it was expected and it is small.** Every real per-name number sits at 0.01–0.03 of IC: the hourly reversal
+  (+0.02 … +0.03, u 7–11, on 188 names and the twelve, R37), the book's one-day lean (−0.04 raw on large names, R33/R34), the candle
+  ridge held out (0.033, R14). Nothing read on these cells is at 0.05 or above except the SIZE of the next move (vol IC 0.2–0.5 from
+  volatility ratios and the book's within-month part), which is not a direction.
+- **(ii) The cost bar is the obstacle, not the sign.** At 4h the twelve's bars are 0.047 (taker), 0.027 (maker), 0.024 / 0.015 (with
+  the vol-timing filter that doubles the mean move, P2 #1); the hourly reversal's 4h IC on the twelve is 0.023 — 85 % of the maker bar
+  and above the maker-with-timing bar — and the 4h direction forecast P2 read at 0.030 (all 24 features 0.044) was "a candidate for P5's
+  forecast layer" that P5 never built on the twelve at 4h (R12's 4h ridge was fitted on the wide universe and lost; P5 moved to 1d).
+  Every one of these verdicts hinges on the maker round trip being 7.2 bps: and that number is P1's MINUTE-level estimate ("coarse:
+  queue position unknown"; fill 86–97 % within 15 min, adverse drift 1–3 bps), whose trade-level validation has been parked in §7 since
+  P1 with the trigger "a verdict hinges on the 4-bps taker-vs-maker difference" — which is now true of R31 (+2 net maker), of the 4h
+  reversal and of the 4h forecast. The harness's bar-level maker reproduced P1's day average (−7.2 against −7.4, P3) but cannot know
+  which orders fill.
+- **(iii) Breadth did not buy power where the names added were younger** (R36: se unchanged with four times the names), and young
+  names carry a right tail that destroys a mean (R29, R36's medians 1.5–2 % a week under the peers' mean). Confirmable per-name reads
+  are therefore reads on LARGE names with short holds (many bets a day), not on many names with long holds.
+- **(iv) Market-wide rules are unconfirmable on the cells in hand** (decision H's structural fact; R31, R32 confirmed it in practice).
+Ranked:
+- **(O1) — recommended first: the maker cost at the TRADE level on the twelve — the §7 item whose trigger is met.** Not a signal: a
+  measurement that moves every bar at once. `ft2 tape --keep-zip` on a ~2-week window of the archive's `aggTrades` (12 names × 14 days
+  × 15–45 MB ≈ 4–6 GB, the VM has 89 GB free): a resting order's queue position at the touch (the volume ahead of it at placement, from
+  the ladder where it exists (2026-08 →) or from the trades' size distribution), the fill time and the drift after the fill, per name
+  and hour of day, at 10,000 USDT. The question with a registered answer: is the twelve's maker round trip 7 bps, or 4, or 10 — and
+  does the harness's bar-level maker (a fill when a later bar trades through the price) over- or under-state it? What it licenses: a
+  NUMBER — the maker bar at every horizon re-written from the measurement (P2 #7's table re-read, not re-run), and a `maker_adv`
+  column the harness prices from. If the measured round trip is ≤ 5 bps, (O2) is registered next with that bar; if ≥ 9, every maker
+  verdict in §8 stands as read and the maker path closes. A day of code (the tape streamer exists), a few hours of download, half a
+  day of reading. No fold spent; nothing of a signal is read.
+- **(O2) P5's 4h forecast on the twelve, held out as R14 was, as a MAKER with the vol-timing filter.** P2 #1's own candidate ("real and
+  above the maker + timing bar"), never built on the twelve at 4h: the in-pair ridge of P2's candle features (R13 B's shape at hold 48),
+  fitted on the twelve less one and scored on the one (R14's design), traded on the most volatile tenth of bars as a maker. Grounded by
+  P2 #1 (0.030, p 0.025; all history 0.044, t 4.0) and by R37's hourly reversal (+0.023 relative at 4h, u 7 — part of what the ridge
+  would fit). Expected gross on the timed tenth ≈ IC × 1.755 × 1.25 × 160 bps (the doubled move) ≈ +10 … +15 a trade against a maker
+  round trip of 7 (or whatever O1 measures): net +3 … +8; six baskets a day on eleven names → se ≈ 2 bps a trade on F1+F2, so a
+  stage-1 read CAN tell, and F3+F4 (unread for a 4h question on the twelve: R16 read them at 1d) can confirm a true +5 about two times
+  in three. The risks written in: R12's 4h ridge lost on the wide universe; R2's rank rule lost in the tails (the body reverses, the
+  tails continue — the ridge must be read on the body, not gated on dispersion); a maker reversal order fills when the price runs
+  further against it (the adverse selection R1 measured at +4 bps in the rule's FAVOUR at 4h — maker beat taker — and R31 at −5.5
+  against a continuation rule). Registered after O1, with O1's bar.
+- **(O3) the premium's reversion around the 8-hour funding settlement, per name (H4, N1)** — the last unread per-name event; R37's
+  frame on the members' premium index; a day. Prior modest. Independent of O1.
+- **(O4) BTC's last hour as per-name information (beta_btc × BTC's last-hour move), R26's frame with BTC in the index's place** —
+  a lead–lag of liquidity; R26's code with the 5m candles; a day. Prior low (the 1h bar is 0.14; at 4h the plain reversal already
+  reads 0.02 and this would have to add to it as R37's family had to).
+- **(O5) two FACTS that are not confirmable on the cells in hand, written so they are not re-proposed:** the level–drift link (names
+  with persistently bid-heavy books drift down over months: a monthly long–short, 16 monthly bets on F1+F2 — no power); the
+  members' right-skewed cross-section (the median member 1.5–2 % a week under the equal-weight mean: a "short the many" basket whose
+  mean is destroyed by the few, R29 — and funding on both sides). Both live as described rows, not registrations.
+- **(O6) P7 alone.**
+Recommended: O1, then O2 with O1's number; O3 in parallel if a day is spare. Needed from Vadim: the pick (and for O1 the download of
+≈ 5 GB of aggTrades to the work VM, which the registration will state exactly before any file is fetched).
 
 The decision of 2026-09-29 → 2026-09-30, for the record — how to correct the record after R25; **Vadim chose (1)**:
 
