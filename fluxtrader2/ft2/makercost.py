@@ -145,8 +145,16 @@ def placements(sym: str, touch: pd.DataFrame, lad: pd.DataFrame, tr: pd.DataFram
 
 
 # ---- the read -------------------------------------------------------------------------------------------------------------------------------
+def _unskipped(g: pd.DataFrame) -> pd.DataFrame:
+    """The placements that were made (a skipped row has no fate): the flags as plain bools (a frame built with skipped rows holds them as objects)."""
+    d = g[~g["skipped"].astype(bool)].copy()
+    for c in ("filled", "partial", "swept", "h_fill"):
+        d[c] = d[c].astype(bool)
+    return d
+
+
 def _summ(g: pd.DataFrame) -> dict:
-    d = g[~g["skipped"]]
+    d = _unskipped(g)
     by_day = d.groupby(pd.DatetimeIndex(d["s"]).floor("D"))["leg_cost_bps"].mean()
     se = float(by_day.std(ddof=1) / np.sqrt(len(by_day))) if len(by_day) > 1 else np.nan
     f = d[d["filled"]]
@@ -238,7 +246,7 @@ def run(start: str, end: str, symbols: list[str], name: str | None = None) -> st
     summ["d_vs_p1"] = summ["eff_rt_bps"] - summ["p1_rt_15"]
     summ["d_vs_harness"] = summ["eff_rt_bps"] - summ["h_eff_rt_bps"]
     summ["sentence"] = np.where(summ["d_vs_harness"] <= 1.5, "OPEN", np.where(summ["d_vs_harness"] <= 4.0, "NARROWER", "CLOSED"))
-    d = P_[~P_["skipped"]].copy()
+    d = _unskipped(P_)
     d["hour"] = pd.DatetimeIndex(d["s"]).hour
     d["day"] = pd.DatetimeIndex(d["s"]).floor("D")
     d["queue_bin"] = pd.cut(d["queue_x"], [-np.inf, 1, 10, np.inf], labels=["<1x", "1-10x", ">10x"])

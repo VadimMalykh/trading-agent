@@ -84,7 +84,7 @@ def _world(tmp_path, swept_minutes=(5, 25), days=2):
         m = tr.assign(ts=pd.to_datetime((tr["transact_time"] // 60_000) * 60_000, unit="ms", utc=True)).groupby("ts").agg(volume=("quantity", "sum"), n_trades=("quantity", "size")).reset_index()
         m.assign(symbol=SYM).to_parquet(f"data/tape/parts/{SYM}/{day:%Y-%m-%d}.parquet", index=False)
         # the ladder: a snapshot every 12 s, the touch 50 a side
-        ts = pd.date_range(day, day + pd.Timedelta(days=1) - pd.Timedelta("1s"), freq="12s")
+        ts = pd.date_range(day + pd.Timedelta("2min"), day + pd.Timedelta(days=1) - pd.Timedelta("1s"), freq="12s")     # the ladder starts two minutes late: the first bar close has no snapshot and is skipped
         lv = pd.DataFrame({"symbol": SYM, "ts": ts.strftime("%Y-%m-%dT%H:%M:%S.%f+00:00"), "event_time": "", "transaction_time": "", "last_update_id": 0, "depth": 100,
                            "bids": '[[100.0, 50.0], [99.9, 500.0]]', "asks": '[[100.1, 50.0], [100.2, 500.0]]'})
         d = Path("data/raw/levels") / f"{day:%Y-%m-%d}"; d.mkdir()
@@ -107,14 +107,16 @@ def test_end_to_end_prices_a_known_book_and_reproduces_its_tape(tmp_path, monkey
     assert v["status"] == "PASS" and v["reproduction"]["max_abs_d_volume"] <= 1e-6 and v["reproduction"]["max_d_trades"] == 0 and v["ladder_cover"][SYM] > 0.99
     s = pd.read_csv(out / "summary.csv").iloc[0]
     # every order fills within 15 min: a buy by the queue (150 units of sells at 0.4 every other second → 750 s) or by the hour's sweeps; a sell by the queue (750 s)
-    assert s["fill_share"] > 0.99 and s["partial_share"] < 0.01 and 700 < s["t_fill_median_s"] < 800 and abs(s["queue_x_median"] - 0.5) < 1e-3   # the sell at 100.1 has q 99.9; 150 units of sells at 0.4 every 2 s → 750 s; the last bars of the last day see no next-day trades
+    assert s["skipped"] == 2 * 2 and s["fill_share"] > 0.99 and s["partial_share"] < 0.01 and 700 < s["t_fill_median_s"] < 800 and abs(s["queue_x_median"] - 0.5) < 1e-3   # the sell at 100.1 has q 99.9; 150 units of sells at 0.4 every 2 s → 750 s; the last bars of the last day see no next-day trades
     # the mid never moves: the drift against the resting price is the half-spread earned (+5 bps), so a leg costs 2.0 − 5.0 = −3.0 and the round trip −6.0
     assert abs(s["adv_filled_mean_bps"] - 5.0) < 0.01 and abs(s["eff_rt_bps"] - (-6.0)) < 0.2 and abs(s["eff_rt_with_missed_bps"] - s["eff_rt_bps"]) < 1e-9
     # the harness's maker: resting at the 5m close (≈ the mid) it is 'filled' when a later bar's low (100.0) trades strictly through — always, for a buy; its adv is ~0
     assert s["h_fill_share"] > 0.95 and abs(s["h_adv_filled_mean_bps"]) < 1.0 and abs(s["h_eff_rt_bps"] - 4.0) < 1.0
     assert s["p1_fill_15"] == 0.95 and abs(s["p1_rt_15"] - 7.0) < 1e-9 and s["sentence"] == "OPEN"
     p = pd.read_parquet(out / "placements.parquet")
-    assert len(p) == 2 * 288 * 2 and (p["swept"][p["side"] == "sell"] == False).all()                               # noqa: E712  — nothing prints above the ask
+    assert len(p) == 2 * 288 * 2 and int(p["skipped"].sum()) == 4
+    p = mc._unskipped(p)
+    assert (p["swept"][p["side"] == "sell"] == False).all()                               # noqa: E712  — nothing prints above the ask
     assert (p[(p["side"] == "buy") & p["swept"]]["t_fill_s"] <= 10 * 60 + 2).all()                                  # the sweeps at minutes 5 and 25: at most ten minutes from a placement
     assert "**PASS**" in md and "## Per name" in md and (out / "by_hour.csv").exists() and (out / "by_queue.csv").exists()
 
