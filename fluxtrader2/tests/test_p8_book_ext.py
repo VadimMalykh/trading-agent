@@ -112,7 +112,7 @@ def test_shift_null_keeps_the_time_of_day_and_breaks_the_link():
     z = pd.DataFrame(np.tile(at0[:, None], (1, 6)) + rng.normal(0, 1e-3, (len(idx), 6)), index=idx, columns=cols)
     D = {"z": {h: z for h in bx.HZ}, "zres": {h: z.sub(z.mean(axis=1), axis=0) for h in bx.HZ}}
     s = np.ones(len(idx), dtype=bool)
-    s[-1] = False                                                                               # the last bar, a fold's end instant, is not scored
+    s[0] = False                                                                                # the leading partial day (one bar here) is never scored
     f = pd.DataFrame(np.tile(at0[:, None], (1, 6)) + rng.normal(0, 1e-3, (len(idx), 6)), index=idx, columns=cols)
     out = bx.shift_feature("f", f, D, s, 10, 0, shift_min=5)
     d = out[(out["bet"] == "directional") & (out["horizon"] == "1d")].set_index("draw")["ic"]
@@ -121,7 +121,7 @@ def test_shift_null_keeps_the_time_of_day_and_breaks_the_link():
     out8 = bx.shift_feature("f8", f8, D, s, 10, 0, shift_min=5)
     assert (out8[(out8["bet"] == "directional") & (out8["horizon"] == "1d")]["ic"].abs() < 0.05).all()
     with pytest.raises(AssertionError):
-        bx.shift_feature("f", f, D, np.ones(len(idx), dtype=bool), 10, 0, shift_min=5)          # a scored bar beyond the whole days is refused
+        bx.shift_feature("f", f, D, np.ones(len(idx), dtype=bool), 10, 0, shift_min=5)          # a scored bar in the leading partial day is refused
 
 
 def test_run_writes_validity_first_and_voids_on_a_saved_screen_that_does_not_match(tmp_path, monkeypatch):

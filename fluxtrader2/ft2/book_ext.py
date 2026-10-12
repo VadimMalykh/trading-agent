@@ -67,18 +67,20 @@ def shifts(n_days: int, draws: int, seed: int, shift_min: int = SHIFT_MIN) -> np
 def shift_feature(name: str, f: pd.DataFrame, D: dict, s: np.ndarray, draws: int, seed: int, shift_min: int = SHIFT_MIN,
                   horizons: tuple[str, ...] = HZ) -> pd.DataFrame:
     """One feature under the shift null — `_null_feature`'s statistics (directional pooled, relative) on the scored bars, the
-    labels rolled by whole days over the panel trimmed to whole days (the panel's last bar, the fold's end instant, is never
-    scored, and nothing scored is trimmed — asserted). The feature stays in place."""
+    labels rolled by whole days over the panel trimmed to a whole number of days: the leading partial day is dropped (the panel
+    starts where the collector's first bar is, inside F0's warm-up, never scored — asserted), so that a roll by k × 288 rows keeps
+    every row's time of day, the wrapped rows included. The feature stays in place."""
     idx = f.index
-    n = (len(idx) // PER_DAY) * PER_DAY
-    assert not s[n:].any(), "a scored bar beyond the panel's whole days"
-    sn, sidx = s[:n], idx[:n][s[:n]]
-    fs = f.iloc[:n][sn]
+    n0 = len(idx) % PER_DAY
+    assert not s[:n0].any(), "a scored bar inside the panel's leading partial day"
+    sn, sidx = s[n0:], idx[n0:][s[n0:]]
+    n = len(idx) - n0
+    fs = f.iloc[n0:][sn]
     day1 = (sidx.floor("D") - sidx[0].floor("D")).days.to_numpy()
     dayc = np.repeat(day1, fs.shape[1])
     fv = _pair_rank(fs).to_numpy().ravel()
-    Z = {h: np.clip(D["z"][h].to_numpy()[:n], -Z_CLIP, Z_CLIP) for h in horizons}
-    Zr = {h: D["zres"][h].to_numpy()[:n] for h in horizons}
+    Z = {h: np.clip(D["z"][h].to_numpy()[n0:], -Z_CLIP, Z_CLIP) for h in horizons}
+    Zr = {h: D["zres"][h].to_numpy()[n0:] for h in horizons}
     rows = []
     for draw, nd in enumerate(shifts(n // PER_DAY, draws, seed, shift_min)):
         for h in horizons:
