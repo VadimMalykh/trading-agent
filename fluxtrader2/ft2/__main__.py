@@ -296,7 +296,7 @@ def main(argv=None):
     b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")
     b.add_argument("--folds", nargs="*", default=["F1", "F2"], help="a confirmation fold (F3–F5) needs --registration")
     b.add_argument("--registration", help="R<n>: the PLAN §8 block this read belongs to")
-    b.add_argument("--execs", nargs="*", default=["taker", "maker", "maker_ev"], choices=["taker", "maker", "maker_ev"])
+    b.add_argument("--execs", nargs="*", default=["taker", "maker", "maker_ev"], choices=["taker", "maker", "maker_ev", "maker_trade"], help="maker_trade (R40): the maker priced from R39's trade-level constants per name — named by a registration, not a default")
     b.add_argument("--draws", type=int, default=200, help="noise floor: label shuffles")
     b.add_argument("--latency", type=int, default=1, help="bars between the decision and the execution price")
     b.add_argument("--refit-days", type=int, default=30)

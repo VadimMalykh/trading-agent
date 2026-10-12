@@ -79,6 +79,8 @@ LATENCY = 1              # bars between the decision and the execution price
 REFIT_DAYS = 30          # a block: the strategy is refitted (if it fits anything) this often
 MAKER_WAIT = 3           # bars a maker order rests before the leg crosses as a taker (= P1's MAKER_H of 15 minutes)
 EXECS = ("taker", "maker", "maker_ev")
+EXECS_ALL = (*EXECS, "maker_trade")                      # R40: the maker priced from R39's trade-level constants; named by a registration, not a default
+MAKER_TRADE = Path(__file__).parent / "maker_trade.csv"  # R39's per-name constants on the twelve (fill share, drift after a fill, slippage at 15 min), frozen
 UNIT = "actual"          # gross = side × (exit / entry − 1); a run without this in its meta was counted in logs (before 2026-09-30)
 CHARGED = "value"        # funding and the exit leg on the position's value; a run without this in its meta charged them on the size at entry (before 2026-10-01)
 SIDES = {"long": 1, "short": -1}
@@ -158,6 +160,9 @@ class Costs:
     maker_fill: np.ndarray       # day × pair: share of resting orders filled within MAKER_H minutes
     fundcum: np.ndarray          # bar × pair: cumulative funding rate, bps, over events stamped ≤ t
     fundval: np.ndarray | None   # bar × pair: cumulative rate × the close at the event (bps × price) — the payment on the position's value, ÷ the entry price
+    mt_fill: np.ndarray | None = None   # pair: R39's trade-level fill share within 15 min (`maker_trade`, R40; NaN for a name without a row)
+    mt_adv: np.ndarray | None = None    # pair: R39's mean drift after a fill against the resting price, bps (negative = adverse)
+    mt_slip: np.ndarray | None = None   # pair: R39's mean slippage of crossing at 15 min beyond the fee, bps (the half-spread inside)
 
 
 def _ns(x) -> np.ndarray:
@@ -194,8 +199,10 @@ def load_costs(index: pd.DatetimeIndex, cols: pd.Index, end: pd.Timestamp, cost_
             if close is not None:                              # the close at or before the event (an event before the first bar: the first close — a constant, gone in every difference)
                 at = cl[np.clip(np.searchsorted(_ns(index), ts, "right") - 1, 0, None), j]
                 val[:, j] = np.concatenate([[0.0], np.cumsum(np.nan_to_num(rate * at))])[pos]
+    mt = pd.read_csv(MAKER_TRADE).set_index("symbol").reindex(cols) if MAKER_TRADE.exists() else pd.DataFrame(index=cols, columns=["fill_share", "adv_filled_mean_bps", "slip15_mean_bps"], dtype=float)
     return Costs(pd.DatetimeIndex(sp.index), (sp / 2 + piv(f"imp_{NOTIONAL}")).to_numpy() * cost_mult, piv(f"maker_adv_{MAKER_H}").to_numpy(),
-                 piv(f"maker_fill_{MAKER_H}").to_numpy(), cum, val)
+                 piv(f"maker_fill_{MAKER_H}").to_numpy(), cum, val,
+                 mt["fill_share"].to_numpy(dtype=float), mt["adv_filled_mean_bps"].to_numpy(dtype=float), mt["slip15_mean_bps"].to_numpy(dtype=float))
 
 
 # ---- strategies ---------------------------------------------------------------------------------------
@@ -379,6 +386,11 @@ def price(dec: pd.DataFrame, M: Market, C: Costs, exec_: str, taker_bps: float, 
             buying = (s > 0) == (leg == "e")
             filled = np.where(buying, below[g, j] < p0, above[g, j] > p0)
             legs[leg] = (np.where(filled, p0, px[g + w, j]), np.where(filled, maker_bps, taker_bps), np.where(filled, 0.0, other_t), filled.astype(float))
+        elif exec_ == "maker_trade":                                    # R40: R39's trade-level constants per name, the EV form, no wait
+            if C.mt_fill is None:
+                raise ValueError("price: maker_trade needs the trade-level constants (ft2/maker_trade.csv)")
+            p, adv, slip = C.mt_fill[j], C.mt_adv[j], C.mt_slip[j]
+            legs[leg] = (p0, p * maker_bps + (1 - p) * taker_bps, p * -adv + (1 - p) * slip, p)
         else:
             p = pick(C.maker_fill)
             legs[leg] = (p0, p * maker_bps + (1 - p) * taker_bps, p * -pick(C.maker_adv) + (1 - p) * other_t, p)
@@ -572,6 +584,8 @@ def report(meta: dict, res: pd.DataFrame, floor: pd.DataFrame) -> str:
           f"*maker* rests a limit order at the bar's close for {MAKER_WAIT * 5} minutes on each leg, is filled only if a later bar trades through it, and "
           "otherwise crosses as a taker at the price by then (so `other_cost` is what the unfilled legs paid and the missed move is inside gross); "
           "*maker_ev* is P1's day-average version, blind to which orders fill — a reference, optimistic for a rule that buys what is falling. "
+          "*maker_trade* (R40) prices a maker leg from R39's trade-level constants per name — the fill share within 15 minutes, the drift after a fill, "
+          "the slippage of crossing — measured on 2026-08 and applied to every bar; path-independent like maker_ev. "
           "The interval is 95 %, clustered by day; "
           "*MDE* is the smallest true mean this sample could tell from zero (80 % power). The *noise floor* is the same pipeline on labels whose days were "
           "shuffled; p is the share of shuffles that did at least as well. *flip p* is the stricter null: the rule's own trades, with every day's sides "

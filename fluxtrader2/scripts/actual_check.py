@@ -65,7 +65,35 @@ def cells(old: str, new: str) -> dict:
     return v
 
 
+def same(old: str, new: str) -> dict:
+    """The validity of a re-execution that ADDS an execution (R40, `maker_trade`): the read made again is the first read's on everything the
+    first read had — the decisions row by row, the params, the folds and the pairs, and for every execution of `bt.EXECS` present in both every
+    column of the fills to 1e-9 (gross and net included: the same unit, the same costs) — and the re-executed run has the added execution priced."""
+    a, b = bt.OUT / old, bt.OUT / new
+    ma, mb = (json.loads((x / "meta.json").read_text()) for x in (a, b))
+    da, db = (pd.read_parquet(x / "decisions.parquet") for x in (a, b))
+    v = {"first": old, "re_executed": new, "decisions": len(db), "decisions_identical": bool(da.equals(db)),
+         "params_identical": ma["params"] == mb["params"] and ma["folds"] == mb["folds"] and ma["pairs"] == mb["pairs"], "unit": [ma.get("unit"), mb.get("unit")], "execs": {}}
+    ok = v["decisions_identical"] and v["params_identical"] and ma.get("unit") == mb.get("unit") and ma.get("charged") == mb.get("charged")
+    for e in bt.EXECS:
+        if not ((a / f"fills_{e}.parquet").exists() and (b / f"fills_{e}.parquet").exists()):
+            continue
+        fa, fb = (pd.read_parquet(x / f"fills_{e}.parquet") for x in (a, b))
+        num = [c for c in fa.columns if fa[c].dtype.kind == "f"]
+        d = float(max((np.nanmax(np.abs(fa[c].to_numpy() - fb[c].to_numpy())) if len(fa) else 0.0) for c in num)) if len(fa) == len(fb) else np.inf
+        nan_same = bool(all(fa[c].isna().equals(fb[c].isna()) for c in num)) if len(fa) == len(fb) else False
+        keys = bool(len(fa) == len(fb) and all(fa[c].equals(fb[c]) for c in SAME if c in fa.columns))
+        x = {"fills": len(fb), "rows_identical": keys, "max_abs_diff_numeric": d, "nan_pattern_identical": nan_same}
+        ok = ok and keys and nan_same and d <= TOL
+        v["execs"][e] = x
+    added = [e for e in bt.EXECS_ALL if e not in bt.EXECS and (b / f"fills_{e}.parquet").exists()]
+    v["added_execs"] = added
+    v["status"] = "PASS" if ok and v["execs"] and added else "FAIL"
+    (b / "same_as_first_read.json").write_text(json.dumps(v, indent=1))
+    return v
+
+
 if __name__ == "__main__":
-    out = {"trades": trades, "cells": cells}[sys.argv[1]](sys.argv[2], sys.argv[3])
+    out = {"trades": trades, "cells": cells, "same": same}[sys.argv[1]](sys.argv[2], sys.argv[3])
     print(json.dumps(out, indent=1))
     sys.exit(0 if out["status"] == "PASS" else 1)
