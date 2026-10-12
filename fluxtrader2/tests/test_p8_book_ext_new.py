@@ -79,6 +79,10 @@ def test_universe_new_is_the_32_outside_the_twelve():
         universe, symbols = "new", None
     got = _symbols(A())
     assert got == list(NEW32) and len(got) == 32 and not set(got) & set(PAIRS) and set(got) < set(WIDE)
+
+    class B:
+        universe, symbols = "both", None
+    assert _symbols(B()) == [*PAIRS, *NEW32] and len(_symbols(B())) == 44
     assert bx.out_paths("new") == (Path("output/ceiling_depth_new.md"), Path("output/ceiling_depth_new")) and bx.out_paths(None) == (bx.OUT_MD, bx.OUT_DIR)
 
 

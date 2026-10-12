@@ -47,6 +47,9 @@ def _symbols(args) -> list[str]:
     if u == "new":                                            # R34: the 32 of the forty the collector never recorded (WIDE minus the twelve's eight)
         from .universe import NEW
         return list(NEW)
+    if u == "both":                                           # R34, described: the twelve and the 32 together (HYPE has no bar before F2's end and drops)
+        from .universe import NEW
+        return [*PAIRS, *NEW]
     if u == "screen":                                         # R18: every name that is a member of some block (never one of the twelve)
         from .universe import screen_symbols
         return screen_symbols()
@@ -267,7 +270,7 @@ def main(argv=None):
                    help="--target basket (R30): `index` — the Nasdaq 100's moves, the basket's lag behind it, open/closed and its volatility → output/market_index.md; "
                         "`etf` — the spot-ETF flows, F2 only → output/market_etf.md (see ft2/market_ext.py). --target pairs (R33): `depth` — the ±1 % book "
                         "imbalance demeaned by its trailing month, P2's cells → output/ceiling_depth.md (see ft2/book_ext.py)")
-    g.add_argument("--universe", choices=["new"], default=None, help="--family depth only (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md")
+    g.add_argument("--universe", choices=["new", "both"], default=None, help="--family depth only (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md; `both` — the twelve and the 32 pooled, a described row → output/ceiling_depth_both.md")
     b = sub.add_parser("backtest", help="P3: a strategy through the harness → output/backtest/<name>/ (see ft2/backtest.py)")
     b.add_argument("strategy", help="a name in backtest.STRATEGIES / rules.STRATEGIES, e.g. coin")
     b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")
