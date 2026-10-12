@@ -121,10 +121,17 @@ def derive(P: dict[str, pd.DataFrame]) -> dict:
 
 
 def bar_cost(index: pd.DatetimeIndex, cols: list[str], taker_bps: float, maker_bps: float) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Round trip per bar in bps from P1's pair × day series (the day of the decision time)."""
+    """Round trip per bar in bps from P1's pair × day series (the day of the decision time). A name the tape never priced (the wider
+    universe, R10) takes its row from `ft2 costwide`'s candle proxy (`cost_daily_wide.parquet`, R34) — a taker cost only: the proxy
+    has no maker adverse selection, so its maker column is NaN."""
+    from .cost import DAILY_WIDE
     d = pd.read_parquet(DAILY)
-    d = d[d["day"] < END]
     d["symbol"] = d["symbol"].astype(str)
+    if (missing := [c for c in cols if c not in set(d["symbol"])]) and DAILY_WIDE.exists():
+        w = pd.read_parquet(DAILY_WIDE)
+        w["symbol"] = w["symbol"].astype(str)
+        d = pd.concat([d, w[w["symbol"].isin(missing)].reindex(columns=d.columns)], ignore_index=True)
+    d = d[d["day"] < END]
     d["taker"] = 2 * taker_bps + d["spread_cal_bps"] + 2 * d[f"imp_{NOTIONAL}"]
     d["maker"] = 2 * maker_bps - 2 * d[f"maker_adv_{MAKER_H}"]
     out = []

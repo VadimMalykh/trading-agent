@@ -35,6 +35,13 @@ from .ceiling import HORIZONS, MDE_K, NULL_HORIZONS, Z_CLIP, _ic_pooled, _ic_xs,
 OUT_MD = Path("output/ceiling_depth.md")
 OUT_DIR = Path("output/ceiling_depth")
 SAVED = ceiling.OUT_DIR                   # P2's output/ceiling/: ic.parquet, noise_ic.parquet, move_vs_cost.parquet
+R33_BAR = 0.0106                          # R34: the size condition as a NUMBER — P2's / R33's 1d maker bar on the twelve (the outside names have no maker measurement)
+
+
+def out_paths(universe: str | None) -> tuple[Path, Path]:
+    """R33's paths for the twelve; `output/ceiling_depth_<universe>*` for a breadth read (R34), so R33's outputs are never overwritten."""
+    tag = f"_{universe}" if universe else ""
+    return Path(f"output/ceiling_depth{tag}.md"), Path(f"output/ceiling_depth{tag}")
 RAW, LVL, DM = "depth_imb_1", "depth_imb_1_lvl30", "depth_imb_1_dm"
 MONTH = 30 * 288                          # the trailing month, in 5m bars (§7 (b): "the pair's trailing-month mean")
 MIN_MONTH = MONTH // 2                    # bars of book the mean needs before it exists
@@ -128,12 +135,28 @@ def reproduction(sc_raw: pd.DataFrame, null_raw: pd.DataFrame, saved: Path = SAV
             "null_rows_this_run": int(len(newn.dropna())), "max_abs_diff": diff}
 
 
+def reproduction_r33(sc_twelve: pd.DataFrame, saved: Path = OUT_DIR, tol: float = TOL) -> dict:
+    """R34's validity (1): the frame is R33's — the three features' screen rows on the twelve, computed in this run without nulls,
+    against R33's saved `screen.parquet` (ic, t on every bet × horizon × feature)."""
+    if not (saved / "screen.parquet").exists():
+        return {"status": "MISSING", "note": f"{saved}/screen.parquet not found"}
+    key = ["bet", "horizon", "feature"]
+    old = pd.read_parquet(saved / "screen.parquet").set_index(key)
+    new = sc_twelve.set_index(key)
+    j = new[["ic", "t"]].join(old[["ic", "t"]], rsuffix="_r33", how="inner").dropna()
+    diff = {c: float((j[c] - j[f"{c}_r33"]).abs().max()) if len(j) else np.nan for c in ("ic", "t")}
+    ok = len(j) == len(old.dropna(subset=["ic", "t"])) > 0 and all(np.isfinite(v) and v <= tol for v in diff.values())
+    return {"status": "PASS" if ok else "FAIL", "rows_compared": int(len(j)), "rows_r33": int(len(old)), "max_abs_diff": diff}
+
+
 def decomposition(F: dict[str, pd.DataFrame], s: np.ndarray) -> dict:
     """raw = lvl30 + dm on every scored cell where both exist; the coverage of each feature on the scored cells."""
     both = F[LVL][s].notna() & F[DM][s].notna()
     gap = float((F[RAW][s] - F[LVL][s] - F[DM][s]).abs().where(both).max().max()) if both.any().any() else np.nan
     cov = {k: float(v[s].notna().to_numpy().mean()) for k, v in F.items()}
-    return {"status": "PASS" if np.isfinite(gap) and gap <= 1e-9 else "FAIL", "max_abs_gap": gap, "cells_with_both": int(both.to_numpy().sum()), "coverage": cov}
+    by_name = {c: round(float(F[DM][s][c].notna().mean()), 4) for c in F[DM].columns}
+    return {"status": "PASS" if np.isfinite(gap) and gap <= 1e-9 else "FAIL", "max_abs_gap": gap, "cells_with_both": int(both.to_numpy().sum()), "coverage": cov,
+            "coverage_by_name": by_name, "names_under_half": [c for c, v in by_name.items() if v < 0.5]}
 
 
 # ---- the verdict ---------------------------------------------------------------------------------------------------------------------
@@ -172,54 +195,94 @@ def variance_share(F: dict[str, pd.DataFrame], s: np.ndarray) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def taker_bar(D: dict, ct: pd.DataFrame, h: str) -> float:
+    """P2's #7 `ic_needed_taker` on the scored cells that have a taker cost: the mean round trip over Z_TOP × 1.2533 × the mean |move|
+    (`ceiling.move_vs_cost`'s formula, without requiring a maker cost on the cell — the cost proxy has none)."""
+    s = D["scored"]
+    a, t = D["fwd"][h][s].abs().to_numpy(), ct[s].to_numpy()
+    ok = ~np.isnan(a) & ~np.isnan(t)
+    return float(t[ok].mean() / (ceiling.Z_TOP * 1.2533 * a[ok].mean())) if ok.any() else np.nan
+
+
 # ---- the run ----------------------------------------------------------------------------------------------------------------------------
-def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str], draws: int = DRAWS, seed: int = 0,
-        shift_min: int = SHIFT_MIN, saved: Path = SAVED, jobs: int = 1) -> str:
-    from joblib import Parallel, delayed
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    print("panel…", flush=True)
+def frame(symbols: list[str]) -> tuple[dict, dict, dict[str, pd.DataFrame]]:
+    """P2's panel and derived labels on `symbols` (names the collector never recorded come from the archive klines), and the three
+    book frames on its index."""
     P = ceiling.panel(symbols)
     D = ceiling.derive(P)
+    F = features_depth(D["lr"].index, list(D["lr"].columns), ceiling.END)
+    return P, D, F
+
+
+def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str], draws: int = DRAWS, seed: int = 0,
+        shift_min: int = SHIFT_MIN, saved: Path = SAVED, jobs: int = 1, universe: str | None = None, twelve: list[str] | None = None,
+        saved_r33: Path = OUT_DIR) -> str:
+    """The twelve (universe None): R33 — validity against P2's saved screen, the bar P2's #7 recomputed. A breadth read (R34,
+    `universe` set, e.g. "new"): the same screen on `symbols`; validity (1) = this run's rows on `twelve` (no nulls) against R33's
+    saved screen; the gate's size bar = R33_BAR as a number, the universe's own taker bar from the cost proxy reported beside."""
+    from joblib import Parallel, delayed
+    out_md, out_dir = out_paths(universe)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    reg = "R34" if universe else "R33"
+    print("panel…", flush=True)
+    P, D, F = frame(symbols)
     idx, cols, s = D["lr"].index, list(D["lr"].columns), D["scored"]
     sidx = idx[s]
-    print("features: the ±1 % imbalance, its trailing month, their difference…", flush=True)
-    F = features_depth(idx, cols, ceiling.END)
     Zs = {h: D["z"][h][s].clip(-Z_CLIP, Z_CLIP).to_numpy() for h in HZ}
     Zr = {h: D["zres"][h][s].to_numpy() for h in HZ}
 
-    # validity FIRST: the raw row and its null against P2's saved screen; raw = lvl + dm; the panel
-    print(f"validity: the raw row, its {draws} day shuffles, against {saved}/…", flush=True)
-    sc_raw, daily_raw = ceiling.ic_screen(D, {RAW: F[RAW]}, set())
-    null_raw = _null_feature(RAW, F[RAW][s], Zs, Zr, draws, seed)
-    validity = {"folds": list(folds.EXPLORATION), "scored_bars": int(s.sum()), "days": int(len(np.unique(sidx.floor("D")))), "pairs": cols,
-                "first": str(sidx[0]), "last": str(sidx[-1]), "draws": draws, "seed": seed, "shift_min": shift_min,
-                "reproduction": reproduction(sc_raw, null_raw, saved), "decomposition": decomposition(F, s)}
+    # validity FIRST: the raw row and its null against P2's saved screen (the twelve) — or R33's rows reproduced on the twelve (a breadth
+    # read); raw = lvl + dm; the panel
+    validity = {"registration": reg, "universe": universe or "the twelve", "folds": list(folds.EXPLORATION), "scored_bars": int(s.sum()),
+                "days": int(len(np.unique(sidx.floor("D")))), "pairs": cols, "first": str(sidx[0]), "last": str(sidx[-1]), "draws": draws,
+                "seed": seed, "shift_min": shift_min}
+    if universe is None:
+        print(f"validity: the raw row, its {draws} day shuffles, against {saved}/…", flush=True)
+        sc_raw, daily_raw = ceiling.ic_screen(D, {RAW: F[RAW]}, set())
+        null_raw = _null_feature(RAW, F[RAW][s], Zs, Zr, draws, seed)
+        validity["reproduction"] = reproduction(sc_raw, null_raw, saved)
+    else:
+        print(f"validity: R33's rows on the twelve, this run, against {saved_r33}/screen.parquet…", flush=True)
+        _, D12, F12 = frame(list(twelve or []))
+        sc12, _ = ceiling.ic_screen(D12, F12, set())
+        validity["reproduction"] = reproduction_r33(sc12, saved_r33)
+    validity["decomposition"] = decomposition(F, s)
     validity["status"] = "PASS" if validity["reproduction"]["status"] == "PASS" and validity["decomposition"]["status"] == "PASS" else "FAIL"
-    (OUT_DIR / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
-    head = [f"# R33 — the demeaned ±1 % book imbalance, a ceiling screen on the twelve (`ft2 ceiling --target pairs --family depth`)\n",
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    who = "the twelve" if universe is None else f"the {len(cols)} names of `{universe}`"
+    head = [f"# {reg} — the demeaned ±1 % book imbalance, a ceiling screen on {who} (`ft2 ceiling --target pairs --family depth{' --universe ' + universe if universe else ''}`)\n",
             f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC\n",
             f"\n**Folds read:** {'+'.join(folds.EXPLORATION)} (embargoed), P2's cells; every source cut at {ceiling.END:%Y-%m-%d}. Scored bars "
             f"{sidx[0]:%Y-%m-%d} → {sidx[-1]:%Y-%m-%d} ({int(s.sum()):,} × {len(cols)} pairs). Fees (input): taker {taker_bps} bps, maker {maker_bps} bps — {fee_source}.\n",
             f"\n## Validity — read first: **{validity['status']}**\n", "```\n", json.dumps(validity, indent=1, default=str), "\n```\n"]
     if validity["status"] != "PASS":
-        OUT_MD.write_text("".join(head + ["\n**The read is VOID: nothing of the registered feature was computed.**\n"]))
-        print(f"validity {validity['status']} — the read is void; wrote {OUT_MD}", flush=True)
+        out_md.write_text("".join(head + ["\n**The read is VOID: nothing of the registered feature was computed.**\n"]))
+        print(f"validity {validity['status']} — the read is void; wrote {out_md}", flush=True)
         raise SystemExit(2)
 
     # the registered feature and the slow part: the screen, both nulls
-    print("screen: the slow part and the fast part…", flush=True)
-    sc_new, daily_new = ceiling.ic_screen(D, {LVL: F[LVL], DM: F[DM]}, set())
-    sc, daily = pd.concat([sc_raw, sc_new], ignore_index=True), pd.concat([daily_raw, daily_new], ignore_index=True)
-    print(f"nulls: {draws} day shuffles (P2's) and {draws} whole-day shifts (R6's) on three features…", flush=True)
-    null_shuffle = pd.concat([null_raw, *Parallel(n_jobs=jobs)(delayed(_null_feature)(k, F[k][s], Zs, Zr, draws, seed) for k in (LVL, DM))], ignore_index=True)
+    if universe is None:
+        print("screen: the slow part and the fast part…", flush=True)
+        sc_new, daily_new = ceiling.ic_screen(D, {LVL: F[LVL], DM: F[DM]}, set())
+        sc, daily = pd.concat([sc_raw, sc_new], ignore_index=True), pd.concat([daily_raw, daily_new], ignore_index=True)
+        print(f"nulls: {draws} day shuffles (P2's) and {draws} whole-day shifts (R6's) on three features…", flush=True)
+        null_shuffle = pd.concat([null_raw, *Parallel(n_jobs=jobs)(delayed(_null_feature)(k, F[k][s], Zs, Zr, draws, seed) for k in (LVL, DM))], ignore_index=True)
+    else:
+        print("screen: the raw, the slow part and the fast part…", flush=True)
+        sc, daily = ceiling.ic_screen(D, F, set())
+        print(f"nulls: {draws} day shuffles (P2's) and {draws} whole-day shifts (R6's) on three features…", flush=True)
+        null_shuffle = pd.concat(Parallel(n_jobs=jobs)(delayed(_null_feature)(k, F[k][s], Zs, Zr, draws, seed) for k in (RAW, LVL, DM)), ignore_index=True)
     null_shift = pd.concat(Parallel(n_jobs=jobs)(delayed(shift_feature)(k, F[k], D, s, draws, seed, shift_min) for k in (RAW, LVL, DM)), ignore_index=True)
 
-    # the bar: P2's #7, recomputed
+    # the bar: P2's #7, recomputed on these names (a name without a tape takes the cost proxy: a taker bar only — P2's routine needs
+    # both costs on a cell, so the taker-only bar is computed here with its formula on the cells that have a taker cost)
     print("#7 the bar…", flush=True)
     ct, cm = ceiling.bar_cost(idx, cols, taker_bps, maker_bps)
     mv, _ = ceiling.move_vs_cost(D, ct, cm)
     bars = mv[mv["bet"] == BET].set_index("horizon")
-    saved_mv = pd.read_parquet(saved / "move_vs_cost.parquet") if (saved / "move_vs_cost.parquet").exists() else None
+    if universe is not None:
+        bars = bars.assign(ic_needed_taker=[taker_bar(D, ct, h) for h in bars.index])
+    saved_mv = pd.read_parquet(saved / "move_vs_cost.parquet") if universe is None and (saved / "move_vs_cost.parquet").exists() else None
 
     # the rows
     fi = fold_ics(daily)
@@ -227,6 +290,7 @@ def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str],
     rows["ic_se"] = rows["ic_mde"] / MDE_K
     rows["bar_maker"] = rows["horizon"].map(bars["ic_needed_maker"])
     rows["bar_taker"] = rows["horizon"].map(bars["ic_needed_taker"])
+    rows["bar_gate"] = rows["bar_maker"] if universe is None else np.where(rows["horizon"] == PRIMARY, R33_BAR, np.nan)   # R34: the number, at 1d
     fam = {}
     for k in (RAW, LVL, DM):
         for bet in ("directional", "relative"):
@@ -240,32 +304,35 @@ def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str],
     rows["p_family"] = rows[["p_fw_shuffle", "p_fw_shift"]].max(axis=1)
     rows["verdict"] = ""
     gate = (rows["feature"] == DM) & (rows["bet"] == BET) & rows["horizon"].isin(HZ)
-    rows.loc[gate, "verdict"] = [verdict(r["ic"], r["ic_se"], r["p_family"], bool(r["folds_same_sign"]), r["bar_maker"]) for _, r in rows[gate].iterrows()]
+    rows.loc[gate, "verdict"] = [verdict(r["ic"], r["ic_se"], r["p_family"], bool(r["folds_same_sign"]), r["bar_gate"]) for _, r in rows[gate].iterrows()]
     rows.loc[gate & (rows["horizon"] != PRIMARY), "verdict"] = rows.loc[gate & (rows["horizon"] != PRIMARY), "verdict"] + " (reported, not gated)"
     rows.loc[(rows["feature"] == LVL), "verdict"] = "described (the slow part)"
-    rows.loc[(rows["feature"] == RAW), "verdict"] = "validity (P2's row)"
+    rows.loc[(rows["feature"] == RAW), "verdict"] = "validity (P2's row)" if universe is None else "described (the raw imbalance)"
     vs = variance_share(F, s)
 
-    rows.to_parquet(OUT_DIR / "screen.parquet", index=False)
-    daily.to_parquet(OUT_DIR / "ic_daily.parquet", index=False)
-    null_shuffle.to_parquet(OUT_DIR / "null_shuffle.parquet", index=False)
-    null_shift.to_parquet(OUT_DIR / "null_shift.parquet", index=False)
-    mv.to_parquet(OUT_DIR / "move_vs_cost.parquet", index=False)
-    vs.to_parquet(OUT_DIR / "variance_share.parquet", index=False)
+    rows.to_parquet(out_dir / "screen.parquet", index=False)
+    daily.to_parquet(out_dir / "ic_daily.parquet", index=False)
+    null_shuffle.to_parquet(out_dir / "null_shuffle.parquet", index=False)
+    null_shift.to_parquet(out_dir / "null_shift.parquet", index=False)
+    mv.to_parquet(out_dir / "move_vs_cost.parquet", index=False)
+    vs.to_parquet(out_dir / "variance_share.parquet", index=False)
 
     g = rows[gate & (rows["horizon"] == PRIMARY)].iloc[0]
     show = lambda df, digits=4: df.round(digits).to_markdown(index=False)                    # noqa: E731
     cols_show = ["bet", "horizon", "feature", "ic", "t", "ic_se", "ic_mde", "days", "months_same_sign", "ic_F1", "ic_F2", "folds_same_sign",
-                 "p_single_shuffle", "p_fw_shuffle", "p_single_shift", "p_fw_shift", "p_family", "bar_maker", "bar_taker", "verdict"]
+                 "p_single_shuffle", "p_fw_shuffle", "p_single_shift", "p_fw_shift", "p_family", "bar_gate", "bar_maker", "bar_taker", "verdict"]
+    bar_txt = (f"the bar {g['bar_maker']:.4f} maker / {g['bar_taker']:.4f} taker" if universe is None else
+               f"the gate's bar {R33_BAR:.4f} (R33's maker bar on the twelve, a number); these names' own taker bar {g['bar_taker']:.4f} from the cost proxy (no maker measurement)")
     md = head + [
-        f"\n## Verdict by R33's gate — `{DM}`, {BET}, {PRIMARY}: **{g['verdict']}**\n",
+        f"\n## Verdict by {reg}'s gate — `{DM}`, {BET}, {PRIMARY}: **{g['verdict']}**\n",
         f"\nIC {g['ic']:+.4f} (t {g['t']:+.2f}, se {g['ic_se']:.4f}, MDE {g['ic_mde']:.4f}); p_family {g['p_family']:.3f} (day shuffles {g['p_fw_shuffle']:.3f}, "
         f"whole-day shifts {g['p_fw_shift']:.3f}; single {g['p_single_shuffle']:.3f} / {g['p_single_shift']:.3f}); F1 {g['ic_F1']:+.4f}, F2 {g['ic_F2']:+.4f} "
-        f"({'same sign' if g['folds_same_sign'] else 'signs differ'}); months the same sign {g['months_same_sign']:.2f}; the bar {g['bar_maker']:.4f} maker / "
-        f"{g['bar_taker']:.4f} taker; the registered sign {'negative' if SIGN < 0 else 'positive'}.\n",
-        "\n## The registered feature, the slow part and P2's row — directional and relative, the family's horizons\n",
+        f"({'same sign' if g['folds_same_sign'] else 'signs differ'}); months the same sign {g['months_same_sign']:.2f}; {bar_txt}; the registered sign "
+        f"{'negative' if SIGN < 0 else 'positive'}.\n",
+        "\n## The registered feature, the slow part and the raw imbalance — directional and relative, the family's horizons\n",
         "`p_fw_*` = the share of a null's draws whose largest |t| over the feature's three horizons is at or above the real |t|; `p_family` = the larger of the "
-        "two nulls'. `ic_F1`, `ic_F2` = the HAC mean of the daily IC inside each fold. Bars: P2's #7 `ic_needed` at the horizon, recomputed.\n",
+        "two nulls'. `ic_F1`, `ic_F2` = the HAC mean of the daily IC inside each fold. Bars: P2's #7 `ic_needed` at the horizon, recomputed on these names; "
+        "`bar_gate` is what the verdict compares |IC| with.\n",
         show(rows[rows["horizon"].isin(HZ) & rows["bet"].isin(["directional", "relative"])][cols_show]), "\n",
         "\n## The vol bet and 15m (reported)\n", show(rows[~(rows["horizon"].isin(HZ) & rows["bet"].isin(["directional", "relative"]))][cols_show[:9] + ["verdict"]]), "\n",
         "\n## The nulls' bars (largest |t| over the three horizons, per draw)\n", "```\n", json.dumps({f"{k} / {b}": v for (k, b), v in fam.items()}, indent=1), "\n```\n",
@@ -274,6 +341,6 @@ def run(taker_bps: float, maker_bps: float, fee_source: str, symbols: list[str],
     if saved_mv is not None:
         sm = saved_mv[(saved_mv["bet"] == BET) & (saved_mv["horizon"] == PRIMARY)].iloc[0]
         md += [f"\nP2's saved bar at {PRIMARY}: maker {sm['ic_needed_maker']:.4f}, taker {sm['ic_needed_taker']:.4f} (this run: {bars.loc[PRIMARY, 'ic_needed_maker']:.4f} / {bars.loc[PRIMARY, 'ic_needed_taker']:.4f}).\n"]
-    OUT_MD.write_text("".join(md))
-    print(f"{DM} {BET} {PRIMARY}: {g['verdict']}; wrote {OUT_MD} and {OUT_DIR}/", flush=True)
+    out_md.write_text("".join(md))
+    print(f"{DM} {BET} {PRIMARY}: {g['verdict']}; wrote {out_md} and {out_dir}/", flush=True)
     return "".join(md)

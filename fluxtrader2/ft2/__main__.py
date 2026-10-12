@@ -44,6 +44,9 @@ def _symbols(args) -> list[str]:
     if u == "wide":
         from .universe import WIDE
         return list(WIDE)
+    if u == "new":                                            # R34: the 32 of the forty the collector never recorded (WIDE minus the twelve's eight)
+        from .universe import NEW
+        return list(NEW)
     if u == "screen":                                         # R18: every name that is a member of some block (never one of the twelve)
         from .universe import screen_symbols
         return screen_symbols()
@@ -162,8 +165,9 @@ def cmd_ceiling(args):
         from . import book_ext
         if args.folds:
             raise SystemExit("--family depth reads P2's cells, F1+F2; --folds is for --target basket")
-        book_ext.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")))
-        return print(f"wrote {book_ext.OUT_MD} and {book_ext.OUT_DIR}/")
+        book_ext.run(args.taker_bps, args.maker_bps, args.fee_source, _symbols(args), args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")),
+                     universe=args.universe, twelve=list(PAIRS))
+        return print("wrote {} and {}/".format(*book_ext.out_paths(args.universe)))
     if args.target == "basket" and args.family in ("index", "etf"):   # R30: the index / the ETF flows as market-direction and sizing information
         from . import market_ext
         market_ext.run(args.family, args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.folds, args.draws)
@@ -213,7 +217,7 @@ def main(argv=None):
                                       "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
     i.add_argument("--symbols", nargs="*", help="archive slices only: which pairs (default the twelve)")
-    i.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "launch34", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
+    i.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "launch", "launch34", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
     a.add_argument("kinds", nargs="+", help="bookDepth metrics aggTrades fundingRate klines/1m …")
@@ -221,7 +225,7 @@ def main(argv=None):
     a.add_argument("--start", default="2023-01-01")
     a.add_argument("--end", default=None, help="inclusive; default: two days ago")
     a.add_argument("--monthly", action="store_true", help="klines/<interval>: the archive's monthly files for the months of [start, end] instead of daily ones")
-    a.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "launch34", "all"])
+    a.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "launch", "launch34", "all"])
     u = sub.add_parser("universe", help="R10: rank every USDT perpetual the archive lists by median daily quote volume over the four months before F0 → output/universe_wide.md; "
                                         "--screen (R18): the members per block and what a screener could rank them by → output/universe_screen.md")
     u.add_argument("--n", type=int, default=None, help="default 40; with --screen 60 a block")
@@ -231,7 +235,7 @@ def main(argv=None):
     u.add_argument("--folds", nargs="*", default=["F1", "F2"], help="--screen: the folds whose blocks get a membership")
     cw = sub.add_parser("costwide", help="R10: spread + impact for pairs without a tape (one pooled candle proxy fitted on the twelve) → data/cost_daily_wide.parquet, output/cost_wide.md")
     cw.add_argument("--symbols", nargs="*")
-    cw.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "launch", "launch34", "all"])
+    cw.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "launch", "launch34", "all"])
     cw.add_argument("--start", default="2023-01-01")
     t = sub.add_parser("tape", help="P1: stream archive aggTrades into data/tape/<symbol>.parquet (per-minute summary); zips are not kept")
     t.add_argument("--symbols", nargs="*")
@@ -263,6 +267,7 @@ def main(argv=None):
                    help="--target basket (R30): `index` — the Nasdaq 100's moves, the basket's lag behind it, open/closed and its volatility → output/market_index.md; "
                         "`etf` — the spot-ETF flows, F2 only → output/market_etf.md (see ft2/market_ext.py). --target pairs (R33): `depth` — the ±1 % book "
                         "imbalance demeaned by its trailing month, P2's cells → output/ceiling_depth.md (see ft2/book_ext.py)")
+    g.add_argument("--universe", choices=["new"], default=None, help="--family depth only (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md")
     b = sub.add_parser("backtest", help="P3: a strategy through the harness → output/backtest/<name>/ (see ft2/backtest.py)")
     b.add_argument("strategy", help="a name in backtest.STRATEGIES / rules.STRATEGIES, e.g. coin")
     b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")
