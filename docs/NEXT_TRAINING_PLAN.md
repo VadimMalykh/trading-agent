@@ -1739,6 +1739,14 @@ Go/no-go on the launcher's own lines: `recipe differs from the incumbent (T1) in
 `ARCHIVE_OI_SHIFT_MIN` and `OI_JOIN_AT_CLOSE` items, and `ARCHIVE_DEPTH: … bookdepth_5m_<sha8>`;
 no `fold drift accepted` line. Cost: ≈ $1.5 and ~2.5 h a run, ≈ $4.5 and ~8 h serial.
 
+**Built 2026-10-12 (commit `fa98395`), two facts found while building, neither shaped by a result:**
+(1) `depth_rel_0_2`'s one-day median takes a bar once **144** of the trailing 288 bars carry the
+band (`DEPTH_REL_MIN_PERIODS`), so a half-day gap does not zero the column for a whole day; the
+registration's "zero until the day exists" is read as "until half a day of it exists". (2) The
+archive's per-pair files show 2 missing days a pair over the fetch (counted, printed) and 26–37
+gaps over five minutes a pair; those bars carry `has_depth` 0 by the staleness cap, nothing is
+interpolated.
+
 **Needed from Vadim: nothing** — asked for 2026-10-12 ("why wait"); the only calendar item is
 prerequisite 1's two days of overlap, read on 2026-10-14.
 
