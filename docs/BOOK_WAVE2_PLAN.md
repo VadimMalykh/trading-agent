@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-11): L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 REGISTERED, its export running.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach); L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 REGISTERED, its export running.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
