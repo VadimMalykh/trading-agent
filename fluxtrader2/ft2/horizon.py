@@ -77,18 +77,20 @@ def _ranks(S: np.ndarray, ok: np.ndarray) -> np.ndarray:
     return r
 
 
-def _tenths(S: np.ndarray, Y: np.ndarray) -> np.ndarray:
-    """Per bar with ≥ MIN_CELLS cells that have the signal and the label: the mean label of the k highest by the signal
-    minus that of the k lowest, halved; k = the tenth of them, rounded. Averaged per day (PER_DAY rows a day)."""
+def _tenths(S: np.ndarray, Y: np.ndarray, min_cells: int | None = None) -> np.ndarray:
+    """Per bar with ≥ `min_cells` cells that have the signal and the label: the mean label of the k highest by the signal
+    minus that of the k lowest, halved; k = the tenth of them, rounded (at least one). Averaged per day (PER_DAY rows a day).
+    `min_cells` is MIN_CELLS for every registered statistic; R35's described rows on one universe at a time pass a smaller one."""
+    min_cells = MIN_CELLS if min_cells is None else min_cells            # read at call time: the tests set the module's floor
     ok = ~(np.isnan(S) | np.isnan(Y))
     n = ok.sum(1)
-    k = np.rint(n * TENTH).astype(int)
+    k = np.maximum(np.rint(n * TENTH).astype(int), 1)
     r = _ranks(S, ok)
     y = np.where(ok, Y, 0.0)
     lo, hi = r <= k[:, None], (r > (n - k)[:, None]) & (r <= n[:, None])
     with np.errstate(invalid="ignore", divide="ignore"):
         m = ((y * hi).sum(1) - (y * lo).sum(1)) / k / 2.0
-    m[n < MIN_CELLS] = np.nan
+    m[n < min_cells] = np.nan
     m = m.reshape(-1, PER_DAY)
     have = ~np.isnan(m)
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -421,4 +423,172 @@ def run_pre(holds=PRE_HOLDS, refs=PRE_REFS, members=None, days=None, end=None, c
         bt.READS.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": conf, "strategy": "horizon --pre",
                       "params": json.dumps({"holds": holds, "refs": refs, "signals": PRE_SIGNALS})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    return "\n".join(md)
+
+
+# ---- R35: the slow book at a longer hold --------------------------------------------------------------------------------------
+# The ±1 % imbalance's month-mean (`book_ext.LVL`), found twice at one day (R33, R34), and the raw imbalance, at 3 and 7 days in R22's
+# frame on the 43 names whose book is in hand (the eleven + universe.NEW), hourly cells of F1+F2. `run` above is R22's and is not
+# touched; this reuses its label, statistic, null, by-tenth table and verdict. Cost 15 bps a leg, fixed in the registration. The sign is
+# registered NEGATIVE (a bid-heavy month precedes the worse week): a clear with M_c > 0 is recorded as "with the opposite sign".
+BOOK_HOLDS = (864, 2016)
+BOOK_REF = 288
+BOOK_COST = 15.0
+BOOK_WINDOW_DAYS = 30                 # the slow level's window: the null's gap = this + the longest hold in days + 1
+BOOK_MIN_CELLS_ONE = 8                # the described rows on one universe at a time (the eleven: one name a side)
+FUND_COVER = 0.95
+
+
+def _book_signals() -> tuple[list[str], list[str]]:
+    from .book_ext import DM, LVL, RAW
+    return [LVL, RAW], [DM]
+
+
+def book_verdict(r: dict, cost: float = BOOK_COST) -> str:
+    v = verdict(r, cost)
+    return ("CLEARS" if r["m_c"] < 0 else "CLEARS WITH THE OPPOSITE SIGN") if v == "CLEARS" else v
+
+
+def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: float = BOOK_COST, universe: str = "both", jobs: int = 4,
+             name: str | None = None, twelve: list[str] | None = None, md5_file: Path = Path("output/logs/r34_md5_after.txt")) -> str:
+    import hashlib
+    from joblib import Parallel, delayed
+    from . import book_ext, ceiling, data
+    from .ceiling import END, W
+    fam, described = _book_signals()
+    holds = [int(h) for h in holds]
+    every = [ref, *holds]
+    fold_names = list(folds.EXPLORATION)
+    out = OUT / (name or f"book_{universe}")
+    out.mkdir(parents=True, exist_ok=True)
+    print("market…", flush=True)
+    M = bt.market(symbols, END)
+    idx, names = M.index, list(M.columns)
+    t5 = pd.Series(idx, index=idx)
+    scored = np.zeros(len(idx), dtype=bool)
+    for f in fold_names:
+        scored |= folds.mask(t5, f).to_numpy()
+    grid = idx[scored & (idx.minute == 0) & (idx.second == 0)]
+    n_rows, nd = len(grid), len(grid) // PER_DAY
+    day = (grid.floor("D") - grid[0].floor("D")).days.to_numpy()
+    whole = bool(n_rows == nd * PER_DAY and (np.bincount(day)[np.bincount(day) > 0] == PER_DAY).all())
+    gap = BOOK_WINDOW_DAYS + int(np.ceil(max(holds) / 288)) + 1
+    ks = shifts(nd, gap)
+
+    print("labels (actual returns, funding on value) and the book's three frames…", flush=True)
+    C = bt.load_costs(idx, M.columns, END, close=M.close)
+    G, Y = ({h: labels(M, C, h, bt.LATENCY)[i].loc[grid, names].to_numpy() for h in every} for i in (0, 1))
+    sig = (np.log(M.close).diff() * 1e4).rolling(W["1w"], min_periods=int(W["1w"] * 0.8)).std()
+    Zh = {h: (bt.labels(M, h, bt.LATENCY) / (sig * np.sqrt(h)).where(sig > 0)).clip(-Z_CLIP, Z_CLIP).loc[grid, names] for h in every}
+    F5 = book_ext.features_depth(idx, names, END)
+    F = {k: v.loc[grid] for k, v in F5.items()}
+    S = {k: F[k] for k in [*fam, *described]}
+
+    # validity, read first
+    again = book_ext.features_depth(idx, names, END)
+    d_frames = max(float((again[k].loc[grid] - F[k]).abs().max().max()) if F[k].notna().any().any() else 0.0 for k in F)
+    actual_from_log = (np.exp(bt.labels(M, ref, bt.LATENCY).loc[grid, names].to_numpy() / 1e4) - 1.0) * 1e4
+    both = ~np.isnan(G[ref]) & ~np.isnan(actual_from_log)
+    d_label = float(np.abs(G[ref] - actual_from_log)[both].max()) if both.any() else np.nan
+    fund_cover = {c: float(np.isfinite(Y[ref][:, j][~np.isnan(G[ref][:, j])]).mean()) if (~np.isnan(G[ref][:, j])).any() else 0.0 for j, c in enumerate(names)}
+    md5s = {}
+    if md5_file.exists():
+        want = dict(reversed(line.split()) for line in md5_file.read_text().splitlines() if line.strip())
+        for p, h in want.items():
+            f = Path(p)
+            md5s[f.stem] = "same" if f.exists() and hashlib.md5(f.read_bytes()).hexdigest() == h else "DIFFERENT"
+    v = {"registration": "R35", "universe": universe, "names": len(names), "pairs": names, "folds": fold_names, "days": nd, "rows": n_rows, "whole_days": whole,
+         "gap_days": gap, "shifts": len(ks), "shifts_expected": nd - 2 * gap + 1, "max_abs_d_frames": d_frames, "max_abs_d_label_288": d_label,
+         "funding_cover_by_name": {k: round(x, 4) for k, x in fund_cover.items()}, "names_under_funding_cover": [k for k, x in fund_cover.items() if x < FUND_COVER],
+         "depth_md5_vs_r34": md5s, "cells": {str(h): int((~np.isnan(Y[h])).sum()) for h in every}, "cost_bps": cost, "unit": bt.UNIT, "charged": bt.CHARGED}
+    v["status"] = "PASS" if (whole and len(ks) == v["shifts_expected"] and len(ks) >= 20 and d_frames == 0.0 and np.isfinite(d_label) and d_label <= 1e-9
+                             and not v["names_under_funding_cover"] and "DIFFERENT" not in md5s.values()) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
+    head = [f"# R35 — the slow book at a longer hold: the cells of `{universe}` ({len(names)} names) (`ft2 horizon --book --universe {universe}`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · folds {'+'.join(fold_names)} · {nd} days · holds {holds} bars (reference {ref}) · {len(ks)} shifts "
+            f"(gap {gap} days) · cost {cost:g} bps a leg · the registered sign negative\n",
+            f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n"]
+    if v["status"] != "PASS":
+        (out / "horizon.md").write_text("\n".join(head + ["\n**The read is VOID: nothing of the family was computed.**\n"]))
+        print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
+        raise SystemExit(2)
+
+    n_cells = int((~np.isnan(Y[ref])).sum())
+    print(f"horizon --book: {len(S)} signals × holds {every} × {len(ks)} shifts on {n_cells:,} cells, {nd} days…", flush=True)
+    d = pd.concat(Parallel(n_jobs=jobs, verbose=5)(delayed(_null)(k, x.to_numpy(), Y, ks) for k, x in S.items()), ignore_index=True)
+    real, null = d[d["shift"] == 0].set_index(["signal", "hold"])["m"], d[d["shift"] > 0]
+    st = null.groupby(["signal", "hold"])["m"].agg(centre="mean", se="std")
+    centre, se = st["centre"], st["se"]
+    null = null.join(st, on=["signal", "hold"])
+    null["u"] = (null["m"] - null["centre"]) / null["se"]
+    famn = null[null["signal"].isin(fam) & null["hold"].isin(holds)]
+    mx = famn.assign(a=famn["u"].abs()).groupby("shift")["a"].max()
+
+    # the cells' actual taker round trip on the extreme tenths (the proxy for a name the tape never priced)
+    ct = ceiling.bar_cost(idx, names, 5.0, 2.0)[0].loc[grid].to_numpy()
+    twelve = set(twelve or [])
+    j11 = np.array([c in twelve for c in names])
+    fold_of = np.full(nd, "", dtype=object)
+    days = pd.DatetimeIndex(grid[::PER_DAY]).floor("D")
+    for f in fold_names:
+        fold_of[folds.mask(pd.Series(days, index=days), f, embargoed=False).to_numpy()] = f
+    rows, tenth = [], []
+    for k, x in S.items():
+        s = x.to_numpy()
+        for h in every:
+            m_day = _tenths(s, Y[h])
+            m, c, e = float(real[(k, h)]), float(centre[(k, h)]), float(se[(k, h)])
+            own = null[(null["signal"] == k) & (null["hold"] == h)]
+            per_fold = {f: float(np.nanmean(m_day[fold_of == f])) for f in fold_names}
+            after = float(np.nanmean(_tenths(s, Y[h] - Y[ref]))) if h != ref else np.nan
+            _, se_hac, n_days = hac(m_day, day_lags(h))
+            m_ic, se_ic, _ = hac(_ic_xs(x, Zh[h], day), day_lags(h))
+            yc = np.where(np.isnan(s), np.nan, Y[h])
+            with np.errstate(invalid="ignore", divide="ignore"):
+                move = float(np.nanmean(np.abs(yc - np.nansum(yc, axis=1, keepdims=True) / (~np.isnan(yc)).sum(1, keepdims=True))))
+            ok = ~(np.isnan(s) | np.isnan(Y[h]))
+            n = ok.sum(1)
+            kk = np.maximum(np.rint(n * TENTH).astype(int), 1)
+            r = _ranks(s, ok)
+            ext = ((r <= kk[:, None]) | ((r > (n - kk)[:, None]) & (r <= n[:, None]))) & ok & (n >= MIN_CELLS)[:, None]
+            rt_ext = float(np.nanmean(np.where(ext, ct, np.nan))) if ext.any() else np.nan
+            m11 = float(np.nanmean(_tenths(s[:, j11], Y[h][:, j11], BOOK_MIN_CELLS_ONE))) if j11.sum() >= BOOK_MIN_CELLS_ONE else np.nan
+            m32 = float(np.nanmean(_tenths(s[:, ~j11], Y[h][:, ~j11], BOOK_MIN_CELLS_ONE))) if (~j11).sum() >= BOOK_MIN_CELLS_ONE else np.nan
+            row = {"signal": k, "hold": h, "family": k in fam and h in holds, "cells": int(ok.sum()), "days": n_days, "m": m, "centre": c, "m_c": m - c, "se": e,
+                   "u": (m - c) / e if e else np.nan, "se_hac": se_hac, "lo": m - c - 1.96 * e, "hi": m - c + 1.96 * e, "mde": MDE_K * e,
+                   "p_single": (1 + int((own["u"].abs() >= abs((m - c) / e)).sum())) / (len(own) + 1), "p_family": (1 + int((mx >= abs((m - c) / e)).sum())) / (len(mx) + 1),
+                   **{f"m_{f}": per_fold[f] for f in fold_names}, "folds_same_sign": bool(all(np.sign(per_fold[f]) == np.sign(m - c) for f in fold_names if np.isfinite(per_fold[f])) and any(np.isfinite(per_fold[f]) for f in fold_names)),
+                   "m_after_first": after, "after_same_sign": bool(np.sign(after) == np.sign(m - c)), "funding_part": m - float(np.nanmean(_tenths(s, G[h]))),
+                   "m_twelve": m11, "m_new": m32, "rt_extreme_tenths": rt_ext, "ic": m_ic, "ic_t": m_ic / se_ic if se_ic else np.nan, "move": move,
+                   "ic_needed": cost / (Z_TOP * 1.2533 * move) if move else np.nan}
+            rows.append({**row, "verdict": book_verdict(row, cost) if row["family"] else "reference"})
+            tenth.append(_by_tenth(s, Y[h]).reset_index().assign(signal=k, hold=h))
+    tab, tenth = pd.DataFrame(rows), pd.concat(tenth, ignore_index=True)
+    fam_tab, ref_tab = tab[tab["family"]], tab[~tab["family"]]
+    clears = fam_tab[fam_tab["verdict"].str.startswith("CLEARS")]
+    wide = lambda c: tenth.pivot(index=["signal", "hold"], columns="tenth", values=c).reindex(pd.MultiIndex.from_frame(tab[["signal", "hold"]])).reset_index()      # noqa: E731
+    show = lambda df, k=2: df.round(k).to_markdown(index=False)                         # noqa: E731
+    main = ["signal", "hold", "cells", "m", "centre", "m_c", "se", "u", "lo", "hi", "mde", "p_single", "p_family", "verdict"]
+    more = ["signal", "hold", *(f"m_{f}" for f in fold_names), "folds_same_sign", "m_after_first", "after_same_sign", "funding_part", "m_twelve", "m_new",
+            "rt_extreme_tenths", "se_hac", "ic", "ic_t", "move", "ic_needed"]
+    md = head + [
+        "\nWords: *m*: what one leg of a book earns before trading costs that buys the tenth of names the signal ranks highest and sells the tenth it ranks lowest, in bps "
+        "of the position, funding paid, against the bar's peers; NEGATIVE is the registered direction (a bid-heavy month → the worse week, so the book sells the top tenth). "
+        "*centre*: the same book on moves taken from other weeks; *m_c* = m − centre; *se*: its spread over those weeks; *u* = m_c / se; *p (family)*: the share of shifts "
+        "in which the best of the four did at least as well. *m_twelve*, *m_new*: the eleven and the 32 apart (one and three names a side; described). *rt_extreme_tenths*: "
+        "the cells' own taker round trip on the tenths traded (the proxy for the 32), against the fixed cost.\n",
+        f"\n## The family — two signals × two holds: **{len(clears)} of {len(fam_tab)} clear** (|m_c| > {cost:g}, |u| ≥ {U_BAR:g}, family-wise p ≤ {P_BAR:g}, m of m_c's "
+        f"sign in every fold and after the first day; the registered sign negative)"
+        f"{': ' + ', '.join(f'{a} at {b} ({c})' for a, b, c in zip(clears['signal'], clears['hold'], clears['verdict'])) if len(clears) else ''}. Over the shifts the best "
+        f"of the family reaches |u| {mx.mean():.2f} on average, {mx.quantile(0.95):.2f} one time in twenty.\n", show(fam_tab[main]), "\n",
+        "\n### Described (decides nothing)\n", show(fam_tab[more], 4), "\n",
+        "\n## Reference rows — the one-day hold and the within-month part at every hold (outside the family, no verdict)\n", show(ref_tab[main]), "\n", show(ref_tab[more], 4), "\n",
+        "\n## The label against the bar's peers, by the signal's tenth (1 = lowest, 10 = highest), bps\n", "\n### mean\n", show(wide("mean"), 1), "\n",
+        "\n### median\n", show(wide("median"), 1), "\n"]
+    (out / "horizon.md").write_text("\n".join(md))
+    tab.to_csv(out / "signals.csv", index=False)
+    tenth.to_csv(out / "tenths.csv", index=False)
+    d.to_parquet(out / "shifts.parquet", index=False)
+    (out / "validity.json").write_text(json.dumps({**v, "null_max_u_p95": float(mx.quantile(0.95))}, indent=1, default=str))
+    print(f"R35: {len(clears)} of {len(fam_tab)} clear; wrote {out}/", flush=True)
     return "\n".join(md)

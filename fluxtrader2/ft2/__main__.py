@@ -132,6 +132,12 @@ def cmd_audit(args):
 
 def cmd_horizon(args):
     from . import horizon
+    if args.book:                                             # R35: the slow book at a longer hold, on the names whose book is in hand
+        args.universe = args.universe or "both"
+        out_name = args.name or f"book_{args.universe}"
+        print(horizon.run_book(_symbols(args), args.holds or horizon.BOOK_HOLDS, universe=args.universe, name=out_name, twelve=list(PAIRS),
+                               jobs=int(os.environ.get("FT2_JOBS", "4"))))
+        return print(f"wrote {horizon.OUT / out_name}/")
     if args.pre:                                              # R23: the months before F1, cells from the frozen members
         print(horizon.run_pre(args.holds or horizon.PRE_HOLDS, name=args.name or horizon.PRE, reexecute=args.reexecute))
         return print(f"wrote {horizon.OUT / (args.name or horizon.PRE)}/")
@@ -313,6 +319,8 @@ def main(argv=None):
     hz.add_argument("run", nargs="?", help="the run's directory name under output/backtest/")
     hz.add_argument("--holds", nargs="*", type=int, default=None, help="in 5m bars (default 864 2016; with --pre 2016)")
     hz.add_argument("--pre", action="store_true", help="R23: the open-interest score on the months before F1 (ft2/screen_members_pre.csv) → output/horizon/pre/horizon.md")
+    hz.add_argument("--book", action="store_true", help="R35: the month-mean of the ±1 % imbalance and the raw imbalance at 3 and 7 days on the names whose book is in hand → output/horizon/book_<universe>/horizon.md")
+    hz.add_argument("--universe", choices=["both", "new"], default=None, help="--book only: `both` — the twelve and universe.NEW (default); `new` — the 32 alone")
     hz.add_argument("--name", help="output directory under output/horizon/ (default: the run's name; with --pre, pre)")
     hz.add_argument("--reexecute", metavar="TAG", help="--pre: R23's read made again after a defect in the measurement (PLAN §3), logged as R23/TAG")
     ix = sub.add_parser("index", help="P8 (B3, PLAN §9 #7): the US index CFDs from Dukascopy's public datafeed → data/raw/external/dukascopy/, data/index_1m.parquet, output/index_inventory.md (see ft2/index.py)")
