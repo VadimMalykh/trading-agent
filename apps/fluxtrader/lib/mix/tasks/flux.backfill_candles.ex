@@ -20,7 +20,7 @@ defmodule Mix.Tasks.Flux.BackfillCandles do
   import Ecto.Query
 
   alias FluxTrader.Binance.RateLimit
-  alias FluxTrader.Data.Candle
+  alias FluxTrader.MarketData.FundingRate
   alias FluxTrader.MarketData.Collector
   alias FluxTrader.Repo
 
@@ -71,15 +71,18 @@ defmodule Mix.Tasks.Flux.BackfillCandles do
     end)
   end
 
+  # The pairs the collector is polling right now: one funding row a minute each, so the
+  # last quarter hour is a few hundred rows. (A distinct over two days of 1m candles took
+  # longer than the 15 s query timeout on the VM.)
   defp collected_pairs do
-    since = DateTime.add(DateTime.utc_now(), -2, :day)
+    since = DateTime.add(DateTime.utc_now(), -15, :minute)
 
     Repo.all(
-      from c in Candle,
-        where: c.interval == "1m" and c.open_time > ^since,
+      from f in FundingRate,
+        where: f.ts > ^since,
         distinct: true,
-        select: c.symbol,
-        order_by: c.symbol
+        select: f.symbol,
+        order_by: f.symbol
     )
   end
 
