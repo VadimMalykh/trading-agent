@@ -20,6 +20,8 @@ defmodule FluxTrader.Application do
     [
       {Phoenix.PubSub, name: FluxTrader.PubSub},
       {Finch, name: FluxTrader.Finch},
+      # Owns the used-weight / block table every Binance.Client call consults.
+      FluxTrader.Binance.RateLimit,
       FluxTrader.Repo,
       {Task.Supervisor, name: FluxTrader.TaskSupervisor}
     ]

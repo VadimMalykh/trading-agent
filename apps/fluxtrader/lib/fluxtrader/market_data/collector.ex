@@ -6,7 +6,7 @@ defmodule FluxTrader.MarketData.Collector do
   use GenServer
   require Logger
 
-  alias FluxTrader.Binance.Client
+  alias FluxTrader.Binance.{Client, RateLimit}
 
   alias FluxTrader.MarketData.{
     BookFeatures,
@@ -54,7 +54,17 @@ defmodule FluxTrader.MarketData.Collector do
   # (BookFeatures.stored_levels/0) and the scalars at 20. Request weight per poll: 100 -> 5,
   # 500 -> 10, 1000 -> 20 (Binance USDⓈ-M /fapi/v1/depth); 1000 would put the twelve-pair
   # loop over the 2,400/min ceiling together with the tape sweep, so 500.
+  #
+  # The budget, measured 2026-10-14 (docs/BACKLOG.md "collector / data quality"): the book
+  # loop lands 57–79 polls a minute over the twelve (weight 10 each → 570–790), the tape
+  # sweep 30–72 calls a minute by hour of day (weight 20 each → 600–1,440), the weight-1
+  # polls ≈ 100. The busy hours (12–17 UTC) crossed 2,400 the day 500 went in and the IP
+  # was banned twice on 2026-10-13. Every call now passes Binance.RateLimit: the sweep
+  # waits for the next minute above its cap, the book skips the pair above its own, and
+  # nothing is sent while a 429/418 block stands.
   @default_book_depth_limit 500
+  @book_weight 10
+  @trade_weight 20
 
   # aggTrades to fetch per 5s tape poll. Binance returns the *most recent* N, so a limit
   # below the pair's actual 5s trade count silently discards the OLDEST trades and the
@@ -222,6 +232,13 @@ defmodule FluxTrader.MarketData.Collector do
   end
 
   defp collect_book(symbol) do
+    case RateLimit.reserve(@book_weight, RateLimit.cap(:book)) do
+      :ok -> fetch_book(symbol)
+      {:wait, ms} -> Logger.debug("Book poll #{symbol} skipped: weight cap, #{ms} ms to go")
+    end
+  end
+
+  defp fetch_book(symbol) do
     case Client.order_book(symbol, book_depth_limit()) do
       {:ok, depth} ->
         case BookFeatures.from_depth(symbol, depth) do
@@ -242,9 +259,14 @@ defmodule FluxTrader.MarketData.Collector do
         end
 
       {:error, reason} ->
-        Logger.warning("Book poll failed #{symbol}: #{inspect(reason)}")
+        poll_failed("Book", symbol, reason)
     end
   end
+
+  # A call refused by the rate-limit guard is already logged once by the guard; twelve
+  # warnings every five seconds for the length of a ban would bury the log.
+  defp poll_failed(_kind, _symbol, :rate_limited), do: :ok
+  defp poll_failed(kind, symbol, reason), do: Logger.warning("#{kind} poll failed #{symbol}: #{inspect(reason)}")
 
   defp persist_raw_levels(symbol, depth, ts) do
     case BookFeatures.raw_levels(symbol, depth, ts) do
@@ -268,6 +290,8 @@ defmodule FluxTrader.MarketData.Collector do
 
   defp collect_trades(symbol, last_id) do
     opts = [limit: trade_tape_limit()]
+    # Off the GenServer (start_trade_poll/1), so waiting here stalls only the sweep.
+    RateLimit.wait(@trade_weight, RateLimit.cap(:trades))
 
     case Client.agg_trades(symbol, opts) do
       {:ok, trades} when is_list(trades) and trades != [] ->
@@ -295,7 +319,7 @@ defmodule FluxTrader.MarketData.Collector do
         :ok
 
       {:error, reason} ->
-        Logger.warning("Trades poll failed #{symbol}: #{inspect(reason)}")
+        poll_failed("Trades", symbol, reason)
         {:error, reason}
     end
   end
@@ -348,7 +372,7 @@ defmodule FluxTrader.MarketData.Collector do
         |> Repo.insert(on_conflict: :nothing, conflict_target: [:symbol, :ts])
 
       {:error, reason} ->
-        Logger.warning("Funding poll failed #{symbol}: #{inspect(reason)}")
+        poll_failed("Funding", symbol, reason)
 
       _ ->
         :ok
@@ -371,7 +395,7 @@ defmodule FluxTrader.MarketData.Collector do
         |> Repo.insert(on_conflict: :nothing, conflict_target: [:symbol, :ts])
 
       {:error, reason} ->
-        Logger.warning("OI poll failed #{symbol}: #{inspect(reason)}")
+        poll_failed("OI", symbol, reason)
 
       _ ->
         :ok
@@ -451,7 +475,7 @@ defmodule FluxTrader.MarketData.Collector do
   end
 
   defp persist_ratios({:error, reason}, kind, symbol) do
-    Logger.warning("Ratio poll failed #{symbol}/#{kind}: #{inspect(reason)}")
+    poll_failed("Ratio", "#{symbol}/#{kind}", reason)
   end
 
   defp persist_ratios(_, _kind, _symbol), do: :ok
@@ -605,24 +629,31 @@ defmodule FluxTrader.MarketData.Collector do
         Enum.each(rows, &insert_candle(symbol, interval, &1, broadcast: interval == "1m"))
 
       {:error, reason} ->
-        Logger.warning("Candle poll failed #{symbol}/#{interval}: #{inspect(reason)}")
+        poll_failed("Candle", "#{symbol}/#{interval}", reason)
 
       _ ->
         :ok
     end
   end
 
-  defp backfill_candles(symbol, interval, limit) do
-    case Client.klines(symbol, interval, limit: limit) do
+  @doc """
+  Fetch up to `limit` klines (the newest, or from `opts[:start_time]` ms when given) and
+  store them through `store_candle/1`. Returns `{:ok, n}` or `{:error, reason}`. Public for
+  `mix flux.backfill_candles`, the outage repair; the restart backfill uses it too.
+  """
+  def backfill_candles(symbol, interval, limit, opts \\ []) do
+    case Client.klines(symbol, interval, Keyword.put(opts, :limit, limit)) do
       {:ok, rows} when is_list(rows) ->
         Enum.each(rows, &insert_candle(symbol, interval, &1, broadcast: false))
         Logger.info("Backfilled #{length(rows)} #{interval} candles for #{symbol}")
+        {:ok, length(rows)}
 
       {:error, reason} ->
         Logger.warning("Backfill failed #{symbol}/#{interval}: #{inspect(reason)}")
+        {:error, reason}
 
       _ ->
-        :ok
+        {:ok, 0}
     end
   end
 

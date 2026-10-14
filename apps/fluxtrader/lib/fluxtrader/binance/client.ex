@@ -14,7 +14,7 @@ defmodule FluxTrader.Binance.Client do
   `place_order/1` returned 401 on every call. It now signs, and it is the only order path.
   """
 
-  alias FluxTrader.Binance.Auth
+  alias FluxTrader.Binance.{Auth, RateLimit}
 
   @market_url "https://fapi.binance.com"
 
@@ -195,8 +195,30 @@ defmodule FluxTrader.Binance.Client do
         end
 
       Finch.build(method, url, headers, body)
-      |> Finch.request(finch_name(), receive_timeout: 15_000)
+      |> request(url, 15_000)
       |> handle_response()
+    end
+  end
+
+  # Every request to the PRODUCTION host passes `Binance.RateLimit`: refused outright while
+  # a 429/418 block stands (so a ban is never extended by this node), and every response
+  # reported back so the collector's soft caps read the exchange's own used-weight counter.
+  # The testnet host has its own counter and is left alone.
+  defp request(req, url, timeout) do
+    if String.starts_with?(url, @market_url) do
+      if RateLimit.blocked?() do
+        {:error, :rate_limited}
+      else
+        result = Finch.request(req, finch_name(), receive_timeout: timeout)
+
+        with {:ok, %{status: status, headers: headers, body: body}} <- result do
+          RateLimit.observe(status, headers, decode(body))
+        end
+
+        result
+      end
+    else
+      Finch.request(req, finch_name(), receive_timeout: timeout)
     end
   end
 
@@ -220,6 +242,7 @@ defmodule FluxTrader.Binance.Client do
 
   defp handle_response({:ok, %{status: 200, body: body}}), do: {:ok, decode(body)}
   defp handle_response({:ok, %{status: status, body: body}}), do: {:error, {status, decode(body)}}
+  defp handle_response({:error, :rate_limited}), do: {:error, :rate_limited}
   defp handle_response({:error, reason}), do: {:error, reason}
 
   defp maybe_put(params, _key, nil), do: params
@@ -228,16 +251,7 @@ defmodule FluxTrader.Binance.Client do
   defp get(path) do
     url = if String.starts_with?(path, "http"), do: path, else: "#{@market_url}#{path}"
 
-    case Finch.build(:get, url) |> Finch.request(finch_name(), receive_timeout: 30_000) do
-      {:ok, %{status: 200, body: body}} ->
-        {:ok, decode(body)}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, {status, decode(body)}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    Finch.build(:get, url) |> request(url, 30_000) |> handle_response()
   end
 
   defp decode(body) when is_binary(body) do
