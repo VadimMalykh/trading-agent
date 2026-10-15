@@ -1756,6 +1756,66 @@ interpolated.
 **Needed from Vadim: nothing** — asked for 2026-10-12 ("why wait"); the only calendar item is
 prerequisite 1's two days of overlap, read on 2026-10-14.
 
+#### X8c′ — the depth bands as a feature group, re-registered on a series-shaped identity bar. WRITTEN 2026-10-15 on Vadim's "X8c′", before the new bar was run, after X8c's diagnostic above was read
+
+**Identical to X8c, by reference:** the question, the group and its four columns, the served-pair
+list (ten; BTC and ETH masked in training and in serving), the stale-row rule, the control X8″,
+the recipe (X8″ plus `FEATURE_GROUPS=legacy,depth` and `ARCHIVE_DEPTH`), prerequisites 2–4, the
+statistic, the fallback, the gate, the secondary, what each outcome licenses, and the recorded
+expectation **FLAT**. The reduced parquet is the one X8c made, `bookdepth_5m_fd02aab0.parquet`
+(2,825,550 rows; the reduce does not read the identity). **The only change is prerequisite 1's
+bar.**
+
+**Why the bar changes, and what was already known when this was written.** X8c's bar (median
+|Δ|/c < 2 %, p99 < 10 % on the nearest row within 15 s) compared two clocks, not two series: the
+±0.2 % band on these pairs moves **5.3–9.3 %** (median) between the collector's own rows ten
+seconds apart, and the archive stamps its rows **14–16 s after** the book they describe
+(`logs/X8c_identity_diag_20261015.log`). The same diagnostic showed the centre ratio collector ÷
+archive at **0.997–1.003** and the median |Δ|/c at the best clock offset with a 5 s tolerance at
+**2.3–5.8 %**. Those numbers are known and the bars below are written knowing them. What is **not**
+known is the tail of the difference at the best offset against the band's own tail — the one
+quantity this registration actually reads. The bar is written so that a *definitional*
+difference fails it (another reference price, notional for quantity, a truncated sum, a frozen
+or interpolated source) while two samplings of one series pass it.
+
+**Prerequisite 1′ — the identity, series-shaped. Fixed now.** Per served-depth pair and side,
+over the overlap of the collector's live band rows (since 2026-10-12 02:18 UTC) with the
+archive's files, stale rows dropped on both sides by the registered rule, collector rows masked
+where either side's reach is under 20 bps or the band is not positive:
+
+* *Clock offset.* The archive's stamp is shifted by δ ∈ {−30, −28, …, +30} s and matched to the
+  nearest collector row within 5 s; δ* is the shift that minimises the median |a − c| / c on the
+  bid side. δ* is recorded per pair (descriptive; its agreement across pairs is reported, not
+  gated).
+* **D**, the cross-source difference: |a − c| / c on the matched rows at δ*, per side. **S**, the
+  series' own change: |c(t′) − c(t)| / c(t) over the collector's consecutive rows with
+  5 ≤ t′ − t ≤ 15 s, same pair, same side, same window.
+* **Bars, all three on every pair and side: (1) centre — the median of c ÷ a at δ* within
+  [0.98, 1.02]; (2) spread — median(D) ≤ median(S); (3) tail — p99(D) ≤ 1.5 × p99(S); and
+  n(D) ≥ 2,000.** (2) and (3) say: the two sources differ by no more than the band itself moves in
+  ten seconds, with a half-again margin on the tail for the ±5 s tolerance and the archive's
+  sampling phase. PASS on all → the launch. 🔴 **FAIL on any pair-side → X8c′ is void before it
+  runs; the pair list is not trimmed and no further bar is written.**
+* Command: `./scripts/archive_depth_check.sh --series` (the same VM export; `m3 archivebook check
+  --series`), log `logs/X8cp_identity_<date>.log`, exit 2 on FAIL.
+
+**Expectation for prerequisite 1′, recorded now:** PASS on (1) and (2) by the numbers already
+read; (3) unknown — the stamped-match p99 was 30–168 %, and whether that collapses at δ* or is a
+property of the band's own tail (S's p99) is what the read tells. A FAIL on (3) alone would say
+the archive carries excursions the collector does not, and closes the group as X8c's void did.
+
+**The 15 s stamp lag, as a convention.** An archive row stamped T describes the book at ≈ T − 15 s.
+The loader takes, for each 5m bar, the last row at or before the bar's open, so the archive's
+value for a bar is the book ≈ 15 s before the stamp the loader sees — a lag, never a look-ahead;
+the collector's live rows carry no such lag. The training/serving asymmetry is at most 15 s of
+signal age on a 1 h delta and a one-day relative level. Recorded, not corrected (X8's +5 min
+shift precedent: a convention is recorded, not tuned).
+
+**Commands.** X8c's, with `ARCHIVE_DEPTH=gs://fluxtrader-train-artifacts/archive/bookdepth_5m_fd02aab0.parquet`,
+the logs named `X8cp_s{1,2,3}.log`, and the ten `Archive depth:` acceptance lines naming
+`sha8=fd02aab0`. **Needed from Vadim:** the three serial GPU launches once prerequisite 1′ has
+passed and the parquet is uploaded — Claude hands the block then.
+
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 
 `logs/b3b_gbt_5m_20260911.log`, `logs/b3b_gbt_15m_20260911.log`; reading in
