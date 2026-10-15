@@ -134,6 +134,50 @@ def test_archive_reduce_on_fetched_parquets(tmp_path=None):
     assert not red.duplicated(subset=["symbol", "ts"]).any()
 
 
+def test_series_identity_bar(tmp_path=None):
+    """X8c′ prerequisite 1′: two samplings of one series pass (the archive stamped 15 s late, matched
+    at δ*); a scaled source fails the centre; a source with injected excursions fails the tail."""
+    import pathlib
+    import tempfile
+    from m3 import archivebook as A
+    tmp_path = pathlib.Path(tmp_path or tempfile.mkdtemp())
+    rng = np.random.default_rng(0)
+    n = 24 * 3600  # one second grid, one day (2,880 archive rows, the n floor is 2,000)
+    t0 = pd.Timestamp("2026-10-12 03:00", tz="UTC")
+    # a random walk in log depth, ~2 % a second, both sides
+    walk = {side: np.exp(np.cumsum(rng.normal(0, 0.02, n)) + 8.0) for side in ("bid", "ask")}
+    sec = t0 + pd.to_timedelta(np.arange(n), unit="s")
+    coll_ix = np.arange(0, n, 10)                    # the collector every 10 s, on time
+    arch_ix = np.arange(0, n - 15, 30)               # the archive every 30 s, stamped 15 s late
+    def collector(scale=1.0):
+        g = pd.DataFrame({"symbol": "SOLUSDT", "ts": sec[coll_ix]})
+        for side in ("bid", "ask"):
+            g[f"{side}_band_0_2"] = walk[side][coll_ix] * scale
+            for t in ("1", "2", "3", "4", "5"):
+                g[f"{side}_band_{t}"] = walk[side][coll_ix] * scale * 3
+            g[f"{side}_reach_bps"] = 100.0
+        return g
+    def archive(spikes=0):
+        a = pd.DataFrame({"symbol": "SOLUSDT", "ts": sec[arch_ix] + pd.Timedelta(seconds=15)})
+        for side in ("bid", "ask"):
+            v = walk[side][arch_ix].copy()
+            if spikes:
+                v[rng.choice(len(v), spikes, replace=False)] *= 4.0
+            a[f"d_{side}_0.2"] = v
+            for t in ("1", "2", "3", "4", "5"):
+                a[f"d_{side}_{t}"] = v * 3
+        return a
+    def run(g, a):
+        d = tmp_path / f"case_{rng.integers(1 << 30)}"
+        d.mkdir()
+        a.to_parquet(d / "SOLUSDT.parquet", index=False)
+        g.to_csv(d / "collector.csv", index=False)
+        return A.check_series(str(d / "collector.csv"), in_dir=str(d), pairs=["SOLUSDT"])
+    assert run(collector(), archive()) == 0
+    assert run(collector(scale=1.05), archive()) == 2
+    assert run(collector(), archive(spikes=60)) == 2
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

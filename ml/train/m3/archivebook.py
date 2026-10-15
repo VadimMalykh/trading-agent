@@ -143,6 +143,111 @@ CHECK_MED_MAX, CHECK_P99_MAX = 0.02, 0.10
 CHECK_MIN_MATCHED = 500
 
 
+SERIES_OFFSETS_S = range(-30, 31, 2)
+SERIES_TOL_S = 5.0
+SERIES_CENTER = (0.98, 1.02)
+SERIES_TAIL_MULT = 1.5
+SERIES_MIN_N = 2000
+SERIES_SELF_DT = (5.0, 15.0)
+
+
+def _prep_pair(c: pd.DataFrame, s: str, in_dir: str, tol: pd.Timedelta):
+    """Archive rows over the collector's window and the collector's rows for one pair, stale rows
+    dropped on both sides (the registered rule); None when either side is empty."""
+    from data.db import depth_stale_mask
+    p = os.path.join(in_dir, f"{s}.parquet")
+    if not os.path.exists(p):
+        return None, None
+    lo, hi = c["ts"].min(), c["ts"].max()
+    a = pd.read_parquet(p)
+    a["ts"] = pd.to_datetime(a["ts"], utc=True)
+    a = a[(a["ts"] >= lo - tol) & (a["ts"] <= hi + tol)].sort_values("ts").reset_index(drop=True)
+    a = to_collector_columns(a)
+    a = a[~depth_stale_mask(a)].reset_index(drop=True)
+    g = c[c["symbol"] == s].sort_values("ts").reset_index(drop=True)
+    g = g[~depth_stale_mask(g)].reset_index(drop=True)
+    return a, g
+
+
+def check_series(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = None) -> int:
+    """X8c′ prerequisite 1′ (NEXT_TRAINING_PLAN §2 X8c′): the identity as a comparison of two
+    samplings of one series. Per pair and side at the archive's best clock offset δ* (scan, 5 s
+    tolerance): (1) median c/a within SERIES_CENTER; (2) median |a-c|/c (D) ≤ the median of the
+    band's own change between the collector's rows 5–15 s apart (S); (3) p99(D) ≤ 1.5 × p99(S);
+    n(D) ≥ 2,000. FAIL on any pair-side → exit 2."""
+    from data.features import DEPTH_SERVED_PAIRS
+    c = pd.read_csv(collector_csv)
+    c["ts"] = pd.to_datetime(c["ts"], utc=True)
+    c = c[(c["bid_reach_bps"] >= 20.0) & (c["ask_reach_bps"] >= 20.0)
+          & (c["bid_band_0_2"] > 0) & (c["ask_band_0_2"] > 0)].reset_index(drop=True)
+    pairs = pairs or sorted(DEPTH_SERVED_PAIRS)
+    tol = pd.Timedelta(seconds=SERIES_TOL_S)
+    wide = pd.Timedelta(seconds=max(abs(o) for o in SERIES_OFFSETS_S) + SERIES_TOL_S)
+    print(f"archive bookDepth vs collector band columns, series-shaped (X8c′): overlap "
+          f"{c['ts'].min():%Y-%m-%d %H:%M} -> {c['ts'].max():%Y-%m-%d %H:%M} UTC; archive clock shifted by δ* "
+          f"(scan {min(SERIES_OFFSETS_S):+d}..{max(SERIES_OFFSETS_S):+d} s, nearest row within {SERIES_TOL_S:.0f} s); "
+          f"stale rows removed on both sides; served-depth pairs only.")
+    print(f"bars per pair and side: centre median c/a in [{SERIES_CENTER[0]}, {SERIES_CENTER[1]}]; median D <= median S; "
+          f"p99 D <= {SERIES_TAIL_MULT} x p99 S; n >= {SERIES_MIN_N}  (D = |a-c|/c at δ*, S = the band's own change over "
+          f"{SERIES_SELF_DT[0]:.0f}-{SERIES_SELF_DT[1]:.0f} s)")
+    print(f"{'symbol':<14}{'side':<5}{'δ*':>4}{'n':>7}{'centre':>8}{'med D':>8}{'med S':>8}{'p99 D':>9}{'p99 S':>9}{'max D':>9}  verdict")
+    fails = 0
+    offsets = []
+    for s in pairs:
+        a, g = _prep_pair(c, s, in_dir, wide)
+        if a is None or g is None or a.empty or g.empty:
+            print(f"{s:<14}{'—':<5}{'—':>4}{0:>7}  FAIL (no archive parquet / no overlap rows)")
+            fails += 1
+            continue
+        gg = g[["ts", "bid_band_0_2", "ask_band_0_2"]].rename(columns={"bid_band_0_2": "c_bid", "ask_band_0_2": "c_ask"})
+        # δ*: the shift of the archive clock minimising the median relative difference on the bid side
+        best = None
+        for off in SERIES_OFFSETS_S:
+            aa = a[["ts", "bid_band_0_2"]].copy()
+            aa["ts"] = aa["ts"] + pd.Timedelta(seconds=off)
+            mm = pd.merge_asof(aa, gg[["ts", "c_bid"]], on="ts", direction="nearest", tolerance=tol).dropna(subset=["c_bid"])
+            if mm.empty:
+                continue
+            med = ((mm["bid_band_0_2"] - mm["c_bid"]).abs() / mm["c_bid"]).median()
+            if best is None or med < best[1]:
+                best = (off, med)
+        if best is None:
+            print(f"{s:<14}{'—':<5}{'—':>4}{0:>7}  FAIL (no match at any offset)")
+            fails += 1
+            continue
+        d_star = best[0]
+        offsets.append(d_star)
+        aa = a[["ts", "bid_band_0_2", "ask_band_0_2"]].copy()
+        aa["ts"] = aa["ts"] + pd.Timedelta(seconds=d_star)
+        m = pd.merge_asof(aa, gg, on="ts", direction="nearest", tolerance=tol).dropna(subset=["c_bid"])
+        gd = g["ts"].diff().dt.total_seconds()
+        for side in ("bid", "ask"):
+            D = ((m[f"{side}_band_0_2"] - m[f"c_{side}"]).abs() / m[f"c_{side}"]).to_numpy(np.float64)
+            centre = (m[f"c_{side}"] / m[f"{side}_band_0_2"]).median()
+            sr = (g[f"{side}_band_0_2"].diff().abs() / g[f"{side}_band_0_2"].shift())
+            S = sr[(gd >= SERIES_SELF_DT[0]) & (gd <= SERIES_SELF_DT[1])].to_numpy(np.float64)
+            S = S[np.isfinite(S)]
+            if len(D) < SERIES_MIN_N or len(S) < SERIES_MIN_N:
+                print(f"{s:<14}{side:<5}{d_star:>+4d}{len(D):>7}  FAIL (< {SERIES_MIN_N} matched / self rows)")
+                fails += 1
+                continue
+            medD, medS = float(np.median(D)), float(np.median(S))
+            p99D, p99S = float(np.quantile(D, 0.99)), float(np.quantile(S, 0.99))
+            ok = (SERIES_CENTER[0] <= centre <= SERIES_CENTER[1]) and (medD <= medS) and (p99D <= SERIES_TAIL_MULT * p99S)
+            fails += 0 if ok else 1
+            why = "" if ok else " (" + ", ".join(w for w, bad in (("centre", not (SERIES_CENTER[0] <= centre <= SERIES_CENTER[1])),
+                                                                   ("spread", medD > medS), ("tail", p99D > SERIES_TAIL_MULT * p99S)) if bad) + ")"
+            print(f"{s:<14}{side:<5}{d_star:>+4d}{len(D):>7}{centre:>8.3f}{medD:>8.2%}{medS:>8.2%}{p99D:>9.1%}{p99S:>9.1%}{D.max():>9.1%}  "
+                  f"{'ok' if ok else 'FAIL'}{why}")
+    if offsets:
+        print(f"\nδ* across pairs: {sorted(offsets)} s (descriptive)")
+    if fails:
+        print(f"\nIDENTITY FAILED on {fails} pair-side(s) — X8c′ is void before it runs (NEXT_TRAINING_PLAN §2 X8c′, prerequisite 1′).")
+        return 2
+    print("\nIDENTITY PASS (series-shaped) — the archive's ±0.2 % band and the collector's live band are two samplings of one series; X8c′ may be launched.")
+    return 0
+
+
 def check(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = None) -> int:
     from data.db import depth_stale_mask
     from data.features import DEPTH_SERVED_PAIRS
@@ -211,6 +316,7 @@ def add_parser(sub) -> None:
     c = s2.add_parser("check")
     c.add_argument("--collector", required=True, help="CSV of orderbook_snapshots band rows (scripts/archive_depth_check.sh)")
     c.add_argument("--pairs", default=None)
+    c.add_argument("--series", action="store_true", help="X8c′ prerequisite 1′: the series-shaped bar (check_series)")
     ap.set_defaults(fn=_main)
 
 
@@ -222,4 +328,5 @@ def _main(args) -> int:
     if job == "reduce":
         reduce(args.pairs.split(","), out=args.out)
         return 0
-    return check(args.collector, pairs=args.pairs.split(",") if args.pairs else None)
+    fn = check_series if getattr(args, "series", False) else check
+    return fn(args.collector, pairs=args.pairs.split(",") if args.pairs else None)
