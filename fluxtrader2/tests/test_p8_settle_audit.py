@@ -132,10 +132,10 @@ def test_the_read_finds_the_planted_dip_and_snap_with_the_registered_signs_and_t
     txt = audit_settle.run("transfer", pairs=NAMES, twelve=True, members=str(tmp_path / "m.csv"), jobs=1)
     out = audit_settle.OUT / "transfer_settle"
     v = json.loads((out / "validity.json").read_text())
-    assert v["status"] == "PASS" and v["whole_days"] and v["shifts"] == v["shifts_expected"] == v["days"] - 2 * 3 + 1 >= 20 and v["registration"] == "R41"
+    assert v["status"] == "PASS" and v["whole_days"] and v["shifts"] == v["shifts_expected"] == v["days"] - 2 * 3 + 1 >= 20 and v["registration"] == "R41′"
     for uni in ("outside", "twelve"):
-        assert v[uni]["fund_due_cover"] > 0.95 and v[uni]["formula"]["at_S_minus_1h"]["status"] == "PASS"
-        assert v[uni]["formula"]["at_S_minus_1h"]["rho_median"] > 0.95 and v[uni]["formula"]["at_S"]["within_1bp"] > 0.95
+        assert v[uni]["fund_due_cover"] > 0.95 and v[uni]["formula"]["at_S"]["status"] == "PASS" and "status" not in v[uni]["formula"]["at_S_minus_1h"]
+        assert v[uni]["formula"]["at_S"]["rho_median"] > 0.95 and v[uni]["formula"]["at_S"]["within_1bp"] > 0.95 and v[uni]["formula"]["at_S_minus_1h"]["within_1bp"] > 0.9
         assert v[uni]["schedule"]["share_at_00_08_16"] > 0.8 and set(v[uni]["schedule"]["interval_mix"]) == {"4", "8"}
     assert "**PASS**" in txt
     tab = pd.read_csv(out / "features.csv").set_index(["universe", "feature", "slot", "cells"])
@@ -177,7 +177,7 @@ def test_a_wrong_formula_or_a_missing_premium_voids_the_run_before_any_number_of
     assert e.value.code == 2
     out = audit_settle.OUT / "transfer_settle"
     v = json.loads((out / "validity.json").read_text())
-    assert v["status"] == "FAIL" and v["outside"]["formula"]["at_S_minus_1h"]["status"] == "FAIL" and v["outside"]["fund_due_cover"] > 0.95
+    assert v["status"] == "FAIL" and v["outside"]["formula"]["at_S"]["status"] == "FAIL" and v["outside"]["fund_due_cover"] > 0.95
     assert "VOID" in (out / "audit.md").read_text() and not (out / "features.csv").exists()
     (tmp_path / "data" / "premium.parquet").unlink()
     with pytest.raises(SystemExit) as e2:

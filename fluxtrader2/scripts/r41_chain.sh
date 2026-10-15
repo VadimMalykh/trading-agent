@@ -4,9 +4,11 @@
 # Serial on the work VM, in the venv, from ~/fluxtrader2:
 #   ./fluxtrader2/scripts/vm.sh bgsh r41 'bash scripts/r41_chain.sh'      # log: output/logs/r41.log
 # Each step writes output/logs/<step>.log and, when it ends well, output/logs/<step>.done; a done step is not made again. The chain's last
-# line arms a poweroff 30 minutes after the end (the R40 lesson: a chain must not leave the VM running); `vm.sh stop` before it is fine.
+# exit (done or failed) arms a poweroff 30 minutes later (the R40 lesson: a chain must not leave the VM running); `vm.sh stop` before it is fine.
+# R41′ (2026-10-15): the first four steps' markers stand; only the read is made again (validity (4) at S).
 set -euo pipefail
 mkdir -p output/logs
+trap 'nohup bash -c "sleep 1800; sudo poweroff" > /dev/null 2>&1 &' EXIT      # R41's lesson: armed on ANY exit, a failure included
 step() {
   local name="$1"; shift
   if [[ -e "output/logs/$name.done" ]]; then echo "$(date -u +%H:%M:%S) skip  $name (done)"; return; fi
@@ -24,4 +26,3 @@ step r41_ingest python -c "from ft2 import data; from ft2.__main__ import PAIRS;
 step r41_fp_after python scripts/r41_premium_check.py after
 step r41_read ft2 audit r18_transferbook_1d --family settle --twelve --jobs 4
 echo "$(date -u +%H:%M:%S) R41_CHAIN_DONE"
-nohup bash -c 'sleep 1800; sudo poweroff' > /dev/null 2>&1 &

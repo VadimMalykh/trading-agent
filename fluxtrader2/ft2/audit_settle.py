@@ -24,9 +24,9 @@ reference   P, prem_dev, funding_last signed the same way on the same cells; rev
 money       the FIFTHS on each event bar with ≥ FIFTH_MIN names: INTO short the top fifth of fund_due, long the bottom; AFTER the reverse;
             bps a position against the peers, HAC se over days, the shift null; by interval and by settlement hour; the 5-minute PROFILE
             from S − 55 to S + 60 min signed by the INTO side.
-validity    the frame's; whole days and the shift count; fund_due on ≥ COVER_BAR of the event cells; the FORMULA — at every settlement with
-            ≥ FORMULA_MIN names the Spearman between fund_due(S − 1 h) and the settled rate, its median ≥ FORMULA_RHO and the share of
-            (name, S) within 1 bp ≥ FORMULA_WITHIN; exit 2 = void.
+validity    the frame's; whole days and the shift count; fund_due on ≥ COVER_BAR of the event cells; the FORMULA (R41′) — at every settlement
+            with ≥ FORMULA_MIN names the Spearman between fund_due(S) (the full period) and the settled rate, its median ≥ FORMULA_RHO and
+            the share of (name, S) within 1 bp ≥ FORMULA_WITHIN; fund_due(S − 1 h)'s precision reported beside, deciding nothing; exit 2 = void.
 gate        R37's, plus the control: CLEARS if |u| ≥ 2 AND p_family ≤ 0.05 AND one sign in F1 and F2 AND IC_c > 0 AND u_Δ ≥ 2 AND the control
             does not clear at half the size; "CLEARS AS THE PLAIN REVERSAL", "NOT THE SETTLEMENT'S", "CLEARS WITH THE OPPOSITE SIGN",
             CLOSED (|IC_c| + 1.96 se < 0.02), NOT DETECTABLE.
@@ -55,7 +55,8 @@ CLAMP, I_8H = 5.0, 1.0                                        # bps: funding = P
 P_COVER = 0.6                                                 # P needs this share of the period's bars so far
 DEV_DAYS = 30
 COVER_BAR = {"outside": 0.95, "twelve": 0.90}
-FORMULA_RHO, FORMULA_WITHIN, FORMULA_MIN, FORMULA_MIN_S = 0.8, 0.5, 10, 20
+FORMULA_RHO, FORMULA_WITHIN, FORMULA_MIN, FORMULA_MIN_S = 0.8, 0.8, 10, 20       # R41′: the check at S, the full period (R41's at S − 1 h was void by ties and the unseen hour)
+REGISTRATION = "R41′"
 FIFTH_MIN = 10                                                # names in an event bar for the fifths
 PROFILE = 12                                                  # 5-minute bars either side of S in the profile
 COST = {"outside": 18.0, "twelve": 12.3}                      # bps a taker round trip (R20 D3; P1)
@@ -201,7 +202,7 @@ def _formula(I: dict, cell: pd.DataFrame) -> dict:
         within = float((np.abs(F[ok] - rate[ok]) <= 1.0).mean()) if ok.any() else np.nan
         out[tag] = {"settlements": int(len(rows)), "pairs": int(ok.sum()), "rho_median": float(np.median(rhos)) if rhos else np.nan,
                     "rho_p10": float(np.quantile(rhos, 0.1)) if rhos else np.nan, "within_1bp": within}
-    m = out["at_S_minus_1h"]
+    m = out["at_S"]                                                       # the formula is checked where it is fully observed; at_S_minus_1h is the INTO feature's precision, described
     m["assessable"] = bool(m["settlements"] >= FORMULA_MIN_S)
     m["status"] = ("PASS" if (m["rho_median"] >= FORMULA_RHO and m["within_1bp"] >= FORMULA_WITHIN) else "FAIL") if m["assessable"] else "NOT ASSESSABLE"
     return out
@@ -297,10 +298,10 @@ def run(run: str, pairs: list[str] | None = None, twelve: bool = True, members: 
     ks = horizon.shifts(nd, GAP)
     v = {u["tag"]: {**u["A"]["validity"], "event_cells": u["event_cells"], "fund_due_cover": u["cover"], "cover_bar": COVER_BAR[u["tag"]],
                     "schedule": u["schedule"], "formula": u["formula"], "notes": u["notes"]} for u in U}
-    v.update({"registration": "R41", "whole_days": whole, "days": nd, "shifts": len(ks), "shifts_expected": nd - 2 * GAP + 1, "gap_days": GAP,
+    v.update({"registration": REGISTRATION, "whole_days": whole, "days": nd, "shifts": len(ks), "shifts_expected": nd - 2 * GAP + 1, "gap_days": GAP,
               "slots": SLOTS, "folds": list(fold_names), "run": run})
-    ok_u = all(v[u["tag"]]["status"] == "PASS" and u["cover"] >= COVER_BAR[u["tag"]] and u["formula"]["at_S_minus_1h"]["status"] != "FAIL" for u in U)
-    ok_f = U[0]["formula"]["at_S_minus_1h"]["status"] == "PASS"                   # the members' settlements must be assessable and pass
+    ok_u = all(v[u["tag"]]["status"] == "PASS" and u["cover"] >= COVER_BAR[u["tag"]] and u["formula"]["at_S"]["status"] != "FAIL" for u in U)
+    ok_f = U[0]["formula"]["at_S"]["status"] == "PASS"                            # the members' settlements must be assessable and pass
     v["status"] = "PASS" if (ok_u and ok_f and whole and len(ks) == nd - 2 * GAP + 1 and len(ks) >= 20) else "FAIL"
     out = OUT / (name or f"{run}_settle")
     out.mkdir(parents=True, exist_ok=True)
@@ -417,7 +418,8 @@ def run(run: str, pairs: list[str] | None = None, twelve: bool = True, members: 
         f"\n## The profile — the INTO fifths' side × the 5-minute move against the event's names, from S − 55 to S + 60 min (described; bps a bar, HAC se over days)\n",
         show(profile), "\n",
         *(f"\n- {u['tag']}: a taker round trip costs about {COST.get(u['tag'], float('nan')):.1f} bps on these names (R20 / P1); the schedule on the cells: {json.dumps(u['schedule'])}; "
-          f"the formula check: {json.dumps(u['formula']['at_S_minus_1h'])}.\n" for u in U)]
+          f"the formula check at S: {json.dumps(u['formula']['at_S'])}; fund_due at S − 1 h against the settled rate (the INTO feature's precision, described): "
+          f"{json.dumps(u['formula']['at_S_minus_1h'])}.\n" for u in U)]
     text = "\n".join(md)
     (out / "audit.md").write_text(text)
     tab.to_csv(out / "features.csv", index=False)
