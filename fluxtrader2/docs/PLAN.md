@@ -5425,10 +5425,10 @@ Statistic:     R37's: per bar the Spearman across the names present (≥ 5 with 
                days; the HAC t over days beside, deciding nothing.
 Null:          R37's: the labels move by a whole number of days, the same for every name and bar (time of day kept — the settlement hours
                stay settlement hours under the null, which is the point), every admissible shift with gap = 1 (the period, 8 h → a day)
-               + 1 (the longest hold, 4 h → a day) + 1 = 3 days: 485 days → 479 shifts, the same shift on both universes, every slot and
+               + 1 (the longest hold, 4 h → a day) + 1 = 3 days: 485 days → 480 shifts, the same shift on both universes, every slot and
                the control; centre, se, IC_c = IC − centre, u = IC_c / se; per shift the largest |u| of the SIX → the family-wise p.
 Validity:      read first, or the run is void (exit 2): (1) the frame's — OUTSIDE `audit.frame`'s (the 288-bar labels equal R18's on every
-               cell to 1e-6), THE TWELVE `cells_twelve`'s against R14's run; (2) whole days of 24 bars, 485 − 2·3 + 1 = 479 shifts;
+               cell to 1e-6), THE TWELVE `cells_twelve`'s against R14's run; (2) whole days of 24 bars, 485 − 2·3 + 1 = 480 shifts;
                (3) the premium and the schedule read nothing at or after their bar (a test on made-up rows before the real ones: a premium
                changed from a cut on changes no ingredient at or before the cut); fund_due present on ≥ 95 % of the members' event cells
                and ≥ 90 % of the twelve's, else FAIL; (4) the FORMULA: at every settlement S with ≥ 10 names, the Spearman across names
@@ -5471,7 +5471,7 @@ Expectation:   the members, INTO at h 11: fund_due IC_c +0.01 … +0.03, u 2–5
                if licensed, is a hypothesis about a mechanism priced as a taker, not a trade found. Half a day: the registration, the
                code and its tests (a planted dip-and-snap on made-up bars with a made-up schedule comes back with the registered signs,
                ADDS, and the control is flat; a world without the premium voids the run; the formula check), the fetch (minutes), the run
-               (≈ 30–60 min: six family numbers, the references and the control under 479 shifts), the read.
+               (≈ 30–60 min: six family numbers, the references and the control under 480 shifts), the read.
 Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
