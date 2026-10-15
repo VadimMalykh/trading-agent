@@ -116,6 +116,7 @@ def reduce(pairs: list[str], in_dir: str = OUT_DIR, out: str = REDUCED_OUT) -> s
         df = pd.read_parquet(p)
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
         red, st = reduce_pair(df)
+        red = red.drop(columns=["symbol"], errors="ignore")  # the per-pair parquet carries it already
         red.insert(0, "symbol", sym)
         frames.append(red)
         print(f"{sym:<14}{st['rows']:>10,}{st['stale']:>9,}{st['stale_pct']:>8.2%}{st['kept']:>9,}  "

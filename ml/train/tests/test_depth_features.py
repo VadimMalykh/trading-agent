@@ -111,6 +111,29 @@ def test_archive_reduce_rule_matches():
     assert all((t.second in (0, 30)) for t in red["ts"])
 
 
+def test_archive_reduce_on_fetched_parquets(tmp_path=None):
+    """`reduce` over per-pair parquets as `fetch` writes them: each carries a `symbol` column
+    (the first real run on 2026-10-15 died inserting a second one), and the output is one
+    sha8-named parquet with one row per pair per grid point."""
+    import pathlib
+    import tempfile
+    from m3 import archivebook as A
+    tmp_path = pathlib.Path(tmp_path or tempfile.mkdtemp())
+    ts = pd.date_range("2026-08-06", periods=40, freq="30s", tz="UTC")
+    for sym in ("AAAUSDT", "BBBUSDT"):
+        df = pd.DataFrame({"symbol": sym, "ts": ts})
+        for a in A.BAND_TAGS:
+            for side in ("bid", "ask"):
+                df[f"d_{side}_{a}"] = np.arange(40, dtype=float) + (1 if side == "ask" else 0)
+        df.to_parquet(tmp_path / f"{sym}.parquet", index=False)
+    out = A.reduce(["AAAUSDT", "BBBUSDT"], in_dir=str(tmp_path), out=str(tmp_path / "r.parquet"))
+    red = pd.read_parquet(out)
+    assert os.path.basename(out).startswith("r_") and len(os.path.basename(out)) == len("r_12345678.parquet")
+    assert list(red.columns[:2]) == ["symbol", "ts"] and list(red.columns).count("symbol") == 1
+    assert set(red["symbol"]) == {"AAAUSDT", "BBBUSDT"}
+    assert not red.duplicated(subset=["symbol", "ts"]).any()
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -8,7 +8,6 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine, text
 
 from config import DATABASE_URL
 
@@ -18,6 +17,8 @@ _engine = None
 def engine():
     global _engine
     if _engine is None:
+        from sqlalchemy import create_engine  # lazy: the torch-free ml_analysis image has no DB driver
+
         _engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     return _engine
 
@@ -30,6 +31,8 @@ def connect():
 
 
 def _read_sql(sql: str, params: Optional[dict] = None) -> pd.DataFrame:
+    from sqlalchemy import text
+
     return pd.read_sql(text(sql), engine(), params=params or {})
 
 
@@ -483,6 +486,8 @@ def table_counts() -> dict:
         "liquidations",
     ]
     counts = {}
+    from sqlalchemy import text
+
     with engine().connect() as conn:
         for t in tables:
             try:
