@@ -391,24 +391,52 @@ def _archive_depth() -> pd.DataFrame:
     return _archive_depth_cache
 
 
+_depth_bands_in_db: Optional[bool] = None
+
+
+def orderbook_has_depth_bands() -> bool:
+    """True when `orderbook_snapshots` carries the band columns (migration 20261012000001).
+    A training snapshot dumped before 2026-10-12 — X8″'s pinned 20260913T050118Z, which X8c′
+    reuses by registration — has none; the collector's contribution is then empty and the
+    archive supplies every row. Checked once per process."""
+    global _depth_bands_in_db
+    if _depth_bands_in_db is None:
+        df = _read_sql(
+            """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'orderbook_snapshots' AND column_name = 'bid_band_0_2'
+            """
+        )
+        _depth_bands_in_db = not df.empty
+        if not _depth_bands_in_db:
+            print("Depth bands: orderbook_snapshots has no band columns in this snapshot "
+                  "(before migration 20261012000001) — collector rows 0, archive only")
+    return _depth_bands_in_db
+
+
 def load_depth_bands(
     symbol: str,
     since: Optional[str] = None,
 ) -> pd.DataFrame:
     """(ts, bid_band_0_2, ask_band_0_2, …, bid_reach_bps, ask_reach_bps) for one pair: the
-    collector's rows (stale rule applied), preceded by the archive's when ARCHIVE_DEPTH is set."""
-    params: dict = {"symbol": symbol}
-    clauses = ["symbol = :symbol", "bid_band_0_2 IS NOT NULL"]
-    if since:
-        clauses.append("ts >= :since")
-        params["since"] = since
-    sql = f"""
-        SELECT ts, {', '.join(DEPTH_COLLECTOR_COLS)}, bid_reach_bps, ask_reach_bps
-        FROM orderbook_snapshots
-        WHERE {' AND '.join(clauses)}
-        ORDER BY ts ASC
-    """
-    df = _read_sql(sql, params)
+    collector's rows (stale rule applied), preceded by the archive's when ARCHIVE_DEPTH is set.
+    On a snapshot without the band columns the collector's part is empty (printed once)."""
+    cols = ["ts", *DEPTH_COLLECTOR_COLS, "bid_reach_bps", "ask_reach_bps"]
+    if orderbook_has_depth_bands():
+        params: dict = {"symbol": symbol}
+        clauses = ["symbol = :symbol", "bid_band_0_2 IS NOT NULL"]
+        if since:
+            clauses.append("ts >= :since")
+            params["since"] = since
+        sql = f"""
+            SELECT {', '.join(cols)}
+            FROM orderbook_snapshots
+            WHERE {' AND '.join(clauses)}
+            ORDER BY ts ASC
+        """
+        df = _read_sql(sql, params)
+    else:
+        df = pd.DataFrame({c: pd.Series(dtype="float64") for c in cols})
     n_raw = len(df)
     if not df.empty:
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
@@ -430,7 +458,6 @@ def load_depth_bands(
           f"{'—' if a.empty else a['ts'].iloc[-1].strftime('%Y-%m-%d %H:%M')}, "
           f"collector from {'—' if df.empty else df['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} "
           f"({len(df)} rows, {n_raw - len(df)} stale dropped), sha8={archive_depth_sha()}")
-    cols = ["ts", *DEPTH_COLLECTOR_COLS, "bid_reach_bps", "ask_reach_bps"]
     a = a[[c for c in cols if c in a.columns]]
     return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
 

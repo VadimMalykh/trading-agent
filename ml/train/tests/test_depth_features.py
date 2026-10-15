@@ -178,6 +178,37 @@ def test_series_identity_bar(tmp_path=None):
     assert run(collector(), archive(spikes=60)) == 2
 
 
+def test_snapshot_without_band_columns_is_archive_only():
+    """X8c′'s first launch (20261015T161402Z) died on the pinned 20260913T050118Z snapshot, which
+    predates migration 20261012000001: the collector SQL named a column the table does not have.
+    On such a snapshot the collector's part is empty and the archive supplies every row."""
+    g = _grid(20)
+    arch = pd.DataFrame({"symbol": "SOLUSDT", "ts": g,
+                         **{c: 1.0 for c in db.DEPTH_COLLECTOR_COLS}})
+    calls = []
+
+    def fake_read_sql(sql, params=None):
+        calls.append(sql)
+        assert "information_schema" in sql, "the collector SQL must not run without the columns"
+        return pd.DataFrame()  # no bid_band_0_2 column in this snapshot
+
+    saved = (db._read_sql, db._depth_bands_in_db, db.ARCHIVE_DEPTH, db._archive_depth_cache)
+    try:
+        db._read_sql = fake_read_sql
+        db._depth_bands_in_db = None
+        db.ARCHIVE_DEPTH = "made-up.parquet"
+        db._archive_depth_cache = arch
+        out = db.load_depth_bands("SOLUSDT")
+        out2 = db.load_depth_bands("DOGEUSDT")
+    finally:
+        db._read_sql, db._depth_bands_in_db, db.ARCHIVE_DEPTH, db._archive_depth_cache = saved
+    assert len(calls) == 1                      # the schema check once per process, no band SQL
+    assert len(out) == 20 and out["ts"].iloc[0] == g[0] and out["ts"].iloc[-1] == g[-1]
+    assert (out["bid_reach_bps"] == db.DEPTH_REACH_UNBOUNDED).all()
+    assert "symbol" not in out.columns
+    assert out2.empty
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):
