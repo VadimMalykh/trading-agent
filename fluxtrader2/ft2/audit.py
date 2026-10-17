@@ -155,7 +155,46 @@ class OIBook(bt.Strategy):
         return d.assign(group=M.index.get_indexer(d["t"]) * self.k + slot.astype(int) - 1)
 
 
-STRATEGIES = {OIBook.name: OIBook}
+class MomBook(bt.Strategy):
+    """`mombook` (registration R44): the slow cross-section R43′ cleared, as the smallest priced book. At an hourly decision bar,
+    among the block's members with a close at t and the signal s = close[t] / close[t − window] − 1 (`horizon.mom_signals`,
+    the audit's own, closes at or before t only), n ≥ min_cells of them: k = max(rint(n × tenth), 1) — the audit's tenth; long the
+    k highest, short the k lowest, one unit each; the i-th highest and the i-th lowest are one unit of the book (both legs or
+    neither). No fit, no label, no cap, no stop, no sizing; the hold is the harness's (one position per name)."""
+    name = "mombook"
+
+    def __init__(self, hold: int = 8064, window: int = 24192, tenth: float = 0.10, min_cells: int = 20, grid: int = 12, members: str = ""):
+        self.hold, self.window, self.tenth, self.min_cells, self.grid = int(hold), int(window), float(tenth), int(min_cells), int(grid)
+        self.members = str(members)                              # "" = universe.MEMBERS_CSV
+        self._mem: pd.DataFrame | None = None
+
+    def score(self, M: bt.Market, a: pd.Timestamp, b: pd.Timestamp) -> tuple[pd.DataFrame, pd.Series]:
+        """The signal on the decision bars of [a, b) among the block's members (NaN elsewhere), and k per bar (0 where n < min_cells)."""
+        from .horizon import mom_signals
+        if self._mem is None:
+            self._mem = universe.members(self.members or None)
+        idx = M.index
+        grid = (idx.minute == 0) & (idx.second == 0) if self.grid == 12 else (np.arange(len(idx)) % self.grid == 0)
+        ts = idx[grid & (idx >= a) & (idx < b)]
+        cols = list(M.columns)
+        s = mom_signals(M.close, {"mom": self.window})["mom"].loc[ts, cols]
+        ok = M.close.loc[ts].notna() & s.notna() & member_mask(self._mem, np.asarray(cols, dtype=str), ts)
+        n = ok.sum(axis=1)
+        k = pd.Series(np.where(n >= self.min_cells, np.maximum(np.rint(n * self.tenth).astype(int), 1), 0), index=ts)
+        return s.where(ok).where(n >= self.min_cells, axis=0), k
+
+    def decide(self, M: bt.Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        s, k = self.score(M, a, b)
+        rl, rh = s.rank(axis=1, method="first"), s.rank(axis=1, method="first", ascending=False)
+        lo, hi = rl.le(k, axis=0), rh.le(k, axis=0)
+        d = bt.decisions_from(hi.astype(float) - lo.astype(float), a, b, signal=s,
+                              why=f"momentum: the {self.window}-bar return among the block's members, the top and bottom tenth, whole units")
+        slot = rh.where(hi, rl).to_numpy()[s.index.get_indexer(d["t"]), s.columns.get_indexer(d["symbol"])]      # 1 … k on both sides
+        return d.assign(group=M.index.get_indexer(d["t"]) * SLOTS + slot.astype(int) - 1)
+
+
+SLOTS = 1000                                                      # the slot's stride inside a bar's group ids (k < 1000 always)
+STRATEGIES = {OIBook.name: OIBook, MomBook.name: MomBook}
 
 
 def book_check(run: str, members: str | None = None) -> dict:

@@ -18,7 +18,7 @@ DAYS, START, REGIME = 400, "2023-02-01", 150                 # F0's tail → F1 
 DRIFT, SD = 0.2, 5.0                                         # bps a bar; over 28 days ±1,600 of drift against ≈ 450 of noise
 
 
-def _world(tmp_path, no_funding=(), zero_rate=(), seed=7):
+def _world(tmp_path, no_funding=(), zero_rate=(), seed=7, drift=DRIFT):
     """Thirty random-walk names; each name's drift is ±DRIFT bps a bar with a sign drawn per 150-day regime — the trailing month's return
     says which regime the name is in, and the regime says how the next weeks go: momentum, planted. Every name is a member of every
     block; names in `no_funding` have no funding events at all."""
@@ -31,7 +31,7 @@ def _world(tmp_path, no_funding=(), zero_rate=(), seed=7):
     c5, fund, cost_wide = [], [], []
     for i, sym in enumerate(NAMES):
         signs = rng.choice([-1.0, 1.0], n // (REGIME * 288) + 2)
-        d = DRIFT * signs[np.arange(n) // (REGIME * 288)]
+        d = drift * signs[np.arange(n) // (REGIME * 288)]
         px = 100 * (i + 1) * np.exp(np.cumsum(rng.normal(0, SD, n) + d) / 1e4)
         c5.append(pd.DataFrame({"symbol": sym, "open_time": t5 - ceiling.BAR, "high": px * 1.0005, "low": px * 0.9995, "close": px, "volume": 10.0}))
         if sym not in no_funding:
