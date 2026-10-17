@@ -1316,6 +1316,56 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
+**Decision V (2026-10-17) — after R42 (NOT REPRODUCED) and R43 (2 of 4 clear). OPEN — Vadim's. Two questions, independent of each
+other; the recommendation V1a + V2a.**
+
+*What the two reads say, in one paragraph each.* R42: R14 on 2026's bars made +7.8 bps a trade after costs on 916 trades, with an interval
+of ±37 and a hedged net of −12 — the gross was the market's long side; its ranking of the twelve was the sharpest of the three reads
+(held-out IC 0.066, t 2.16); pooled over F3+F4+F5 the book is +25 a trade on 2,669 trades and beats the flip null (p 0.0025) with a lower
+bound at zero. F5 is spent. R14 is "two blocks of three": a real forecast, thin money that the hedge takes away. R43: among the sixty
+most-traded names outside the twelve, the six that had risen most over 12 weeks beat the six that had fallen most by 4.7 % a leg over the
+next month (u 2.7, family-wise p 0.004) and 2.0 % over two weeks — the first per-name effect in this project that is many times its cost;
+both sides carry it, the medians order it, clipping the explosive names leaves 1 % a leg a month; and F2 (2024-01 → 08) contributes nothing
+of it (+15 against F1's +606). A hypothesis from one regime, as the registration said it would be whatever it read.
+
+*V1 — P7, the paper test of R14 on the serve host (LIVE since 2026-09-25, R17's read earliest 2027-03-25, e2-small ≈ 13–15 USD a month).*
+R42's registration said: NOT REPRODUCED → P7 reads its own ledger as registered, and whether it runs to its read or stops early is this
+decision.
+- **(V1a) Run P7 to its read, unchanged — recommended.** What it costs: ≈ 13–15 USD a month and one `serve-status` read a month; nothing
+  of the project's attention otherwise. What it is worth: the ledger is the fourth block of unseen bars and the ONLY one on the live path
+  (the collector's bars at the hour, the real refits, the real one-bar lag); R17's gate is R16's and it will read what it reads. Said
+  plainly: at a true edge of +8 … +25 and an se of ≈ 39 at 650 trades the gate will not be passed by power — P7's value from here is the
+  live-path identity and the ledger's own number beside F5's, not a route to funding. R42 did not change R17's gate and must not: a gate
+  rewritten after a confirmation failed is the thing §2 forbids.
+- **(V1b) Stop P7 now; delete the serve host.** Saves ≈ 13–15 USD a month and the monthly read; loses the live block and the serving path's
+  running record (the host is recreated from `docs/SERVE.md` in an hour if a later rule needs it). Defensible: R42's verdict is the gate's
+  answer to "does 2026 pay", and the ledger is 2026 too.
+- Not an option: tuning, re-fitting or replacing what is served (a new registration, never an edit); reading the ledger early.
+
+*V2 — R44, the one registration R43 licensed: the smallest priced book at mom_12w and hold 8,064 on the members.*
+- **(V2a) Register R44 — recommended.** Design, in R43's words and `oibook`'s pattern: at each hourly bar of F1+F2 the block's 60 members
+  ranked by their own 12-week return; the top six bought and the bottom six sold at the next bar's close, one position per name, held
+  8,064 bars (28 days) — so a name already held is not opened again, and the book carries at most ≈ 12 × 28 × 24 positions if every bar
+  opened new ones, in practice far fewer because the ranks move slowly: the harness's cap and the exit rule decide what fraction of R43's
+  mean a book keeps, and that is the question R44 answers; actual returns, funding on the position's value, the taker cost from the
+  members' own proxies (R21's: fees + the proxy spread and impact per name), the flip null (one sign per UTC day) deciding, the shuffle
+  null reported. Stage 1 on F1+F2 with a gate written first: net > 0, hedged net > 0, flip p ≤ 0.05, net POSITIVE IN F1 AND IN F2 EACH
+  (R43's weakness made a line: a book that earns nothing in 2024 does not go to F3+F4), the clipped row (labels at ±3,000) positive; the
+  14-day hold a described row of the same registration, not a second book. A pass → stage 2, ONCE, on F3+F4's members
+  (`ft2/screen_members_f34.csv`; candles and funding through 2025-12-31 as R25 fetched them), a market that held both a run (2024-Q4) and a
+  fall (2025-H1): the confirmation that decides whether the slow cross-section becomes the first per-name candidate in money. Before any
+  of it, the data step: fetch funding for MEW, RENDER, TAO and BNB's gap (R43 validity (4)) and check the F3+F4 members' funding cover the
+  same way — a validity line of R44, read first. Expected size: half a day of code (a `mombook` strategy on the members' market, R24's
+  path), one chain on the work VM for stage 1 (minutes), the read, then the stage-2 decision on a pass (Vadim's go, as R23 → R24 was).
+- **(V2b) Do not register R44; park the slow cross-section as "one regime".** The F2 flatness is the reason; the counter-argument is that
+  R44's stage 1 costs a day and its own per-fold gate line makes the same test the registration's, with F3+F4 unspent until a pass.
+- Not an option: a different window, hold, tenth or universe cut on R43's cells (its gate forbids them); going to F3+F4's members
+  without stage 1 (R43's letter: "explored on F1+F2 with its own gate").
+
+*The order if V1a + V2a:* the funding fetch and cover check (a data step, no read) → R44 registered → the code and its planted tests →
+stage 1 on the work VM → its read → stage 2 on Vadim's go. P7 runs beside it untouched; the next `serve-status` on or after 2026-11-01.
+U3 (execution timing on R14's decisions, a described row) stays the spare-half-day item; U4, U5, U6 as decision U left them.
+
 **Decision U (2026-10-17) — the brainstorm after R41′, Vadim's "T1": what to register next, in parallel with P7. DECIDED 2026-10-17, Vadim's "U1-U2 as proposed. Yes spend F5": (U1) REGISTERED as R42 (§8) — R14 on F5 once, taker, the flip null deciding, and the pooled F3+F4+F5 row from the saved decisions; F5 spent for the candle ridge on the twelve by his word. (U2) REGISTERED as R43 (§8) — the members' 4- and 12-week return against their peers at 14- and 28-day holds in R22's frame, the sign momentum, cost 17.6 a leg, the power re-stated honestly (MDE 100–220, not 70). Neither run before the registrations were committed. U3 waits for a spare half-day.**
 Ground rule as under decisions H and O: a mechanism, the cells it can be confirmed on, its power, and why it escapes what forty-one
 reads found. First the structural facts the reads since R18 leave, because the list is built from them and not from taste:
