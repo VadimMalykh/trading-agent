@@ -1316,7 +1316,7 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
-**Decision AA (2026-10-17) — the brainstorm after R45 and R46, on Vadim's "No no, I don't want to wait until 2027, let's do more brainstorming and experiments": what to register next. OPEN, Vadim's.**
+**Decision AA (2026-10-17) — the brainstorm after R45 and R46, on Vadim's "No no, I don't want to wait until 2027, let's do more brainstorming and experiments": what to register next. DECIDED 2026-10-17, Vadim's "AA1": the mechanism behind R45 REGISTERED as R47 (§8) before any code was written — IC by state, dispersion and correlation by state, the ceiling's features by state, on saved forecasts, a saved panel and the candles; no fold spent, nothing re-run, nothing in money. AA2 (the pre-history read) not taken; AA3–AA7 stand.**
 Ground rule as under decisions H, O, U and Y: a mechanism, the cells it can be confirmed on, its power, and why it escapes what forty-six
 reads found. First the facts R45 and R46 add; U's (i)–(vii) and Y's (viii)–(xii) stand:
 - **(xiii) The state does not pick a side; it switches R14's skill on and off.** R45's `by_state.csv` (set A, the five folds, the
@@ -6629,6 +6629,65 @@ Result:        **READ 2026-10-17 (the chain, 7 s; made again at 15:28 UTC with t
                **In plain words.** R14's entry is best made at once: every five minutes of delay costs about a bp a trade on average and the
                whole hour costs ten, all of it the market's part; the two sub-cost facts do not survive inside a trade either. Licensed:
                nothing. The successor's registration gets two lines from here — the entry at the first bar, and a time-of-day described row.
+
+### R47 — the mechanism behind R45: is the state's switch in the forecast's skill or in the cross-section's dispersion? Read on R14's saved held-out forecasts, the ceiling's saved daily ICs and the twelve's candles (registered 2026-10-17 on Vadim's "AA1" (P8 decision AA), before any code was written; read —)
+Question:      Decision AA's AA1, on R45's fact (decision AA (xiii)): R14's hedged net is +45 a trade after a rising quarter of the twelve
+               and −13 after a falling one, on both sides. A trade's hedged net is the forecast's skill times the cross-section's
+               dispersion; which term carries the state? (a) the held-out forecast's IC by state — R14's own; (b) the twelve's next-day
+               dispersion across names and their pairwise correlation by state — the market's; (c) the same cut on the ceiling's features
+               (P2's saved daily ICs) — every candle feature's cross-sectional IC by state, a family. Nothing is traded or gated; no fold is
+               spent (every cell is a seen one; the ceiling's panel is F1+F2); no walk, no fit; the serve path untouched (R17).
+Cells:         R14's saved held-out forecasts, as written by the first walk of each run (`forecast.parquet`: t on the hour × name, `f_bps`,
+               `sigma_h`, `group`): `output/backtest/r42_check_f12/` (F1+F2, 128,040 cells, 11 names), `r16_ridgebook_1d_ho12_f34/` (F3+F4,
+               139,104, 12), `r42_ridgebook_1d_ho12_f5/` (F5, 73,440, 12); the realised label from the panel, `backtest.labels(M, 288, 1)`,
+               as `forecast.forecast_report` computes it (z = y / σ_h clipped at ±5; ẑ = f / σ_h; the residual z_res = z − the bar's mean
+               over the names present). The ceiling's `output/ceiling/ic_daily.parquet` (bet × horizon × feature × day): the `relative` bet
+               at 1d (21 features, 487 days of F1+F2) the family; the `directional` bet at 1d (24) described beside. The state: R45's S90
+               (`scripts/r45_state.states` — the sign of `market.derive`'s blr minus its value 90 days before, on `backtest.market(PAIRS, F5's
+               end, PRE_START)`, PAIRS from `r42_ridgebook_1d_ho12_f5/meta.json`), at the cell's t (a, d), at the day's 00:00 UTC (b, c).
+               R45's set A fills (`r42_check_f12/fills_taker.parquet`, `r42_pool/pooled_fills.parquet`) for the described table (d).
+Statistic:     (a) IC_s = Σ ẑ·z_res / √(Σ ẑ² · Σ z_res²) over the cells in state s (the uncentred pooled correlation of `ceiling._ic_pooled`,
+               the sample being the state's cells), the three runs pooled; D_IC = IC_{+1} − IC_{−1}, the registered sign POSITIVE. Per run
+               described. (b) on the daily grid (00:00 UTC closes from the 5m panel; a day needs ≥ 5 names): r_{i,d} = the name's next-day
+               log move in bps; disp_d = the sd across names of r_{i,d} − mean_i r_{i,d}; zdisp_d = the same on r_{i,d} / σ_{i,1w} (the
+               name's trailing-week 5m sd × √288 — the units the forecast works in); ρ_d = the mean pairwise correlation of the names'
+               daily moves over days d+1 … d+30 (names with the full window); |m_d| = the basket's next-day |move|. D_disp = mean disp in
+               +1 minus −1, sign POSITIVE; D_ρ = mean ρ in +1 minus −1, sign NEGATIVE; D_zdisp and D_|m| described. (c) per feature, D_f =
+               the mean daily IC on days in state +1 minus −1, two-sided; the family's statistic the max |z| over the 21 relative features.
+               (d) described: the side × state table in R45's weighting (size-weighted net and hedged net, set A), and one table of hedged
+               net / IC / disp / zdisp / ρ by state. Null, every row: R45's — every admissible whole-day circular shift of the state series on
+               the span (90 ≤ d ≤ span − 90; 2,271 on 2019-12-31 → 2026-09-15), the statistic recomputed under each; two-sided p =
+               (1 + #{|null| ≥ |D|}) / (1 + shifts); for the signed rows a clear needs the registered sign. Families: (a), (b1), (b2) are
+               three mechanism rows — each its own p, and a family-wise p over the three (max |z|); (c) its own family of 21.
+Validity:      (1) the record: IC over ALL cells of each run reproduces its `forecast.md` "all | all" row — F1+F2 0.0328 (125,394 cells),
+               F3+F4 0.0427 (132,229), F5 0.0662 (73,152) — within 0.001 and the cell counts exact; (2) the state series reproduces R45:
+               the set A side × state × fold table (`r45_state/by_state.csv`, 20 rows) identical in trades, net and hedged net to 0.01;
+               (3) known-at: S90 on the panel cut at t equals the full-panel S90 on 20 drawn cells (R45's check); (4) cover: the state
+               defined on ≥ 95 % of the cells of (a), of the days of (b) and of (c); (5) the daily grid of (b) holds ≥ 2,300 days with
+               ≥ 5 names, and ρ's windows ≥ 2,200. A failure of (1) or (2) voids the read.
+Folds read:    none spent. F1–F5's cells are R14's saved forecasts (R16, R42 read them); the ceiling's days are F1+F2; the candles over
+               the span are the same panel R45 read. No walk, no fit, no new label on a confirmation fold beyond the saved forecasts' own.
+Power:         (a) ≈ 340,000 cells over ≈ 1,220 days; the null's sd on D_IC from the shifts, expected ≈ 0.01 (daily IC sd ≈ 0.15–0.2,
+               autocorrelated by the hold): MDE ≈ 0.02–0.03; R14's whole-sample IC is 0.03–0.07, so a state that halves it is at the MDE.
+               (b1) 2,450 days, disp ≈ 300 bps with sd ≈ 150 and volatility clustering: MDE ≈ 30–50 bps of dispersion; (b2) ρ's windows
+               overlap 30-fold, ≈ 80 effective: MDE ≈ 0.10 in ρ. (c) 487 days a feature: MDE ≈ 0.03 on an IC difference — a family that
+               can see only a large switch. All written from the null's sd at the read.
+Gate:          a described registration; what the numbers MEAN, fixed first: (b1) or (b2) CLEARS (its sign, p ≤ 0.05) → "the state is the
+               market's: the cross-section has more to catch after a rising quarter" — S90 becomes a STANDING sizing overlay offered to every
+               next cross-sectional registration (a sizing / on-off row written into each before its read), not only the next one; (a)
+               CLEARS and (b) not → "the state is the forecast's: the candle ridge's skill lives in rising quarters" — R45's licensing
+               unchanged, the mechanism named; neither → "not detectable at this power", R45 stays one rule's row; (c) names which features
+               switch (described for a successor's design, licensing nothing). No outcome licenses a variant of R14 on F1–F5, a
+               regime-switched rule, or anything on the serve path.
+Expectation:   validity PASS; (b2) the correlation higher after a falling quarter (ρ_{−1} − ρ_{+1} ≈ +0.1, p ≤ 0.05 likelier than not —
+               correlations rise in falls on every market anyone has measured); (b1) a coin flip in bps (bull markets add volatility as
+               well as rotation) and about zero in z units; (a) a coin flip — D_IC ≈ +0.02 with the interval touching zero; (c) 0–2 of
+               21 clear, the volume features the likelier. The honest expectation is that the market's rows clear and the forecast's does
+               not: the switch is in what there is to catch, not in the forecast — which is what would make S90 a standing overlay.
+Files:         `scripts/r47_mech.py` → `output/backtest/r47_mech/{mech.md, mech.json, shifts.parquet, daily.parquet, features.csv,
+               by_state.csv, known_at.csv}`; `scripts/r47_chain.sh` (the read on the work VM, the poweroff trap); tests
+               `tests/test_p8_mech.py` on test_p3's made-up bars.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
