@@ -1316,7 +1316,7 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
-**Decision Y (2026-10-17) — the brainstorm after R44 stage 2, Vadim's "X1": what to register next, in parallel with P7. OPEN, Vadim's.**
+**Decision Y (2026-10-17) — the brainstorm after R44 stage 2, Vadim's "X1": what to register next, in parallel with P7. DECIDED 2026-10-17, Vadim's "let's go Y1 + Y2": (Y1) REGISTERED as R45 (§8) — the market's state (the basket's 90-day sign; the 30-day sign and the vol state described) on the saved decisions of R14, R32 and R44, net and hedged net by state, every whole-day circular shift of the state series as the null, no fold spent; (Y2) REGISTERED as R46 (§8) — R14's F1+F2 decisions re-priced at each 5-minute slot of the hour, a described row. Neither run before the registrations were committed.**
 Ground rule as under decisions H, O and U: a mechanism, the cells it can be confirmed on, its power, and why it escapes what forty-four
 reads found. The first item's origin is Vadim's question of 2026-10-17: "we already have results that look good on some periods and lose
 when the market cycle changes — could it be worth classifying the market stage first, then applying the model good for that stage?"
@@ -6358,6 +6358,103 @@ Result:        **Stage 1 RUN 2026-10-17 (the chain `scripts/r44_chain.sh` on the
                cross-sectional momentum is a regime of 2023, not a rule. No variant of this book — k, hold, window, a cap, a stop, a skip, a
                funding filter, one side — on F1–F4's members' bars: they are spent for it (R43's and R44's letters). What follows is a new
                question, decision X (P8), Vadim's; P7 continues untouched.
+
+### R45 — the market's state as a pre-registered observable, read on the saved decisions of R14, R32 and R44 (registered 2026-10-17 on Vadim's "let's go Y1 + Y2" (P8 decision Y), before any code was written and before any state was computed; read —)
+Question:      Vadim's question of 2026-10-17 in the one form the protocol can read (decision Y (ix)): does a market state known at the
+               decision — the sign of the basket's trailing 90-day return — separate what the rules that made and lost money earned a
+               trade, on the trades they already made? Not a strategy and not a switch: a ceiling registration on SAVED decisions, every
+               cell already read and priced, nothing new read, nothing re-run. The informative row is the HEDGED one (decision Y (viii)):
+               a rule whose net moves with the state and whose hedged net does not has beta and no state-dependent skill.
+Observable:    S90 at the decision bar t (bars closed at t): sign(blr(t) − blr(t − 90 × 288)) where blr is the cumulative equal-weight 5m
+               basket move of the twelve's panel (`market.derive`: b1 = `ceiling.basket` of the pairs' 5m log moves, MIN_PAIRS 5, blr its
+               cumulative sum; the panel `backtest.market(PAIRS, F5's end, PRE_START)` — the archive's klines under the collector's from
+               2019-12-31, HYPE included where it exists). The state is a function of bars closed at or before t: known at the time.
+               Described beside, the same way: S30 (the 30-day sign, R6's `mret_30d` sign) and V30 (the basket's 30-day realised 5m
+               volatility above / below the median of its own trailing 365 days: "high" / "low"). Three states, one primary.
+Cells:         three decision sets, the fills as the harness saved them (taker; `net_bps`, `hedged_net_bps`, `size`; the unpriced dropped):
+               A = R14: F1+F2 `output/backtest/r42_check_f12/fills_taker.parquet` (R42's validity (1) run: R14's decisions under today's
+                   unit, 1,896 priced) and F3+F4+F5 `output/backtest/r42_pool/pooled_fills.parquet` (R16's and R42's decisions re-priced on
+                   one market under today's unit, 2,669 priced) — 4,565 trades, 2023-05 → 2026-09;
+               B = R32: `output/backtest/trend1d/fills_taker.parquet` (14,672 priced, FP+F0+F1+F2, 2020-05 → 2024-08);
+               C = R44: `output/backtest/r44_mombook_28d_f12/fills_taker.parquet` ∪ `r44_mombook_28d_f34/` (334 + 315 priced, 2023-05 →
+                   2025-12). Each trade joined to the state at its decision time t (A and C decide on the hourly grid, B at 00:00 UTC).
+Statistic:     per set k and row r ∈ {net, hedged net}: D_k(r) = the size-weighted mean of r on the trades decided in state +1 minus the same
+               in state −1 (bps a trade); the states' trade counts and means beside; a described table by state × fold × side.
+The null:      the state series circularly shifted by every admissible whole-day shift d (90 ≤ d ≤ span − 90, the span the panel's
+               2020-05-01 → 2026-09-14, ≈ 2,150 shifts; a shift keeps the state's own persistence and the time of day, as R6's and R22's
+               nulls do); under each shift D_k(d) on every set and row. Per set: the two-sided p = the share of shifts with |D_k(d)| ≥ |D_k|
+               (no sign is registered — a state may help or hurt a rule). The FAMILY: the three sets on the net row at S90, family-wise
+               p = the share of shifts with max_k |D_k(d)| / sd_k ≥ max_k |D_k| / sd_k, sd_k the sd of D_k over the shifts. The hedged row
+               is its own family of three, the same way. S30 and V30 are described (their p's reported, nothing decided by them).
+Validity:      read first; a failure voids the read: (1) the fills loaded reproduce the record — A's F1+F2 part net +39.16 on 1,896 trades
+               and its F3–F5 part +25.31 on 2,669 (R42's pool), B +10.67 on 14,672, C +331.0 on 334 and −66.1 on 315 (size-weighted
+               means, within 0.05); (2) the state exists on ≥ 95 % of each set's decision bars (the first 90 days of FP have none; B's
+               trades there are dropped and counted); (3) known-at: on 20 decision bars drawn at random, S90 computed on the panel cut
+               at t equals the full-panel S90; (4) each state holds ≥ 10 % of a set's trades, else that set is NOT READABLE at that
+               state and leaves the family (the family-wise p then over the sets that remain); (5) the episode count is the read's first
+               line: the number of sign changes of S90 over the span and inside each set's bars, and the share of bars in state +1.
+Folds read:    none. Every bar in these sets was read by R14 / R16 / R42, R32 and R44 under their registrations; this is a re-reading of
+               saved fills, as R42's pool was; the guard is not involved; no fold is spent. The twelve's panel is loaded only to compute
+               the state series (bars already seen by R6 / R14 / R16 / R42 / R32).
+Power:         written before the read. Trade-level lower bounds on se(D), with a 60 / 40 split of the trades between the states: A ≈ 30
+               (sd ≈ 1,000 a trade, 4,565 trades), B ≈ 20 (a day's basket net sd ≈ 390 over 1,578 days — B's unit is the day, its trades
+               are one basket), C ≈ 160 (sd ≈ 2,000, 649 trades). The shift null's sd is the real bar and larger: the state persists for
+               months and the trades' money clusters by month (R44: a month at −2,501, another at +1,950), so it is expected 2–3× the
+               trade-level se — MDE (2.8 × the null sd) ≈ 150–250 on A, ≈ 100–170 on B, ≈ 900–1,300 on C. Only a LARGE state dependence
+               is detectable; a +50-bps difference on A is not. The episode count (≈ 10 by a 90-day sign over 6.4 years, counted by
+               validity (5)) is why: the null's effective sample is the episodes, not the trades.
+Gate:          CLEARS on the net if the primary family's p ≤ 0.05 (S90, the net row); CLEARS on the hedged if the hedged family's p ≤ 0.05;
+               otherwise NOT CLEAR (with the MDE beside: NOT DETECTABLE if |D_k| < MDE on every set, CLOSED if the interval excludes a
+               dependence of the MDE's size). What a clear LICENSES: a sizing or on / off row, named with this observable, written into the
+               next PRICED registration before its read (as R30's session is a described sizing row), and a described column on P7's
+               ledger at R17 (S90 computed from the candles after the fact; the serve path untouched, R17). What it CANNOT license: a
+               regime-switched strategy as a rule (decision Y (ix)); any variant or re-run of R14, R32 or R44; a priced read of any fold.
+               A clear on the net WITHOUT a clear on the hedged is the record's expected shape — "beta, no state-dependent skill" — and
+               closes the regime question as a source of skill here; the hedged row alone can open it.
+Expectation:   validity PASS; S90 = +1 on 55–65 % of the bars, 8–14 episodes over the span, 2–4 inside A, 4–8 inside B, 2–4 inside C.
+               The net row: A's D positive (R14's long side earns the market's rise), B's D positive and the largest in its own units
+               (R32 is long when the 30-day sign is up, which S90 mostly agrees with), C's D of unknown sign (F1 and F4 were rising
+               markets with opposite outcomes for the book); the family-wise p on the net 0.05–0.5 — CLEARS one time in three. The
+               hedged row: every D inside its null; p > 0.2 likeliest — CLEARS one time in four or less. S30 reads as S90 with more
+               episodes and a smaller D; V30 nothing. Nothing in money is decided either way.
+Result:        —
+
+### R46 — execution timing on R14's own historical decisions: the entry at each 5-minute slot of its hour, a described row (registered 2026-10-17 on Vadim's "let's go Y1 + Y2" (P8 decision Y), before any code was written; read —)
+Question:      Decision U's U3, decision Y's Y2. Two sub-cost facts stand — the cross-sectional hourly reversal (+0.02 … +0.03 everywhere,
+               R37) and the settlement's dip–snap at a bp (R41′) — too small to trade and exactly the size a trade made anyway could
+               collect at its entry. On R14's F1+F2 decisions, as saved: does the slot of the hour at which the entry is made change what
+               the trade earns, by how much, and in which direction? A described row: nothing traded, nothing gated; its value is for
+               a successor's registration (an entry rule written before its read), not for P7 (R17: the serve path is untouched).
+Cells:         `output/backtest/r42_check_f12/decisions.parquet` (R14's 20,716 decisions on F1+F2, 1,911 accepted; R42's validity (1)
+               reproduced them to R14's), the market `backtest.market(R14's eleven PAIRS, F2's end, ceiling.START)`, the costs
+               `backtest.load_costs` with the close — the harness as it stands.
+Statistic:     `backtest.price(dec, M, C, "taker", 5, 2, latency=k)` for k = 1 … 12: the entry at the close of the k-th 5-minute bar after
+               the decision bar, the exit 288 bars after the entry (hold fixed, so the exit moves with it), every cost component the
+               harness's (funding between the entry and the exit rows). k = 1 is the registered execution. Per slot: the size-weighted mean
+               gross, net and hedged net; the PAIRED difference per trade against k = 1 (gross and net), its mean and a day-clustered se
+               (`backtest.trade_stats` on the differences, `day_lags(288)`), 11 differences — the best slot flagged as the maximum of
+               eleven correlated looks, never as a finding. Two described cuts: (a) the hourly-reversal cut — the trades split by whether
+               the name's own last-hour move against its peers at t has the side's sign (the rule enters WITH the hour's move) or the
+               opposite; the slot curve on each half; (b) the settlement cut — the trades whose entry hour contains a funding settlement
+               of the name (`funding_archive` events; decision hours 23, 07, 15 UTC for the 8-hour names), the slots before the settlement
+               against the slots at and after it, gross and funding apart.
+Validity:      (1) k = 1 reproduces `r42_check_f12/fills_taker.parquet` — every fill identical on (entry_t, exit_t, entry_px, exit_px,
+               net_bps) to 1e-6 (1,896 priced); (2) every slot prices ≥ 1,880 trades (a slot loses trades only at the panel's end); (3) the
+               meta of the run read: unit actual, charged value, folds F1 F2, R14's params.
+Folds read:    none. F1+F2 are exploration bars; the decisions are saved; no walk, no fit; the guard is not involved.
+Power:         1,896 paired differences; an hour's move on these names has sd ≈ 100 bps and a trade's paired difference between slots is a
+               fraction of it (the two legs move together), so se ≈ 2–4 bps on the slot-12 difference, smaller at nearer slots. The
+               cuts hold ≈ 900 trades each (a) and ≈ 240 (b): se ≈ 4 and ≈ 8.
+Gate:          none — a described row licenses nothing automatic. What the numbers MEAN, written first: a slot whose net difference
+               against k = 1 has an interval above zero AND ≥ 3 bps a round trip (a sixth of the taker cost) is "an entry worth writing
+               into a successor's registration" (as a rule fixed beforehand, its slot named, read once there); anything less is "nothing
+               to write"; the maximum of eleven is reported with that caveat and is not a rule. The cut (a) says whether the hourly
+               reversal is what an entry would collect; the cut (b) whether the settlement matters at the hour (prior: no).
+Expectation:   validity PASS; the slot curve flat within ±5 bps with se 2–4; the best slot +2 … +6 as the max of eleven; the reversal
+               cut with the sign R37 measured (a trade WITH the hour's move earns less at k = 1 than at k = 12, a trade against it the
+               reverse), the two halves cancelling in the whole; the settlement cut inside noise. "Nothing to write" likelier than not;
+               "an entry worth writing" one time in four.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
