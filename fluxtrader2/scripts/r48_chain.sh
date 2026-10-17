@@ -15,6 +15,6 @@ step() {
   touch "output/logs/$name.done"
   echo "$(date -u +%H:%M:%S) done  $name"
 }
-step r48_walk ft2 backtest ridgebook --param hold=288 --folds FP F0 --registration R48 --execs taker maker --draws 200 --name r48_ridgebook_1d_ho12_pre
+step r48_walk python -m ft2 backtest ridgebook --param hold=288 --folds FP F0 --registration R48 --execs taker maker --draws 200 --name r48_ridgebook_1d_ho12_pre
 step r48_read python scripts/r48_pre.py
 echo "$(date -u +%H:%M:%S) R48_CHAIN_DONE"
