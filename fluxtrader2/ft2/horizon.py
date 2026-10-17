@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import audit, folds
+from . import audit, data, folds
 from . import backtest as bt
 from .ceiling import MDE_K, Z_CLIP, Z_TOP, _ic_xs, day_lags, hac
 
@@ -693,13 +693,22 @@ def run_mom(symbols: list[str], holds=MOM_HOLDS, refs=MOM_REFS, cost: float = MO
     actual_from_log = (np.exp(bt.labels(M, refs[0], bt.LATENCY).loc[grid, names].to_numpy() / 1e4) - 1.0) * 1e4
     both = ~np.isnan(G[refs[0]]) & ~np.isnan(actual_from_log)
     d_label = float(np.abs(G[refs[0]] - actual_from_log)[both].max()) if both.any() else np.nan
-    # validity (4): funding present — events inside the first week's window (the cumulative rate moves) — on the labelled cells of a
-    # name, else the name is dropped from the cells and listed (a name without events has a zero `fundval`, which is finite: the event count is the check)
-    fcum = pd.DataFrame(C.fundcum, index=idx, columns=M.columns)
-    events = ((fcum.shift(-(bt.LATENCY + first_week)) - fcum.shift(-bt.LATENCY)).loc[grid, names].to_numpy() != 0.0)
+    # validity (4): funding present — the archive holds at least one funding EVENT inside the first week's window (a settled rate of
+    # exactly 0 is an event: BNB's rate was 0 on half its 2023-24 settlements, and R43's first read, which counted moves of the
+    # cumulative rate, dropped it wrongly — 2026-10-17) — on the labelled cells of a name, else the name is dropped from the cells and
+    # listed (a name without events has a zero `fundval`, which is finite: the event count is the check). A name with no labelled cell
+    # (a member of the last block only) has no cover to read: listed apart, not dropped.
+    fa = data.load("funding_archive", columns=["symbol", "ts"], symbols=names)
+    ecount = np.zeros((len(idx), len(names)))
+    for j, c in enumerate(names):
+        ts = np.sort(fa.loc[fa["symbol"] == c, "ts"].to_numpy())
+        ecount[:, j] = np.searchsorted(ts, idx.to_numpy(), side="right")                 # events stamped ≤ t
+    ecount = pd.DataFrame(ecount, index=idx, columns=names)
+    events = ((ecount.shift(-(bt.LATENCY + first_week)) - ecount.shift(-bt.LATENCY)).loc[grid, names].to_numpy() > 0)
     labelled = ~np.isnan(G[first_week])
-    fund_cover = {c: float(events[:, j][labelled[:, j]].mean()) if labelled[:, j].any() else 0.0 for j, c in enumerate(names)}
-    dropped = [c for c, x in fund_cover.items() if x < MOM_FUND_COVER]
+    fund_cover = {c: float(events[:, j][labelled[:, j]].mean()) if labelled[:, j].any() else float("nan") for j, c in enumerate(names)}
+    no_labelled = [c for c, x in fund_cover.items() if not np.isfinite(x)]
+    dropped = [c for c, x in fund_cover.items() if np.isfinite(x) and x < MOM_FUND_COVER]
     if dropped:
         jd = np.array([c in dropped for c in names])
         cell = cell & ~jd[None, :]
@@ -715,7 +724,7 @@ def run_mom(symbols: list[str], holds=MOM_HOLDS, refs=MOM_REFS, cost: float = MO
     v = {"registration": MOM_REG, "names": len(names), "members": n_members, "members_without_bars": without_bars, "blocks": int(len(per_block)),
          "members_per_block": {str(k.date()): int(x) for k, x in per_block.items()}, "folds": fold_names, "days": nd, "rows": n_rows, "whole_days": whole,
          "gap_days": gap, "shifts": len(ks), "shifts_expected": nd - 2 * gap + 1, "max_abs_d_causal": d_causal, "max_abs_d_label_ref": d_label,
-         "funding_cover_by_name": {k: round(x, 4) for k, x in fund_cover.items()}, "names_dropped_under_funding_cover": dropped,
+         "funding_cover_by_name": {k: (round(x, 4) if np.isfinite(x) else None) for k, x in fund_cover.items()}, "names_dropped_under_funding_cover": dropped, "names_without_labelled_cells": no_labelled,
          "dropped_share": len(dropped) / max(n_members, 1), "cells": {str(h): int((~np.isnan(Y[h]) & ~np.isnan(S["mom_4w"].to_numpy())).sum()) for h in every},
          "signal_windows_bars": windows, "holds": holds, "refs": refs, "cost_bps": cost, "unit": bt.UNIT, "charged": bt.CHARGED}
     v["status"] = "PASS" if (whole and len(ks) == v["shifts_expected"] and len(ks) >= 20 and d_causal == 0.0 and np.isfinite(d_label) and d_label <= 1e-9

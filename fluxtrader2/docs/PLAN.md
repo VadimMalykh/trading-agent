@@ -6020,6 +6020,19 @@ Result:        **READ 2026-10-17 (the chain's last step on the work VM, 09:31 �
                Whether R44 is registered, and when against P7's clock and the serve host, is **decision V, Vadim's** (P8). Nothing in
                money here; the slow cross-section at 4 weeks (mom_4w) is parked at these holds on the members; no other window, hold,
                tenth, skip, weighting or universe cut on these cells under this registration.
+               **AMENDED 2026-10-17, before the read was made again — the first read above is VOID as a read of this registration's letter,
+               and R43′ is the same read with validity (4) to the letter.** Checking the "data gap" for R44 showed there is none: the archive
+               holds MEW's, RENDER's and TAO's funding from their listings (2024-04 … 07) and BNB's without a gap (1,467 events in F1+F2).
+               The three were "dropped" because they are members of the LAST block only (2024-08-30) and have no labelled cell — nothing
+               to drop, a listing error. BNB was dropped WRONGLY: the code counted moves of the cumulative rate as events, and BNB's
+               settled rate is exactly 0 on half its 2023–24 settlements (722 of 1,467) — a rate of zero is a settlement, priced right by
+               the harness, and the registration's "fundval finite" holds on 100 % of BNB's cells. A member of all 18 blocks was excluded
+               from the cells by a defect of the check. By §2 and the project's rule (void and rerun, never salvage) the read is made again
+               with the check counting the archive's EVENTS in the window (a zero rate an event; a name with no labelled cell listed apart,
+               not dropped — `horizon.run_mom`, the test extended with a planted zero-rate name), nothing else changed: the same command,
+               the same cells plus BNB's, the same gate; the first read's files kept beside as `output/horizon/mom_screen_first/`. Written
+               before the rerun; expectation: the family's numbers move by less than the se (BNB is a low-volatility name, rarely in an
+               extreme tenth), the verdicts unchanged.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …

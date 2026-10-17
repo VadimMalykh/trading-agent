@@ -18,7 +18,7 @@ DAYS, START, REGIME = 400, "2023-02-01", 150                 # F0's tail → F1 
 DRIFT, SD = 0.2, 5.0                                         # bps a bar; over 28 days ±1,600 of drift against ≈ 450 of noise
 
 
-def _world(tmp_path, no_funding=(), seed=7):
+def _world(tmp_path, no_funding=(), zero_rate=(), seed=7):
     """Thirty random-walk names; each name's drift is ±DRIFT bps a bar with a sign drawn per 150-day regime — the trailing month's return
     says which regime the name is in, and the regime says how the next weeks go: momentum, planted. Every name is a member of every
     block; names in `no_funding` have no funding events at all."""
@@ -36,7 +36,7 @@ def _world(tmp_path, no_funding=(), seed=7):
         c5.append(pd.DataFrame({"symbol": sym, "open_time": t5 - ceiling.BAR, "high": px * 1.0005, "low": px * 0.9995, "close": px, "volume": 10.0}))
         if sym not in no_funding:
             ft = pd.date_range(t5[0].floor("D"), periods=DAYS * 3 + 3, freq="8h")
-            fund.append(pd.DataFrame({"symbol": sym, "ts": ft, "rate": 1e-4, "interval_h": 8}))
+            fund.append(pd.DataFrame({"symbol": sym, "ts": ft, "rate": 0.0 if sym in zero_rate else 1e-4, "interval_h": 8}))
         dd = pd.date_range(t5[0].floor("D"), periods=DAYS + 8, freq="D")
         cost_wide.append(pd.DataFrame({"symbol": sym, "day": dd, "spread_cal_bps": 3.0, f"imp_{bt.NOTIONAL}": 1.0, f"maker_adv_{bt.MAKER_H}": np.nan, f"maker_fill_{bt.MAKER_H}": np.nan}))
     pd.concat(c5).to_parquet("data/candles_5m.parquet", index=False)
@@ -90,10 +90,12 @@ def test_a_planted_momentum_clears_at_two_and_four_weeks_with_the_registered_sig
 
 
 def test_a_name_without_funding_is_dropped_and_too_many_void_the_run(tmp_path):
-    members = _world(tmp_path, no_funding=NAMES[:1])
+    members = _world(tmp_path, no_funding=NAMES[:1], zero_rate=NAMES[1:3])
     hz.run_mom(NAMES, jobs=1, members=members)
     v = json.loads(Path("output/horizon/mom_screen/validity.json").read_text())
     assert v["status"] == "PASS" and v["names_dropped_under_funding_cover"] == NAMES[:1] and 0 < v["dropped_share"] < 0.05
+    assert v["funding_cover_by_name"][NAMES[1]] == 1.0 and v["funding_cover_by_name"][NAMES[2]] == 1.0           # a settled rate of 0 is an event (BNB)
+    assert v["funding_cover_by_name"][NAMES[0]] == 0.0 and v["names_without_labelled_cells"] == []
     members = _world(tmp_path, no_funding=NAMES[:4])
     with pytest.raises(SystemExit) as e:
         hz.run_mom(NAMES, jobs=1, members=members, name="mom_void")
