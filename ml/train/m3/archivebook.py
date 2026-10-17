@@ -121,6 +121,17 @@ def reduce(pairs: list[str], in_dir: str = OUT_DIR, out: str = REDUCED_OUT) -> s
         frames.append(red)
         print(f"{sym:<14}{st['rows']:>10,}{st['stale']:>9,}{st['stale_pct']:>8.2%}{st['kept']:>9,}  "
               f"{str(red['ts'].min())[:16]} .. {str(red['ts'].max())[:16]}")
+        # X8c′ lesson (2026-10-17): a band may be absent for most of the history (Binance added
+        # the ±0.2 % band on 2026-01-15); print each band's first row and coverage so a feature
+        # registered on it is read against the history it actually has.
+        for tag in BAND_TAGS.values():
+            cols = [f"bid_band_{tag}", f"ask_band_{tag}"]
+            if not all(c in red.columns for c in cols):
+                print(f"{'':<14}  band {tag:<4} absent from the archive")
+                continue
+            has = red[cols].notna().all(axis=1)
+            first = str(red.loc[has, "ts"].min())[:16] if has.any() else "—"
+            print(f"{'':<14}  band {tag:<4} rows {int(has.sum()):>9,} ({has.mean():6.1%})  first {first}")
     if not frames:
         raise SystemExit("reduce: nothing to reduce")
     allr = pd.concat(frames, ignore_index=True).sort_values(["symbol", "ts"]).reset_index(drop=True)
