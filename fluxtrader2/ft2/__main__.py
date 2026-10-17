@@ -138,8 +138,18 @@ def cmd_audit(args):
     print(f"wrote {audit.OUT / args.run}/")
 
 
+def cmd_pool(args):
+    from . import pool
+    print(pool.pool(args.runs, exec_=args.exec, draws=args.draws, seed=args.seed, name=args.name, split=args.split, taker_bps=args.taker_bps, maker_bps=args.maker_bps))
+
+
 def cmd_horizon(args):
     from . import horizon
+    if args.mom:                                              # R43: the slow cross-section on the members' own cells
+        from .universe import screen_symbols
+        out_name = args.name or horizon.MOM_NAME
+        print(horizon.run_mom(screen_symbols(), args.holds or horizon.MOM_HOLDS, name=out_name, jobs=int(os.environ.get("FT2_JOBS", "4"))))
+        return print(f"wrote {horizon.OUT / out_name}/")
     if args.book:                                             # R35: the slow book at a longer hold, on the names whose book is in hand
         args.universe = args.universe or "both"
         out_name = args.name or f"book_{args.universe}"
@@ -332,11 +342,21 @@ def main(argv=None):
     au.add_argument("--family", choices=["exchange", "index", "etf", "flow", "settle"], default="exchange", help="R41: `settle` — the funding settlement as a scheduled per-name event (the rate due, into it and after it), R37's frame → <run>_settle/; R37: `flow` — the forced-flow signature at 1h and 4h (open interest left, a far move, the takers with it → a reversal), R26's frame → <run>_flow/; R26: `index` — the US index family (beta, beta × the index's move) with R22's shift null → output/audit/<run>_index/; R27: `etf` — the ETF flows, F2 only → <run>_etf/")
     au.add_argument("--twelve", action="store_true", help="--family index: the twelve on the same grid as a second universe (one family of ten) → output/audit/twelve_index/")
     au.add_argument("--jobs", type=int, default=4)
+    po = sub.add_parser("pool", help="R42: the saved decisions of several backtest runs of one strategy re-priced on one market under today's unit, pooled, with the flip null on the union → output/backtest/<name>/pool.md (see ft2/pool.py)")
+    po.add_argument("runs", nargs="+", help="run directory names under output/backtest/")
+    po.add_argument("--exec", default="taker", choices=["taker", "maker", "maker_ev", "maker_trade"])
+    po.add_argument("--draws", type=int, default=2000, help="flip-null draws (default 2000)")
+    po.add_argument("--seed", type=int, default=0)
+    po.add_argument("--name", default="pool", help="output directory under output/backtest/")
+    po.add_argument("--split", help="YYYY-MM-DD: each run's trades summarised before / from this date (R42's gate (iv))")
+    po.add_argument("--taker-bps", type=float, default=5.0)
+    po.add_argument("--maker-bps", type=float, default=2.0)
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
                                         "`transferbook` run → output/horizon/<run>/horizon.md (see ft2/horizon.py)")
     hz.add_argument("run", nargs="?", help="the run's directory name under output/backtest/")
     hz.add_argument("--holds", nargs="*", type=int, default=None, help="in 5m bars (default 864 2016; with --pre 2016)")
     hz.add_argument("--pre", action="store_true", help="R23: the open-interest score on the months before F1 (ft2/screen_members_pre.csv) → output/horizon/pre/horizon.md")
+    hz.add_argument("--mom", action="store_true", help="R43: the 188 screener members' 4- and 12-week trailing return at 14- and 28-day holds, R22's frame → output/horizon/mom_screen/horizon.md")
     hz.add_argument("--book", action="store_true", help="R35: the month-mean of the ±1 % imbalance and the raw imbalance at 3 and 7 days on the names whose book is in hand → output/horizon/book_<universe>/horizon.md")
     hz.add_argument("--universe", choices=["both", "new", "screen"], default=None, help="--book only: `both` — the twelve and universe.NEW (default, R35); `new` — the 32 alone; `screen` — the 188 screener members (R36)")
     hz.add_argument("--name", help="output directory under output/horizon/ (default: the run's name; with --pre, pre)")
@@ -373,7 +393,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":

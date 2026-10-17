@@ -604,3 +604,215 @@ def run_book(symbols: list[str], holds=BOOK_HOLDS, ref: int = BOOK_REF, cost: fl
     (out / "validity.json").write_text(json.dumps({**v, "null_max_u_p95": float(mx.quantile(0.95))}, indent=1, default=str))
     print(f"{reg}: {len(clears)} of {len(fam_tab)} clear; wrote {out}/", flush=True)
     return "\n".join(md)
+
+
+# ---- R43: the slow cross-section — the members' trailing return, held 2 and 4 weeks (PLAN §8 R43) ---------------------------------
+# Every per-name read stopped at a 7-day hold. Here the cells are the 188 screener members' own (the block's members on the
+# hourly grid of F1+F2, `audit.member_mask`), the signals the name's trailing 4- and 12-week return (the ranking inside a bar
+# is against the peers), the holds 14 and 28 days, R22's statistic and null with the gap grown to the signal's window.
+# `run` and `run_book` above are R22's and R35's and are not touched.
+MOM_HOLDS = (4032, 8064)                 # 14 and 28 days
+MOM_REFS = (288, 2016)                   # one day (validity (2)) and the first week (the "after the first week" part)
+MOM_FAMILY = {"mom_4w": 8064, "mom_12w": 24192}      # the family: the trailing return over this many bars
+MOM_DESCRIBED = {"mom_1w": 2016}                     # outside the family: the week's move (the reversal's cousin)
+MOM_COST = 17.6                          # bps a leg, FIXED in R43: R22's on these members
+MOM_WINDOW_DAYS = 84                     # the longest signal window: the null's gap = this + the longest hold in days + 1 = 113
+MOM_WINSOR = 3000.0                      # described: M with every label clipped at ±MOM_WINSOR bps
+MOM_FUND_COVER = 0.95                    # a name's labelled cells with funding present, else the name is dropped and listed
+MOM_MAX_DROPPED = 0.10                   # more than this share of the members dropped voids the run
+MOM_NAME, MOM_REG = "mom_screen", "R43"
+
+
+def mom_signals(close: pd.DataFrame, windows: dict[str, int]) -> dict[str, pd.DataFrame]:
+    """The name's own trailing return over `w` bars: close[t] / close[t − w] − 1 — closes at or before t only."""
+    return {k: close / close.shift(w) - 1.0 for k, w in windows.items()}
+
+
+def mom_gap_days(holds) -> int:
+    return MOM_WINDOW_DAYS + int(np.ceil(max(holds) / 288)) + 1
+
+
+def mom_verdict(r: dict, cost: float = MOM_COST) -> str:
+    """R43's gate: the registered sign POSITIVE (momentum). CLOSED is one-sided — the upper bound under the cost."""
+    strong = abs(r["u"]) >= U_BAR and r["p_family"] <= P_BAR and r["folds_same_sign"] and r["after_same_sign"]
+    if r["m_c"] > cost and strong:
+        return "CLEARS"
+    if r["m_c"] < -cost and strong:
+        return "CLEARS WITH THE OPPOSITE SIGN"
+    return "CLOSED" if r["m_c"] + 1.96 * r["se"] < cost else "NOT DETECTABLE"
+
+
+def run_mom(symbols: list[str], holds=MOM_HOLDS, refs=MOM_REFS, cost: float = MOM_COST, jobs: int = 4, name: str | None = None,
+            members: str | None = None, end: pd.Timestamp | None = None, fold_names=None) -> str:
+    from joblib import Parallel, delayed
+    from . import ceiling, universe
+    from .ceiling import W
+    holds, refs = [int(h) for h in holds], [int(h) for h in refs]
+    every = [*refs, *holds]
+    first_week = refs[-1]
+    fold_names = list(fold_names or folds.EXPLORATION)
+    end = ceiling.END if end is None else end
+    out = OUT / (name or MOM_NAME)
+    out.mkdir(parents=True, exist_ok=True)
+    mem = universe.members(members)
+    print("market…", flush=True)
+    M = bt.market(symbols, end)
+    idx, names = M.index, list(M.columns)
+    t5 = pd.Series(idx, index=idx)
+    scored = np.zeros(len(idx), dtype=bool)
+    for f in fold_names:
+        scored |= folds.mask(t5, f).to_numpy()
+    grid = idx[scored & (idx.minute == 0) & (idx.second == 0)]
+    n_rows, nd = len(grid), len(grid) // PER_DAY
+    day = (grid.floor("D") - grid[0].floor("D")).days.to_numpy()
+    whole = bool(n_rows == nd * PER_DAY and (np.bincount(day)[np.bincount(day) > 0] == PER_DAY).all())
+    gap = mom_gap_days(holds)
+    ks = shifts(nd, gap)
+    cell = audit.member_mask(mem, np.asarray(names), grid)                      # the block's members, point in time
+
+    print("labels (actual returns, funding on value) and the signals…", flush=True)
+    C = bt.load_costs(idx, M.columns, end, close=M.close)
+    G, Y = ({h: labels(M, C, h, bt.LATENCY)[i].loc[grid, names].to_numpy() for h in every} for i in (0, 1))
+    G = {h: np.where(cell, g, np.nan) for h, g in G.items()}
+    Y = {h: np.where(cell, y, np.nan) for h, y in Y.items()}
+    sig = (np.log(M.close).diff() * 1e4).rolling(W["1w"], min_periods=int(W["1w"] * 0.8)).std()
+    Zh = {h: (bt.labels(M, h, bt.LATENCY) / (sig * np.sqrt(h)).where(sig > 0)).clip(-Z_CLIP, Z_CLIP).loc[grid, names] for h in every}
+    windows = {**MOM_FAMILY, **MOM_DESCRIBED}
+    S_full = mom_signals(M.close, windows)
+    S = {k: x.loc[grid, names].where(pd.DataFrame(cell, index=grid, columns=names)) for k, x in S_full.items()}
+
+    # validity (3): the signals are causal — recomputed on the market cut at the midpoint, every value at or before it identical
+    mid = grid[n_rows // 2]
+    again = mom_signals(M.close.loc[M.close.index <= mid], windows)
+    d_causal = 0.0
+    for k in windows:
+        a, b = S_full[k].loc[grid[grid <= mid], names], again[k].loc[grid[grid <= mid], names]
+        both = a.notna() & b.notna()
+        d_causal = max(d_causal, float((a - b).abs().where(both).max().max() or 0.0), float((a.isna() != b.isna()).sum().sum()))
+    # validity (2): the label at the one-day reference before funding is the harness's unit converted from the log
+    actual_from_log = (np.exp(bt.labels(M, refs[0], bt.LATENCY).loc[grid, names].to_numpy() / 1e4) - 1.0) * 1e4
+    both = ~np.isnan(G[refs[0]]) & ~np.isnan(actual_from_log)
+    d_label = float(np.abs(G[refs[0]] - actual_from_log)[both].max()) if both.any() else np.nan
+    # validity (4): funding present — events inside the first week's window (the cumulative rate moves) — on the labelled cells of a
+    # name, else the name is dropped from the cells and listed (a name without events has a zero `fundval`, which is finite: the event count is the check)
+    fcum = pd.DataFrame(C.fundcum, index=idx, columns=M.columns)
+    events = ((fcum.shift(-(bt.LATENCY + first_week)) - fcum.shift(-bt.LATENCY)).loc[grid, names].to_numpy() != 0.0)
+    labelled = ~np.isnan(G[first_week])
+    fund_cover = {c: float(events[:, j][labelled[:, j]].mean()) if labelled[:, j].any() else 0.0 for j, c in enumerate(names)}
+    dropped = [c for c, x in fund_cover.items() if x < MOM_FUND_COVER]
+    if dropped:
+        jd = np.array([c in dropped for c in names])
+        cell = cell & ~jd[None, :]
+        G = {h: np.where(cell, g, np.nan) for h, g in G.items()}
+        Y = {h: np.where(cell, y, np.nan) for h, y in Y.items()}
+        S = {k: x.where(pd.DataFrame(cell, index=grid, columns=names)) for k, x in S.items()}
+    # validity (5): the blocks of the scored months
+    in_scope = mem[(mem["block"] >= grid[0].floor("D") - pd.Timedelta(days=30)) & (mem["block"] < grid[-1])]
+    per_block = in_scope.groupby("block").size()
+    member_names = sorted(set(in_scope["symbol"]))
+    without_bars = [c for c in member_names if c not in names]
+    n_members = len(member_names)
+    v = {"registration": MOM_REG, "names": len(names), "members": n_members, "members_without_bars": without_bars, "blocks": int(len(per_block)),
+         "members_per_block": {str(k.date()): int(x) for k, x in per_block.items()}, "folds": fold_names, "days": nd, "rows": n_rows, "whole_days": whole,
+         "gap_days": gap, "shifts": len(ks), "shifts_expected": nd - 2 * gap + 1, "max_abs_d_causal": d_causal, "max_abs_d_label_ref": d_label,
+         "funding_cover_by_name": {k: round(x, 4) for k, x in fund_cover.items()}, "names_dropped_under_funding_cover": dropped,
+         "dropped_share": len(dropped) / max(n_members, 1), "cells": {str(h): int((~np.isnan(Y[h]) & ~np.isnan(S["mom_4w"].to_numpy())).sum()) for h in every},
+         "signal_windows_bars": windows, "holds": holds, "refs": refs, "cost_bps": cost, "unit": bt.UNIT, "charged": bt.CHARGED}
+    v["status"] = "PASS" if (whole and len(ks) == v["shifts_expected"] and len(ks) >= 20 and d_causal == 0.0 and np.isfinite(d_label) and d_label <= 1e-9
+                             and v["dropped_share"] <= MOM_MAX_DROPPED and not without_bars) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
+    head = [f"# {MOM_REG} — the slow cross-section: the members' trailing return held {holds} bars (`ft2 horizon --mom`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · folds {'+'.join(fold_names)} · {len(names)} names, {n_members} members · {nd} days · holds {holds} bars "
+            f"(references {refs}) · {len(ks)} shifts (gap {gap} days) · cost {cost:g} bps a leg · the registered sign POSITIVE (momentum)\n",
+            f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n"]
+    if v["status"] != "PASS":
+        (out / "horizon.md").write_text("\n".join(head + ["\n**The read is VOID: nothing of the family was computed.**\n"]))
+        print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
+        raise SystemExit(2)
+
+    fam = list(MOM_FAMILY)
+    n_cells = int((~np.isnan(Y[refs[0]])).sum())
+    print(f"horizon --mom: {len(S)} signals × holds {every} × {len(ks)} shifts on {n_cells:,} cells, {nd} days…", flush=True)
+    d = pd.concat(Parallel(n_jobs=jobs, verbose=5)(delayed(_null)(k, x.to_numpy(), Y, ks) for k, x in S.items()), ignore_index=True)
+    real, null = d[d["shift"] == 0].set_index(["signal", "hold"])["m"], d[d["shift"] > 0]
+    st = null.groupby(["signal", "hold"])["m"].agg(centre="mean", se="std")
+    centre, se = st["centre"], st["se"]
+    null = null.join(st, on=["signal", "hold"])
+    null["u"] = (null["m"] - null["centre"]) / null["se"]
+    famn = null[null["signal"].isin(fam) & null["hold"].isin(holds)]
+    mx = famn.assign(a=famn["u"].abs()).groupby("shift")["a"].max()
+
+    ct = ceiling.bar_cost(idx, names, 5.0, 2.0)[0].loc[grid].to_numpy()        # the cells' own taker round trip (the proxy for the members)
+    fold_of = np.full(nd, "", dtype=object)
+    days = pd.DatetimeIndex(grid[::PER_DAY]).floor("D")
+    for f in fold_names:
+        fold_of[folds.mask(pd.Series(days, index=days), f, embargoed=False).to_numpy()] = f
+    rows, tenth = [], []
+    for k, x in S.items():
+        s = x.to_numpy()
+        for h in every:
+            m_day = _tenths(s, Y[h])
+            m, c, e = float(real[(k, h)]), float(centre[(k, h)]), float(se[(k, h)])
+            own = null[(null["signal"] == k) & (null["hold"] == h)]
+            per_fold = {f: float(np.nanmean(m_day[fold_of == f])) if (fold_of == f).any() else np.nan for f in fold_names}
+            if h in holds:                                                     # the part earned after the first week
+                after = float(np.nanmean(_tenths(s, Y[h] - Y[first_week])))
+            elif h == first_week:
+                after = float(np.nanmean(_tenths(s, Y[h] - Y[refs[0]])))       # the week after its first day (reference)
+            else:
+                after = np.nan
+            _, se_hac, n_days = hac(m_day, day_lags(h))
+            m_ic, se_ic, _ = hac(_ic_xs(x, Zh[h], day), day_lags(h))
+            yc = np.where(np.isnan(s), np.nan, Y[h])
+            with np.errstate(invalid="ignore", divide="ignore"):
+                move = float(np.nanmean(np.abs(yc - np.nansum(yc, axis=1, keepdims=True) / (~np.isnan(yc)).sum(1, keepdims=True))))
+            ok = ~(np.isnan(s) | np.isnan(Y[h]))
+            n = ok.sum(1)
+            kk = np.maximum(np.rint(n * TENTH).astype(int), 1)
+            r = _ranks(s, ok)
+            top, bottom = (r > (n - kk)[:, None]) & (r <= n[:, None]) & ok & (n >= MIN_CELLS)[:, None], (r <= kk[:, None]) & ok & (n >= MIN_CELLS)[:, None]
+            ext = top | bottom
+            rt_ext = float(np.nanmean(np.where(ext, ct, np.nan))) if ext.any() else np.nan
+            with np.errstate(invalid="ignore", divide="ignore"):
+                rel = yc - np.nansum(yc, axis=1, keepdims=True) / (~np.isnan(yc)).sum(1, keepdims=True)
+            m_top, m_bottom = float(np.nanmean(np.where(top, rel, np.nan))), float(np.nanmean(np.where(bottom, rel, np.nan)))
+            m_w = float(np.nanmean(_tenths(s, np.clip(Y[h], -MOM_WINSOR, MOM_WINSOR))))
+            row = {"signal": k, "hold": h, "family": k in fam and h in holds, "cells": int(ok.sum()), "days": n_days, "m": m, "centre": c, "m_c": m - c, "se": e,
+                   "u": (m - c) / e if e else np.nan, "se_hac": se_hac, "lo": m - c - 1.96 * e, "hi": m - c + 1.96 * e, "mde": MDE_K * e,
+                   "p_single": (1 + int((own["u"].abs() >= abs((m - c) / e)).sum())) / (len(own) + 1), "p_family": (1 + int((mx >= abs((m - c) / e)).sum())) / (len(mx) + 1),
+                   **{f"m_{f}": per_fold[f] for f in fold_names},
+                   "folds_same_sign": bool(all(np.sign(per_fold[f]) == np.sign(m - c) for f in fold_names if np.isfinite(per_fold[f])) and any(np.isfinite(per_fold[f]) for f in fold_names)),
+                   "m_after_first_week": after, "after_same_sign": bool(np.isfinite(after) and np.sign(after) == np.sign(m - c)), "funding_part": m - float(np.nanmean(_tenths(s, G[h]))),
+                   "m_top_tenth": m_top, "m_bottom_tenth": m_bottom, "m_winsorised": m_w, "rt_extreme_tenths": rt_ext, "ic": m_ic, "ic_t": m_ic / se_ic if se_ic else np.nan,
+                   "move": move, "ic_needed": cost / (Z_TOP * 1.2533 * move) if move else np.nan}
+            rows.append({**row, "verdict": mom_verdict(row, cost) if row["family"] else "reference"})
+            tenth.append(_by_tenth(s, Y[h]).reset_index().assign(signal=k, hold=h))
+    tab, tenth = pd.DataFrame(rows), pd.concat(tenth, ignore_index=True)
+    fam_tab, ref_tab = tab[tab["family"]], tab[~tab["family"]]
+    clears = fam_tab[fam_tab["verdict"].str.startswith("CLEARS")]
+    wide = lambda c: tenth.pivot(index=["signal", "hold"], columns="tenth", values=c).reindex(pd.MultiIndex.from_frame(tab[["signal", "hold"]])).reset_index()      # noqa: E731
+    show = lambda df, k=2: df.round(k).to_markdown(index=False)                         # noqa: E731
+    main = ["signal", "hold", "cells", "m", "centre", "m_c", "se", "u", "lo", "hi", "mde", "p_single", "p_family", "verdict"]
+    more = ["signal", "hold", *(f"m_{f}" for f in fold_names), "folds_same_sign", "m_after_first_week", "after_same_sign", "funding_part", "m_top_tenth", "m_bottom_tenth",
+            "m_winsorised", "rt_extreme_tenths", "se_hac", "ic", "ic_t", "move", "ic_needed"]
+    md = head + [
+        "\nWords: *m*: what one leg of a book earns before trading costs that buys the tenth of names with the highest trailing return and sells the tenth with the "
+        "lowest, in bps of the position, funding paid; POSITIVE is the registered direction (momentum). *centre*: the same book on moves taken from other months; "
+        "*m_c* = m − centre; *se*: its spread over those months; *u* = m_c / se; *p (family)*: the share of shifts in which the best of the four did at least as well. "
+        "*m_after_first_week*: the part of m earned from the eighth day on. *m_top_tenth*, *m_bottom_tenth*: each side's label against the bar's peers (which side "
+        "carries it). *m_winsorised*: M with every label clipped at ±3,000 bps. *rt_extreme_tenths*: the cells' own taker round trip on the tenths traded, against the fixed cost.\n",
+        f"\n## The family — two signals × two holds: **{len(clears)} of {len(fam_tab)} clear** (m_c > {cost:g}, u ≥ {U_BAR:g}, family-wise p ≤ {P_BAR:g}, m of m_c's "
+        f"sign in every fold and after the first week; the registered sign positive)"
+        f"{': ' + ', '.join(f'{a} at {b} ({c})' for a, b, c in zip(clears['signal'], clears['hold'], clears['verdict'])) if len(clears) else ''}. Over the shifts the best "
+        f"of the family reaches |u| {mx.mean():.2f} on average, {mx.quantile(0.95):.2f} one time in twenty.\n", show(fam_tab[main]), "\n",
+        "\n### Described (decides nothing)\n", show(fam_tab[more], 4), "\n",
+        "\n## Reference rows — the one-day and the one-week hold, and the week's move at every hold (outside the family, no verdict)\n", show(ref_tab[main]), "\n", show(ref_tab[more], 4), "\n",
+        "\n## The label against the bar's peers, by the signal's tenth (1 = lowest, 10 = highest), bps\n", "\n### mean\n", show(wide("mean"), 1), "\n",
+        "\n### median\n", show(wide("median"), 1), "\n"]
+    (out / "horizon.md").write_text("\n".join(md))
+    tab.to_csv(out / "signals.csv", index=False)
+    tenth.to_csv(out / "tenths.csv", index=False)
+    d.to_parquet(out / "shifts.parquet", index=False)
+    (out / "validity.json").write_text(json.dumps({**v, "null_max_u_p95": float(mx.quantile(0.95))}, indent=1, default=str))
+    print(f"{MOM_REG}: {len(clears)} of {len(fam_tab)} clear; wrote {out}/", flush=True)
+    return "\n".join(md)
