@@ -65,6 +65,8 @@ def fetch(pairs: list[str], start: str, end: str, cache: str = L.ARCHIVE_CACHE,
 # --------------------------------------------------------------------------------------
 
 BAND_TAGS = {"0.2": "0_2", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5"}
+BAND_BPS = {"0_2": 20.0, "1": 100.0, "2": 200.0, "3": 300.0, "4": 400.0, "5": 500.0}   # width, bps
+BAND_LABEL = {"0_2": "±0.2 %", "1": "±1 %", "2": "±2 %", "3": "±3 %", "4": "±4 %", "5": "±5 %"}
 REDUCED_OUT = "output/archive/bookdepth_5m.parquet"
 GRID_MIN = 5
 MAX_AGE_MIN = 5.0
@@ -180,21 +182,22 @@ def _prep_pair(c: pd.DataFrame, s: str, in_dir: str, tol: pd.Timedelta):
     return a, g
 
 
-def check_series(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = None) -> int:
+def check_series(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = None,
+                 band: str = "0_2") -> int:
     """X8c′ prerequisite 1′ (NEXT_TRAINING_PLAN §2 X8c′): the identity as a comparison of two
     samplings of one series. Per pair and side at the archive's best clock offset δ* (scan, 5 s
     tolerance): (1) median c/a within SERIES_CENTER; (2) median |a-c|/c (D) ≤ the median of the
     band's own change between the collector's rows 5–15 s apart (S); (3) p99(D) ≤ 1.5 × p99(S);
     n(D) ≥ 2,000. FAIL on any pair-side → exit 2."""
-    from data.features import DEPTH_SERVED_PAIRS
+    from data.features import DEPTH_BANDS
     c = pd.read_csv(collector_csv)
     c["ts"] = pd.to_datetime(c["ts"], utc=True)
-    c = c[(c["bid_reach_bps"] >= 20.0) & (c["ask_reach_bps"] >= 20.0)
-          & (c["bid_band_0_2"] > 0) & (c["ask_band_0_2"] > 0)].reset_index(drop=True)
-    pairs = pairs or sorted(DEPTH_SERVED_PAIRS)
+    c = c[(c["bid_reach_bps"] >= BAND_BPS[band]) & (c["ask_reach_bps"] >= BAND_BPS[band])
+          & (c[f"bid_band_{band}"] > 0) & (c[f"ask_band_{band}"] > 0)].reset_index(drop=True)
+    pairs = pairs or sorted(DEPTH_BANDS[band][1])
     tol = pd.Timedelta(seconds=SERIES_TOL_S)
     wide = pd.Timedelta(seconds=max(abs(o) for o in SERIES_OFFSETS_S) + SERIES_TOL_S)
-    print(f"archive bookDepth vs collector band columns, series-shaped (X8c′): overlap "
+    print(f"archive bookDepth vs collector band columns, series-shaped (X8c′ bar), band {BAND_LABEL[band]}: overlap "
           f"{c['ts'].min():%Y-%m-%d %H:%M} -> {c['ts'].max():%Y-%m-%d %H:%M} UTC; archive clock shifted by δ* "
           f"(scan {min(SERIES_OFFSETS_S):+d}..{max(SERIES_OFFSETS_S):+d} s, nearest row within {SERIES_TOL_S:.0f} s); "
           f"stale rows removed on both sides; served-depth pairs only.")
@@ -210,16 +213,16 @@ def check_series(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | N
             print(f"{s:<14}{'—':<5}{'—':>4}{0:>7}  FAIL (no archive parquet / no overlap rows)")
             fails += 1
             continue
-        gg = g[["ts", "bid_band_0_2", "ask_band_0_2"]].rename(columns={"bid_band_0_2": "c_bid", "ask_band_0_2": "c_ask"})
+        gg = g[["ts", f"bid_band_{band}", f"ask_band_{band}"]].rename(columns={f"bid_band_{band}": "c_bid", f"ask_band_{band}": "c_ask"})
         # δ*: the shift of the archive clock minimising the median relative difference on the bid side
         best = None
         for off in SERIES_OFFSETS_S:
-            aa = a[["ts", "bid_band_0_2"]].copy()
+            aa = a[["ts", f"bid_band_{band}"]].copy()
             aa["ts"] = aa["ts"] + pd.Timedelta(seconds=off)
             mm = pd.merge_asof(aa, gg[["ts", "c_bid"]], on="ts", direction="nearest", tolerance=tol).dropna(subset=["c_bid"])
             if mm.empty:
                 continue
-            med = ((mm["bid_band_0_2"] - mm["c_bid"]).abs() / mm["c_bid"]).median()
+            med = ((mm[f"bid_band_{band}"] - mm["c_bid"]).abs() / mm["c_bid"]).median()
             if best is None or med < best[1]:
                 best = (off, med)
         if best is None:
@@ -228,14 +231,14 @@ def check_series(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | N
             continue
         d_star = best[0]
         offsets.append(d_star)
-        aa = a[["ts", "bid_band_0_2", "ask_band_0_2"]].copy()
+        aa = a[["ts", f"bid_band_{band}", f"ask_band_{band}"]].copy()
         aa["ts"] = aa["ts"] + pd.Timedelta(seconds=d_star)
         m = pd.merge_asof(aa, gg, on="ts", direction="nearest", tolerance=tol).dropna(subset=["c_bid"])
         gd = g["ts"].diff().dt.total_seconds()
         for side in ("bid", "ask"):
-            D = ((m[f"{side}_band_0_2"] - m[f"c_{side}"]).abs() / m[f"c_{side}"]).to_numpy(np.float64)
-            centre = (m[f"c_{side}"] / m[f"{side}_band_0_2"]).median()
-            sr = (g[f"{side}_band_0_2"].diff().abs() / g[f"{side}_band_0_2"].shift())
+            D = ((m[f"{side}_band_{band}"] - m[f"c_{side}"]).abs() / m[f"c_{side}"]).to_numpy(np.float64)
+            centre = (m[f"c_{side}"] / m[f"{side}_band_{band}"]).median()
+            sr = (g[f"{side}_band_{band}"].diff().abs() / g[f"{side}_band_{band}"].shift())
             S = sr[(gd >= SERIES_SELF_DT[0]) & (gd <= SERIES_SELF_DT[1])].to_numpy(np.float64)
             S = S[np.isfinite(S)]
             if len(D) < SERIES_MIN_N or len(S) < SERIES_MIN_N:
@@ -255,16 +258,17 @@ def check_series(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | N
     if fails:
         print(f"\nIDENTITY FAILED on {fails} pair-side(s) — X8c′ is void before it runs (NEXT_TRAINING_PLAN §2 X8c′, prerequisite 1′).")
         return 2
-    print("\nIDENTITY PASS (series-shaped) — the archive's ±0.2 % band and the collector's live band are two samplings of one series; X8c′ may be launched.")
+    print(f"\nIDENTITY PASS (series-shaped) — the archive's {BAND_LABEL[band]} band and the collector's live band are two samplings of one series; the registration on this band may be launched.")
     return 0
 
 
-def check(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = None) -> int:
+def check(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = None,
+          band: str = "0_2") -> int:
     from data.db import depth_stale_mask
-    from data.features import DEPTH_SERVED_PAIRS
+    from data.features import DEPTH_BANDS
     c = pd.read_csv(collector_csv)
     c["ts"] = pd.to_datetime(c["ts"], utc=True)
-    pairs = pairs or sorted(DEPTH_SERVED_PAIRS)
+    pairs = pairs or sorted(DEPTH_BANDS[band][1])
     lo, hi = c["ts"].min(), c["ts"].max()
     print(f"archive bookDepth vs collector band columns: overlap {lo:%Y-%m-%d %H:%M} -> {hi:%Y-%m-%d %H:%M} UTC, "
           f"nearest row within {CHECK_TOL_S:.0f} s, stale rows removed on both sides, served-depth pairs only; "
@@ -289,17 +293,17 @@ def check(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = N
             print(f"{s:<14}{'—':<6}{len(a):>8}{0:>9}  FAIL (no overlap rows)")
             fails += 1
             continue
-        m = pd.merge_asof(a[["ts", "bid_band_0_2", "ask_band_0_2"]],
-                          g[["ts", "bid_band_0_2", "ask_band_0_2", "bid_reach_bps", "ask_reach_bps"]]
-                          .rename(columns={"bid_band_0_2": "c_bid", "ask_band_0_2": "c_ask"}),
+        m = pd.merge_asof(a[["ts", f"bid_band_{band}", f"ask_band_{band}"]],
+                          g[["ts", f"bid_band_{band}", f"ask_band_{band}", "bid_reach_bps", "ask_reach_bps"]]
+                          .rename(columns={f"bid_band_{band}": "c_bid", f"ask_band_{band}": "c_ask"}),
                           on="ts", direction="nearest", tolerance=tol).dropna(subset=["c_bid"])
         for side in ("bid", "ask"):
-            sub = m[(m[f"{side}_reach_bps"] >= 20.0) & (m[f"c_{side}"] > 0)]
+            sub = m[(m[f"{side}_reach_bps"] >= BAND_BPS[band]) & (m[f"c_{side}"] > 0)]
             if len(sub) < CHECK_MIN_MATCHED:
                 print(f"{s:<14}{side:<6}{len(a):>8}{len(sub):>9}{'—':>9}{'—':>9}{'—':>9}  FAIL (< {CHECK_MIN_MATCHED} matched)")
                 fails += 1
                 continue
-            rel = (sub[f"{side}_band_0_2"] - sub[f"c_{side}"]).abs() / sub[f"c_{side}"]
+            rel = (sub[f"{side}_band_{band}"] - sub[f"c_{side}"]).abs() / sub[f"c_{side}"]
             med, p99, mx = rel.median(), rel.quantile(0.99), rel.max()
             ok = med < CHECK_MED_MAX and p99 < CHECK_P99_MAX
             fails += 0 if ok else 1
@@ -307,7 +311,7 @@ def check(collector_csv: str, in_dir: str = OUT_DIR, pairs: list[str] | None = N
     if fails:
         print(f"\nIDENTITY FAILED on {fails} pair-side(s) — X8c is void before it runs (NEXT_TRAINING_PLAN §2 X8c, prerequisite 1).")
         return 2
-    print("\nIDENTITY PASS — the archive's ±0.2 % band and the collector's live band are the same series; X8c may be launched.")
+    print(f"\nIDENTITY PASS — the archive's {BAND_LABEL[band]} band and the collector's live band are the same series; X8c may be launched.")
     return 0
 
 
@@ -328,6 +332,8 @@ def add_parser(sub) -> None:
     c.add_argument("--collector", required=True, help="CSV of orderbook_snapshots band rows (scripts/archive_depth_check.sh)")
     c.add_argument("--pairs", default=None)
     c.add_argument("--series", action="store_true", help="X8c′ prerequisite 1′: the series-shaped bar (check_series)")
+    c.add_argument("--band", default="0_2", choices=list(BAND_TAGS.values()),
+                   help="the band checked: 0_2 (X8c/X8c′) or 1 (X8c″); served pairs and the reach floor follow")
     ap.set_defaults(fn=_main)
 
 
@@ -340,4 +346,4 @@ def _main(args) -> int:
         reduce(args.pairs.split(","), out=args.out)
         return 0
     fn = check_series if getattr(args, "series", False) else check
-    return fn(args.collector, pairs=args.pairs.split(",") if args.pairs else None)
+    return fn(args.collector, pairs=args.pairs.split(",") if args.pairs else None, band=args.band)

@@ -30,7 +30,7 @@ def test_layout_and_group():
     groups, cols = F.resolve_feature_groups("legacy,depth")
     assert groups == ["legacy", "depth"] and len(cols) == 23
     assert cols[:19] == F.LEGACY_FEATURE_COLS and cols[19:] == F.DEPTH_COLS
-    assert F.ALL_FEATURE_COLS[-4:] == F.DEPTH_COLS
+    assert F.ALL_FEATURE_COLS[34:38] == F.DEPTH_COLS and F.ALL_FEATURE_COLS[-4:] == F.DEPTH1_COLS
     assert "BTCUSDT" not in F.DEPTH_SERVED_PAIRS and "ETHUSDT" not in F.DEPTH_SERVED_PAIRS
     assert len(F.DEPTH_SERVED_PAIRS) == 10
 
@@ -176,6 +176,16 @@ def test_series_identity_bar(tmp_path=None):
     assert run(collector(), archive()) == 0
     assert run(collector(scale=1.05), archive()) == 2
     assert run(collector(), archive(spikes=60)) == 2
+    # X8c″: the same bar on the ±1 % band (3× the walk on both sides above, spikes included)
+    def run1(g, a):
+        d = tmp_path / f"case1_{rng.integers(1 << 30)}"
+        d.mkdir()
+        a.to_parquet(d / "SOLUSDT.parquet", index=False)
+        g.to_csv(d / "collector.csv", index=False)
+        return A.check_series(str(d / "collector.csv"), in_dir=str(d), pairs=["SOLUSDT"], band="1")
+    assert run1(collector(), archive()) == 0
+    assert run1(collector(scale=1.05), archive()) == 2
+    assert run1(collector(), archive(spikes=60)) == 2
 
 
 def test_snapshot_without_band_columns_is_archive_only():
@@ -207,6 +217,43 @@ def test_snapshot_without_band_columns_is_archive_only():
     assert (out["bid_reach_bps"] == db.DEPTH_REACH_UNBOUNDED).all()
     assert "symbol" not in out.columns
     assert out2.empty
+
+
+def test_band1_group_layout_and_columns():
+    """X8c″: the `depth1` group — four columns on the ±1 % band, appended after `depth`, seven
+    served pairs, a 100-bps reach floor; the ±0.2 % group is untouched."""
+    groups, cols = F.resolve_feature_groups("legacy,depth1")
+    assert groups == ["legacy", "depth1"] and len(cols) == 23
+    assert cols[:19] == F.LEGACY_FEATURE_COLS and cols[19:] == F.DEPTH1_COLS
+    assert F.ALL_FEATURE_COLS[34:38] == F.DEPTH_COLS and F.ALL_FEATURE_COLS[38:42] == F.DEPTH1_COLS
+    assert F.DEPTH1_SERVED_PAIRS == frozenset(["SOLUSDT", "DOGEUSDT", "WLDUSDT", "ADAUSDT",
+                                               "AVAXUSDT", "LINKUSDT", "XRPUSDT"])
+    for p in ("BTCUSDT", "ETHUSDT", "ZECUSDT", "HYPEUSDT", "1000PEPEUSDT"):
+        assert p not in F.DEPTH1_SERVED_PAIRS
+    g = _grid(600)
+    n = len(g)
+    bid = np.full(n, 300.0)
+    ask = np.full(n, 100.0)
+    bid[300:] = 100.0
+    b = pd.DataFrame({"ts": g + pd.Timedelta(seconds=-30), "bid_band_1": bid, "ask_band_1": ask,
+                      "bid_band_0_2": np.nan, "ask_band_0_2": np.nan,      # the archive before 2026-01-15
+                      "bid_reach_bps": 200.0, "ask_reach_bps": 200.0})
+    out = F.depth_features(b, g, 5.0, served=True, bars_1h=12, bars_1d=288, tag="1")
+    assert list(out.columns) == F.DEPTH1_COLS
+    assert (out["has_depth_1"] == 1).all()
+    assert abs(out["depth_imb_1"].iloc[10] - 0.5) < 1e-12 and abs(out["depth_imb_1"].iloc[400]) < 1e-12
+    assert abs(out["depth_imb_1_d1h"].iloc[305] + 0.5) < 1e-12
+    assert abs(out["depth_rel_1"].iloc[301] - np.log(200.0 / 400.0)) < 1e-9
+    # the ±0.2 % group on the same rows is all zero — the band is NaN (X8c′'s fact)
+    out02 = F.depth_features(b, g, 5.0, served=True, bars_1h=12, bars_1d=288)
+    assert (out02[F.DEPTH_COLS] == 0).all().all()
+    # the reach floor is the band's own: 50 bps reaches ±0.2 % and not ±1 %
+    b.loc[10:19, "bid_reach_bps"] = 50.0
+    out = F.depth_features(b, g, 5.0, served=True, bars_1h=12, bars_1d=288, tag="1")
+    assert (out["has_depth_1"].iloc[10:20] == 0).all() and out["has_depth_1"].iloc[9] == 1
+    # not served -> zero
+    out = F.depth_features(b, g, 5.0, served=False, bars_1h=12, bars_1d=288, tag="1")
+    assert (out[F.DEPTH1_COLS] == 0).all().all()
 
 
 if __name__ == "__main__":

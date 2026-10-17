@@ -129,14 +129,39 @@ DEPTH_SERVED_PAIRS = frozenset([
 DEPTH_BAND_BPS = 20.0          # the band's width; a row whose reach is under it is masked
 DEPTH_REL_MIN_PERIODS = 144    # half a day of 5m bars inside the one-day median window
 
+# X8c″ (NEXT_TRAINING_PLAN §2 X8c″, registered 2026-10-17 after X8c′ read VOID): the same four
+# quantities on the ±1 % band. Binance's archive carries the ±0.2 % band only from 2026-01-15 —
+# after the training window — but the ±1 … ±5 % bands from 2024-05-16; the collector writes
+# `bid/ask_band_1` live since 2026-10-12. Served pairs by the same 1.5× rule on the live reach
+# (p50 ≥ 150 bps): seven; 1000PEPE (135), HYPE (62), ZEC (43), ETH (20), BTC (7) are masked in
+# training as in serving. A separate group so a `depth` checkpoint and a `depth1` checkpoint
+# are both served exactly what they were trained on (append-only layout).
+DEPTH1_COLS = [
+    "depth_imb_1",         # (bid − ask) / (bid + ask) within ±1 % of the mid
+    "depth_imb_1_d1h",     # the same minus its value 60 minutes earlier (0 when either is masked)
+    "depth_rel_1",         # log(bid + ask) minus its trailing one-day median (0 until half a day exists)
+    "has_depth_1",         # 1 where the band row is present, fresh, reached, not stale, on a served pair
+]
+DEPTH1_SERVED_PAIRS = frozenset([
+    "SOLUSDT", "DOGEUSDT", "WLDUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "XRPUSDT",
+])
+DEPTH1_BAND_BPS = 100.0
+# band tag -> (columns, served pairs, the band's width in bps); the tag names the collector's
+# and the archive's columns (bid_band_<tag>, ask_band_<tag>).
+DEPTH_BANDS = {
+    "0_2": (DEPTH_COLS, DEPTH_SERVED_PAIRS, DEPTH_BAND_BPS),
+    "1": (DEPTH1_COLS, DEPTH1_SERVED_PAIRS, DEPTH1_BAND_BPS),
+}
+
 _FEATURE_GROUPS = {
     "legacy": LEGACY_FEATURE_COLS,
     "multiscale": OWN_PAIR_MULTISCALE_COLS,
     "market": MARKET_CONTEXT_COLS,
     "flow": FLOW_COLS,
     "depth": DEPTH_COLS,
+    "depth1": DEPTH1_COLS,
 }
-_GROUP_ORDER = ["legacy", "multiscale", "market", "flow", "depth"]
+_GROUP_ORDER = ["legacy", "multiscale", "market", "flow", "depth", "depth1"]
 
 
 def resolve_feature_groups(spec: str):
@@ -173,6 +198,7 @@ def resolve_feature_groups(spec: str):
 # a 30-column checkpoint would be rebuilt from a 25-column list.
 ALL_FEATURE_COLS = (
     LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS + FLOW_COLS + DEPTH_COLS
+    + DEPTH1_COLS
 )
 
 ACTIVE_FEATURE_GROUPS, FEATURE_COLS = resolve_feature_groups(FEATURE_GROUPS)
@@ -300,31 +326,34 @@ def flow_features(ratios: pd.DataFrame, grid: pd.Index,
 
 
 def depth_features(bands: pd.DataFrame, grid: pd.Index, max_age_min: float,
-                   served: bool, bars_1h: int, bars_1d: int) -> pd.DataFrame:
-    """X8c: the four `depth` columns on the candle grid.
+                   served: bool, bars_1h: int, bars_1d: int, tag: str = "0_2") -> pd.DataFrame:
+    """X8c / X8c″: the four depth columns of one band (`tag`: "0_2" or "1") on the candle grid.
 
-    `bands` has columns ts, bid_band_0_2, ask_band_0_2, bid_reach_bps, ask_reach_bps
+    `bands` has columns ts, bid_band_<tag>, ask_band_<tag>, bid_reach_bps, ask_reach_bps
     (db.load_depth_bands; the stale rule already applied). A bar is masked when the pair is
-    not a served-depth pair, when no band row exists or it is older than `max_age_min`, when
-    either side's reach is under the band's width, or when bid + ask is not positive.
-    Masked -> all four columns 0 (has_depth 0), the funding/OI convention.
+    not a served-depth pair for the band, when no band row exists or it is older than
+    `max_age_min`, when either side's reach is under the band's width, or when bid + ask is
+    not positive. Masked -> all four columns 0 (the presence column 0), the funding/OI
+    convention. Column names come from DEPTH_BANDS[tag].
     """
+    names, _, band_bps = DEPTH_BANDS[tag]
+    col_imb, col_d1h, col_rel, col_has = names
     out = pd.DataFrame(index=grid)
     n = len(grid)
     if not served or bands is None or bands.empty:
-        for c in DEPTH_COLS:
+        for c in names:
             out[c] = 0.0
         return out
     src = bands.set_index("ts").sort_index()
     aligned, age = _align_with_age(src, grid)
     stale = _stale_mask(age, max_age_min)
-    bid = pd.to_numeric(aligned["bid_band_0_2"], errors="coerce").to_numpy(np.float64)
-    ask = pd.to_numeric(aligned["ask_band_0_2"], errors="coerce").to_numpy(np.float64)
+    bid = pd.to_numeric(aligned[f"bid_band_{tag}"], errors="coerce").to_numpy(np.float64)
+    ask = pd.to_numeric(aligned[f"ask_band_{tag}"], errors="coerce").to_numpy(np.float64)
     rb = pd.to_numeric(aligned["bid_reach_bps"], errors="coerce").to_numpy(np.float64)
     ra = pd.to_numeric(aligned["ask_reach_bps"], errors="coerce").to_numpy(np.float64)
     tot = bid + ask
     ok = (np.isfinite(tot) & (tot > 0) & ~stale
-          & np.isfinite(rb) & np.isfinite(ra) & (rb >= DEPTH_BAND_BPS) & (ra >= DEPTH_BAND_BPS))
+          & np.isfinite(rb) & np.isfinite(ra) & (rb >= band_bps) & (ra >= band_bps))
     imb = np.zeros(n)
     imb[ok] = (bid[ok] - ask[ok]) / tot[ok]
     imb_s = pd.Series(np.where(ok, imb, np.nan), index=grid)
@@ -334,10 +363,10 @@ def depth_features(bands: pd.DataFrame, grid: pd.Index, max_age_min: float,
     med = logd.rolling(bars_1d, min_periods=min(DEPTH_REL_MIN_PERIODS, bars_1d)).median()
     rel = (logd - med).to_numpy(np.float64)
     rel = np.where(np.isfinite(rel), rel, 0.0)
-    out["depth_imb_0_2"] = imb
-    out["depth_imb_0_2_d1h"] = np.where(ok, d1h, 0.0)
-    out["depth_rel_0_2"] = np.where(ok, rel, 0.0)
-    out["has_depth"] = ok.astype(np.float32)
+    out[col_imb] = imb
+    out[col_d1h] = np.where(ok, d1h, 0.0)
+    out[col_rel] = np.where(ok, rel, 0.0)
+    out[col_has] = ok.astype(np.float32)
     return out
 
 
@@ -523,15 +552,22 @@ def build_feature_frame(
     # X8c: the depth group, likewise only on request. The served-pair gate is applied here,
     # identically in training and serving; BOOK_MAX_AGE_MIN is the cap (the band rows come
     # from the same snapshots as the book scalars).
-    if any(c in DEPTH_COLS for c in cols):
-        served = symbol in DEPTH_SERVED_PAIRS
-        bands = db.load_depth_bands(symbol, since=min_time) if served else None
+    # X8c″: one band per group (`depth` = ±0.2 %, `depth1` = ±1 %); the band rows are loaded
+    # once per pair, the served-pair gate is the band's own.
+    bands, bands_loaded = None, False
+    for tag, (gcols, gpairs, _) in DEPTH_BANDS.items():
+        if not any(c in gcols for c in cols):
+            continue
+        served = symbol in gpairs
+        if served and not bands_loaded:
+            bands = db.load_depth_bands(symbol, since=min_time)
+            bands_loaded = True
         if not served and db.ARCHIVE_DEPTH:
-            print(f"Archive depth: {symbol} not a served-depth pair — the four depth columns are 0")
-        depth = depth_features(bands, feat.index, BOOK_MAX_AGE_MIN, served,
+            print(f"Archive depth: {symbol} not a served-depth pair (band {tag}) — the four depth columns are 0")
+        depth = depth_features(bands if served else None, feat.index, BOOK_MAX_AGE_MIN, served,
                                bars_for_minutes(candle_interval, 60),
-                               bars_for_minutes(candle_interval, 1440))
-        for c in DEPTH_COLS:
+                               bars_for_minutes(candle_interval, 1440), tag=tag)
+        for c in gcols:
             feat[c] = depth[c].to_numpy()
     missing = [c for c in cols if c not in feat.columns]
     if missing:

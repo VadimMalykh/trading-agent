@@ -9,8 +9,9 @@
 #       15 s, stale rows removed on both sides by the registered rule; PASS = median rel. diff
 #       < 2 % and p99 < 10 % everywhere. Exit 2 on FAIL — X8c is then void before it runs.
 #
-# Usage:  ./scripts/archive_depth_check.sh [--since 'YYYY-MM-DD HH:MM'] [--series]
+# Usage:  ./scripts/archive_depth_check.sh [--since 'YYYY-MM-DD HH:MM'] [--series] [--band 0_2|1]
 #         --series: X8c′ prerequisite 1′, the series-shaped bar (NEXT_TRAINING_PLAN §2 X8c′)
+#         --band 1: X8c″ — the ±1 % band, its seven served pairs and a 100-bps reach floor
 set -euo pipefail
 
 source "$(cd "$(dirname "$0")" && pwd)/gcp_common.sh"
@@ -18,10 +19,12 @@ require_gcloud
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SINCE="2026-10-12 02:17"
 SERIES=()
+BAND=(--band 0_2)
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --since) SINCE="$2"; shift 2 ;;
     --series) SERIES=(--series); shift ;;
+    --band) BAND=(--band "$2"); shift 2 ;;
     *) echo "unknown arg $1" >&2; exit 2 ;;
   esac
 done
@@ -36,4 +39,4 @@ gssh "$GCP_ALWAYS_ON" "cd ~/$REMOTE_REPO_NAME && docker compose exec -T postgres
   > "$CSV"
 echo "→ $(($(wc -l < "$CSV") - 1)) rows -> $CSV" >&2
 
-exec "$REPO_ROOT/scripts/m3.sh" -m m3 archivebook check --collector "output/archive/collector_depth_${STAMP}.csv" "${SERIES[@]+"${SERIES[@]}"}"
+exec "$REPO_ROOT/scripts/m3.sh" -m m3 archivebook check --collector "output/archive/collector_depth_${STAMP}.csv" "${SERIES[@]+"${SERIES[@]}"}" "${BAND[@]}"

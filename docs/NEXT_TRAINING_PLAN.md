@@ -1828,6 +1828,64 @@ the logs named `X8cp_s{1,2,3}.log`, and the ten `Archive depth:` acceptance line
 `sha8=fd02aab0`. **Needed from Vadim:** the three serial GPU launches once prerequisite 1′ has
 passed and the parquet is uploaded — Claude hands the block then.
 
+#### X8″-6 — X8″'s recipe on three more seeds: the six-seed read against X0. WRITTEN 2026-10-17 on Vadim's "D2 - b", before any of the three ran, after X8c′'s void trio was read descriptively
+
+**Question.** Does X8″'s MOVED (+0.0091 over X0 on three seeds, 0.001 over the +0.008 bar) survive three more seeds of the same recipe? The prompt is X8c′'s void trio — the recipe with four inert inputs and a fresh init stream — at 0.5276 / 0.5299 / 0.5311 (family 0.5295) against X8″'s 0.5334 / 0.5363 / 0.5350; if seeds 4–6 read like that trio the recipe's six-seed mean is ≈ 0.532, +0.006 over X0 and under the bar. **Recorded expectation: NOT ON SIX** (the replicate is the only evidence and it points down).
+
+**Recipe: X8″'s exactly** — WALKFORWARD §10's block (`FEATURE_GROUPS=legacy`, the pinned snapshot, `ARCHIVE_OI` + `ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1`, no fold variables), `SEED=4`, `5`, `6`, strictly serial; logs `logs/X8pp_s{4,5,6}.log`. Git at or after this registration's commit. No other knob.
+
+**Statistic: X8's**, per run the plateau-restricted mean of the per-epoch cov-0.05 Wilson-LB on the 240m head (plateau = `loss_va` within 0.02 of the run's minimum; §0.3's awk). **Fallback:** any plateau under 15 epochs among the SIX → all six and X0 on the all-epoch mean, said so. **The read:** the six-seed family mean (X8″ s1–s3 + s4–s6) − X0's three-seed family mean (0.5258); SE ≈ 0.0032 · √(1/6 + 1/3) = 0.0023. **Verdicts, fixed now:** ≥ +0.008 **and** at least five of the six seeds above X0's family mean → **MOVED STANDS**; anything else → **MOVED ON THREE, NOT ON SIX** (recorded as FLAT on six). Descriptive beside, not a verdict: the nine-run mean with X8c′'s void trio, and the between-seed sd of the six.
+
+**What each verdict licenses.** STANDS → nothing served changes; the six-seed mean is X8c″'s control (below) and the forward read's val expectation. NOT ON SIX → the fifth start is **not** stopped by this read (the forward test is its own registered read, WALKFORWARD §10.4; stopping or replacing it is Vadim's decision, taken with the forward ledger, not here); wherever the forward ledger is interpreted against X8″'s val numbers (M3_5 §4.3, the ledger script's expectation lines) the six-seed mean replaces the three-seed one, said so in the record; and a rule is **proposed** for §10.4, decided by Vadim: a promotion read whose margin over the bar is under one SE needs six seeds before promotion. X8″'s MOVED entry above is annotated, not rewritten. 🔴 **Not licensed:** choosing which seeds count, a seventh seed, re-reading X0 on more seeds (X0 stays three — asymmetric, said so; a six-seed X0 is a separate registration), choosing a new served checkpoint from the six on P&L.
+
+**Acceptance per log:** X8″'s lines (§10.8 / X8″ above): X0's `Split` line exactly; `knob SEED=4/5/6`; `knob ARCHIVE_OI_SHIFT_MIN=5`, `knob OI_JOIN_AT_CLOSE=1`; twelve `Archive OI: … sha8=83c85bd7, shift_min=5`; `OI join: OI_JOIN_AT_CLOSE=1`; `Align age: ALIGN_AGE_FIX=0`; no `Embargo:`; `Feature groups: legacy -> 19 columns`; no `Depth bands:` / `Archive depth:` line; `oi` / `oi_chg` in no CONSTANT list (11/19, WLD and `_global` 10/19); `Pair embedding: ON dim=8`; md5 distinct; `recipe differs from the incumbent (T1) in:` exactly the three `ARCHIVE_OI` / `ARCHIVE_OI_SHIFT_MIN` / `OI_JOIN_AT_CLOSE` items, no `fold drift accepted`. A run missing any is void and re-run on the same seed.
+
+**Commands** (WALKFORWARD §10's block; ≈ $1.5 and ~2.5 h a run, ≈ $4.5 and ~8 h serial):
+```sh
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export DUMP_MAX_AGE_MIN=100000                      # the pinned 20260913T050118Z snapshot — same as X0, X8″
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet
+export ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1
+unset VAL_OFFSET VAL_FRACTION TRAIN_FRACTION ALLOW_RECIPE_DRIFT SPLIT_EMBARGO ALIGN_AGE_FIX ARCHIVE_DEPTH   # not a fold; no depth
+FEATURE_GROUPS=legacy SEED=4 ./scripts/gcp_train.sh --gpu 60 384   # X8″-6 s4; then SEED=5, SEED=6 after each DONE
+./scripts/gcp_logs.sh <run_id> > logs/X8pp_s4.log                   # X8pp_s5, X8pp_s6 — never --save
+```
+
+**Needed from Vadim:** the three serial launches, **before X8c″'s** (so X8c″'s control is read first). Claude: fetch each log, acceptance lines, the read after the third.
+
+#### X8c″ — the depth bands as a feature group, on the ±1 % band. WRITTEN 2026-10-17 on Vadim's "D1 - b", after X8c′ read VOID, before the ±1 % identity was run and before any number was read
+
+**Identical to X8c′ by reference** — the question, the stale-row rule, the reduced parquet `fd02aab0` (unchanged: it carries all six bands), the statistic, the fallback, the gate size, the secondary, what each outcome licenses, the recorded expectation **FLAT** — **except five things, fixed now:**
+1. **The band: ±1 % of the mid.** Binance's archive carries it from 2024-05-16 on SOL, DOGE, ADA, AVAX, LINK, XRP and from 2024-12-04 on WLD (100 % of the reduced rows per pair, measured 2026-10-17 on `fd02aab0`): nineteen and twelve months inside the train window, where the ±0.2 % band had none. The collector writes `bid/ask_band_1` live since 2026-10-12.
+2. **The columns: `depth_imb_1`, `depth_imb_1_d1h`, `depth_rel_1`, `has_depth_1`** — the same four quantities on the new band; group **`depth1`**, appended after `depth` in the canonical layout (slots 38–41; `depth` keeps 34–37 so every banked checkpoint is served what it was trained on). `FEATURE_GROUPS=legacy,depth1`, 23 columns.
+3. **The served pairs: seven** — by X8c's own 1.5× rule on the live reach (p50 ≥ 150 bps for a 100-bps band; BOOK_WAVE2_PLAN's numbers): XRP 355, LINK 407, SOL 447, AVAX 482, DOGE 576, WLD 914, ADA 2003. **Masked in training as in serving:** 1000PEPE (135), HYPE (62), ZEC (43), ETH (20), BTC (7). The row-level reach floor is the band's width, **100 bps**.
+4. **The control: X8″-6's six-seed family** (above), read before this one. Contrast = X8c″ family mean (three seeds) − X8″₆ (six); SE ≈ 0.0023. **Gate:** ≥ +0.008 **and** every X8c″ seed above X8″₆'s mean → MOVED; in (−0.008, +0.008), or ≥ +0.008 with a seed below → FLAT; ≤ −0.008 → WORSE. Secondary: pooled cov-0.02 gross on the 240m head against X8″₆'s pooled. If X8″-6 is void or unread when X8c″ is read, the control is X8″'s three-seed family (0.5349, +21.4), said so.
+5. **Acceptance line 4 (re-cut for the band):** `Feature groups: legacy,depth1 -> 23 columns (…, has_funding_oi, depth_imb_1, depth_imb_1_d1h, depth_rel_1, has_depth_1)`; twelve `Archive OI:` lines (`sha8=83c85bd7, shift_min=5`); one `Depth bands: orderbook_snapshots has no band columns in this snapshot … archive only` line; **seven** `Archive depth: <pair> N archive rows 2024-… -> 2026-10-14 23:59, collector from — (0 rows, 0 stale dropped), sha8=fd02aab0` lines and **five** `Archive depth: <pair> not a served-depth pair (band 1) — the four depth columns are 0` lines (BTC, ETH, ZEC, HYPE, 1000PEPE), each set printed by train and again by eval; X8″'s `Split` line exactly; `OI join: OI_JOIN_AT_CLOSE=1`; `Align age: ALIGN_AGE_FIX=0`; **none of the four `depth1` columns in the CONSTANT list of any served pair or of `_global`** (the X8c′ void line, now the first thing read; `has_depth_1` constant 0 on the five masked pairs is recorded, not a void); `Pair embedding: ON dim=8`. A run missing any is void.
+
+**Prerequisites, before launch, none shaped by a result:** (1′) the identity on band 1, X8c′'s series-shaped bar unchanged (centre within 2 %, median D ≤ median S, p99 D ≤ 1.5 × p99 S, n ≥ 2,000), seven served pairs, both sides, over the 2026-10-12 → now collector overlap against the archive files through 10-14 — `./scripts/archive_depth_check.sh --series --band 1`, exit 2 = void before it runs; (2) `fd02aab0` as uploaded; (3) code — `features.DEPTH1_COLS` / `DEPTH1_SERVED_PAIRS` / `DEPTH_BANDS`, `depth_features(…, tag="1")`, group `depth1`, `archivebook check --band`, the wrapper's `--band`; tests: the band-1 columns on a made-up series, the ±0.2 % group zero on the same NaN rows, the 100-bps floor, the seven-pair set, the layout 34–37 / 38–41, the series bar on band 1 (9 green in `ml_trainer`, 2026-10-17, this commit).
+
+**Commands** (X8c′'s with the group renamed; ≈ $4.5 and ~8 h serial, **after X8″-6's three**):
+```sh
+# prerequisite 1′ (laptop, ml_analysis; exit 2 = void)
+./scripts/archive_depth_check.sh --series --band 1 2>&1 | tee logs/X8cpp_identity_$(date +%Y%m%d).log
+# the three runs, strictly serial
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export DUMP_MAX_AGE_MIN=100000
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet
+export ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1
+export ARCHIVE_DEPTH=gs://fluxtrader-train-artifacts/archive/bookdepth_5m_fd02aab0.parquet
+unset VAL_OFFSET VAL_FRACTION TRAIN_FRACTION ALLOW_RECIPE_DRIFT SPLIT_EMBARGO ALIGN_AGE_FIX   # not a fold
+FEATURE_GROUPS=legacy,depth1 SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # then SEED=2, SEED=3 after each DONE
+./scripts/gcp_logs.sh <run_id> > logs/X8cpp_s1.log                         # X8cpp_s2, X8cpp_s3 — never --save
+```
+Go/no-go on the launcher's lines: `FEATURE_GROUPS: incumbent='legacy' this run='legacy,depth1'`, the three `ARCHIVE_OI…` / `OI_JOIN_AT_CLOSE` items and `ARCHIVE_DEPTH: … bookdepth_5m_fd02aab0`; no `fold drift accepted`.
+
+**Needed from Vadim:** the three serial launches once prerequisite 1′ has passed (Claude runs it and reports) and X8″-6 is DONE.
+
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 
 `logs/b3b_gbt_5m_20260911.log`, `logs/b3b_gbt_15m_20260911.log`; reading in
