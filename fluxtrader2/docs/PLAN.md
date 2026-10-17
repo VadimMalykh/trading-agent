@@ -1316,6 +1316,25 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
+**Decision Z (2026-10-17) — after R45 (CLEARS on the net and on the hedged, on R14) and R46 (nothing to write). OPEN, Vadim's.**
+
+*Where P8 stands.* R45 is the first row in the record where R14's HEDGED money depends on something known at the decision: after a
+rising quarter of the twelve, +45 bps a trade against the market; after a falling one, −13 (D +58, p 0.001, MDE 55; 4,565 trades, both
+sides, five folds). It is a hypothesis on seen bars; what it licenses is written in R45 — a sizing / on-off row keyed on S90 in the NEXT
+priced registration, and a described column on P7's ledger at R17 (written into R17's block). R46 says the entry is best made at once.
+R14's bars are all spent (F1–F5); no state-gated variant of it is readable on any seen bar; the one place the state's claim meets unseen
+bars is P7's ledger (R17's read earliest 2027-03-25, ≈ 650 trades: by R45's A-row sd the between-state difference on the ledger would
+have se ≈ 80 — a +58 reads as a sign, not a clear). Y3–Y7 of decision Y stand on the list unchanged.
+
+- **(Z1) — recommended: the licensed column and the wait.** The R17 described row is written (done with this decision); nothing is
+  registered or run; the mode is WAIT until R17's read, with the monthly serve-status the only work. When a priced registration is
+  next written (Y3–Y7, or a successor to R14 on bars that do not exist yet), it carries the S90 sizing / on-off row as R45 licensed.
+- **(Z2) A fresh brainstorm on R45's fact first** — what a state-dependent R14 implies for a successor's design (the candle ridge gated
+  or trained by state is a variant on seen bars and forbidden; a successor can only be read on F6 when one exists or live), a session,
+  nothing run; then the pick.
+- **(Z3) P7 alone** without the column — not recommended: the column is licensed and costs nothing.
+Needed from Vadim: Z1, Z2 or Z3.
+
 **Decision Y (2026-10-17) — the brainstorm after R44 stage 2, Vadim's "X1": what to register next, in parallel with P7. DECIDED 2026-10-17, Vadim's "let's go Y1 + Y2": (Y1) REGISTERED as R45 (§8) — the market's state (the basket's 90-day sign; the 30-day sign and the vol state described) on the saved decisions of R14, R32 and R44, net and hedged net by state, every whole-day circular shift of the state series as the null, no fold spent; (Y2) REGISTERED as R46 (§8) — R14's F1+F2 decisions re-priced at each 5-minute slot of the hour, a described row. Neither run before the registrations were committed.**
 Ground rule as under decisions H, O and U: a mechanism, the cells it can be confirmed on, its power, and why it escapes what forty-four
 reads found. The first item's origin is Vadim's question of 2026-10-17: "we already have results that look good on some periods and lose
@@ -1702,6 +1721,7 @@ The decision of 2026-09-29 → 2026-09-30, for the record — how to correct the
 | **H2 tail continuation (`rankcont4h`, R5)** — PARKED on cost 2026-09-21, FP+F0 unread; **on the 40-pair universe CLOSED 2026-09-22 (R10)** | Needed from Vadim: nothing. Twelve names: gross +12.5 a leg, hedged +14.2 [+1.8, +26.5], net −0.2 taker / +4.9 maker. Forty names, four a side (R10): gross +1.6, hedged +1.8 [−3.5, +7.0] on 9,360 legs, MDE 7.4 — the effect is absent with power, and R5's long-side asymmetry reversed. Do not re-open on breadth | only a lower fee tier for the twelve-name version (VIP 1 / BNB discount takes 1–2 bps off a round trip) — and R10 says the twelve-name gross may itself be the upper tail of noise, so that read would need FP+F0 first (R5 stage 2, still unspent) |
 | **The candle-feature ridge (`ridgebook`)** — on the WIDE universe CLOSED 2026-09-23 (R12, R13 A); **on the twelve, held out (R14): the F3+F4 confirmation read R16 (2026-09-25) FAILED on the shuffle null only, every other criterion passed and the numbers reproduced (net +33, hedged net +25, IC 0.043, flip p 0.005) — CLOSED by the gate as written; R15 (full feature set) FAILED the same day; F5 READ by R42 2026-10-17: NOT REPRODUCED — net +7.8 [−29.3, +44.9] on 916 trades, hedged net −12.0, flip p 0.154, the first half −6.5; held-out IC 0.066 (t 2.16); pooled F3+F4+F5 +25.3 [−0.6, +51.2], flip p 0.0025; F5 SPENT** | Vadim chose P7 paper trading by override, 2026-09-25 (R16 Result); serve host `fluxtrader2-serve` created the same day; the serving path BUILT and its replay identity check PASSED the same day (P7). LIVE since 2026-09-25 17:00 UTC. Needed from Vadim: nothing. Forty: IC 0.0075 held out (t 1.3), 0.009 in pair — no candle signal on the 32 added 2022-era names; at 4h nothing clears 15 bps. Twelve: IC 0.034 in pair (R13 B) and **0.033 held out (R14, t 2.1)** — the signal transfers to WLD, SOL, PEPE, AVAX from models that never saw them, and to none of the seven older names; the book +34 net [+6, +62], hedged net +13 [−8, +34], flip p 0.01, **shuffle p 0.085 (bar 0.05; null p95 +41 against a +33 effect)** | CLOSED on the twelve by R16's gate; F5 read by R42 (2026-10-17): "two blocks of three" — the forecast real on 2026 (IC the best of the three reads) and the money the market's long side; the pooled three-block book +25 a trade, flip p 0.0025, lower bound at zero. R16's failing null had no power (p95 +104 vs +33); R14 is the best measured candidate and stays so unless a new registration beats it; decision V (P8): P7 to its read or stopped early. R15 parked: paired gain +0.001 (t 0.1), net +2.7, hedged net −4.3 on 4,033 trades — the twelve extra columns add nothing held out. Live: P7 paper trading of R14 under R17, running since 2026-09-25 17:00 UTC (`docs/SERVE.md`; R17's read at ≥ 600 trades and ≥ 6 months, earliest 2027-03-25) |
 | **The slow cross-section at 4 and 12 weeks (R43′) and its priced book (`mombook`, R44)** — **PARKED 2026-10-17: R44 stage 2 NOT CONFIRMED**; mom_4w parked by its own gate the same day: NOT DETECTABLE at 14 and 28 days (M_c +89 / +92 a leg, u 1.1 / 0.6, MDE 229 / 411); the 12-week signal CLEARED beside it (+212 / +463, u 3.0 / 3.6; F1's market, F2 a tenth of it) and licensed R44 — R44′ stage 1 PASSED 2026-10-17 by every line (net +331 a trade [+20, +642] on 334 trades, flip p 0.025, F1 +551 / F2 +67, clipped +70 ± 177, the shorts carrying the hedged money); **R44 stage 2 on F3+F4's 216 members (Vadim's "W1") NOT CONFIRMED the same day: net −66 a trade [−614, +481] on 315 trades, hedged net −60, flip p 0.57, F3 −382 / F4 +268, the settled row −35 — the tails cut the other way (CRV, ENA, DYDX shorts in 2024-Q4's run), no side holds across both folds; F3+F4's members SPENT for the slow cross-section as a priced book** | Needed from Vadim: nothing (decision W decided and read; what follows is decision X, P8). On the 188 members' hourly cells of F1+F2, the top tenth by 12-week return beats the bottom tenth by 9 % over the next month before costs (4.6 % a leg against 0.18), 0.9 % a leg clipped at ±30 %, both sides carrying, the medians 100–300 apart; the 4-week signal nothing; the week's move reverses at a week (u −1.4) | No other window, hold, tenth, skip, weighting or universe cut on these cells under R43; R44 was the smallest priced book at mom_12w / 8,064 on F1+F2, then once on F3+F4's members — read; no variant (k, hold, window, cap, stop, skip, funding filter, one side) on F1–F4's members' bars |
+| **The market's state as a pre-registered observable (`S90`, the sign of the twelve's basket's trailing 90-day move; R45)** — **READ 2026-10-17: CLEARS on the net (family-wise p 0.013) and on the hedged (p 0.002), both on R14** | Needed from Vadim: decision Z (P8). On R14's 4,565 saved trades (F1–F5) the net is +60 after a rising quarter against +6 after a falling one (D +54, p 0.004, MDE 57) and the hedged net +45 against −13 (D +58, p 0.001, MDE 55), the long side positive against the market in every fold after a rising quarter, the short side negative in four of five after a falling one; R32 by state +38 net, not detectable, its hedged row degenerate by construction; R44 unreadable (MDE 900). 36 runs of ≥ 7 days over 2020–2026 (19 inside R14's bars); S30 weaker on R14 (hedged p 0.14), V30 nothing. A hypothesis on seen bars: the one cut of three that cleared, at 1.0 MDE | Licensed (R45): a sizing / on-off row keyed on S90 in the NEXT priced registration, written before its read; a described column on P7's ledger at R17 (R17's block). Not licensed: a regime-switched rule; any state-gated variant of R14 on F1–F5. The state series is in hand from the candles (`scripts/r45_state.py`) |
 | **Open interest as a rank book (`oibook`, R21)** — **CLOSED 2026-09-28** | Needed from Vadim: nothing. On R18's 188 names, F1+F2, the data that chose the three features: taker net −17.3 [−28.9, −5.8], maker −9.6 [−21.2, +2.0], gross +1.6, flip p 0.50. The score's rank IC is +0.034 (t 5.2) and all of it is the two lowest tenths (the most violent names) falling behind; top minus bottom is +12 bps a leg in the mean on all cells, under the cost | none for the book: no other k, weights, hold or side on these cells. The features stay candidates for a model's inputs (R20: NOT DETECTABLE). A longer horizon is a new question (P8 "What next" (1)), not a revival |
 | **The open-interest score at a 7-day hold, names outside the twelve (R22–R25)** — **PARKED 2026-09-30: re-executed in actual returns, R25 NOT CONFIRMED** | Needed from Vadim: nothing — R23's offered stage 2 is not run (his "(A1)", 2026-09-30). The first reads counted a trade in log returns, which overstates shorts and understates longs by half the squared move; this book shorts the most violent names. First read → re-executed: R22 the score at 7 days +58.9 → +20.7 a leg (u 1.54 → 0.68); R23 +66.7 → +20.4 (u 2.43 → 1.13, CLEARS → GO ON); R24 net +17.2 → −13.9 [−52.9, +25.1], flip p 0.025 → 0.42 (CANDIDATE → NOT FUNDED); R25 net +69.9 → −39.4 [−189.3, +110.5], flip p 0.005 → 0.51 (NOT CONFIRMED; −66.7 with funding counted on the position's value). The ranking is real (rank IC +0.02 … +0.04, the median in order); the mean is not there for a sold position | none proposed. As registered: F5 with the months that accrue (a new registration, Vadim's decision) or a measured lower cost — the gross before costs is +11.6, +3.2, −5.6 on the three samples, below the round trip's cost on each. A book with a protective stop is a new rule and a new registration (capped at a short's size: −9.3 on R24's samples, +32.5 on R25's, one trade); the only unread months left for outside names are F5 and what accrues |
 | ~~**The harness charges funding and the exit leg's costs on the size at entry**~~ (§3 "The unit of money"; found 2026-09-30, R25 (E4)) — **DONE 2026-10-01** | Needed from Vadim: nothing. On small moves it was nothing (R24's samples: +0.05 bps a trade); on a short of a name that rises many-fold it understated the loss (R25 net −39.4 as counted, −66.7 in full; two MYX shorts). No verdict depended on it. Changed 2026-10-01: `backtest.load_costs` carries `fundval` (Σ rate × the close at the event), `price` charges each funding payment ÷ the entry close and the exit leg × exit ÷ entry, `horizon.labels` the same for the longer-hold label; a run's meta says `"charged": "value"`. Tests: `test_p3.py::test_funding_and_the_exit_leg_are_charged_on_the_positions_value`, `::test_load_costs_values_funding_at_the_close_at_the_event`. Reference reproduced on the work VM from the saved decisions (`scripts/charged_check.py`, `output/backtest/charged_check/`): PASS 2026-10-01 07:13 UTC — R25 (2,368 trades) net -66.74 against -66.74, R24 pooled (5,054) net -13.83 against -13.83, largest difference over every statistic of the four samples 5.7e-14 bps; the gross unchanged trade by trade | none. P7's ledger (R17) is untouched: its exit leg's funding stays in bps of the size at entry (one-day holds on the twelve) |
@@ -2474,6 +2494,11 @@ Expectation:   At F3+F4's rate, 3.6 trades a day → ~650 trades in 6 months (MD
                +10 … +50; hedged net 0 … +40; flip p 0.01–0.2; live half-spread within 1 bps of the tape's calibration (P1) on the
                eight liquid names, wider on PEPE, WLD, ZEC, HYPE. Likeliest: net positive, flip p borderline, IC t ≈ 1.5 — one more
                "real but thin"; the read then decides by the gate, not by the reading.
+Described:     (licensed by R45, written 2026-10-17, before any live number was read) a column S90 on the ledger at the read — the sign of the
+               twelve's basket's trailing 90-day move at each decision, computed from the candles after the fact by `scripts/r45_state.py`'s
+               construction (`market.derive`'s blr on `backtest.market`), never by the serve path; the ledger's net and hedged net by state
+               beside the registered read, with the between-state difference and its se. It decides nothing in R17's gate: at ≈ 650 trades
+               the difference has se ≈ 80 (R45's A row sd), so a +58 reads as a sign, not a clear. The serve path is untouched.
 Result:        —
 
 ### R18 — the screener: the twelve's candle ridge on names it never saw, cut by what is known about a name beforehand (registered 2026-09-27, before the universe was chosen and before any 5m bar of a new name was downloaded; read 2026-09-27: (A) and (B) FAIL — NOT DETECTABLE, nothing licensed)
@@ -6359,7 +6384,7 @@ Result:        **Stage 1 RUN 2026-10-17 (the chain `scripts/r44_chain.sh` on the
                funding filter, one side — on F1–F4's members' bars: they are spent for it (R43's and R44's letters). What follows is a new
                question, decision X (P8), Vadim's; P7 continues untouched.
 
-### R45 — the market's state as a pre-registered observable, read on the saved decisions of R14, R32 and R44 (registered 2026-10-17 on Vadim's "let's go Y1 + Y2" (P8 decision Y), before any code was written and before any state was computed; read —)
+### R45 — the market's state as a pre-registered observable, read on the saved decisions of R14, R32 and R44 (registered 2026-10-17 on Vadim's "let's go Y1 + Y2" (P8 decision Y), before any code was written and before any state was computed; read 2026-10-17)
 Question:      Vadim's question of 2026-10-17 in the one form the protocol can read (decision Y (ix)): does a market state known at the
                decision — the sign of the basket's trailing 90-day return — separate what the rules that made and lost money earned a
                trade, on the trades they already made? Not a strategy and not a switch: a ceiling registration on SAVED decisions, every
@@ -6417,9 +6442,55 @@ Expectation:   validity PASS; S90 = +1 on 55–65 % of the bars, 8–14 episodes
                markets with opposite outcomes for the book); the family-wise p on the net 0.05–0.5 — CLEARS one time in three. The
                hedged row: every D inside its null; p > 0.2 likeliest — CLEARS one time in four or less. S30 reads as S90 with more
                episodes and a smaller D; V30 nothing. Nothing in money is decided either way.
-Result:        —
+Result:        **READ 2026-10-17 (the chain `scripts/r45_chain.sh` on the work VM, 15:21 UTC, 45 s; the read made again at 15:28 with the
+               episode count sampled daily added to the report — every number identical, max |Δ| 0.0 on D, p, the families and the
+               known-at draws; commit eabff5f holds this block as written before any code, 8c4e54a the code; `output/backtest/r45_state/`
+               — state.md, state.json, shifts.parquet, by_state.csv, episodes.csv; the log `output/logs/r45_state.log`). VALIDITY PASS:
+               (1) every file reproduces the record (A 1,896 / +39.16 and 2,669 / +25.31; B 14,672 / +10.67; C 334 / +331.01 and 315 /
+               −66.14); (2) S90 on 100 % of each set's decision bars; (3) known-at 20 / 20 the same; (4) every set readable at every state
+               (S90's share in +1: A 0.508, B 0.515, C 0.553 — 51 % over the span, not the 55–65 % written); (5) the episodes: the panel
+               2019-12-31 → 2026-09-15 (2,450 days), 2,271 shifts; S90's sign changes 1,830 on the 5m grid — the letter of (5) counts the
+               chatter at a zero crossing (2020-04-30: the 90-day return crossed zero eleven times inside a day) — 105 sampled daily at
+               00:00 UTC, **36 runs of ≥ 7 days over the span (A's bars 19, B's 22, C's 14)**; S30 67 runs, V30 34. More episodes than the
+               8–14 expected: the 90-day sign is a shorter state than "a regime", written as such; the null is what it is.
+               **THE FAMILIES (S90): the net row max z 2.65 → family-wise p 0.013 — CLEARS ON THE NET; the hedged row max z 2.95 → p 0.002 —
+               CLEARS ON THE HEDGED.** Per set (D = state +1 minus −1, bps a trade; p two-sided over the shifts; MDE 2.8 × the null's sd):
+               A (R14, 4,565 trades): net +60.2 on the 2,317 trades decided after a rising quarter against +6.0 on the 2,248 after a falling
+               one — D +54.3, null sd 20.5, p 0.004, MDE 57 — CLEARS; hedged net +45.1 against −13.0 — D +58.1, sd 19.7, p 0.001, MDE 55 —
+               CLEARS. B (R32, 14,672): net +29.2 against −9.0, D +38.2, sd 25.9, p 0.152, MDE 73 — NOT DETECTABLE; hedged −18.5 against
+               −13.7, D −4.8, sd 1.9, p 0.000 — "CLEARS" by the letter and DEGENERATE by construction: R32 trades every pair at once, so
+               its trade IS the basket and its hedged gross is ≈ 0 on every trade; the row measures the costs by state (spread, impact
+               and funding dearer after a falling quarter), not skill — recorded, and not what carries the family (A's z 2.95 is the
+               maximum; B's is 2.5). C (R44, 649): net +140.6 against +135.3, D +5.4, sd 324, MDE 907 — CLOSED at this power (the interval
+               excludes a dependence of the MDE's size and says nothing about a smaller one); hedged D −14.6 — CLOSED the same way. The
+               described states: S30 — net family p 0.076 (A +43.9, p 0.047; B +51.3, p 0.028; C −265, p 0.42), hedged family p 0.000
+               carried by B's degenerate row (A +26.3, p 0.14); V30 — nothing (net p 0.18, hedged 0.11; A's net −43.9 at p 0.065 the one
+               line near the bar: R14 earns less in high-volatility months, inside noise).
+               **The described table, A by state × fold × side.** After a rising quarter the long side's hedged net is positive in every
+               fold (F1 +68, F2 +23, F3 +39, F4 +104, F5 +71) and the short side's in four of five (F1 +71, F2 +36, F3 +33, F4 +24, F5 −20);
+               after a falling quarter the short side's hedged net is negative in four of five (F1 −40, F2 +2, F3 −39, F4 −26, F5 −19) and
+               the long side's about zero (+10, −5, +1, +100, −36). The net: rising → F1 +86 / −15 (long / short), F2 +79 / +10, F3 +105 /
+               −73, F4 +87 / +93, F5 +84 / +76; falling → F1 +70 / −33, F2 +35 / +7, F3 +23 / −52, F4 +170 / −34, F5 +9 / −40. R14 on F5
+               (R42's NOT REPRODUCED): 234 trades after a rising quarter at +81 net / +36 hedged, 682 after a falling one at −17 / −27 —
+               2026 was mostly the falling state for the twelve. Against the expectation: validity PASS as written; A's D positive as
+               written; B's positive and not detectable; C nothing; the net family CLEARS (named one time in three) and the HEDGED family
+               CLEARS (named one time in four or less) — on A, the one set where it was not expected.
+               **In plain words.** After a quarter in which the twelve rose, R14's trades earned +60 bps net and +45 against the market;
+               after a quarter in which they fell, +6 net and −13 against the market — on 4,565 trades over 2023-05 → 2026-09, on both
+               sides, under a whole-day shift null at p 0.004 / 0.001, the difference just above what the null can detect (MDE 55–57).
+               This is the first row in the record where R14's HEDGED money depends on something known at the decision: its skill, not
+               only its beta, is present after a rising quarter and absent after a falling one. R32 shows the market's drift by state
+               (+38, inside noise) and nothing against the market by construction; R44 is unreadable at 650 trades (MDE 900). Read with
+               skepticism: A's D sits at 1.0 MDE; S30, the same idea at 30 days, reads weaker on A (hedged p 0.14), so "a rising quarter"
+               is the one cut of three that cleared; the look was pre-registered and the family-wise p holds across the sets, but one
+               observable over one rule on seen bars is a hypothesis. **Licensed, as registered:** (a) a sizing or on / off row keyed on S90,
+               written into the NEXT priced registration before its read; (b) a described column on P7's ledger at R17 — S90 at each
+               decision from the candles after the fact, the ledger's net and hedged net by state beside the registered read (written
+               into R17's block as a described row; the serve path untouched). **Not licensed:** a regime-switched rule; any variant or
+               re-run of R14 on F1–F5 (R16, R42); a state-gated R14 on any seen bar. The state series is data in hand (from the candles,
+               `scripts/r45_state.py`). What follows is decision Z (P8), Vadim's.
 
-### R46 — execution timing on R14's own historical decisions: the entry at each 5-minute slot of its hour, a described row (registered 2026-10-17 on Vadim's "let's go Y1 + Y2" (P8 decision Y), before any code was written; read —)
+### R46 — execution timing on R14's own historical decisions: the entry at each 5-minute slot of its hour, a described row (registered 2026-10-17 on Vadim's "let's go Y1 + Y2" (P8 decision Y), before any code was written; read 2026-10-17)
 Question:      Decision U's U3, decision Y's Y2. Two sub-cost facts stand — the cross-sectional hourly reversal (+0.02 … +0.03 everywhere,
                R37) and the settlement's dip–snap at a bp (R41′) — too small to trade and exactly the size a trade made anyway could
                collect at its entry. On R14's F1+F2 decisions, as saved: does the slot of the hour at which the entry is made change what
@@ -6454,7 +6525,26 @@ Expectation:   validity PASS; the slot curve flat within ±5 bps with se 2–4; 
                cut with the sign R37 measured (a trade WITH the hour's move earns less at k = 1 than at k = 12, a trade against it the
                reverse), the two halves cancelling in the whole; the settlement cut inside noise. "Nothing to write" likelier than not;
                "an entry worth writing" one time in four.
-Result:        —
+Result:        **READ 2026-10-17 (the chain, 7 s; made again at 15:28 UTC with the settlement cut's pooled rows made NaN-safe, every slot
+               number identical; `output/backtest/r46_slots/` — slots.md, slots.json, slots.csv, cuts.csv; the log `output/logs/r46_slots.log`).
+               VALIDITY PASS: (1) k = 1 reproduces the saved fills — 1,896 / 1,896 matched, max |Δ| 0.0 on the entry, the exit and the net,
+               the times the same; (2) 1,896 trades at every slot; (3) unit actual, charged value, folds F1 F2. THE SLOT CURVE (d = the
+               paired net difference against k = 1, bps a trade, day-clustered se): k 2 −1.3 ± 2.0, 3 −3.6 ± 2.6, 4 −3.0 ± 2.7, 5 −4.7 ± 3.4,
+               6 −5.0 ± 4.0, 7 −1.5 ± 4.2, 8 −2.7 ± 4.3, 9 −4.1 ± 4.4, 10 −5.0 ± 4.6, 11 −7.9 ± 4.7, 12 −10.1 [−19.6, −0.6]; the HEDGED net
+               differences within ±3 at every slot (−1.0 at k 12): what a later entry loses is the market's part of the first hour, not
+               the relative part. **NOTHING TO WRITE**: no slot beats k = 1; the best, k 2, is −1.3 [−5.1, +2.5]. Cut (a): 1,437 decisions
+               enter WITH the hour's own move against the peers, 474 against; both halves lose by waiting (with −9.5 ± 5.7 at k 12,
+               against −12.2 ± 11.5) — the expectation that the "against" half gains by waiting (the hourly reversal collected at the
+               entry) is NOT what the bars show: the forecast's target starts moving from the decision bar, and the hour's reversal is
+               smaller than that drift. Cut (b): 198 decisions have a settlement inside the entry hour, and since both the decisions and
+               the settlements sit on the hour, "before" is slots 1–11 and "at / after" is slot 12 alone — the cut degenerates to the curve
+               (gross +132 at k 1 → +106 at k 12, funding −2.27 against −2.34): nothing of the settlement at the hour. Described beside:
+               those 195 trades, decided at 23, 07 and 15 UTC, earn +132 gross against +53 on all — a time-of-day row for a successor's
+               registration, not a finding here (195 trades, inside noise). Against the expectation: the curve FALLS rather than sits flat
+               (every slot inside ±5 but 11 and 12), "nothing to write" as named likelier, the reversal cut's sign not as written.
+               **In plain words.** R14's entry is best made at once: every five minutes of delay costs about a bp a trade on average and the
+               whole hour costs ten, all of it the market's part; the two sub-cost facts do not survive inside a trade either. Licensed:
+               nothing. The successor's registration gets two lines from here — the entry at the first bar, and a time-of-day described row.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
