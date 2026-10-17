@@ -1316,7 +1316,91 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
-**Decision X (2026-10-17) — after R44 stage 2 NOT CONFIRMED. OPEN, Vadim's.**
+**Decision Y (2026-10-17) — the brainstorm after R44 stage 2, Vadim's "X1": what to register next, in parallel with P7. OPEN, Vadim's.**
+Ground rule as under decisions H, O and U: a mechanism, the cells it can be confirmed on, its power, and why it escapes what forty-four
+reads found. The first item's origin is Vadim's question of 2026-10-17: "we already have results that look good on some periods and lose
+when the market cycle changes — could it be worth classifying the market stage first, then applying the model good for that stage?"
+First the structural facts the reads since decision U add; U's (i)–(vii) stand:
+- **(viii) The money of every rule that passed a stage-1 gate was the market's.** R14 on F5 (R42): the forecast real (held-out IC 0.066,
+  t 2.16, the best of its three reads) and the net +7.8 with hedged net −12.0 — the money the market's long side; R32's +10.7 all on the
+  long side, 2020, 2022 and 2024 losing; R8's +52 with 2022 at −5.9; R44's F1 +551 / F2 +67, then F3 −382 / F4 +268 — "the sign of a fold
+  is the sign of its market". The hedged net is the row that strips it, and on unseen bars only R16's F3+F4 read of R14 had it above zero
+  (+25), and F5 took it back (−12). A rule whose net moves with the fold and whose hedged net does not is a rule with beta and no
+  state-dependent skill; that is the shape the record shows so far.
+- **(ix) A "market stage" is a market-wide series, and the record has measured what such a series can be confirmed on here: nothing.**
+  Decision H's arithmetic (one series: se ≈ 8 a trade at 4h, ≈ 18 a day at 1d on 487 days) is the kind case; a regime switch is worse,
+  because its unit is the episode, not the day — by the sign of the basket's 90-day return the whole history 2020-05 → 2026-09 holds on
+  the order of ten episodes (to be counted at registration, not assumed), the folds unspent for the market factor (F3+F4) hold one run
+  and one fall, F5 one more. A switch "model A in state 1, model B in state 2" confirmed on one instance of each state is n = 1 an arm.
+  And the switch that keeps the long side in rising markets and the short side in falling ones IS the trend as a timing rule — R32 and R8
+  traded it and the years failed them, not the costs. What the idea CAN be here is a ceiling registration on saved decisions (Y1): the
+  R8 row's revival trigger, written 2026-09-21, is exactly that — "a measured observable that separates the losing half-years, a new
+  ceiling registration, not a variant of the rule".
+- **(x) The month's hold on the members is read once and spent.** R43′: the 12-week cross-sectional momentum +463 a leg on 2023–24
+  (u 3.6), F2 a tenth of F1; R44: +331 a trade on F1+F2, −66 on F3+F4 (MDE 782), the tails deciding both ways (five explosive longs of
+  2023 pay; CRV, ENA, DYDX sold in 2024-Q4 cost); the 4-week signal NOT DETECTABLE; the week reverses at a week. F1–F4's members' bars
+  are spent for a priced cross-sectional book at that hold; F5's members (2026-01 → 09-15, nine months, one regime) are unread for
+  anything and would hold ≈ 100–150 trades at 28 days — an MDE in the thousands of bps a trade, a confirmation fold in name only for a
+  book of this kind.
+- **(xi) What is unread, by fold and universe.** The twelve: F3+F4 for anything but the candle ridge (R16; R38's stage 2 not licensed,
+  R31's not run), F5 for anything but R14 (R42). The members: F5 whole; F5's 69 launches (R29's population). The market factor: F3+F4
+  (R31 parked, unspent) and F5. FP+F0: R5's stage 2 (tail continuation on the twelve), unspent. A fold is spent by a question, not by
+  a rule: a third shot at a hypothesis that failed its confirmation (R25, R29, R44) is not a registration this project writes.
+- **(xii) P7 is the live block, and its clock is the only confirmation the realistic edge has.** U's (iii) stands and R42 sharpened it:
+  +33 on F3+F4, +8 on F5, pooled +25 with the lower bound at zero; serve-status next on or after 2026-11-01; R17's read earliest
+  2027-03-25, with the honest expectation that its gate is not passed by power.
+Ranked:
+- **(Y1) — recommended: the market's state as a pre-registered observable, read on the saved decisions of the rules that made and lost
+  money — a ceiling registration, no fold spent.** Vadim's idea in the one form the protocol can read. The observable fixed before the
+  read and computable at every entry from the twelve's candles alone: the sign of the basket's trailing 90-day return (primary); R6's
+  30-day sign and the basket's 30-day realised volatility against its trailing year as two described states. The cells: every saved
+  decision in hand — R14's on F1+F2 (`r42_check_f12`), F3+F4 (`r16_ridgebook_1d_ho12_f34`) and F5 (`r42_ridgebook_1d_ho12_f5`); R32's
+  basket trades on FP+F0+F1+F2 (`trend1d`); R44's on F1+F2 and F3+F4 (`r44_mombook_28d_f12`, `_f34`) — all seen, all priced, nothing new
+  read, nothing re-run (the files checked at registration). The statistic: a trade's net and hedged net by state, the between-state
+  difference with its se from the trades, the state series shifted by whole 30-day blocks as the null (it keeps the state's own
+  persistence; the admissible shifts counted); one family of three (the three decision sets at the primary state), family-wise p; the two
+  described states beside. The power written first from the episode count: the state changes inside each decision set's bars, and the
+  MDE on the between-state difference with the trades' sd (≈ 1,000 bps a trade on the twelve at 1d, ≈ 2,000 on the members at 28 days).
+  What a clear licenses: a sizing or on/off row written into the NEXT registration before its read, and a described column on P7's
+  ledger at R17 (the state is computed from candles after the fact; the serve path is untouched). What it cannot license: a
+  regime-switched strategy as a rule — (ix). Expectation, honestly: the state will "explain" R44's and R14's fold signs ex post, because
+  the sign IS the market's (viii), and with ≈ 10 episodes the family-wise p on the net sits inside noise; the informative row is the
+  HEDGED one — if the hedged net also differs by state, the rules' skill is state-dependent and not only their beta; if it does not, the
+  regime question is closed by the record (the rules have beta and no state-dependent skill, and the hedged row already removes the
+  beta). Prior: a clear on the net likelier than not, a clear on the hedged net one time in four. Half a day to a day; a script over
+  saved parquet files, the harness untouched.
+- **(Y2) execution timing measured on R14's own historical decisions (U3) — a described row, nothing traded.** As written under U3: the
+  entry priced at each 5-minute slot of its hour and around the nearest settlement on R14's F1+F2 decisions; the best fixed rule's
+  saving in bps a round trip against the 18 paid, the hedged net re-stated as a described line. Half a day, no fold, the serve path
+  untouched. Prior 1–3 bps a round trip; its value is for the successor's registration, not for P7.
+- **(Y3) the volatility-sorted cross-section at a month's hold on the members — a ceiling screen on F1+F2 in R43's frame.** The one
+  strong forecast in hand is the SIZE of a name's next move (vol IC 0.2–0.5); unread is whether the names that moved most (the trailing
+  4-week realised volatility, or the largest daily move in it) lag or lead their peers over the next 2–4 weeks — the lottery-demand
+  mechanism, per name, with breadth, a cost paid once against a month's dispersion. Ranked third by (x): the frame's MDE is 100–220 bps
+  a leg, the paying side of such a sort is a SHORT of the violent names (R21, R25, R44: where the tail destroys the mean), and the only
+  confirmation bars left are F5's members, with no power — a clear would stand as a hypothesis with no priced book to follow it until F5
+  grows. A day, no fold. Prior: a coin flip to detect, the sign unknown on these names.
+- **(Y4) token unlocks on F1+F2 (§9 #8): 90 cliff events on 22 names, from the snapshots only** — the price into and after a known cliff
+  against the peers, R28's frame; F3's 58 events the only confirmation (F4, F5 cannot be rebuilt). Per name, young names, known in
+  advance; sees only a large effect; the typical and the mean beside (v). A day. Prior low to modest; the tail hazard is (v)'s.
+- **(Y5) the spot-hedged funding carry (U5)** — the one item with a known positive sign and no forecast; after forty-four reads it is
+  worth the arithmetic as a described row: the realised rate on the names paying the most, four legs' cost, the capital, what a year of
+  2023–25 would have paid, and its own regime (the longs pay in rising markets — the carry collects most when the market rises and
+  little when it falls). A scope decision for Vadim after the row is written; a day.
+- **(Y6) BTC's last hour per name (U4) and (Y7) delistings / monitoring tags (U6)** — standing from decision U, low prior, a day each;
+  not before Y1–Y2.
+- **(Y8) closed by arithmetic or by the record, so they are not re-proposed:** a regime-switched strategy as a rule (ix — unconfirmable
+  by episodes; the trend timing of R32 / R8 is its tradeable form, and the years failed it); a long-only, capped or stopped momentum
+  book on the members (hindsight after F3+F4 — F1+F2 said the shorts carried — and F1–F4's members' bars are spent); any F5 read of a
+  hypothesis that failed its confirmation (R25, R29, R44: a third shot); R5's stage 2 on FP+F0 (maker net +4.9 at 7.2 a round trip is
+  ≈ +3.5 at R39's 8.4); a sizing or hedged variant of the candle ridge on the twelve (R16, U7) and anything that touches the serve path
+  (R17); U7's list as carried.
+- **(Y9) P7 alone** — the mode becomes wait until R17's read (earliest 2027-03-25).
+Recommended: Y1 and Y2 registered together, both described rows on saved decisions, neither spending a fold, a day in all; Y5's
+arithmetic if a half-day is spare. Said plainly: after Y1 and Y2 the honest default is Y9 unless Y1's hedged row surprises — the record
+now says the measurable edges here are the market's, and the one per-name edge is on P7's clock. Needed from Vadim: the pick.
+
+**Decision X (2026-10-17) — after R44 stage 2 NOT CONFIRMED. DECIDED 2026-10-17, Vadim's "X1": the brainstorm first — written above as decision Y, nothing registered or run.**
 
 *Where P8 stands.* Every per-name question registered since P8 was parked on 2026-09-30 has been read, and none pays: the index and the
 flows (R26, R27, R30, R31), the new listing (R28, R29), the imbalance at one day (R33 → R36), the forced flow (R37), the candle ridge held
