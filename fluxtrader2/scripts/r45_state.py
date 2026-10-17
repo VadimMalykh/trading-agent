@@ -60,9 +60,21 @@ def states(P: dict, days: int, s30_days: int, vol_days: int, vol_ref_days: int) 
 
 
 def episodes(s: np.ndarray) -> int:
-    """Sign changes of a ±1 / 0 series, the zeros skipped."""
+    """Sign changes of a ±1 / 0 series, the zeros skipped — on the 5m grid this counts the chatter at a zero crossing too."""
     x = s[s != 0]
     return int((np.diff(x) != 0).sum()) if len(x) > 1 else 0
+
+
+def episodes_daily(s: np.ndarray, min_run_days: int = 7) -> tuple[int, int]:
+    """(sign changes of the state sampled once a day at 00:00 UTC, the number of runs of ≥ `min_run_days` days) — the regimes."""
+    x = s[::PER_DAY]
+    x = x[x != 0]
+    if len(x) < 2:
+        return 0, int(len(x) > 0)
+    ch = np.flatnonzero(np.diff(x) != 0)
+    bounds = np.concatenate([[0], ch + 1, [len(x)]])
+    runs = np.diff(bounds)
+    return int(len(ch)), int((runs >= min_run_days).sum())
 
 
 def _d(x: np.ndarray, w: np.ndarray, s: np.ndarray) -> float:
@@ -132,13 +144,16 @@ def read(sets: dict[str, list[str]], pairs: list[str], start: pd.Timestamp, end:
     validity["3_pass"] = all(r["same"] for r in ka)
 
     # validity (5): the episodes
-    ep = [{"series": st, "scope": "span", "episodes": episodes(S[st].to_numpy()), "share_up": float((S[st][S[st] != 0] > 0).mean()),
-           "first": str(idx[0]), "last": str(idx[-1])} for st in STATES]
+    def _ep(st, lo, hi, scope, share):
+        arr = S[st].to_numpy()[lo: hi + 1]
+        ed, runs = episodes_daily(arr)
+        return {"series": st, "scope": scope, "episodes": episodes(arr), "episodes_daily": ed, "runs_7d": runs, "share_up": share,
+                "first": str(idx[lo]), "last": str(idx[hi])}
+    ep = [_ep(st, 0, n - 1, "span", float((S[st][S[st] != 0] > 0).mean())) for st in STATES]
     for k, f in F.items():
-        a, b = f["pos"].min(), f["pos"].max()
+        a, b = int(f["pos"].min()), int(f["pos"].max())
         for st in STATES:
-            ep.append({"series": st, "scope": k, "episodes": episodes(S[st].to_numpy()[a: b + 1]), "share_up": validity["4_share_up"][st][k],
-                       "first": str(idx[a]), "last": str(idx[b])})
+            ep.append(_ep(st, a, b, k, validity["4_share_up"][st][k]))
     ep = pd.DataFrame(ep)
     ep.to_csv(out / "episodes.csv", index=False)
     validity["5_episodes"] = ep.to_dict("records")
@@ -226,9 +241,10 @@ def _report(s: dict, res: pd.DataFrame, by: pd.DataFrame, ep: pd.DataFrame) -> s
     for r in v["1_record"]:
         rec = "—" if r["record_trades"] is None else f"{r['record_trades']} / {r['record_net']:+.2f}"
         L.append(f"| {r['set']} | `{r['file']}` | {r['trades']} | {r['net']:+.2f} | {rec} | {r['reproduced']} |")
-    L += ["", "## Validity (5): the episodes", "", "| series | scope | episodes | share in +1 | first | last |", "|---|---|---|---|---|---|"]
+    L += ["", "## Validity (5): the episodes (sign changes on the 5m grid — the chatter at a zero crossing counts; sampled daily at 00:00 UTC; runs ≥ 7 days)", "",
+          "| series | scope | changes (5m) | changes (daily) | runs ≥ 7 d | share in +1 | first | last |", "|---|---|---|---|---|---|---|---|"]
     for _, r in ep.iterrows():
-        L.append(f"| {r['series']} | {r['scope']} | {r['episodes']} | {r['share_up']:.3f} | {r['first'][:10]} | {r['last'][:10]} |")
+        L.append(f"| {r['series']} | {r['scope']} | {r['episodes']} | {r['episodes_daily']} | {r['runs_7d']} | {r['share_up']:.3f} | {r['first'][:10]} | {r['last'][:10]} |")
     L += ["", f"## The verdict: **{s['verdict']['net']}** (family-wise p {s['families']['S90/net']['p_family']:.3f}), "
           f"**{s['verdict']['hedged']}** (p {s['families']['S90/hedged']['p_family']:.3f})", "",
           "| state | row | members | max |D| / sd | family-wise p |", "|---|---|---|---|---|"]

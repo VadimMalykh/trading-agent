@@ -67,8 +67,9 @@ def test_a_planted_state_dependence_clears_and_the_validity_lines_hold(tmp_path)
     s = _read(m, start, "r45_dep")
     v = s["validity"]
     assert v["pass"] and v["1_pass"] and v["1_record"][0]["reproduced"] == "no record" and v["3_pass"] and v["2_cover_S90"]["A"] >= 0.95
-    ep = {(r["series"], r["scope"]): r["episodes"] for r in v["5_episodes"]}
-    assert ep[("S90", "span")] == 4, ep                                   # the planted phase changes, counted on the 5-day sign
+    ep = {(r["series"], r["scope"]): r for r in v["5_episodes"]}
+    e = ep[("S90", "span")]
+    assert e["episodes"] == 4 and e["episodes_daily"] == 4 and e["runs_7d"] == 5, e     # the planted phase changes on the 5-day sign, five runs
     res = {(r["state"], r["row"]): r for r in s["results"]}
     net, hed = res[("S90", "net")], res[("S90", "hedged")]
     assert net["D"] > EDGE / 2 and net["p"] <= 0.05 and net["verdict"] == "CLEARS", net

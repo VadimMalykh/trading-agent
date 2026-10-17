@@ -31,7 +31,9 @@ ROWS = ("gross_bps", "net_bps", "hedged_net_bps")
 
 
 def _wmean(x, w) -> float:
-    return float(np.average(x, weights=w)) if len(x) else np.nan
+    x, w = np.asarray(x, dtype=float), np.asarray(w, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(w) & (w > 0)
+    return float(np.average(x[ok], weights=w[ok])) if ok.any() else np.nan
 
 
 def _diff_stats(f1: pd.DataFrame, fk: pd.DataFrame, days: pd.DatetimeIndex, lags: int) -> dict:
