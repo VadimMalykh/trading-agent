@@ -22,8 +22,15 @@ else
   U="--universe screen --folds F1 F2"; P=""; T="f12"
 fi
 step r44_${T}_28d ft2 backtest mombook $U --execs taker --param hold=8064 $P --name r44_mombook_28d_$T
-step r44_${T}_14d ft2 backtest mombook $U --execs taker --param hold=4032 $P --name r44_mombook_14d_$T
-step r44_${T}_book28 ft2 audit r44_mombook_28d_$T --book
-step r44_${T}_book14 ft2 audit r44_mombook_14d_$T --book
-step r44_${T}_read python scripts/r44_read.py r44_mombook_28d_$T r44_mombook_14d_$T
+if [[ "${STAGE:-1}" == "2" ]]; then
+  # Stage 2 has no described 14-day run: the 28-day run under R44 logs F3 and F4, and the harness reads a confirmation fold once per
+  # registration (PLAN §3) — the first stage-2 chain stopped here on that refusal (output/logs/r44_f34_14d.log, 2026-10-17 11:53 UTC).
+  step r44_${T}_book28 ft2 audit r44_mombook_28d_$T --book
+  step r44_${T}_read python scripts/r44_read.py r44_mombook_28d_$T
+else
+  step r44_${T}_14d ft2 backtest mombook $U --execs taker --param hold=4032 $P --name r44_mombook_14d_$T
+  step r44_${T}_book28 ft2 audit r44_mombook_28d_$T --book
+  step r44_${T}_book14 ft2 audit r44_mombook_14d_$T --book
+  step r44_${T}_read python scripts/r44_read.py r44_mombook_28d_$T r44_mombook_14d_$T
+fi
 echo "$(date -u +%H:%M:%S) R44_CHAIN_DONE"
