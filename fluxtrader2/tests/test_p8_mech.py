@@ -3,6 +3,7 @@ disperse more and co-move less in the up phases, and whose per-name flag pays on
 mechanism rows CLEARING with their registered signs (the family p small, the planted feature flagged in the ceiling family, known-at and
 the record lines passing); the same world with nothing state-dependent reads as nothing clearing."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 
@@ -122,6 +123,24 @@ def test_planted_mechanisms_clear_with_their_signs_and_the_validity_lines_hold(t
     assert {"by_fold", "side_state"} == set(by["table"]) and len(by[by["table"] == "side_state"]) == 4
     md = (out / "mech.md").read_text()
     assert "Validity: PASS" in md and "THE MARKET'S AND THE FORECAST'S" in md and "f_state" in md
+
+
+def test_the_cells_are_cut_at_the_run_s_own_panel_end(tmp_path):
+    """A run whose last fold ends inside the panel labelled no cell in its last `latency + hold` bars: the cells read here stop there too."""
+    fc = _world(tmp_path, True)
+    bt.run(Planted(), PAIRS, ["F1"], execs=("taker",), draws=1, name="r47_cut")
+    fc.to_parquet("output/backtest/r47_cut/forecast.parquet", index=False)
+    meta = json.loads(Path("output/backtest/r47_cut/meta.json").read_text())
+    meta["folds"] = ["F0"]                                            # F0 ends 2023-05-01, inside the world (2023-03-20 → 2024-12)
+    Path("output/backtest/r47_cut/meta.json").write_text(json.dumps(meta))
+    m = _module()
+    from ft2 import ceiling, folds
+    P = ceiling.panel(PAIRS, pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp(START, tz="UTC"))
+    o, _ = m.forecast_cells("r47_cut", P, HOLD, 1)
+    end = folds.bounds("F0")[1]
+    assert pd.DatetimeIndex(o["t"]).max() <= end - pd.Timedelta(minutes=5 * (HOLD + 1)) and (pd.DatetimeIndex(o["t"]) < end).all()
+    want = fc[(fc["t"] <= end - pd.Timedelta(minutes=5 * (HOLD + 1))) & (fc["t"] >= folds.bounds("F0")[0])]
+    assert len(o) == len(want) > 1000, (len(o), len(want))
 
 
 def test_a_world_with_nothing_state_dependent_reads_as_nothing_clearing(tmp_path):

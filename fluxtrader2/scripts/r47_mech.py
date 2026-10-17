@@ -82,6 +82,10 @@ def forecast_cells(run: str, P: dict, hold: int, latency: int) -> tuple[pd.DataF
     o["fold"] = ""
     for f in meta["folds"]:
         o.loc[folds.mask(pd.Series(t, index=o.index), f).to_numpy(), "fold"] = f
+    # the run's own panel ended at its last fold's end (`ceiling.panel` keeps t ≤ end), so a cell whose label window ran past it had no
+    # label there and is not in its record: the same cut here, or the record's cell count is missed by one day of the grid (R47's first read)
+    run_end = max(folds.bounds(f)[1] for f in meta["folds"])
+    o = o[t <= run_end - pd.Timedelta(minutes=5 * (latency + hold))].copy()
     o = o[o["f_bps"].notna() & o["z"].notna() & (o["fold"] != "")].copy()
     o["zres"] = o["z"] - o.groupby("t")["z"].transform("mean")
     o["run"] = run
