@@ -1316,7 +1316,7 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
-**Decision AB (2026-10-17) — after R47 (the mechanism: the forecast's, at 0.9 MDE, the same sign on three disjoint reads; the market's row the volatility level). OPEN, Vadim's.**
+**Decision AB (2026-10-17) — after R47 (the mechanism: the forecast's, at 0.9 MDE, the same sign on three disjoint reads; the market's row the volatility level). DECIDED 2026-10-17, Vadim's "As1" then "AB1": the pre-history read REGISTERED as R48 (§8) before any code was written and before any pre-history bar was walked by the ridge. The power as written in AB ("the IC's power the better of the two") is corrected in R48's block: the null's sd comes from the episodes (≈ 17 runs on the pre-history), so both rows sit at ≈ 0.6 MDE and the family gives one shot.**
 *Where P8 stands.* R45 said R14's hedged money depends on the quarter's sign; R47 says why: the candle ridge's held-out IC is 0.08 after a
 rising quarter and 0.01 after a falling one, on F1+F2, on F3+F4 and on F5 alike, and the single candle features do not carry the switch —
 the ridge's combination does. S90 is now a standing overlay for any next cross-sectional registration. R14's bars are all seen; the
@@ -6740,6 +6740,68 @@ Result:        **FIRST READ 2026-10-17 18:18 UTC, VOID at validity (1)** (`outpu
                forecaster: on every set of bars it has been read on, it sees the cross-section after a rising quarter and is blind after a
                falling one; the market also moves more then. The only unseen bars that could test this before 2027 are the pre-history
                (decision AA's AA2, not taken), and P7's ledger at R17. What follows is decision AB (P8), Vadim's.
+
+### R48 — the candle ridge on the pre-history, once: R45's and R47's state hypotheses on bars the ridge never saw (registered 2026-10-17 on Vadim's "AB1" (P8 decision AB), before any code was written and before any pre-history bar was walked by the ridge; read —)
+Question:      Decision AA's AA2, decision AB's AB1. R45 (seen bars, 4,565 trades): R14's hedged net +45 a trade after a rising quarter of the
+               twelve, −13 after a falling one. R47 (the same bars' forecasts): the ridge's held-out IC 0.082 against 0.009, the same shape on
+               three disjoint reads. Both are hypotheses on bars the rule was read on. The pre-history FP+F0 (2020-05 → 2023-05) was never
+               walked by the ridge and never read for the state question (`folds.PREHISTORY`, guarded like a confirmation fold, once per
+               registration); it holds the 2021 rise and the whole 2022 fall — the long runs of both states that F1–F5 hold only twice each.
+               Does the switch hold there? (xi) stands: R14's unconditional net on the pre-history is a DESCRIBED row and not a gate — a third
+               shot at a rule's net that failed its confirmation twice (R16, R42) is not written; the question here is the state's.
+Rule:          R14's registered `ridgebook` to the letter (hold 288, min_bps 15, cap 2, groups 4, grid 12, min_pairs 5, holdout), refit 30 days,
+               latency 1, taker 5 / maker 2 (R14's own run line; FP has no maker_ev), draws 200 (the harness's shuffle and flip nulls, described):
+               `ft2 backtest ridgebook --param hold=288 --folds FP F0 --registration R48 --execs taker maker --draws 200 --name
+               r48_ridgebook_1d_ho12_pre`. The market as the harness builds it for FP: `backtest.market(the twelve, F0's end 2023-05-01,
+               PRE_START 2019-12-31)` — the archive's klines under the collector's, the candle cost proxy of `ft2 costpre` before the tape,
+               the funding archive; 1000PEPE, WLD and HYPE absent (NaN; the rule's min_pairs 5 and the harness's basket guard). The fit sees
+               every row with a label before each block, from 2019-12-31 (120 days of history at FP's first block; `MIN_ROWS` 500). Entry at
+               the first bar (R46).
+Cells:         FP (2020-05-03, embargoed → 2022-08-18) + F0 (→ 2023-05-01): 1,095 days. Names: 5 at the start (BTC, ETH, XRP, ADA, LINK; ZEC
+               2020-06, DOGE 2020-07, SOL and AVAX 2020-09), 9 from 2020-10. The state on those days, counted before the run from R47's
+               `daily.parquet`: 54 daily sign changes, 17 runs of ≥ 7 days, share +1 0.549 — 2020 (May on) 0.76, 2021 0.82, 2022 0.09,
+               2023-Q1 0.68. The run's saved `fills_taker.parquet` (the trades; the maker file described) and `forecast.parquet` (the
+               held-out cells of the first walk).
+Statistic:     `scripts/r48_pre.py` on the run's saved files; S90 at each decision and cell from the run's own panel (R45's `states`, on
+               `ceiling.panel(the twelve, 2023-05-01, 2019-12-31)`; identical by construction to R45/R47's on the shared days — validity (2)).
+               Two primary rows, each with its sign fixed: **(i) D_hedged** = the size-weighted mean hedged net of the taker trades decided in
+               state +1 minus state −1, sign POSITIVE (R45); **(ii) D_IC** = the pooled held-out IC (R47's statistic: Σ ẑ·z_res / √(Σ ẑ² Σ z_res²),
+               the cells cut at the run's panel end minus 289 bars) in state +1 minus −1, sign POSITIVE (R47). The null on both: every
+               admissible whole-day circular shift of the state series on the run's panel span (2019-12-31 → 2023-05-01, 1,217 days; 90 ≤ d ≤
+               span − 90 → ≈ 1,038 shifts); two-sided p = (1 + #{|null| ≥ |D|}) / (1 + shifts), a clear needs the sign; the family of two,
+               family-wise p on max |z|. Described: D_net (the same on net); the by-year × state table (2020-H2, 2021, 2022, 2023-Q1: trades,
+               net, hedged net, IC); side × state; the maker fills' D_hedged; R14's unconditional taker and maker net and hedged net on FP+F0
+               with the harness's intervals and its shuffle / flip p — described, not a gate.
+Validity:      (1) the run's meta: R14's params to the letter, folds FP F0, registration R48, execs taker maker, draws 200, the guard's line in
+               `confirmation_reads.csv`; (2) the state at every 00:00 UTC day of the run's span equals R47's `daily.parquet` state on that
+               day — exact, every shared day; (3) known-at: S90 on the panel cut at t equals the full-panel S90 on 20 drawn decisions; (4) the
+               names: ≥ 5 present at the first decision and at every decision (the harness's basket guard; counted); (5) the counts written:
+               trades, cells, days, the episodes on the decision days; (6) the harness's causal check ran (the run's report). A failure of (1)
+               or (2) voids the read; the run is then made again whole after the fix, the first files kept.
+Folds read:    FP+F0, once, by this registration — spent afterwards for the candle ridge and for the state question on it.
+Power:         the null's sd comes from the EPISODES, not the trades (decision Y (ix); R47's test world showed it): R45's A row had sd 20 on
+               4,565 trades over 36 runs (19 inside its bars), R47's IC row sd 0.029 on 330,000 cells over the same 36. Here ≈ 17 runs and
+               ≈ 1,500–2,700 trades / ≈ 150,000–190,000 cells: sd ≈ 30–35 on D_hedged → MDE ≈ 85–100 against the fact of +58; sd ≈ 0.045 on
+               D_IC → MDE ≈ 0.12 against the fact of +0.073. Each row at ≈ 0.6 of its MDE: a true effect of the seen size clears a row about
+               one time in three, the family about one in two. Decision AB's line "the IC's power the better of the two" was wrong and is
+               corrected here: the two rows share the episodes. The read is worth its power because the pre-history holds what no seen fold
+               does — a full bear year (2022, up share 0.09) and a full bull one (2021, 0.82) — and a sign on those is information even
+               inside the MDE.
+Gate:          **CONFIRMED ON THE PRE-HISTORY** if the family-wise p ≤ 0.05 and the row carrying it has its registered sign; otherwise **NOT
+               CONFIRMED**, with each row's sub-verdict: REFUTED if D's interval (± 1.96 sd) lies wholly below half the fact (+29 / +0.037);
+               NOT DETECTABLE if |D| < MDE; NOT CLEAR otherwise. What a confirmation licenses: (i) the S90 column on P7's ledger at R17 read as a
+               REGISTERED on/off row, its sign fixed (the live form of the gated R14, decision AA (xvi)); (ii) S90 as a pre-registered on/off or
+               sizing term in any successor to R14, not a described one; (iii) at R17 and only then, a state-keyed arm as a funding question
+               for Vadim. What a miss licenses: nothing new — the column stays described, R45 and R47 stay hypotheses on seen bars. Either way:
+               no variant of R14 on F1–F5, nothing on the serve path, R14's pre-history net licenses nothing (described).
+Expectation:   validity PASS; ≈ 2,000 taker trades on ≈ 1,090 days; the unconditional net described, anywhere in −20 … +40 with 2022 negative
+               (the ridge on 5–9 names is a thinner model than on eleven); D_hedged positive and inside its MDE (NOT DETECTABLE) likelier than
+               not; D_IC positive with 2021 carrying it and 2022 near zero; CONFIRMED one time in three. The honest surprise would be a 2022
+               with a positive IC — that would say the switch is 2023–26's and not the market's.
+Files:         `scripts/r48_pre.py` → `output/backtest/r48_pre/{pre.md, pre.json, shifts.parquet, by_year.csv, by_state.csv, known_at.csv}`; the
+               run `output/backtest/r48_ridgebook_1d_ho12_pre/`; `scripts/r48_chain.sh` (the walk, the read, the poweroff trap); tests
+               `tests/test_p8_pre.py` on test_p8_mech's made-up world.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
