@@ -6132,7 +6132,35 @@ Expectation:   validity PASS; 400–1,000 trades at 28 days (twice that at 14); 
                interval of ± 300; the long side larger than the short; the clipped row half the net; F1 positive and F2 near zero or
                negative → the likeliest outcome is stage 1 FAILING on (iv) with (i) passing; stage 1 PASS one time in four; CONFIRMED on
                F3+F4 one time in ten from here. Nothing about 2024's or 2025's path is assumed.
-Result:        —
+Result:        **Stage 1 RUN 2026-10-17 (the chain `scripts/r44_chain.sh` on the work VM, 10:36 → 10:55 UTC: the 28-day book 7 minutes, the
+               14-day book 7, the book checks, the read 6; commit 0248b3c holds this block as written before any code, 30a72cc the code;
+               `output/backtest/r44_mombook_28d_f12/`, `r44_mombook_14d_f12/`, `r44_read.md`, `r44_read.json`, the logs `output/logs/r44*.log`).
+               THE FIRST READ IS VOID AT VALIDITY (4) AS WRITTEN: of the 28-day book's 26 unpriced trades, 24 are exits after the last bar
+               and TWO are not — a short on COCOSUSDT decided 2023-05-17 (entry 1.363, the exit day's cost row absent, the last close 1.454)
+               and a short on TOMOUSDT decided 2023-11-16 (entry 1.2792, the price frozen at 1.2792, no cost row): both names were DELISTED
+               inside the hold, a cause the registration did not list ("no other cause allowed"), so the verdict is void by its own letter
+               (the 14-day book: the same two names, three trades). Everything else of the validity block PASSED: (1) `book_check` PASS —
+               132,492 decisions on the hourly grid, every one a member of its block, 360 accepted as 180 whole units, 180 long / 180 short,
+               131 names traded; (2) the decisions' signal equals R43′'s mom_12w on every decision (max |Δ| 0.0) and k = rint(n × 0.10)
+               at every one of the 11,640 decided bars (n 50–60, k 5–6); (3) unit actual, charged value, folds F1+F2, no registration, all
+               188 pairs on the proxy cost, the causal check passed; (5) the read script at clip ∞ reproduces the report's net, interval
+               (max |Δ| 0.0) and flip p (0.0249 against 0.025); (6) F1 182 and F2 152 priced trades. The gate's five lines, computed
+               before the void was seen and recorded here as computed, all PASS: net +331.0 [+19.7, +642.3] on 334 trades, hedged net
+               +333.4, flip p 0.025, F1 +551.4 / F2 +67.1, the clipped row +70.2 [−106.4, +246.8]. They decide nothing: the read is void.**
+               **AMENDED 2026-10-17, before the read was made again — R44′: validity (4) to the letter of the world, nothing else of the
+               registration changed.** A name delisted inside its hold leaves its trade unpriced (the harness has no close or no cost row at
+               the exit); the registration's (4) read "exits after the last bar, no other cause", which was wrong about the data, not about
+               the book — the members of 2023–24 include names that Binance delisted (COCOS 2023-06, TOMO 2023-12). R44′: (4) unpriced =
+               exits after the last bar OR names delisted before their exit (their bars or their cost row ending inside the hold), LISTED
+               by name and date; no other cause. Beside it a DESCRIBED row, "the settled row": the delisted trades settled at the last close
+               the market holds before their exit, charged the run's mean other cost, their fee and funding as the harness wrote them, added
+               to the priced trades — what a short on a name that is delisted would actually have realised (the exchange settles the
+               position at the delisting price; a short that was in profit on a falling name keeps it, a short on a name that rose loses).
+               Stage 1's gate stands as registered (the settled row describes). STAGE 2's gate gains a line, written now, before any F3+F4
+               bar is read: (vi) net > 0 with the delisted trades settled — F3+F4's members (2024-09 → 2025-12) hold more delistings than
+               F1+F2's, and a book must not live on excluding the trades the exchange closed. The runs are deterministic and unchanged (the
+               harness's files stand, as R41′ kept R41's steps); the read alone is made again by the same command. Expectation: the two
+               trades settle at ≈ −668 + 40 − 20 and ≈ 0 + 84 − 20 bps, the settled row within 3 bps of the net, the five lines as above.
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …

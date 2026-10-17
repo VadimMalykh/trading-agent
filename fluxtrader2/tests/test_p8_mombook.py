@@ -17,6 +17,7 @@ from test_p8_horizon_mom import NAMES, _world
 
 READ = Path(__file__).resolve().parents[1] / "scripts" / "r44_read.py"
 THIN_BLOCK, THINNED = "2023-08-01", NAMES[20:]                     # ten names out of one block: n = 20 there, k = 2
+DELIST_DAY = "2023-10-15"
 
 
 def _read_module():
@@ -41,6 +42,13 @@ def test_a_planted_momentum_makes_money_as_a_book_and_the_read_passes(tmp_path):
     m.to_csv(members, index=False)
     s = audit.MomBook(members=members)                             # the registered parameters: hold 8064, window 24192, tenth 0.10, min_cells 20
     assert s.params() == {"hold": 8064, "window": 24192, "tenth": 0.1, "min_cells": 20, "grid": 12, "members": members}
+    r0 = bt.run(s, NAMES, ["F1"], draws=1, execs=("taker",), name="r44_test_pre")
+    d0 = r0["decisions"]
+    day = pd.Timestamp(DELIST_DAY, tz="UTC")
+    held = d0[d0["accepted"] & (d0["t"] < day) & (d0["t"] >= day - pd.Timedelta(days=20))]
+    delisted = held["symbol"].iloc[0]                                 # a name with a position open on the delisting day
+    c = pd.read_parquet("data/candles_5m.parquet")                   # delisted mid-F1: its bars end, the trade open then is unpriced by the harness
+    c[~((c["symbol"] == delisted) & (c["open_time"] >= day))].to_parquet("data/candles_5m.parquet", index=False)
     r = bt.run(s, NAMES, ["F1"], draws=20, execs=("taker",), name="r44_test_28d")
     dec, t = r["decisions"], pd.DatetimeIndex(r["decisions"]["t"])
     assert len(dec) > 500 and (t.minute == 0).all() and set(dec["symbol"]) <= set(NAMES)
@@ -64,7 +72,9 @@ def test_a_planted_momentum_makes_money_as_a_book_and_the_read_passes(tmp_path):
     rr.MIN_FOLD_TRADES = 50                                           # the world's 30 names give ≈ 60 trades a fold; the registration's 100 is for 60 members
     v, _ = rr.read("r44_test_28d", M)
     assert v["validity_status"] == "PASS", v["validity"]
-    assert v["bars_k_wrong"] == 0 and v["k_min"] == 2 and v["k_max"] == 3 and v["n_min"] == 20 and v["n_max"] == 30 and v["unpriced"] > 0
+    assert v["bars_k_wrong"] == 0 and v["k_min"] == 2 and v["k_max"] == 3 and v["n_min"] == 20 and v["n_max"] == 30 and v["unpriced_beyond_last_bar"] > 0
+    assert v["unpriced_other"] == 0 and v["settled"]["delisted_added"] == len(v["delisted"]) >= 1 and {d["symbol"] for d in v["delisted"]} == {delisted}
+    assert v["settled"]["mean"] != v["all"]["net"] and np.isfinite(v["settled"]["lo"])
     assert v["max_abs_d_clip_inf"] <= 1e-9 and abs(v["flip"]["p"] - v["flip_p_report"]) < 5e-4 and v["flip"]["draws"] == 20
     assert all(v["gate"].values()) and v["verdict"].startswith("PASS") and v["clipped"]["mean"] > 0 and v["clipped"]["share_clipped"] >= 0.0
     text = rr.md(v, None)
@@ -74,7 +84,8 @@ def test_a_planted_momentum_makes_money_as_a_book_and_the_read_passes(tmp_path):
     meta["registration"] = "R44"
     Path("output/backtest/r44_test_28d/meta.json").write_text(json.dumps(meta))
     v2, _ = rr.read("r44_test_28d", M)
-    assert v2["verdict"] == "CONFIRMED"
+    assert v2["verdict"] == "CONFIRMED" and "(vi) net > 0 with the delisted settled" in v2["gate"] and "(vi)" not in str(list(v["gate"]))
+    assert "The settled row" in rr.md(v2, None)
 
 
 def test_without_a_drift_the_book_pays_its_costs(tmp_path):

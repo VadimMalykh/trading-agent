@@ -56,10 +56,31 @@ def read(run: str, M: bt.Market | None = None) -> tuple[dict, bt.Market]:
     # (3) meta
     v["meta"] = {k: meta.get(k) for k in ("unit", "charged", "folds", "registration", "pairs_on_proxy_cost", "decisions", "accepted", "max_open", "avg_open")}
     v["meta"]["pairs_on_proxy_cost"] = len(meta.get("pairs_on_proxy_cost", [])), len(meta["pairs"])
-    # (4) unpriced = exits after the last bar only
+    # (4) unpriced = exits after the last bar, or a name DELISTED before its exit (its bars or its cost row end inside the hold: the
+    # harness leaves the trade unpriced) — listed by name; nothing else. R44′ (2026-10-17): the first read voided on two delisted names.
     un = fills[fills["net_bps"].isna()]
     beyond = M.index.get_indexer(un["t"]) + bt.LATENCY + hold >= len(M.index)
-    v["unpriced"], v["unpriced_not_beyond_last_bar"] = int(len(un)), int((~beyond).sum())
+    v["unpriced"], v["unpriced_beyond_last_bar"] = int(len(un)), int(beyond.sum())
+    dl = un[~beyond]
+    v["delisted"] = [{"t": str(r.t), "symbol": r.symbol, "side": int(r.side), "entry_px": float(r.entry_px), "exit_px": None if np.isnan(r.exit_px) else float(r.exit_px)} for r in dl.itertuples()]
+    v["unpriced_other"] = 0
+    # the settled row (described; stage 2's gate line (vi)): the delisted trades settled at the last close the market holds before their
+    # exit, charged the run's mean other cost, their fee and funding as the harness wrote them, and added to the priced trades
+    pr = fills.dropna(subset=["net_bps"]).copy()
+    other_mean = float(np.average(pr["other_cost_bps"], weights=pr["size"])) if len(pr) else 0.0
+    rows = []
+    for r in dl.itertuples():
+        c = M.close[r.symbol].loc[:r.exit_t].dropna()
+        if not len(c) or np.isnan(r.entry_px):
+            v["unpriced_other"] += 1
+            continue
+        px = float(c.iloc[-1])
+        gross = float(r.side * (px / r.entry_px - 1.0) * 1e4)
+        fund = 0.0 if np.isnan(r.funding_bps) else float(r.funding_bps)
+        fee = float(r.fee_bps) if not np.isnan(r.fee_bps) else 2 * 5.0
+        rows.append({"t": r.t, "symbol": r.symbol, "side": r.side, "size": r.size, "gross_bps": gross, "fee_bps": fee, "other_cost_bps": other_mean, "funding_bps": fund,
+                     "net_bps": gross - fee - other_mean + fund, "settled_px": px})
+    v["settled_trades"] = [{k: (str(x) if k == "t" else float(x) if k != "symbol" else x) for k, x in r.items()} for r in rows]
     # (5) the clipped row's arithmetic at clip ∞ is the harness's
     days = bt.scored_days(meta["folds"], M.index[-1])
     inf = clipped_row(fills, days, hold, np.inf)
@@ -75,20 +96,25 @@ def read(run: str, M: bt.Market | None = None) -> tuple[dict, bt.Market]:
                           "hedged_net": float(res.loc[fo, "hedged_net"])} for fo in meta["folds"]}
     v["validity"] = {"(1) book_check": v["book_check"]["status"] == "PASS", "(2) signal and tenth": v["max_abs_d_signal"] <= TOL and v["bars_k_wrong"] == 0,
                      "(3) meta": meta.get("unit") == "actual" and meta.get("charged") == "value" and v["meta"]["pairs_on_proxy_cost"][0] == v["meta"]["pairs_on_proxy_cost"][1],
-                     "(4) unpriced": v["unpriced_not_beyond_last_bar"] == 0, "(5) clip inf": v["max_abs_d_clip_inf"] <= TOL and abs(v["flip"]["p"] - (v["flip_p_report"] or -1)) < 5e-4,
+                     "(4) unpriced": v["unpriced_other"] == 0, "(5) clip inf": v["max_abs_d_clip_inf"] <= TOL and abs(v["flip"]["p"] - (v["flip_p_report"] or -1)) < 5e-4,
                      "(6) trades a fold": all(x["trades"] >= MIN_FOLD_TRADES for x in v["per_fold"].values())}
     v["validity_status"] = "PASS" if all(v["validity"].values()) else "FAIL"
     # the money
     v["all"] = {k: float(res.loc["all", k]) for k in ("trades", "trades_per_day", "hit", "gross", "hedged", "fee", "other_cost", "funding", "net", "net_lo", "net_hi", "net_mde", "hedged_net", "hedged_net_lo", "hedged_net_hi")}
     v["sides"] = {s: {k: float(res.loc[s, k]) for k in ("trades", "gross", "hedged", "net", "net_lo", "net_hi", "hedged_net")} for s in ("long", "short") if s in res.index}
     v["clipped"] = clipped_row(fills, days, hold)
+    settled = pd.concat([pr, pd.DataFrame(rows)], ignore_index=True) if rows else pr
+    v["settled"] = {**bt.trade_stats(settled["net_bps"].to_numpy(), settled["size"].to_numpy(), pd.DatetimeIndex(settled["t"]).floor("D"), days, bt.day_lags(hold)),
+                    "delisted_added": len(rows), "net_of_the_delisted": float(np.average([r["net_bps"] for r in rows])) if rows else None}
     v["clipped"]["share_clipped"] = float((fills["gross_bps"].abs() > CLIP).mean()) if len(fills) else 0.0
     sh = nul[(nul["kind"] == "shuffle") & (nul["exec"] == "taker")]["net"].dropna()
     v["shuffle"] = {"draws": int(len(sh)), "null_sd": float(sh.std()) if len(sh) > 1 else None, "note": "uninformative for a rule without a fit (the decisions do not depend on the labels); decides nothing"}
     g = {"(i) net > 0": v["all"]["net"] > 0, "(ii) hedged net > 0": v["all"]["hedged_net"] > 0, "(iii) flip p <= 0.05": v["flip"]["p"] <= 0.05,
          "(iv) net > 0 in each fold": all(x["net"] > 0 for x in v["per_fold"].values()), "(v) clipped row > 0": v["clipped"]["mean"] > 0}
-    v["gate"] = g
     stage2 = meta.get("registration") == REG
+    if stage2:
+        g["(vi) net > 0 with the delisted settled"] = v["settled"]["mean"] > 0                   # stage 2 only (R44′, written before any F3+F4 bar was read)
+    v["gate"] = g
     if v["validity_status"] != "PASS":
         v["verdict"] = "VOID (validity)"
     elif all(g.values()):
@@ -101,7 +127,7 @@ def read(run: str, M: bt.Market | None = None) -> tuple[dict, bt.Market]:
 def md(v: dict, d: dict | None) -> str:
     a, c, f = v["all"], v["clipped"], v["flip"]
     out = [f"# R44 read — `{v['run']}` (folds {'+'.join(v['folds'])}{', registration ' + v['registration'] if v['registration'] else ', exploration'})\n",
-           f"\n## Validity — read first: **{v['validity_status']}**\n", "```\n" + json.dumps({k: v[k] for k in ("validity", "book_check", "max_abs_d_signal", "bars_decided", "bars_k_wrong", "k_min", "k_max", "n_min", "n_max", "meta", "unpriced", "unpriced_not_beyond_last_bar", "max_abs_d_clip_inf", "flip_p_report")}, indent=1, default=str) + "\n```\n",
+           f"\n## Validity — read first: **{v['validity_status']}**\n", "```\n" + json.dumps({k: v[k] for k in ("validity", "book_check", "max_abs_d_signal", "bars_decided", "bars_k_wrong", "k_min", "k_max", "n_min", "n_max", "meta", "unpriced", "unpriced_beyond_last_bar", "delisted", "unpriced_other", "max_abs_d_clip_inf", "flip_p_report")}, indent=1, default=str) + "\n```\n",
            f"\n## The book, taker (bps per unit of notional)\n",
            f"\n{a['trades']:.0f} trades ({a['trades_per_day']:.2f} a day), hit {a['hit']:.1%}; gross {a['gross']:+.2f} (hedged {a['hedged']:+.2f}), fee {a['fee']:.2f}, other {a['other_cost']:.2f}, funding {a['funding']:+.2f} → "
            f"**net {a['net']:+.2f} [{a['net_lo']:+.2f}, {a['net_hi']:+.2f}]**, MDE {a['net_mde']:.1f}; **hedged net {a['hedged_net']:+.2f} [{a['hedged_net_lo']:+.2f}, {a['hedged_net_hi']:+.2f}]**; "
@@ -109,6 +135,8 @@ def md(v: dict, d: dict | None) -> str:
            f"\nPer fold: " + "; ".join(f"{k} {x['trades']} trades net {x['net']:+.2f} [{x['net_lo']:+.2f}, {x['net_hi']:+.2f}], hedged net {x['hedged_net']:+.2f}" for k, x in v["per_fold"].items()) + "\n",
            f"\nSides: " + "; ".join(f"{k} {x['trades']:.0f} trades gross {x['gross']:+.2f}, hedged {x['hedged']:+.2f}, net {x['net']:+.2f} [{x['net_lo']:+.2f}, {x['net_hi']:+.2f}], hedged net {x['hedged_net']:+.2f}" for k, x in v["sides"].items()) + "\n",
            f"\n**The clipped row** (every trade's gross at ±{CLIP:.0f} bps, costs and funding unchanged; {c['share_clipped']:.1%} of the trades clipped): net {c['mean']:+.2f} [{c['lo']:+.2f}, {c['hi']:+.2f}].\n",
+           f"\n**The settled row** (the {v['settled']['delisted_added']} trades on names delisted inside their hold settled at the last close before the exit, the run's mean other cost charged, added to the priced trades"
+           + (f"; the delisted trades' own mean net {v['settled']['net_of_the_delisted']:+.1f}" if v['settled']['delisted_added'] else "") + f"): net {v['settled']['mean']:+.2f} [{v['settled']['lo']:+.2f}, {v['settled']['hi']:+.2f}].\n",
            "\n## The gate\n", "\n" + "\n".join(f"- {k}: **{'PASS' if x else 'FAIL'}**" for k, x in v["gate"].items()) + f"\n\n**VERDICT: {v['verdict']}**\n"]
     if d:
         a2, c2, f2 = d["all"], d["clipped"], d["flip"]
