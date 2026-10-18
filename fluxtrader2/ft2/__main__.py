@@ -88,6 +88,17 @@ def cmd_etf(args):
     etf.main(args.action, args.no_wayback, args.hours, args.per_hour, args.cached)
 
 
+def cmd_dvol(args):
+    from . import dvol
+    dvol.main(args.action, args.currencies, args.start)
+
+
+def cmd_magvol(args):
+    from . import magvol
+    print(magvol.run(args.holds, args.names, args.name))
+    print(f"wrote {magvol.OUT / args.name}/")
+
+
 def cmd_events(args):
     from . import events
     events.main(args.action, PAIRS, args.source, args.cached, args.reverse)
@@ -376,6 +387,14 @@ def main(argv=None):
     ix.add_argument("--start", default=None, help="fetch: first day (default FP's first day, 2020-05-01; histdata: its year)")
     ix.add_argument("--end", default=None, help="fetch --source dukascopy: last day inclusive (default yesterday UTC)")
     ix.add_argument("--symbols", nargs="*", default=None, help="US500 US100 (default both)")
+    dvp = sub.add_parser("dvol", help="P8 (R54, PLAN §9 #7): Deribit's implied volatility index, daily, from the public endpoint → data/raw/external/deribit/, data/dvol.parquet, output/dvol_inventory.md (see ft2/dvol.py)")
+    dvp.add_argument("action", choices=["fetch", "ingest", "inventory"])
+    dvp.add_argument("--currencies", nargs="*", default=None, help="default BTC ETH SOL")
+    dvp.add_argument("--start", default="2021-01-01", help="fetch: the first day asked for")
+    mvp = sub.add_parser("magvol", help="P8 (R54): magnitude against implied — the candle-built realised-vol forecast against DVOL in forecasting BTC's and ETH's realised volatility at 1 and 7 days → output/magvol/<name>/magvol.md (see ft2/magvol.py)")
+    mvp.add_argument("--holds", nargs="*", type=int, default=[1, 7], help="horizons in days (default 1 7)")
+    mvp.add_argument("--names", nargs="*", default=None, help="the family's names (default BTCUSDT ETHUSDT)")
+    mvp.add_argument("--name", default="f12", help="output directory under output/magvol/")
     et = sub.add_parser("etf", help="P8 (B3′, PLAN §9 #7): the US spot-ETF net flows from Farside's tables → data/raw/external/farside/, data/etf_flows.parquet, output/etf_inventory.md (see ft2/etf.py)")
     et.add_argument("action", choices=["fetch", "ingest", "inventory"])
     et.add_argument("--no-wayback", action="store_true", help="inventory: skip the known-at measurement on the Wayback Machine's snapshots of the live page")
@@ -402,7 +421,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
