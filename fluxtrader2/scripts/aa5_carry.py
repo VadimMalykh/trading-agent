@@ -220,7 +220,7 @@ def universe_frames(name: str, fold_names, costs=None, premium=None, state_path=
     if name == "twelve":
         cols, blocks = pd.Index(TWELVE), None
     else:
-        parts = [pd.read_csv(MEMBERS[f], usecols=["block", "symbol"]).assign(block=lambda x: pd.to_datetime(x["block"], utc=True)) for f in dict.fromkeys(MEMBERS[f] for f in fold_names)]
+        parts = [pd.read_csv(path, usecols=["block", "symbol"]).assign(block=lambda x: pd.to_datetime(x["block"], utc=True)) for path in dict.fromkeys(MEMBERS[f] for f in fold_names)]
         blocks = pd.concat(parts, ignore_index=True).drop_duplicates()
         cols = pd.Index(sorted(set(blocks["symbol"])))
     C = costs if costs is not None else bt.load_costs(cost_index(days), cols, b + DAY)
