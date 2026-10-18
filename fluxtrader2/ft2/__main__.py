@@ -99,6 +99,11 @@ def cmd_magvol(args):
     print(f"wrote {magvol.OUT / args.name}/")
 
 
+def cmd_optsrc(args):
+    from . import optsrc
+    optsrc.main(args.action, args.sources)
+
+
 def cmd_events(args):
     from . import events
     events.main(args.action, PAIRS, args.source, args.cached, args.reverse)
@@ -395,6 +400,9 @@ def main(argv=None):
     mvp.add_argument("--holds", nargs="*", type=int, default=[1, 7], help="horizons in days (default 1 7)")
     mvp.add_argument("--names", nargs="*", default=None, help="the family's names (default BTCUSDT ETHUSDT)")
     mvp.add_argument("--name", default="f12", help="output directory under output/magvol/")
+    osp = sub.add_parser("optsrc", help="P8 (decision AL1, after R54): the option-price source audit — what Deribit's public API, Tardis's free days and Binance's option archive serve for a one-day straddle's price, spread and fees → data/raw/external/{deribit/audit,tardis,binance_options}/, output/optsrc_audit.md (see ft2/optsrc.py)")
+    osp.add_argument("action", choices=["audit"])
+    osp.add_argument("--sources", nargs="*", default=None, help="deribit tardis binance (default all)")
     et = sub.add_parser("etf", help="P8 (B3′, PLAN §9 #7): the US spot-ETF net flows from Farside's tables → data/raw/external/farside/, data/etf_flows.parquet, output/etf_inventory.md (see ft2/etf.py)")
     et.add_argument("action", choices=["fetch", "ingest", "inventory"])
     et.add_argument("--no-wayback", action="store_true", help="inventory: skip the known-at measurement on the Wayback Machine's snapshots of the live page")
@@ -421,7 +429,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "optsrc": cmd_optsrc, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":

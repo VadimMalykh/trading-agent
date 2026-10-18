@@ -211,6 +211,63 @@ only (206 days; the index stopped) — no fold covered, so SOL is outside every 
 published continuously and the daily candle's open is the first print after midnight). **Rule for any feature: the value known at
 00:00 UTC of day d is the OPEN of day d's candle; a registration reads `open` and nothing else of the row** (R54's validity (1)).
 
+### deribit_options (Deribit's expired options by name, hourly trade bars; the AL1 audit 2026-10-18) — no table yet: `ft2 optsrc audit` → `output/optsrc_audit.md`, raw `data/raw/external/deribit/audit/`
+
+What Deribit's public, keyless API serves of its OPTIONS history (`ft2/optsrc.py`; measured on the work VM 2026-10-18; every number in
+`output/optsrc_audit.json`). `get_instruments?expired=true` lists only the instruments that expired TODAY (64 BTC, 74 ETH options on
+2026-10-18); `get_last_trades_by_*` with `include_old` returns no old option trade (0 for BTC options on 2023-06-01). **What IS served:
+`get_tradingview_chart_data` on an EXPIRED option addressed by its deterministic name** (`BTC-2JUN23-27250-C`: currency, the expiry as
+day-without-zero + month + two-digit year, the strike, C/P; daily expiries settle at 08:00 UTC) — hourly OHLCV bars, trade-based
+(`volume` in contracts, `cost` in the base currency; a bar without a trade carries the last price; 0.35 s a call). Probed one
+at-the-money daily-expiry call and put per half-year and at each fold's first day: **served from 2020-05-01 on BTC (18 of 20 probe days)
+and 2020-07-01 on ETH (17 of 20) — nothing for 2019-07 and 2020-01 (HTTP 400: no such instrument; the daily expiries did not exist) —
+every fold's first day served.** On the probe days 61 % (BTC) / 56 % (ETH) of a leg's 24 bars hold a trade; the 00:00 bar holds a trade on
+both legs on 10 of 18 (BTC) / 4 of 17 (ETH) days, so the price at a day's open is the LAST TRADE before it as often as a trade in the hour,
+and a stale leg shows (ETH 2025-01-01: the call 0.040 against the put 0.0135 at the money) — any read must check put–call parity against
+the perpetual's price and skip the day when it fails. The straddle's 00:00 price, median 1.98 % (BTC) / 2.60 % (ETH) of spot (a 32-hour
+option: 00:00 of d to 08:00 of d + 1). Also served: the perpetual's 1-minute and hourly bars back to 2021 at least (the spot at 00:00 and
+the settlement window). **No quote is in this history: the spread at the touch comes from Tardis's free days (below), the live book
+(today: BTC's next-day straddle bid 0.0099 / ask 0.0112 BTC — the spread 13 bps of spot, 12 % of the mid; ETH 0.0175 / 0.0195 — 20 bps,
+11 %) and Binance's 2023 end-of-hour file.** Fees (the instrument record, and Deribit's fee article found by search, not fetched):
+options maker and taker 0.03 % of the underlying a contract, capped at 12.5 % of the premium; the delivery fee 0.015 % is a third-party
+figure, unconfirmed; perpetuals 1.5 / 3.5 bps. The DVOL FUTURES (`BTCDVOL_USDC-<expiry>`, USDC-settled, monthly since 2023-09 by
+Tardis's symbol list) are not a venue: the API lists the live one only (created 2026-09-23: 257 contracts in 25 days, open interest 151,
+the book 37.4 / 39.9 — a 6.5 % spread).
+
+### tardis (Tardis.dev — Deribit's full history, paid; the first day of each month free; the AL1 audit 2026-10-18) — no table yet; raw `data/raw/external/tardis/`
+
+The coverage API (`api.tardis.dev/v1/exchanges/deribit`, keyless) lists Deribit since 2019-03-30: 556,894 symbols, 118,251 BTC and
+122,057 ETH options by the year they start (BTC 2023 19,444, 2024 24,476), the option data types trades, quotes, book snapshots (5 / 25),
+`options_chain` (the exchange's ticker per instrument: bid / ask / mark with their IVs, the underlying, the greeks — the columns measured
+on 2023-06-01), incremental L2, liquidations, book ticker; 50 DVOL-futures symbols from 2023-09-20. **The CSV files
+(`datasets.tardis.dev/v1/deribit/<type>/<yyyy>/<mm>/<dd>/<SYMBOL>.csv.gz`) are served WITHOUT A KEY for the first day of each month**
+— measured 2026-10-18: 2023-05-01, 2023-06-01 and 2024-08-01 answer 200 for every type; 2023-05-15 and 2023-06-02 answer 401 "For
+unauthorized requests, only historical CSV market datasets for the first day of each month are available". 41 such days lie inside
+F1–F5 (16 in F1+F2). Sizes (MB, gz): the whole market's `options_chain OPTIONS` 1,311 (2023-05-01), 1,210 (2023-06-01), 4,503
+(2024-08-01); `quotes OPTIONS` 65; `trades OPTIONS` 0.24; `book_snapshot_5 OPTIONS` 176; **one instrument's `quotes` 0.26, its chain
+0.87** (BTC-2JUN23-27250-C on 2023-06-01: 21,639 quote updates in the day, 1,859 in hour 0; the first after 00:00 bid 0.009 / ask 0.010 —
+the at-the-money straddle that minute 0.0095 / 0.0105 a leg: 20 bps of spot wide, 10 % of the mid). **The free tier has a DAILY transfer
+limit and a file counts against it on REQUEST**: the VM's first audit asked for ≈ 75 whole-market files (≈ 50 GB in all) closed after
+their headers and got HTTP 429 "This account has reached its data transfer limit", retry after 86,287 s — a read on the free days must
+fetch per-instrument files only (a one-day straddle's two legs ≈ 0.5 MB a day). Price list (tardis.dev/#pricing,
+docs.tardis.dev/faq/billing-and-subscriptions, 2026-10-18, a hand copy): the Options plan (Deribit's options among others) Academic
+350 / Solo 700 / Professional 1,000 / Business 3,000 USD a month; MONTHLY billing serves 4 months of history, YEARLY 4 years (5 on
+invoicing) — so F1+F2's 2023 → 2024 days need a yearly Solo (8,400 USD) or a yearly Academic (4,200; a university e-mail, CSV only); no
+single exchange, no date range, no one-off purchase, no discount, no refund; a free trial of one month on 10 days of data (20 GB).
+
+### binance_options (Binance's own options market — the archive and the live book; the AL1 audit 2026-10-18) — no table yet; raw `data/raw/external/binance_options/`
+
+`data.binance.vision/data/option/daily/` holds two kinds and nothing else. **`EOHSummary/<UNDERLYING>/`** — per option and HOUR the
+end-of-hour open / high / low / close, volume, **best bid and ask with their sizes and IVs**, mark and mark IV, the greeks, open interest
+(26 columns; 6,046 rows, 272 instruments on 2023-07-17 for BTC): **BTCUSDT and ETHUSDT 2023-05-18 → 2023-10-23 only** (147 files each, 12
+days missing inside), BNB, DOGE, XRP thinner; the archive stops there. At hour 00 of 2023-07-17 the next-day at-the-money straddle
+(BTC-230718-30000) was 465 / 535 USDT — a spread of 14 % of the mid, 23 bps of spot, with 2.4 contracts at the touch. **`BVOLIndex/`** —
+the exchange's implied volatility index, one row a SECOND, BTC and ETH 2023-06-20 → 2026-10-17 (1,190 files each, 26 days missing inside,
+≈ 530 MB a name): a second implied beside DVOL, not a quote. The live market (`eapi.binance.com`, 1,566 options on 8 underlyings,
+USDT-quoted) on 2026-10-18: BTC's next-day at-the-money straddle 865 / 875 USDT — **1.2 bps of spot, 1.1 % of the mid**; ETH 47.6 / 48.8 —
+5 bps, 2.5 %: an order of magnitude tighter than Deribit's touch the same minute, with no public history to say since when. Tardis lists
+`binance-european-options` from 2023-06-15 under the same plans and free days.
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
