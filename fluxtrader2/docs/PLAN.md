@@ -1316,7 +1316,7 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
-**Decision AE (2026-10-18) — after R50 (0 of 12 CLEAR: BTC's last hour per name is the plain hourly reversal again — lead_1h CLEARS AS THE PLAIN REVERSAL at 1h / 4h on both universes and adds nothing to rev_1h (u_Δ −3.2 … +1.4); bx_1h CLOSED at every horizon on both universes; stage 2 not run, F3+F4 unread for BTC's hour; described: the high-beta names give back after a BTC fall and not after a rise). What next; decision AD's order said "AD1, then AD2; AD3 as a half-day described row whenever convenient".**
+**Decision AE (2026-10-18) — after R50 (0 of 12 CLEAR: BTC's last hour per name is the plain hourly reversal again — lead_1h CLEARS AS THE PLAIN REVERSAL at 1h / 4h on both universes and adds nothing to rev_1h (u_Δ −3.2 … +1.4); bx_1h CLOSED at every horizon on both universes; stage 2 not run, F3+F4 unread for BTC's hour; described: the high-beta names give back after a BTC fall and not after a rise). What next; decision AD's order said "AD1, then AD2; AD3 as a half-day described row whenever convenient". DECIDED 2026-10-18, Vadim's "Ok AE1": the calendar check passed — the point-in-time unlock table is in hand on the work VM (`data/unlock_asof.parquet`, 81 Wayback snapshots; `events.promised`: 36 + 54 events on F1+F2's members, 58 + 20 on F3+F4's) — and token unlocks on the members REGISTERED as R51 (§8) before any code was written and before any bar was read against an unlock: the week INTO a promised cliff and the 1 / 3 / 7 days AFTER it against the block's members, two-sided, a family of four; the null every whole-day shift of the event dates; stage 1 F1+F2, stage 2 F3+F4 only for the rows that clear; a confirmation licenses an avoid / side row in the next priced registration and a described R17 column, not a rule of its own (F5 has 5 events). AE2–AE4 stand.**
 *Where P8 stands.* Four reads since decision AA, none a finding: the state's mechanism (R47), the pre-history (R48), the time of day (R49), BTC's
 hour per name (R50). The cross-sectional facts in hand are the ones R20–R37 left: the hourly reversal (0.02–0.03 at 1h, a tenth of its cost), the
 book's slow lean, the level–drift link, the index's last hour, the trend's long side, the 12-week cross-section on 2023's members — none money.
@@ -7206,6 +7206,107 @@ Result:        **STAGE 1 READ 2026-10-18 (the chain on the work VM 05:08:44 → 
                this registration. F3+F4 stay unread for BTC's hour. In plain words: BTC's last hour is in every alt within the hour; what is
                left in the cross-section is the names' own hourly bounce, which R37 measured and which does not pay. What follows is decision AE
                (P8), Vadim's.**
+
+### R51 — token unlocks on the members: what a name does against its peers over the week INTO a promised cliff and over the 1, 3 and 7 days AFTER it. Stage 1 on F1+F2's promised events, stage 2 on F3+F4's for the rows that clear, once (registered 2026-10-18 on Vadim's "Ok AE1" (P8 decision AE), before any code was written and before any bar was read against an unlock; stage 1 read —; stage 2 read —)
+Question:      Decision AA's AA3 (Y4 / §9 #8), decision AE's AE1. A token unlock is a block of a token held back for the team, investors or a
+               treasury that becomes sellable on a published date — known weeks ahead, per name, and about exactly the young names the
+               screener holds. The one hypothesis in the record whose mechanism is a KNOWN supply shock on a KNOWN date, which no
+               cross-sectional read can see. Two questions, no direction fixed (R28's rule: nothing measured here has chosen one): (a) INTO —
+               does the name move against its peers over the week before the cliff (holders selling ahead of the supply, or buying the dip
+               others sell); (b) AFTER — over the 1, 3 and 7 days after it (the released tokens sold, or the overhang lifted). The source
+               audit of 2026-10-05 (DATA.md `unlock_asof`) fixed the known-at rule this read obeys to the letter: an unlock is used as the
+               LAST archived page at least 7 days before it dated it (`events.promised`), never from today's file, which is re-drawn as it
+               ages (38–46 % of what a 2023–25 page dated is not in today's file as dated).
+Events:        the point-in-time table, frozen BEFORE any price is read: `events.promised` on the cliff days of the 81 Wayback snapshots of
+               defillama.com/unlocks (`data/unlock_asof.parquet`, aligned to today's ids; a protocol's cliffs on one UTC day one event; size ≥
+               0.1 % of the maximum supply — the inventory's dust line), joined by ticker to the members WHILE THEY ARE MEMBERS (the 30 days of
+               the block holding the day; `events.in_blocks`): stage 1 the F1+F2 members (`ft2/screen_members.csv`), stage 2 the F3+F4
+               members (`ft2/screen_members_f34.csv`). One event per (perpetual, day). Written by `scripts/r51_unlocks.py select` on the work
+               VM to `output/audit/r51_unlocks/events_f12.csv` and `events_f34.csv`, frozen as `ft2/unlocks_f12.csv` and `ft2/unlocks_f34.csv`
+               (perp, ticker, pid, name, day, pct_max, tokens, recipients, asof, lead_days, fold, today = same / amount / not as dated against
+               today's schedule) and committed before the first bar is loaded for this read. Expected from the inventory: 36 + 54 = 90 events
+               on F1+F2 (22 names, the ten with the most holding nine in ten), 58 + 20 = 78 on F3+F4 (F4's 20 are the ones the 30-day pages
+               reach); F5's 5 are too few for anything and are not read. A 2026-10-05 fingerprint of the two parquet files (rows, md5) is
+               written into validity. The twelve are not read (seven have a schedule; the twelve are not members and were walked by R14 over
+               these days — a different question, not this one).
+Entry:         per event the cliff day D (UTC midnight, the day the page dated). AFTER: the decision bar is the one closing at D 00:00 UTC,
+               the position entered one bar later (00:05, the harness's latency), held 288 / 864 / 2,016 bars (1 / 3 / 7 days). INTO: the
+               decision bar closes at D − 7 d 00:00 UTC, entered one bar later, held 2,016 bars — the exit at D 00:05, the entry at or after
+               the page that promised the event (asof ≤ D − 7 d by construction: a validity line). An event whose D − 7 d bar is before the
+               stage's first scored instant or whose D + 7 d exit is not before its end is dropped and counted, the same events at every row.
+Label:         per event and row, bps of the position's size at entry, R28's `listing.label_at` (= `horizon.labels`' second number: exit ÷
+               entry − 1 minus the funding a long pays on the position's value): a = the name's own; b = the mean of the same over the block's
+               members that have both prices, the name itself left out (`listing.excess`); y = a − b — what a LONG earns against its peers;
+               a sold position earns −y, so one number says both sides.
+Family:        four rows, two-sided: into_7d, after_1d, after_3d, after_7d; M_r = the mean of y over the events. Nothing fitted, no threshold.
+Null:          every admissible WHOLE-DAY shift of the event dates, the same k for every event (R26's / R50's form: the calendar structure of
+               the events — their clustering in a few names, their months — kept, their link to the cliff broken): the day moved circularly
+               within the stage's window [first scored day, last day whose D + 7 d exit fits), the name and the block's benchmark taken at
+               the shifted day; admissible if |k| ≥ 15 days (7 into + 7 after + 1) — on F1+F2 ≈ 486 − 8 days of window → ≈ 448 shifts, the
+               exact count written. A shift on which fewer than 90 % of the events have a label (the name not yet listed at the shifted
+               day) is dropped and counted. centre_r = the mean of M*_r over the shifts, se_r = their sd, M_c = M − centre, u = M_c / se;
+               per shift the largest |u*| over the FOUR rows → the family-wise p. Beside, deciding nothing: R28's moving-block bootstrap over
+               calendar weeks (6-week blocks, 10,000 draws, seed 51) and the plain se.
+Bar:           B = 46 bps — R28's: twice a member's taker round trip (≈ 23 bps at 10,000 USDT, DATA.md). The members have cost rows (unlike
+               R28's first days), so the priced money of a position is described through the harness beside the family (`backtest.price`,
+               `costwide`'s proxy and its double).
+Validity:      read first, or the stage is void (exit 2): STAGE 1 — (1) the frozen list reproduces from the parquet files at run time (the
+               same rows, days and sizes; the files' fingerprint equal to the registration's); (2) point-in-time: every event's `asof` ≤ D − 7 d
+               00:00 UTC and its lead written (min, median); (3) known-at and identity on made-up bars BEFORE the real ones: a planted fall of
+               the name against its peers after the event is recovered on the after rows with the sign and NOT on the into row, a planted fall
+               into the event the reverse; the module's label equals `horizon.labels` at the same cells to 1e-9 on the made-up market and the
+               real one, and the harness's gross + funding of a long; (4) coverage: y exists for ≥ 95 % of the events at every row, every
+               event's name with a close on ≥ 95 % of the 5m bars from D − 7 d to D + 7 d; (5) b the mean of ≥ 40 members at every event and
+               row; (6) the shift count as written and ≥ 90 % of the events labelled on every kept shift, the dropped shifts counted. STAGE 2 —
+               the same on F3+F4's list, and (7) the order: stage 1's files (`stage1.json`) on disk before any F3+F4 bar is loaded, the cleared
+               rows and their signs read from that file.
+Folds read:    stage 1 F1+F2 — the members' bars (read by R18–R26, R37, R41, R50 for other questions; by no read around an unlock). Stage 2
+               F3+F4 — the members' bars by block (R44, R25, R29 for other questions), read ONCE for this family, only for the rows that cleared
+               and only if one did; spent for unlocks afterwards whatever the verdict. F5 is not read (5 events). The guard is not involved (an
+               audit, no walk); the registration IS the guard — written here.
+Gate:          STAGE 1, per row: **CLEARS** if |M_c| > B AND |u| ≥ 2 AND the family-wise p ≤ 0.05 AND M_c has the same sign on F1's and F2's
+               events AND the trimmed M_c (the three largest and three smallest y left out) keeps the sign and stays beyond B. **CLOSED** if
+               |M_c| + 1.96 se < B. **NOT DETECTABLE** otherwise, with its MDE (2.8 se). ≥ 1 CLEARS → stage 2 runs in the same chain on the
+               cleared rows, the sign fixed. STAGE 2, per cleared row, one-sided: CLEARS if u ≥ 2 with the fixed sign AND the family-wise p ≤
+               0.05 over the cleared set AND the trimmed M_c keeps the sign; **CONFIRMED** if any cleared row clears there, else **NOT
+               CONFIRMED** with each row's sub-verdict (REFUTED if the interval lies wholly on the other side of half the stage-1 M_c; NOT
+               DETECTABLE if |M_c| < MDE; NOT CLEAR otherwise); **NOTHING TO CONFIRM** if stage 1 cleared nothing. What a confirmation licenses,
+               fixed here: a confirmed row is a FACT about the members around a promised unlock; it licenses (i) a pre-registered AVOID / SIDE
+               row in the next priced registration on the members (do not buy a name in its unlock week, or sell it, by the confirmed row),
+               written before that read; (ii) a described column on P7's ledger at R17 (R14's trades in a name's unlock week) — and NOT a
+               priced rule of its own: F5 has 5 promised events, no fold is left on which one could be read. Nothing on the serve path; no
+               variant on these events under this registration (no other entry hour, hold, benchmark, size cut, recipient cut, name cut or
+               side-specific re-read).
+Power:         written from the record before any number. The members' move against their peers has a mean |move| of ≈ 245 bps a day (R50's
+               break-even line) → sd ≈ 350 bps at 1 d, ≈ 600 at 3 d, ≈ 900 at 7 d, a long tail (young names). On 90 events, if independent:
+               se ≈ 37 / 63 / 95 bps at 1 / 3 / 7 d, the into row ≈ 95 → MDE ≈ 100 / 180 / 270 bps. The events cluster (ten names hold nine
+               in ten, each about once a month): the shift null's se will be larger, perhaps 1.3–1.5×. CLOSED is out of reach everywhere
+               (needs se < 23); the read can find a drift of 1 % at a day or 3 % at a week or say NOT DETECTABLE. Stage 2 on 78 events: a
+               cleared row of 300 bps confirms with power ≈ 0.7 at se ≈ 110.
+Expectation:   validity PASS; 86–90 events eligible on F1+F2 (the first days of F1 and the last week of F2 cut a few), 70–78 on F3+F4; b from
+               55–59 members. The into row NEGATIVE — the published record on unlocks says holders sell ahead of large cliffs — M_c −100 …
+               −300 bps, the likeliest verdict NOT DETECTABLE (half the time), CLEARS on the sold side one time in three; the after rows within
+               ±150 bps, NOT DETECTABLE (the overhang lifted at a day, a drift either way at a week; CLEARS one in six over the three). Nothing
+               clears at all about 55 %; stage 2 CONFIRMED one time in eight. Described: the ≥ 1 % events carry whatever is there (the
+               0.1–1 % ones are near zero); the events today's file no longer dates as promised (13 + 13 on F1+F2) look like the rest —
+               what the trader believed is what moved the price, if anything did.
+Described:     decides nothing. Per row: the median, the share of events with y < 0, the quantiles, the trimmed mean; a and b apart; funding's
+               part of a; M_c per fold and per calendar quarter; by size (≥ 1 % of the maximum supply against 0.1–1 %); by what today's schedule
+               says of the event (same / amount / not as dated); by recipient (team / investors against the rest, where the page names one);
+               by S90 at D (R45's state from `output/backtest/r47_mech/daily.parquet`) and by the day of the week; the ten names with the most
+               events and M_c without the three largest holders; the money of a SOLD after_7d position and a SOLD into_7d position through the
+               harness as a taker (`costwide`'s proxy and its double; the name's own legs, no benchmark). Reference rows, no verdict: y against
+               BTCUSDT instead of the members; a alone; the after rows entered a day later (D + 1 d 00:00); the week BEFORE the into week
+               (D − 14 d → D − 7 d, a control at the same names); the same four rows on the events today's file dates that the snapshots did not
+               promise (the hindsight set: 70 + 96 − 90 on F1+F2 — what a read from today's file would have seen, shown to say why it is not
+               read as the family).
+Files:         `scripts/r51_unlocks.py` (select | stage1 | stage2) → `output/audit/r51_unlocks/{events_f12.csv, events_f34.csv, stage1.md,
+               stage1.json, validity.json, rows.csv, shifts.parquet, events_labelled.csv, described.md}` and, if run, `{stage2.md, stage2.json,
+               validity_f34.json, rows_f34.csv, shifts_f34.parquet}`; `scripts/r51_chain.sh` (stage 1, then stage 2 only on a clear, the poweroff
+               trap; on the work VM — the members' klines, costs and the snapshot files live there); tests `tests/test_p8_unlocks.py` on
+               made-up bars (the point-in-time table from made-up snapshots, the planted fall into and after, the label identity, the shift
+               null's centre on a null world, the gate).
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
