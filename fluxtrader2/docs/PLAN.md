@@ -1359,6 +1359,11 @@ the same one. Each item below was checked against the record before it was writt
 Recommended: AK2 now (registered and run on the free data this week), AK3 beside it if Vadim wants a quick shot at the members;
 AK1 is done above; AK4 and AK5 wait on AK2. Needed from Vadim: the pick (AK2 / AK3 / both), and for AK2 the scope word — a
 variance product on Deribit is a new venue and a new product for this project.
+**DECIDED 2026-10-18, Vadim's "AK2": REGISTERED as R54 (§8) the same day, before any DVOL value was fetched and before any code —
+the candle-built realised-vol forecast against Deribit's DVOL in forecasting BTC's and ETH's realised volatility at 1 and 7 days on
+F1+F2, a family of four, the gate "alive / not detectable / closed" per row; the variance product itself (venue, fees, option prices)
+is the NEXT registration if a row is alive, with the budget and the scope Vadim's then. AK3 stays open beside it.**
+
 
 **Decision AJ (2026-10-18) — after R53 (0 of 4 CLEAR: the members' own ridge NOT DETECTABLE at 1d, CLOSED at 4h; the twelve under
 the fifth model NOT DETECTABLE; none of the ridge's twelve inputs carries a linear IC on the members' cells; U7 closed by measurement;
@@ -7779,6 +7784,72 @@ Result:        **Read 2026-10-18 (the block registered in aa3ce6b before any cod
                as not detectable with an upper bound of 0.007 against R14's 0.033 on the twelve; F3+F4's 216 members stay unread for any
                candle model. Per the registration: no variant, no learner (AI6 needed a row at least REAL; none is, and the inputs carry
                nothing linear on these cells), the serve path untouched. Decision AJ follows.
+
+### R54 — magnitude against implied: does P2's realised-volatility forecast add to Deribit's implied volatility index in forecasting BTC's and ETH's realised volatility over the next 1 and 7 days? (registered 2026-10-18 on Vadim's "AK2" (P8 decision AK), before any DVOL value was fetched and before any code was written; read —)
+Question:      P2 #1 is the one finding of this project with power: how much a price will move is predictable out of sample (R² 16 % at
+               15m, 11 % at 4h, 5 % at 1d) while which way is not. Within the perpetuals' frame that is only a multiplier. The product that
+               pays for a magnitude forecast is variance — options, or Deribit's DVOL futures — on the three names Deribit lists (BTC, ETH,
+               SOL). Before any paid data, one audit on free data decides whether the line is alive at all: the market already publishes
+               its own magnitude forecast, Deribit's implied volatility index (DVOL, the 30-day implied vol in annualised %, daily since
+               2021-03-24 for BTC). Does the candle-built realised-vol forecast carry anything BEYOND it about the realised volatility of
+               the next day and the next week? If it does not, the frame closes without buying a single option quote; if it does, the next
+               question is the variance product's cost, not its signal.
+Data:          (1) DVOL — `ft2 dvol fetch|ingest|inventory` (`ft2/dvol.py`): Deribit's public, keyless JSON-RPC endpoint
+               `public/get_volatility_index_data` (currency, start/end ms, resolution 1D → candles [ts, open, high, low, close], 100 a call,
+               paginated by `continuation`), for BTC, ETH and SOL from 2021-01-01 to the fetch day; raw under `data/raw/external/deribit/
+               dvol_<CUR>_1D_<YYYYMMDD>.json` (a dated copy per fetch), ingested to `data/dvol.parquet`: `(currency, day) → open, high, low,
+               close`; the inventory writes the extent per currency, the gaps, the range, and a DATA.md row before the audit reads it. The
+               VALUE KNOWN AT 00:00 UTC of day d is the OPEN of day d's candle (Deribit's day is UTC; the row's ts 00:00); the audit reads
+               `open` and nothing else of the row. (2) The 5-minute candles of BTCUSDT and ETHUSDT (the collector's, with the archive's
+               klines under them from 2019-12-31 — `ceiling.panel(..., start=2021-01-01)`), for the target and the candle features. Nothing
+               else; no option quote, no fee table.
+Target:        y_h(d) = log RV_h(d), the realised volatility of the h days from 00:00 of day d: RV = √(365/h × Σ r²) × 100 in annualised %,
+               r the 5-minute log returns of the close over [d, d + h), h ∈ {1, 7}; a day with fewer than 95 % of its 288 bars is not a
+               target day and not inside another's window (dropped and counted).
+Features:      at 00:00 of day d, from bars strictly before d: the candle set C = { log RV_1 (day d − 1), log RV_7 (d − 7 … d − 1),
+               log RV_30 (d − 30 … d − 1), dvs = log(dollar volume of d − 1 / its mean over d − 30 … d − 1) } — the HAR ladder of
+               realised volatility plus P2's dollar-volume surprise (P2 #3: the two inputs that carry IC ≈ 0.2 for |move|); the implied
+               set I = { log DVOL_open(d) }. Fixed here; no other feature, lag or transform.
+Models:        per name and horizon, three ordinary least-squares fits WITH an intercept (a level is the right prior for volatility):
+               I alone, C alone, I + C — refitted every 30 days on every row whose target window ended before the block's first day
+               (the harness's rule, R7), the rows accruing from 2021-03-24 (DVOL's first day; the pre-history and F0 are training rows,
+               never scored); scored on F1+F2's whole days. Out-of-sample R² on the scored days = 1 − Σ(y − ŷ)² / Σ(y − ȳ_scored)²; the
+               per-day squared-error loss of each model.
+Statistic:     per name × horizon the LOSS DIFFERENCE L_I − L_{I+C} per scored day (positive: the candles improve on the implied), its mean
+               with a Newey–West se over days (lags h + 1), t = mean / se; ΔR² = that mean / the scored days' mean total variance (the
+               same number in R² units); per fold beside. The reverse, L_C − L_{I+C} (what the implied adds to the candles), described
+               with the same statistic, no verdict. Also described: each model's R² per fold; the I + C coefficients at the last refit;
+               the variance risk premium as context — the mean of log DVOL_open(d) − log RV_30(d) over the scored days; SOL's rows if its
+               DVOL covers F1+F2 (outside the family, no verdict).
+Family:        FOUR rows — BTC and ETH × 1 and 7 days — of "the candles beyond the implied"; the one-sided bar for four at 5 %: t ≥ 2.24.
+Validity:      read first, or the run is void and the cause found before any number: (1) DVOL present on ≥ 99 % of the scored days of each
+               name, every value in [10, 300], no duplicate day, the row's ts at 00:00 UTC; the feature is the OPEN (a test plants a
+               post-midnight value in `close` and shows the forecast unchanged); (2) the scored days whole (dropped days counted and ≤ 2 %
+               of F1+F2); (3) causal: the features at d recomputed on the panel cut at d identical, and a planted series in the tests;
+               (4) every refit's rows have target windows ended before the block's first day; (5) the folds by `folds.bounds` with the
+               embargo; (6) the target recomputed from the candles in the test equals the formula to 1e-9.
+Folds read:    F1+F2 (exploration) on BTC and ETH; FP and F0 as training rows only; nothing from F3–F5; no backtest, no guard.
+Gate:          per family row: THE LINE IS ALIVE on that row if t ≥ 2.24 AND ΔR² ≥ 0.02 AND the loss difference is positive in F1 and in
+               F2; CLOSED if ΔR² + 1.96 × (se / mean total variance) < 0.02; else NOT DETECTABLE with its MDE (2.8 se). Any row alive →
+               the frame is OPEN and the next registration is the variance product's COST (Deribit's fee schedule, the option spread, a
+               delta-hedged straddle's realised PnL from the forecast's sign against the implied), which needs option prices the project
+               does not hold — a source audit first (Deribit's public trade history, Tardis), and the budget Vadim's call. No row alive →
+               the magnitude frame is CLOSED for a product; P2 #1's multiplier stays what it is. No variant on these days under this
+               registration: no other feature, horizon, learner, name, or fit window; a 30-day horizon is NOT read (sixteen months hold
+               16 non-overlapping months — no power).
+Expectation:   written before any value is fetched. At 1 day: R² of I alone 0.35 … 0.55, C alone 0.45 … 0.65 (the HAR ladder beats the
+               30-day implied at a day in the literature), ΔR² of C beyond I +0.05 … +0.20 with t 3 … 6 on both names — ALIVE the
+               likeliest at 1d; the reverse +0.00 … +0.03. At 7 days the implied catches up: ΔR² 0 … +0.08, t 0 … 3 — NOT DETECTABLE or
+               ALIVE; the reverse larger than at 1d. The variance risk premium positive, +0.1 … +0.3 in log units (the implied above the
+               realised on average). Validity PASS, under 1 % of days dropped. The named likeliest verdict: 2 of 4 alive (the 1d rows),
+               the 7d rows not detectable — the frame OPEN, with the honest note written now that a one-day volatility edge is the harder
+               one to monetise through options (the tenor and the daily gamma costs), so the 7d rows are the ones a product would need.
+               Power: ≈ 489 scored days a name at 1d; at 7d the overlapping windows leave ≈ 70 independent weeks a name — MDE in ΔR²
+               ≈ 0.05 … 0.08 there, so a small 7d gain is not detectable on F1+F2 and is not refuted by "not detectable".
+Commands:      on the work VM — `ft2 dvol fetch && ft2 dvol ingest && ft2 dvol inventory` (minutes; the DATA.md row written from the
+               inventory before the audit), then `ft2 magvol --holds 1 7` → output/magvol/f12/magvol.md, rows.csv, loss.csv, coef.csv,
+               validity.json → `vm.sh pull`.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
