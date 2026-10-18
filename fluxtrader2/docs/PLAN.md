@@ -1316,7 +1316,7 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
-**Decision AD (2026-10-18) — after R49 (NOTHING TO CONFIRM: no hour of the day changes R14's forecast skill detectably on 330,775 seen cells, the pre-named settlement contrast a quarter of its MDE on both halves; R46's money hint does not travel). What next; decision AC's order said "AC1, then AC2; AC3–AC5 as Vadim's taste".**
+**Decision AD (2026-10-18) — after R49 (NOTHING TO CONFIRM: no hour of the day changes R14's forecast skill detectably on 330,775 seen cells, the pre-named settlement contrast a quarter of its MDE on both halves; R46's money hint does not travel). What next; decision AC's order said "AC1, then AC2; AC3–AC5 as Vadim's taste". DECIDED 2026-10-18, Vadim's "AD1": BTC's last hour per name REGISTERED as R50 (§8) before any code was written and before any bar was read against BTC's hour — R26's frame, two features (the name's lag behind BTC's hour and BTC's hour through the name's beta) × three horizons × two universes, stage 1 on F1+F2, stage 2 on F3+F4 only for the cells that clear, inside the same chain; the plain reversal the reference every lead row must beat (R37). AD2–AD4 stand.**
 *Where P8 stands.* Three reads on R14's saved cells and trades since decision AA — the state's mechanism (R47, the forecast's switch on seen bars),
 the pre-history (R48, the switch not there), the time of day (R49, nothing) — and the picture of R14 is settled for what the data in hand can say:
 a forecast real at IC 0.03–0.07 on four samples, its money the long side's and inside noise after costs, its skill not keyed to the hour and keyed
@@ -7023,6 +7023,105 @@ Result:        **READ 2026-10-18 (the chain on the work VM 03:11:58 → 03:12:59
                successor may carry (the sessions line above is the form). No variant of R14 on any fold, nothing on the serve path, no second read of
                these cells by their hour. In plain words: R14's forecast is as good at 4 in the morning as at 4 in the afternoon, on 2,312 days of
                bars; R46's "better trades at the settlement hours" was 195 trades of noise. What follows is decision AD (P8), Vadim's.**
+
+### R50 — BTC's last hour as per-name information: does a name that lagged BTC's hour catch up against its peers over the next 1h / 4h / 1d, and does BTC's hour carry on through the high-beta names? Stage 1 on F1+F2 (the members and the twelve), stage 2 on F3+F4 for the cells that clear, once (registered 2026-10-18 on Vadim's "AD1" (P8 decision AD), before any code was written and before any crypto bar was read against BTC's hour; stage 1 read —; stage 2 read —)
+Question:      Decision AA's AA4 (Y6 / U4), decision AD's AD1. R26 read the US index as per-name information through each name's beta and found
+               nothing (the index's move is in crypto within minutes). BTC is the crypto market's own index, traded round the clock on the same
+               venue, and every alt is quoted against it by every desk: when BTC moves in an hour, the alts move with it — but not all at once
+               and not all by their beta. Two questions on the hour just closed, per name and against its peers: (a) CATCH-UP — a name that
+               moved LESS than its beta to BTC said it should have (it lagged) moves toward BTC's lead over the next hours; (b) CARRY-ON — BTC's
+               hour continues through the high-beta names (or reverses in them, R26's "beta after an index rise" lesson). The plain
+               cross-sectional hourly reversal (R37: a name's own last hour reversed, IC +0.02 … +0.03 at 1h, u 7–11, far under its cost) is the
+               known fact that (a) contains and must BEAT: a catch-up row that does not add to the plain reversal is the plain reversal again.
+Cells:         STAGE 1, exploration — R26's / R37's frame exactly. OUTSIDE: R18's cells (`audit.frame` on `output/backtest/r18_transferbook_1d`:
+               the hourly decision bars of F1+F2, embargoed, the block's 60 members, the twelve left out; 694,501 cells, 188 names, 485 days) as the
+               membership mask; the labels at 12, 48 and 288 bars where they exist. THE TWELVE: `audit_index.cells_twelve` on the same grid
+               (125,462 cells, 11 names; checked against R14's decisions as R26 did); BTC's own cells are NOT cells here (its beta is 1 and its
+               lag 0 by definition — NaN, as R27's beta_btc), so 10 names a bar. The same grid, the same shifts for both universes.
+               STAGE 2, confirmation, once and only for the cells that clear stage 1: the F3+F4 MEMBERS — `ft2/screen_members_f34.csv` (216
+               names, the 60 most-traded outside the twelve in each 30-day block; R44's universe) on the hourly grid of F3+F4, embargoed, a cell
+               where the name is a member of the block containing t and has a close at t, a σ_1w and the label; the twelve on F3+F4 by
+               `cells_twelve(folds F3 F4)` checked against `r16_ridgebook_1d_ho12_f34`'s forecast. The klines, funding and costs of both are in
+               hand (R25, R29, R44). If NO cell clears stage 1, stage 2 is not run and F3+F4 stays unread for this family.
+Labels:        z_h = the log move from the close one bar after t to the close h bars later over σ_1w·√h, clipped at ±5 (`horizon.run`'s Zh; the
+               frame R20–R37 used), at h = 12 (1h), 48 (4h), 288 (1d).
+Ingredients:   per name and hourly bar t, known strictly before t (the candles closed at t; nothing of BTC's or the name's bar after t):
+                 r_1h       = the name's log return over the last 12 bars, bps; b_1h = BTC's (BTCUSDT's 5m close from the same market; the
+                              SAME number on both universes at every bar — a validity line)
+                 beta_btc   = the least-squares slope of the name's hourly log return on BTC's over the 720 hours before t (≥ 200 finite pairs,
+                              else NaN; R27's `_beta`; every hour counts — BTC never closes)
+                 σ_1h       = σ_1w·√12, the name's trailing-week 5m sd scaled to the hour (`_derive`'s sig 1w)
+Family:        two features, in the name's own hourly sigmas (the statistic ranks across names; the unit fixes which names are compared on
+               what):
+                 lead_1h = (beta_btc × b_1h − r_1h) / σ_1h     what BTC's hour said the name should have moved minus what it did: POSITIVE when
+                                                              the name lagged a rise or out-fell a fall; the CATCH-UP hypothesis is a POSITIVE IC
+                 bx_1h   = beta_btc × b_1h / σ_1h              BTC's hour through the name's beta; two-sided (carry-on +, over-reaction −)
+               × three horizons (12, 48, 288) × two universes = 12 numbers. Nothing fitted, no threshold.
+Reference:     described, no verdict, the same frame and shifts: rev_1h = −r_1h / σ_1h (R37's plain reversal, the fact lead_1h must beat);
+               beta_btc alone (a level); and per lead_1h cell the PAIRED difference against rev_1h on the same cells under the same shifts,
+               Δ = IC_c(lead_1h) − IC_c(rev_1h), u_Δ from the shifts' sd of the difference — whether BTC's term ADDS to the plain reversal.
+               Described beside: lead_1h and bx_1h split by the sign of b_1h (after a BTC rise / fall); lead_1h by S90 (R45's state at the
+               cell's day, from `output/backtest/r47_mech/daily.parquet`) and by the four sessions (R49's: 00–08, 08–13, 13–21, 21–24 UTC);
+               R18's forecast on the outside cells and R14's held-out on the twelve (the reference rows R26 printed); the IC at which trading the
+               top tenth breaks even per horizon and universe (P2 #7's formula on the cells' own |move| and the members' 18 / the twelve's 12.3
+               bps taker round trip; the maker 8.4 at 4h and 1d on the twelve).
+Statistic:     R20's / R26's / R37's (`ceiling._ic_xs`): per bar the Spearman correlation across the names present (≥ 5 with feature and label),
+               averaged per day; IC = the mean over days; the HAC t over days (2 lags) reported beside, deciding nothing.
+Null:          R26's: the labels move by a whole number of days, the same for every name, bar, horizon and universe (a circular shift of the
+               scored days; time of day kept — the features have one), EVERY admissible shift; admissible if no day receives the labels of a day
+               nearer than gap = 30 (beta's window) + 1 (the longest hold, 1d) + 1 = 32 days: 485 days → 422 shifts on F1+F2 (R26's count).
+               centre = the mean of the IC over the shifts, se = their sd, IC_c = IC − centre, u = IC_c / se; per shift the largest |u| of the
+               TWELVE → the family-wise p. Stage 2 the same on F3+F4's own days (≈ 485 days → ≈ 422 shifts), the family the cleared cells only.
+Validity:      read first, or the stage is void (exit 2): STAGE 1 — (1) OUTSIDE: `audit.frame`'s own (R18's 288-bar labels equal the run's on
+               every cell to 1e-6, every cell on the grid); THE TWELVE: `cells_twelve`'s against R14's run; (2) whole days of 24 bars and 485 −
+               2·32 + 1 = 422 shifts; (3) known-at: a test on made-up bars before the real ones — a planted lag that closes over the next hour is
+               recovered with the registered sign, the same feature shifted one bar into the future reads nothing on the planted world's labels,
+               and beta against numpy's lstsq; on the real bars BTC's b_1h is the same number on both universes at every bar (max |Δ| 0); (4)
+               coverage: lead_1h and bx_1h on ≥ 95 % of the cells of each universe (beta's 200 hours cost a young member its first nine days).
+               STAGE 2 — (5) the members' cells: every cell's name a member of its block in the frozen csv, no cell outside F3+F4, ≥ 5 names at
+               every bar read, the count written; the twelve's cells against `r16_ridgebook_1d_ho12_f34`'s forecast (`cells_twelve`'s check);
+               whole days and the shift count; (6) the order: stage 1's files on disk (`stage1.json`) before any F3+F4 bar is loaded, and the
+               cleared set read from that file.
+Folds read:    stage 1 F1+F2 (exploration; cells read before for other features — for BTC's hour a new question). Stage 2 F3+F4 — the members'
+               F3+F4 bars (read by R25, R29 and R44 for other questions) and the twelve's F3+F4 (read by R16 / R42 for the ridge, by R45 / R47 / R49
+               on saved forecasts) — read ONCE for this family, only for the cells that cleared, and only if one did; spent for BTC's hour
+               afterwards whatever the verdict. The guard is not involved (an audit, not a walk); the registration IS the guard — written here.
+Gate:          STAGE 1, per feature × horizon × universe: **CLEARS** if |u| ≥ 2 AND family-wise p ≤ 0.05 AND the IC_c has one sign in F1 and F2
+               AND, for lead_1h, IC_c > 0 (the catch-up sign) AND u_Δ ≥ 2 against rev_1h on the same cells and shifts (it ADDS); for bx_1h
+               either sign, the sign then FIXED for stage 2. lead_1h with every condition but ADDS → **CLEARS AS THE PLAIN REVERSAL** —
+               recorded, the known sub-cost fact restated, NOT carried to stage 2; lead_1h with IC_c < 0 and the rest → **CLEARS WITH THE
+               OPPOSITE SIGN** (the laggard keeps lagging) — recorded as a fact, not carried (the registered hypothesis is catch-up). **CLOSED**
+               if |IC_c| + 1.96 se < 0.02 (R20's bar). **NOT DETECTABLE** otherwise, with its MDE (2.8 se). ≥ 1 CLEARS → stage 2 runs in the same
+               chain on those cells. STAGE 2, per cleared cell with its fixed sign: CLEARS if u ≥ 2 one-sided AND family-wise p ≤ 0.05 over the
+               cleared set AND (lead_1h) u_Δ ≥ 2 again; the verdict **CONFIRMED** if any cleared cell clears there, else **NOT CONFIRMED** with
+               each cell's sub-verdict (REFUTED if the interval lies wholly on the other side of half the stage-1 IC_c; NOT DETECTABLE if |IC_c|
+               < MDE; NOT CLEAR otherwise); **NOTHING TO CONFIRM** if stage 1 cleared nothing (stage 2 not run). What a confirmation licenses,
+               fixed here: a confirmed cell is a FACT about the mechanism at its horizon; it licenses ONE priced registration only if its
+               confirmed IC_c is at or above its horizon's money bar on that universe — 1d: 0.033 members / 0.029 twelve (R20 D3, P2 #7); 4h:
+               ≈ 0.045 members / 0.034 twelve as a maker; 1h: ≈ 0.14 / ≈ 0.10 — the smallest rule that trades the cleared feature at the cleared
+               horizon through the harness, on F5 only (F1–F4 read), written before its read; below the bar it is a described fact a successor
+               may carry as a pre-registered term. Nothing on the serve path; no variant on these cells (no other window, lag, unit, horizon,
+               hour-of-day cut or name cut) under this registration.
+Power:         written from the record before any number: R37's se on these cells — the members' plain reversal u 11 at IC 0.020 (1h) → se ≈
+               0.0018, at 4h ≈ 0.0018; the twelve's u 8.5 at 0.028 → se ≈ 0.0033; at 1d R26's 0.005–0.010 (members) and 0.010–0.015 (twelve).
+               MDE ≈ 0.005 at 1h / 4h on the members, ≈ 0.009 on the twelve; at 1d 0.015–0.03 / 0.03–0.04. The family bar over twelve ≈ |u|
+               2.7–3.0. The ADDS test is the hard one: Δ's se is smaller than either row's (the two share the cells), ≈ 0.001–0.002 at 1h. The
+               money bars sit far above the MDEs at 1h (0.14 against 0.005) and near them at 1d: a stage-1 clear at 1h is a mechanism, not
+               money; at 1d a clear at the MDE is under the bar. Stage 2 on F3+F4: the same se (the same days and about the same names), a cleared
+               1h cell of IC_c 0.01 confirms with power ≈ 0.9; a 1d cell at 0.02 about 0.5.
+Expectation:   validity PASS; coverage 97–99 %. lead_1h at 1h on both universes positive and far over u 2 (it contains the plain reversal) —
+               CLEARS AS THE PLAIN REVERSAL likelier than CLEARS: the ADDS test u_Δ ≥ 2 one time in three (BTC's hour is in every alt within
+               minutes, R26's lesson; what lags BTC is the thin names' stale prints, which is the reversal already). At 4h half of it; at 1d
+               nothing. bx_1h inside ±0.005 at 1h and 4h (CLOSED on the members, NOT DETECTABLE on the twelve); a small NEGATIVE at 1d possible
+               (R26's beta after an index rise was −0.021: the high-beta names give back) — a two-sided clear one time in five. Likeliest table:
+               two lead cells CLEARS AS THE PLAIN REVERSAL (members 1h, 4h), the twelve's lead at 1h the same or NOT DETECTABLE, bx rows CLOSED /
+               NOT DETECTABLE; stage 2 not run, F3+F4 unread. A CLEARS proper one time in three; CONFIRMED one in six. The split by BTC's sign and
+               the state / sessions rows described, nothing quotable expected.
+Files:         `scripts/r50_btchour.py` → `output/audit/r50_btchour/{stage1.md, stage1.json, features.csv, reference.csv, shifts.parquet,
+               validity.json}` and, if run, `{stage2.md, stage2.json, features_f34.csv, shifts_f34.parquet}`; `scripts/r50_chain.sh` (stage 1,
+               then stage 2 only on a clear, the poweroff trap; on the work VM — the members' klines live there); tests
+               `tests/test_p8_btchour.py` on made-up bars (the planted lag, the known-at shift, beta against lstsq, the members-by-block cells).
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
