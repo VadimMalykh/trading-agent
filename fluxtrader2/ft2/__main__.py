@@ -107,6 +107,12 @@ def cmd_universe(args):
     universe.select(args.n or universe.SELECT_N)
 
 
+def cmd_membersbook(args):
+    from . import membersbook
+    print(membersbook.read(args.run, args.draws))
+    print(f"wrote {membersbook.OUT / args.run}/")
+
+
 def cmd_screen(args):
     from . import screen
     from .universe import HINDSIGHT_CSV
@@ -233,7 +239,7 @@ def _param(s: str):
 def cmd_backtest(args):
     from . import backtest
     syms = _symbols(args)
-    if args.strategy == "transferbook":                       # the training names first, in their fixed order; then the names to score
+    if args.strategy in ("transferbook", "membersbook"):      # the twelve first, in their fixed order; then the members (R18: trained on; R53: scored only)
         syms = [*PAIRS, *(s for s in syms if s not in PAIRS)]
     r = backtest.run(backtest.get_strategy(args.strategy, dict(args.param or [])), syms, args.folds, args.execs, args.draws,
                      args.taker_bps, args.maker_bps, args.latency, args.refit_days, args.registration, args.name, args.seed, args.cost_mult, args.reexecute)
@@ -329,6 +335,9 @@ def main(argv=None):
     sc.add_argument("--reference", default=None, help="the run whose forecasts the training names must reproduce (default: R13 B's)")
     sc.add_argument("--draws", type=int, default=200)
     sc.add_argument("--hindsight", action="store_true", help="R19: read the one hindsight screen (ft2/screen_hindsight.csv) instead of R18's four → output/screen/<run>_hindsight/")
+    mb = sub.add_parser("membersbook", help="P8 (R53): the read of a `membersbook` run — the members' own ridge held out among them, the twelve by the full model → output/membersbook/<run>/read.md (see ft2/membersbook.py)")
+    mb.add_argument("run", help="the run's directory name under output/backtest/")
+    mb.add_argument("--draws", type=int, default=200, help="the flip null of the split books")
     au = sub.add_parser("audit", help="P8 (R20): what funding, premium, open interest, long/short ratios and taker flow say about a member's next day, on the cells of a "
                                       "`transferbook` run → output/audit/<run>/audit.md (see ft2/audit.py)")
     au.add_argument("run", help="the run's directory name under output/backtest/")
@@ -393,7 +402,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
