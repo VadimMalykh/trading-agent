@@ -46,13 +46,17 @@ def test_a_days_funding_is_the_sum_of_its_settlements_and_the_annualisation():
     M = m.membership(days, pd.Index(NAMES), None)
     tab = m.by_group(F, M, {"all": np.ones(len(days), bool)}, "t")
     r = tab.iloc[0]
-    assert abs(r["mean_bps_day"] - (3.0 - 1.5 + 9.0 + 0.0) / 4) < 1e-9 and abs(r["mean_pct_yr"] - r["mean_bps_day"] * 365 / 100) < 1e-9
-    assert abs(r["share_days_negative"] - 0.25) < 1e-9 and r["names"] == 4
+    assert abs(r["mean_bps_day"] - (3.0 - 1.5 + 9.0) / 3) < 1e-9 and abs(r["mean_pct_yr"] - r["mean_bps_day"] * 365 / 100) < 1e-9     # DD never settled: not a funded name
+    assert abs(r["share_days_negative"] - 1 / 3) < 1e-9 and r["names"] == 3 and F["DDUSDT"].isna().all()
     # membership by blocks: a name is counted only inside its blocks
     blocks = pd.DataFrame({"block": [D("2023-05-01"), D("2023-05-31")], "symbol": ["AAUSDT", "BBUSDT"]})
     Mb = m.membership(days, pd.Index(NAMES), blocks)
     assert Mb.loc[D("2023-05-15"), "AAUSDT"] and not Mb.loc[D("2023-05-31"), "AAUSDT"] and Mb.loc[D("2023-06-15"), "BBUSDT"] and not Mb.loc[D("2023-05-15"), "BBUSDT"]
     assert not Mb["CCUSDT"].any()
+    # a name listed later: its days before the first settlement are NaN, not zeros
+    C2 = _costs(m, days, {"AAUSDT": 1.0, "BBUSDT": 0.5, "CCUSDT": 3.0, "DDUSDT": 0.0}, jump={"DDUSDT": (D("2023-06-15"), 2.0)})
+    F2 = m.daily_funding(C2, days, pd.Index(NAMES))
+    assert F2["DDUSDT"].loc[:D("2023-06-14")].isna().all() and np.allclose(F2["DDUSDT"].loc[D("2023-06-15"):], 6.0) and F2["AAUSDT"].notna().all()
 
 
 def test_the_top_quartile_is_picked_from_the_days_before_the_block_only():

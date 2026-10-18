@@ -54,7 +54,9 @@ def daily_funding(C: bt.Costs, days: pd.DatetimeIndex, cols) -> pd.DataFrame:
     have been loaded on the index `days − 1 ns` plus one more such instant (events stamped < d)."""
     cum = C.fundcum
     assert cum.shape[0] == len(days) + 1, "daily_funding: load the costs on cost_index(days)"
-    return pd.DataFrame(np.diff(cum, axis=0), index=days, columns=cols)
+    F = pd.DataFrame(np.diff(cum, axis=0), index=days, columns=cols)
+    live = F.ne(0).cummax()                                       # a name is funded from its first settlement on (before it the series is 0, not a day the short earned nothing)
+    return F.where(live)
 
 
 def cost_index(days: pd.DatetimeIndex) -> pd.DatetimeIndex:
