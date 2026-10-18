@@ -1316,6 +1316,50 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
+**Decision AK (2026-10-18) — the research queue after R53, on Vadim's "Yes, I want to research" (decision AJ). WRITTEN 2026-10-18 —
+OPEN, Vadim's pick; AK1 answered here.** The state of the frame, in one paragraph: within Binance USDⓈ-M perpetuals, 5-minute bars, a
+10,000-USDT unit and VIP 0 fees, 53 registered reads over five weeks have covered every source in hand (§9) at every horizon from 15
+minutes to 12 weeks on the twelve, the forty, the 188 and the 216; direction has a ceiling of ≈ 0.03 IC on the twelve and ≈ 0 elsewhere
+(R12/R13, R18, R53 from three sides), the twelve are too few names for a refitted model to beat its own shuffle null (R16, R42), and
+the one thing that is predictable with power is MAGNITUDE (P2 #1: out-of-sample R² 16 % at 15m, 11 % at 4h, 5 % at 1d), which this
+frame can only use as a multiplier. What remains is therefore mostly a change of frame — product, venue, bet type — not another row in
+the same one. Each item below was checked against the record before it was written.
+- **(AK1) the fee lever, answered by arithmetic (described; no run).** P1 named the fee tier "the single biggest lever on cost". With
+  R39's measured maker round trip (8.43 bps median: 2 × 2.0 fee + 2 × ≈ 2.2 adverse drift after the fill) and R53's mean |move| on the
+  twelve's cells (122 bps at 4h, 312 at 1d), P2 #7's bar ic_needed = rt / (1.755 × 1.2533 × |move|) reads: at 4h, maker VIP 0 0.031,
+  zero maker fee 0.016 (rt 4.4, the adverse-selection floor the fee cannot remove), taker 13.7 bps 0.051; at 1d, maker 0.012, zero
+  fee 0.006, taker 0.019. Against the found numbers: the 4h rank reversal 0.023 (R37; a per-bar rank fact, R53) and R38's held-out 4h
+  ridge 0.013 sit under or at the ZERO-fee bar; R14's 1d 0.033 is above the VIP 0 maker bar already and fails its confirmation on the
+  shuffle null (R16, R42), which no fee changes. A venue with a maker rebate is the zero-fee row. (The published Binance schedule as
+  recalled, to be verified on the fee page before any use: VIP 1 at 15 M USDT of 30-day volume 1.6 / 4.0 bps, VIP 4 1.0 / 3.0, VIP 9
+  0 / 1.7; BNB −10 %.) In plain words: fees are half the maker round trip and the fill's adverse drift is the other half; cutting the fee
+  to nothing moves the 4h bar from 0.031 to 0.016, and nothing found at 4h clears 0.016 as a linear forecast. **The fee / venue frame
+  is CLOSED by arithmetic for the effects in hand**; it reopens only with an effect at 4h above 0.016 or at 1d that survives its null.
+- **(AK2) magnitude against implied — recommended.** The only predictability with power is how much a price will move. The product
+  that pays for that is variance (options, or Deribit's DVOL futures), which exists for BTC, ETH and SOL. Before any paid data, one
+  described audit on FREE data decides whether the line is alive: does P2's magnitude forecast (the candle features that carry
+  IC ≈ 0.2 for |move|: dollar-volume surprise, the short/long volatility ratio) ADD to Deribit's implied volatility index (DVOL, daily,
+  free, BTC from 2021-03-24 — confirmed today from the public endpoint `get_volatility_index_data`, 100 rows a call with continuation;
+  ETH and SOL to be inventoried) in forecasting BTC's and ETH's REALISED volatility over the next 1 and 7 days? Gate written at
+  registration: the partial R² of the candle forecast beyond DVOL, its t by fold, and the sign; if it adds nothing, the magnitude frame
+  closes and no options data is bought; if it adds, the next question is the variance product's cost (Deribit's fees, the options'
+  spread), with the data (Tardis, paid) Vadim's budget call. A day; a DVOL fetch under §9's rule (`data/raw/external/deribit/`,
+  `ft2 ingest`, a DATA.md row). Prior: modest — DVOL is the market's forecast and hard to beat at a day; at a week and in the vol-of-vol
+  regimes it is beaten in the literature by realised-vol models, which is what P2's features are.
+- **(AK3) the weekly reversal on the members, one shot.** R43's reference row — outside its family, deciding nothing — read mom_1w at a
+  one-week hold on the 188 members at −58 bps a leg (IC −0.048, HAC t −3.3, u −1.34 under the shift null), three times the 17.6 cost
+  with the wrong-way sign of a reversal. F1+F2's cells have been seen for it, so the clean test is one shot on F3+F4's 216 members
+  (unspent for THIS question; R44 and R52 spent them for momentum and unlocks), sign negative fixed, R43's frame (`horizon --mom` at
+  hold 2016 on `screen_members_f34.csv`; a small code change). Power, stated now: se ≈ 43 a leg → MDE ≈ 120 against −58, so the likeliest
+  read is NOT DETECTABLE; a clear needs the F3+F4 effect to be twice F1+F2's. Minutes on the VM; a day of code and registration.
+- **(AK4) a non-linear learner on the twelve, held out as R14 at 1d.** P2 #5's depth-2 boosted tree never beat the ridge on learning
+  curves; the twelve's row count is the limit, not the learner. Low prior; a day.
+- **(AK5) paid data** — Tardis (cross-venue L2 and trades, Deribit options history): only after AK2 says the magnitude line is alive, or
+  for a question this record does not yet hold; Vadim's budget call, not a technical one.
+Recommended: AK2 now (registered and run on the free data this week), AK3 beside it if Vadim wants a quick shot at the members;
+AK1 is done above; AK4 and AK5 wait on AK2. Needed from Vadim: the pick (AK2 / AK3 / both), and for AK2 the scope word — a
+variance product on Deribit is a new venue and a new product for this project.
+
 **Decision AJ (2026-10-18) — after R53 (0 of 4 CLEAR: the members' own ridge NOT DETECTABLE at 1d, CLOSED at 4h; the twelve under
 the fifth model NOT DETECTABLE; none of the ridge's twelve inputs carries a linear IC on the members' cells; U7 closed by measurement;
 stage 2 not run). WRITTEN 2026-10-18 — OPEN, Vadim's.** What the read settled: the last unmeasured candle-model question on the members
@@ -1334,6 +1378,14 @@ diagnostic on the twelve's cells). The options:
 - **(AJ4) the twelve's 1d book under the members' model** (net −127 a trade on 505 trades, flip p 1.00, the shorts in F2) — a described
   fact; eleven names and the tails; not a signal to invert, nothing to register.
 Recommended: AJ1. Needed from Vadim: the pick (AJ1 / AJ3; AJ2 is closed by the gate, AJ4 is a fact).
+**DECIDED 2026-10-18 on Vadim's "Yes, I want to research. If we wait for every hypothesis couple of months, we likely won't find
+anything by the end of my life. Why we need that out of sample before we try anything else? How it cannot be done in parallel?" —
+AJ1 STRUCK. Research continues in parallel with P7, always: P7 is the forward test of one model on the serve path and blocks nothing;
+the work VM, the exploration folds and the registration protocol are free for every other question at the same time. The only
+sequential constraints of this project are (i) F3–F5 are spent by a question once each and (ii) the served model is untouched. "Wait"
+is not a mode of this project and is not offered again (the recommendation had been Claude's conservatism, not a rule). Decision AK
+written the same day with the research queue; AK1 (the fee lever) answered in it by arithmetic.**
+
 
 **Decision AI (2026-10-18) — AH6 opened by Vadim's "Let's continue with AH6 (or what's closest next experiment)" (2026-10-18). The line is Claude's to name; what the record has not touched is read out below, the closest experiment is picked and registered the same day as R53 — the members' own ridge. The mode is "build, with P7's clock running" (the serve-status check on or after 2026-11-01; R17 earliest 2027-03-25; nothing on the serve path changes).**
 *The check that precedes the pick.* Decision AH's three untouched directions and two sources looked at today, each against the record:
