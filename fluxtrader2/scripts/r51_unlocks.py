@@ -1,4 +1,4 @@
-"""R51 (PLAN §8): token unlocks on the members — what a name does against the block's members over the week INTO a promised cliff
+"""R51 and R52 (PLAN §8): token unlocks on the members — what a name does against the block's members over the week INTO a promised cliff
 and over the 1 / 3 / 7 days AFTER it. R28's label (listing.label_at / excess), the known-at rule of the source audit (events.promised:
 an unlock as the LAST archived page at least 7 days before it dated it), the null every admissible whole-day shift of the event dates.
 
@@ -6,6 +6,8 @@ select     the point-in-time event lists from data/unlock_asof.parquet on the me
            r51_unlocks/events_{f12,f34}.csv, frozen as ft2/unlocks_{f12,f34}.csv and committed BEFORE any bar is loaded. No price is read.
 stage1     F1+F2: the four rows, the shift null, the gate; described; → stage1.md / stage1.json / validity.json / rows.csv / shifts.parquet.
 stage2     F3+F4, only for the rows stage 1 cleared (stage1.json's `cleared`), one-sided with the signs fixed; else the NOTHING TO CONFIRM stub.
+confirm    R52 (PLAN §8, decision AF's AF1): the into_7d row ALONE on F3+F4's frozen events, one-sided, the sign fixed NEGATIVE by the
+           registration (not by any file); R51's stage1.json supplies the REFUTED reference only → output/audit/r52_confirm/.
 
 The script changes nothing of the registration; the registration is the guard.
 """
@@ -505,18 +507,13 @@ def _report(s: dict, tab: pd.DataFrame, D: dict, fold_names) -> list[str]:
             show(D["hindsight"]) if len(D["hindsight"]) else "(none in the window)", "\n"]
 
 
-def stage2(frozen: Path | str = FROZEN["f34"], members_csv: Path | str = MEMBERS["f34"], fold_names=STAGE_FOLDS["f34"], out: Path = OUT, taker_bps: float = TAKER_BPS,
-           min_members: int = MIN_MEMBERS, min_events: int = MIN_EVENTS, market=None, tables=None, window=None) -> dict:
+def _confirm(registration: str, tag: str, frozen, members_csv, fold_names, out: Path, signs: dict, fact: dict, extra: dict, title: str, name: str,
+             taker_bps: float, min_members: int, min_events: int, market, tables, window, state_daily: Path | None = None, describe: bool = False, draws: int = DRAWS) -> dict:
+    """The one-sided read on a stage's events with the rows and signs FIXED by the caller (R51's stage 2 from stage1.json's cleared set;
+    R52's confirm from its registration). `fact[row]` is the earlier M_c the REFUTED line is measured against. The other rows are
+    computed on the same events and shifts and described, no verdict."""
     t0 = time.time()
-    s1 = json.loads((out / "stage1.json").read_text())                 # (7) stage 1 on disk first; the cleared rows read from it
-    cleared = s1["cleared"]
-    if not cleared:
-        res = {"registration": "R51", "stage": 2, "verdict": "NOTHING TO CONFIRM", "confirmed": False, "stage1_written": s1["written"], "rows": [], "note": "stage 1 cleared nothing; F3+F4 not read for unlocks"}
-        (out / "stage2.json").write_text(json.dumps(res, indent=1))
-        (out / "stage2.md").write_text("# R51 — stage 2\n\n**NOTHING TO CONFIRM** — stage 1 cleared nothing; F3+F4 was not read for unlocks.\n")
-        print("R51 stage 2: NOTHING TO CONFIRM (stage 1 cleared nothing); F3+F4 not read", flush=True)
-        return res
-    tag = "f34"
+    out.mkdir(parents=True, exist_ok=True)
     fold_names = folds.order(fold_names)
     ev = load_events(frozen)
     fin, asof = tables if tables is not None else (pd.read_parquet(events.UNLOCKS), pd.read_parquet(events.ASOF))
@@ -531,34 +528,96 @@ def stage2(frozen: Path | str = FROZEN["f34"], members_csv: Path | str = MEMBERS
     null = shift_null(fr, E["perp"].to_numpy(), pd.DatetimeIndex(E["day"]), ks)
     ident = _identity(fr, E, real, taker_bps)
     v = validity(tag, ev, E, fr, real, null, ks, repro, fp, ident, min_members, min_events)
-    v.update({"stage": 2, "cleared_from_stage1": cleared, "stage1_written": s1["written"]})
-    (out / "validity_f34.json").write_text(json.dumps(v, indent=1, default=str))
-    head = _head(f"stage 2, the confirmation on {'+'.join(fold_names)}'s promised events, the rows stage 1 cleared", fr, E, ks, v)
+    v["registration"] = registration
+    v.update(extra)
+    (out / f"validity_{tag}.json").write_text(json.dumps(v, indent=1, default=str))
+    ev.to_csv(out / f"events_labelled_{tag}.csv", index=False)
+    head = _head(title, fr, E, ks, v)
     if v["status"] != "PASS":
-        (out / "stage2.md").write_text("\n".join(head + ["\n**The read is VOID: nothing was computed on F3+F4.**\n"]))
-        print("validity FAIL — stage 2 is void", flush=True)
+        (out / f"{name}.md").write_text("\n".join(head + [f"\n**The read is VOID: nothing was computed on {'+'.join(fold_names)}.**\n"]))
+        print(f"validity FAIL — {registration} {name} is void", flush=True)
         raise SystemExit(2)
-    signs = {c["row"]: int(c["sign"]) for c in cleared}
     tab = family(real, null, E["fold"].to_numpy(), fold_names, signs=signs)
-    fact = {c["row"]: float(c["M_c"]) for c in cleared}
-    tab["verdict"] = [verdict2(r["M_c"], r["se"], r["p_family"], signs[r["row"]], fact[r["row"]], r["signed_u"], r["M_trim_c"]) if r["row"] in signs else "(not cleared in stage 1 — described)" for r in tab.to_dict("records")]
-    confirmed = bool((tab[tab["row"].isin(signs)]["verdict"] == "CLEARS").any())
-    res = {"registration": "R51", "stage": 2, "verdict": "CONFIRMED" if confirmed else "NOT CONFIRMED", "confirmed": confirmed, "validity": v, "rows": tab.to_dict("records"), "cleared_from_stage1": cleared,
-           "stage1_written": s1["written"], "seconds": round(time.time() - t0, 1), "written": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())}
-    (out / "stage2.json").write_text(json.dumps(res, indent=1, default=str))
-    tab.to_csv(out / "rows_f34.csv", index=False)
-    null.to_parquet(out / "shifts_f34.parquet", index=False)
-    main = ["row", "n", "M", "centre", "M_c", "se", "signed_u", "MDE", "lower", "upper", "M_trim_c", *[f"M_c_{f}" for f in fold_names], "p_single", "p_family", "verdict"]
-    (out / "stage2.md").write_text("\n".join(head + [f"\n## Verdict: **{res['verdict']}** — the cleared rows one-sided with the signs fixed from stage 1 ({json.dumps(signs)})\n", tab[main].round(2).to_markdown(index=False), "\n"]))
-    print(f"R51 stage 2: {res['verdict']}; wrote {out}/", flush=True)
+    tab["verdict"] = [verdict2(r["M_c"], r["se"], r["p_family"], signs[r["row"]], fact.get(r["row"], np.nan), r["signed_u"], r["M_trim_c"]) if r["row"] in signs else "(not in the family — described)" for r in tab.to_dict("records")]
+    tab["bar"] = BAR_BPS
+    wk, W = listing.weeks(pd.DatetimeIndex(E["day"]))
+    bs = listing.bootstrap(np.column_stack([real[n]["y"] for n in ROWS]), wk, W, draws=draws, seed=SEED)
+    tab["se_bootstrap_weeks"], tab["se_plain"], tab["p_fw_bootstrap"] = bs["se"], bs["se_plain"], bs["p_fw"]
+    sub = {r["row"]: r["verdict"] for r in tab.to_dict("records") if r["row"] in signs}
+    confirmed = any(x == "CLEARS" for x in sub.values())
+    res = {"registration": registration, "stage": 2, "verdict": "CONFIRMED" if confirmed else "NOT CONFIRMED", "confirmed": confirmed, "sub_verdicts": sub, "signs": signs, "fact": fact,
+           "validity": v, "rows": tab.to_dict("records"), **extra, "seconds": round(time.time() - t0, 1), "written": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())}
+    body = [f"\n## Verdict: **{res['verdict']}** — {', '.join(f'{k} {v_}' for k, v_ in sub.items())}; one-sided with the signs fixed before the read ({json.dumps(signs)}); "
+            f"the REFUTED reference {json.dumps({k: round(v_, 1) for k, v_ in fact.items()})}\n",
+            tab[["row", "n", "M", "centre", "M_c", "se", "signed_u", "MDE", "lower", "upper", "M_trim_c", *[f"M_c_{f}" for f in fold_names], "p_single", "p_family", "verdict"]].round(2).to_markdown(index=False), "\n",
+            "\n### Described beside (decides nothing): the median, the share below zero, R28's week bootstrap and the plain se\n",
+            tab[["row", "n", "median", "share_below_0", "se_bootstrap_weeks", "se_plain", "p_fw_bootstrap", "shifts_kept"]].round(2).to_markdown(index=False), "\n"]
+    if describe:
+        hind = hindsight_events(fin, asof, memdf, ev)
+        Dd = described(fr, E, real, tab, fold_names, state_daily, taker_bps, hind)
+        res["described"] = {k: (d.to_dict("records") if isinstance(d, pd.DataFrame) else d) for k, d in Dd.items()}
+        body += _report({"cleared": [], "verdicts": {}}, tab, Dd, fold_names)[7:]        # the described tables; the family paragraph above is this read's
+    (out / f"{name}.json").write_text(json.dumps(res, indent=1, default=str))
+    tab.to_csv(out / f"rows_{tag}.csv", index=False)
+    null.to_parquet(out / f"shifts_{tag}.parquet", index=False)
+    for n in ROWS:
+        for k in ("a", "b", "n_b", "y"):
+            E[f"{k}_{n}"] = real[n][k]
+    E.to_csv(out / f"events_labelled_{tag}.csv", index=False)
+    (out / f"{name}.md").write_text("\n".join(head + body))
+    print(f"{registration} {name}: {res['verdict']} ({sub}); wrote {out}/", flush=True)
     return res
+
+
+def stage2(frozen: Path | str = FROZEN["f34"], members_csv: Path | str = MEMBERS["f34"], fold_names=STAGE_FOLDS["f34"], out: Path = OUT, taker_bps: float = TAKER_BPS,
+           min_members: int = MIN_MEMBERS, min_events: int = MIN_EVENTS, market=None, tables=None, window=None) -> dict:
+    s1 = json.loads((out / "stage1.json").read_text())                 # (7) stage 1 on disk first; the cleared rows read from it
+    cleared = s1["cleared"]
+    if not cleared:
+        res = {"registration": "R51", "stage": 2, "verdict": "NOTHING TO CONFIRM", "confirmed": False, "stage1_written": s1["written"], "rows": [], "note": "stage 1 cleared nothing; F3+F4 not read for unlocks"}
+        (out / "stage2.json").write_text(json.dumps(res, indent=1))
+        (out / "stage2.md").write_text("# R51 — stage 2\n\n**NOTHING TO CONFIRM** — stage 1 cleared nothing; F3+F4 was not read for unlocks.\n")
+        print("R51 stage 2: NOTHING TO CONFIRM (stage 1 cleared nothing); F3+F4 not read", flush=True)
+        return res
+    signs = {c["row"]: int(c["sign"]) for c in cleared}
+    fact = {c["row"]: float(c["M_c"]) for c in cleared}
+    return _confirm("R51", "f34", frozen, members_csv, fold_names, out, signs, fact, {"cleared_from_stage1": cleared, "stage1_written": s1["written"]},
+                    f"stage 2, the confirmation on {'+'.join(folds.order(fold_names))}'s promised events, the rows stage 1 cleared", "stage2",
+                    taker_bps, min_members, min_events, market, tables, window)
+
+
+# ---- R52: the into row confirmed once on F3+F4's events, the row and the sign fixed by the registration ---------------------------------
+R52_OUT = Path("output/audit/r52_confirm")
+R52_SIGNS = {"into_7d": -1}                                       # the week INTO a promised cliff, NEGATIVE: the name falls against its peers
+R52_FACT = {"into_7d": -216.12}                                   # R51's M_c on F1+F2's 86 events (stage1.json): the REFUTED line's reference
+R51_STAGE1 = OUT / "stage1.json"
+
+
+def confirm(frozen: Path | str = FROZEN["f34"], members_csv: Path | str = MEMBERS["f34"], fold_names=STAGE_FOLDS["f34"], out: Path = R52_OUT, r51_stage1: Path | None = R51_STAGE1,
+            fact: dict | None = None, state_daily: Path | None = STATE_DAILY, taker_bps: float = TAKER_BPS, min_members: int = MIN_MEMBERS, min_events: int = MIN_EVENTS,
+            market=None, tables=None, window=None, draws: int = DRAWS) -> dict:
+    """R52: one row (into_7d), one-sided, the sign fixed NEGATIVE here — not read from any file. R51's stage1.json, if given, supplies
+    the REFUTED reference only and must hold the registered number (validity (7)); it decides nothing."""
+    ref = {"7_r51_stage1": str(r51_stage1) if r51_stage1 else None}
+    if fact is None:
+        fact = dict(R52_FACT)
+        if r51_stage1 is not None:
+            s1 = json.loads(Path(r51_stage1).read_text())
+            mc = {r["row"]: float(r["M_c"]) for r in s1["rows"]}["into_7d"]
+            ref.update({"7_r51_into_M_c": mc, "7_r51_cleared": s1["cleared"], "7_r51_written": s1["written"], "7_equals_registered": abs(mc - R52_FACT["into_7d"]) < 0.5})
+            if not ref["7_equals_registered"]:
+                raise SystemExit(f"R51's stage1.json holds into_7d M_c {mc:.2f}, the registration {R52_FACT['into_7d']}: fix the registration, not the file")
+            fact = {"into_7d": mc}
+    return _confirm("R52", "f34", frozen, members_csv, fold_names, out, dict(R52_SIGNS), fact, ref,
+                    f"R52 — the week INTO a promised unlock confirmed once on {'+'.join(folds.order(fold_names))}'s promised events, one row, one-sided, the sign fixed negative",
+                    "confirm", taker_bps, min_members, min_events, market, tables, window, state_daily=state_daily, describe=True, draws=draws)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stage", choices=["select", "stage1", "stage2"])
+    ap.add_argument("stage", choices=["select", "stage1", "stage2", "confirm"])
     args = ap.parse_args()
-    {"select": select, "stage1": stage1, "stage2": stage2}[args.stage]()
+    {"select": select, "stage1": stage1, "stage2": stage2, "confirm": confirm}[args.stage]()
 
 
 if __name__ == "__main__":

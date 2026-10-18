@@ -2,12 +2,16 @@
 (an event as the last page at least 7 days before it; a page that did not list the protocol yet promises nothing; a cliff today's file
 moved stays an event with `today` = not as dated; a cliff only today's file has is the hindsight set), the label identity, a planted
 fall into and after the cliff recovered on the right rows by stage 1 and CONFIRMED by stage 2 on fresh events, and a world without the
-plant clearing nothing (stage 2 NOTHING TO CONFIRM without loading a bar). No network, no real bar."""
+plant clearing nothing (stage 2 NOTHING TO CONFIRM without loading a bar); R52's `confirm` (the into row alone, one-sided, the sign fixed
+negative by the registration, no stage1.json read): a planted fall INTO the cliff CONFIRMED, a fall only AFTER it NOT CONFIRMED (the into row
+has nothing), a null world NOT CONFIRMED. No network, no real bar."""
 import importlib.util
+import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from ft2 import backtest as bt
 from ft2 import horizon, listing
@@ -167,6 +171,66 @@ def test_a_world_without_the_plant_clears_nothing_and_stage_2_has_nothing_to_con
     s2 = m.stage2(frozen=tmp_path / "ev.csv", members_csv=tmp_path / "m.csv", fold_names=["F1"], out=out, market=None, tables=None, window=(A, B))   # loads nothing: the stub
     assert s2["verdict"] == "NOTHING TO CONFIRM" and not s2["confirmed"] and not (out / "rows_f34.csv").exists()
     assert "NOTHING TO CONFIRM" in (out / "stage2.md").read_text()
+
+
+def _confirm_world(m, tmp_path, into_bps, after_bps, seed=0):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    fin, asof = _tables()
+    _members(tmp_path / "m.csv")
+    ev = m.promised_events(fin, asof, m.members_df(tmp_path / "m.csv", "f34"))
+    ev.to_csv(tmp_path / "ev34.csv", index=False)
+    M, C = _world({"AAAUSDT": AAA_DAYS, "BBBUSDT": BBB_DAYS}, plant=True, seed=seed, into_bps=into_bps, after_bps=after_bps)
+    out = tmp_path / "r52"
+    r = m.confirm(frozen=tmp_path / "ev34.csv", members_csv=tmp_path / "m.csv", fold_names=["F1"], out=out, r51_stage1=None, state_daily=None, market=(M, C), tables=(fin, asof),
+                  min_members=4, min_events=5, window=(A, B), draws=300)
+    return r, out
+
+
+def test_r52_confirm_reads_the_into_row_alone_with_the_sign_fixed_and_no_stage1_json(tmp_path):
+    m = _module()
+    assert m.R52_SIGNS == {"into_7d": -1} and m.R52_FACT["into_7d"] == -216.12                                                         # the registration's row, sign and reference
+    # a fall INTO the cliff and nothing after: CONFIRMED on the one row; the after rows described, no verdict
+    r, out = _confirm_world(m, tmp_path / "a", into_bps=-2000.0, after_bps=0.0)
+    assert r["registration"] == "R52" and r["verdict"] == "CONFIRMED" and r["confirmed"] and r["signs"] == {"into_7d": -1} and r["fact"] == {"into_7d": -216.12}
+    assert r["validity"]["status"] == "PASS" and r["validity"]["registration"] == "R52" and r["validity"]["7_r51_stage1"] is None and r["validity"]["events_eligible"] == 9
+    tab = pd.DataFrame(r["rows"]).set_index("row")
+    assert tab.loc["into_7d", "verdict"] == "CLEARS" and tab.loc["into_7d", "signed_u"] > 2 and tab.loc["into_7d", "p_family"] <= 0.05 and tab.loc["into_7d", "M_c"] < -1200
+    assert (tab.loc[["after_1d", "after_3d", "after_7d"], "verdict"] == "(not in the family — described)").all() and tab.loc[["after_1d", "after_3d", "after_7d"], "signed_u"].isna().all()
+    assert tab.loc["into_7d", "p_family"] == tab.loc["into_7d", "p_single"]                                                            # one row: the family is the row
+    assert all((out / f).exists() for f in ("confirm.md", "confirm.json", "validity_f34.json", "rows_f34.csv", "shifts_f34.parquet", "events_labelled_f34.csv"))
+    assert not (out / "stage1.json").exists() and not (out / "stage2.json").exists()
+    text = (out / "confirm.md").read_text()
+    assert "CONFIRMED" in text and "R52" in text and "hindsight set" in text and "the money through the harness" in text and "stage 2 RUNS" not in text
+    assert "described" in r and any(x["row"] == "into_7d" and x["side"] == "sold" and x["net"] > 0 for x in r["described"]["money"])
+    # a fall only AFTER the cliff: the into row has nothing to show — NOT CONFIRMED, and the one-sided sign never turns a rise into a confirmation
+    r2, _ = _confirm_world(m, tmp_path / "b", into_bps=0.0, after_bps=-2000.0)
+    assert r2["verdict"] == "NOT CONFIRMED" and not r2["confirmed"] and r2["sub_verdicts"]["into_7d"] in ("NOT DETECTABLE", "NOT CLEAR", "REFUTED")
+    r3, _ = _confirm_world(m, tmp_path / "c", into_bps=+2000.0, after_bps=0.0)                                                       # a RISE into the cliff: the opposite sign
+    t3 = pd.DataFrame(r3["rows"]).set_index("row")
+    assert r3["verdict"] == "NOT CONFIRMED" and t3.loc["into_7d", "signed_u"] < -2 and r3["sub_verdicts"]["into_7d"] == "REFUTED"
+    # a null world: NOT CONFIRMED, the centre near zero
+    r4, _ = _confirm_world(m, tmp_path / "d", into_bps=0.0, after_bps=0.0, seed=7)
+    t4 = pd.DataFrame(r4["rows"]).set_index("row")
+    assert r4["verdict"] == "NOT CONFIRMED" and abs(t4.loc["into_7d", "signed_u"]) < 3.5 and abs(t4.loc["into_7d", "centre"]) < 1.5 * t4.loc["into_7d", "se"]
+
+
+def test_r52_confirm_takes_r51_s_file_as_the_reference_only_and_refuses_another_number(tmp_path):
+    m = _module()
+    good = tmp_path / "s1.json"
+    good.write_text(json.dumps({"rows": [{"row": "into_7d", "M_c": -216.1207}, {"row": "after_1d", "M_c": 22.0}], "cleared": [], "written": "x"}))
+    bad = tmp_path / "s1bad.json"
+    bad.write_text(json.dumps({"rows": [{"row": "into_7d", "M_c": -300.0}], "cleared": [], "written": "x"}))
+    fin, asof = _tables()
+    _members(tmp_path / "m.csv")
+    ev = m.promised_events(fin, asof, m.members_df(tmp_path / "m.csv", "f34"))
+    ev.to_csv(tmp_path / "ev34.csv", index=False)
+    M, C = _world({"AAAUSDT": AAA_DAYS, "BBBUSDT": BBB_DAYS}, plant=True, into_bps=-2000.0, after_bps=0.0)
+    r = m.confirm(frozen=tmp_path / "ev34.csv", members_csv=tmp_path / "m.csv", fold_names=["F1"], out=tmp_path / "r52", r51_stage1=good, state_daily=None, market=(M, C), tables=(fin, asof),
+                  min_members=4, min_events=5, window=(A, B), draws=300)
+    assert r["verdict"] == "CONFIRMED" and r["validity"]["7_equals_registered"] and abs(r["fact"]["into_7d"] + 216.1207) < 1e-9 and r["validity"]["7_r51_cleared"] == []
+    with pytest.raises(SystemExit):
+        m.confirm(frozen=tmp_path / "ev34.csv", members_csv=tmp_path / "m.csv", fold_names=["F1"], out=tmp_path / "r52b", r51_stage1=bad, state_daily=None, market=(M, C), tables=(fin, asof),
+                  min_members=4, min_events=5, window=(A, B), draws=300)
 
 
 def test_the_gates():
