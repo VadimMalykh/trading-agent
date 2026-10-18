@@ -1316,6 +1316,36 @@ under decision O stands with O2 struck:
 Needed from Vadim: the pick. On P1 Claude registers (the window, the disk, the queue model, the statistics, what the number licenses),
 commits, fetches, runs and reads — nothing in money.
 
+**Decision AI (2026-10-18) — AH6 opened by Vadim's "Let's continue with AH6 (or what's closest next experiment)" (2026-10-18). The line is Claude's to name; what the record has not touched is read out below, the closest experiment is picked and registered the same day as R53 — the members' own ridge. The mode is "build, with P7's clock running" (the serve-status check on or after 2026-11-01; R17 earliest 2027-03-25; nothing on the serve path changes).**
+*The check that precedes the pick.* Decision AH's three untouched directions and two sources looked at today, each against the record:
+- **(AI1) — recommended and TAKEN: R53, the members' own ridge — the modelling line.** §0 asks for a model trained on other names. Every
+  read of that model so far was fitted on the twelve (R14 held out among them, IC 0.033; R18 the twelve's model on 188 members: IC +0.0002
+  on 694,501 cells) or on forty names fixed in 2022 (R12 held out 0.0075, t 1.3 — an upper bound of 0.019; R13 in pair 0.009). **A ridge
+  fitted ON the members and held out among them was never read**: decision U's U7 (2026-10-17) closed it by inference from R12/R13 ("no
+  candle signal on the 2022-era names, the members younger still") — and "younger" cuts the other way: R14's money sits on the young names
+  (WLD, SOL, PEPE, AVAX), and R18's `young` top third was the one screen leaning right (+0.0115). A not-demonstrated was written as a refuted;
+  the deliverable is the read, not the inference. The members' panel holds ≈ 700,000 member-cells on F1+F2 — fifteen times the twelve's
+  training rows, se ≈ 0.007 on the pooled IC (R18's), so the read is decisive either way: an upper bound under the 1d maker bar CLOSES U7 by
+  measurement, a clear is §0's model. Two horizons: 1d (R14's) and 4h (where R37's plain reversal is real on these very cells, +0.018 at
+  u 10, under its bar 0.045 — a fitted combination of the trailing returns is the first thing that could lift it). The twelve are scored
+  by the model that never saw them — §0's sentence verbatim — and their book is read apart on their measured tape cost. Confirmation bars
+  exist with power: F3+F4's 216 members (`ft2/screen_members_f34.csv`, ≈ 800,000 cells) have never been read for any candle model. CPU, two
+  runs of a few hours, no fetch, no fold spent at stage 1.
+- **(AI2) the funding RATE's change per name** (AH6's third direction) — R20 read the level per name against the next day: CLOSED with upper
+  bounds 0.008 / 0.017; the change of a closed quantity has the lower prior; a half-day described row at best. Not now.
+- **(AI3) per-name implied volatility** — Deribit lists options on BTC, ETH and SOL only: three names, no breadth; as a state it is one more
+  series on R14's spent trades (AA8). Closed in practice.
+- **(AI4) the tape at a minute for a maker rule** — R39: the fill comes by sweep and is the adverse event; the 15m bar and R41′'s 0.9 bps
+  snap say what a minute holds. A different project's shape. Not proposed.
+- **(AI5) liquidations as a source** — looked for today: Binance's archive has NO liquidation file (`futures/um/daily` holds aggTrades,
+  bookDepth, bookTicker, indexPriceKlines, klines, markPriceKlines, metrics, premiumIndexKlines, trades; `option/daily` holds BVOLIndex and
+  EOHSummary only — BTC / ETH indices); the footprint from `metrics` was R37's read (the plain reversal). Closed as a source.
+- **(AI6) a non-linear learner on the members' cells** (LightGBM is in the image; P2 #5 on the twelve: a depth-2 tree never beat the ridge)
+  — the follow-on to AI1 if a row of R53 is at least REAL; a new registration whose family counts R53's four. Not before.
+- **(AI7) AA7 the vol sort; R50's asymmetry** — standing, low, unchanged. **(AI8) P7 alone** — the wait.
+Recommended: AI1. **DECIDED 2026-10-18 on Vadim's "let's continue with AH6 (or what's closest next experiment)": AI1 — R53 registered the
+same day, before any code (its block in §8). Stage 1 reads F1+F2 (exploration, nothing spent); stage 2 — F3+F4's members, once — needs
+Vadim's go and is behind the stop.** Needed from Vadim: nothing until R53's stage-1 read is in.
 **Decision AH (2026-10-18) — after AA5's row (the hedged carry 3–4 % a year on its capital after stated costs over 2023–26, under 2 % since 2025, the members' 2025 negative; the funding regime is S90's: +12 % against +1 % on the twelve). What next; decision AG's order said "AG1, then AG4 if Vadim wants a new line, else AG5". Vadim's "AH1" 2026-10-18 → VOID the same day, before any fetch: both candidates were already audited and read (R20; DATA.md etf_flows, R27, R30) — see the CORRECTED paragraph; the pick is re-asked. DECIDED 2026-10-18 on the re-asked list, Vadim's "AH1" = AH1′: P7 alone — the wait to R17 with the monthly serve-status check.**
 *Where P8 stands.* The standing list is read out: the unlocks did not travel (R52), the carry is arithmetic with a known answer (AA5), the two
 items left (the vol sort, R50's asymmetry) have no prior above low and no confirmation bars with power. P7's clock runs (serve-status on or
@@ -7550,6 +7580,70 @@ Result:        **READ 2026-10-18 (the chain on the work VM 07:27:34 → 07:32:33
                frame (the page that promised the cliff a week ahead) was obeyed on both reads, so the thing that did not travel is the effect, not the
                bookkeeping. The published record's "holders sell ahead of large cliffs" is, on 160 events of 2023–2025's members, a drift of −1.4 % at
                1.7 sigma — not a fact of this project. What follows is decision AG (P8), Vadim's.**
+
+### R53 — the members' own ridge: P5's forecast layer fitted on the screener's members and held out among them, the twelve scored as names it never saw, at 1d and 4h (registered 2026-10-18 on Vadim's "let's continue with AH6 (or what's closest next experiment)" (P8 decision AI), before any code was written and before any member's cell was fitted on; read —)
+Question:      §0's goal is a model that trades names it was not trained on. Every read of it so far trained on the twelve (R14 held out
+               among them, IC 0.033; R18 the twelve's model on 188 members, IC +0.0002 on 694,501 cells) or on forty names fixed in 2022
+               (R12 held out 0.0075, t 1.3; R13 in pair 0.009). Decision U's U7 closed "a ridge fitted on the members for the members" by
+               inference from R12/R13, never by a read. The members are another population — 188 names chosen point-in-time by volume,
+               2023–24's listings among them, where R14's money sits on the young names — and their member-cells are fifteen times the
+               twelve's training rows. Fitted on them: (A) does the candle ridge carry information on members it never saw, (B) on the
+               twelve, which it never saw at all — at 1d (R14's horizon) and at 4h (R37's plain reversal is real on these cells, +0.018 at
+               u 10, under its bar)? (C) At 1d, does training on the members ADD to training on the twelve, on the same cells (R18's file)?
+Universe:      `--universe screen` with the twelve first: R18's 188 members (`ft2/screen_members.csv`, frozen 2026-09-27) and the twelve
+               (HYPE has no bar in F1+F2 and drops; 199 columns, as R18). The members' bars are `candles_5m_archive` as held (DATA.md).
+               Nothing fetched. The twelve are never a training row and never a peer in a member's relative feature or label mean.
+Strategy:      `ft2/membersbook.py::MembersBook` (`membersbook`; the module docstring is the specification): `forecast.RidgeBook` in every
+               respect not named here — the 12 candle columns (`ceiling.dir_features` + hour sin/cos), the residual label (the gross bps
+               to exit ÷ σ_1w·√hold, clipped ±5, minus the mean over the training peers present at the bar, ≥ 5), grid 12, RidgeCV over
+               `ceiling.ALPHAS` without intercept, refit every 30-day block on all rows whose labels ended before it, min_bps 15, cap 2, the
+               sizing. What differs: (i) a training row is a MEMBER's cell while it is a member of the block the bar falls in (R18's mask) —
+               never a twelve's cell, never a bar outside a name's membership; (ii) the relative features and the label's mean are against
+               the block's members present at the bar (≥ 5), the twelve excluded — the market a members-only host would hold; (iii) the
+               hold-out: four static groups of the members (the sorted member names, every fourth), a member scored by the model fitted
+               without its group; the twelve scored by a FIFTH model fitted on all members' rows (the deployable one); (iv) traded: member
+               cells and the twelve's cells alike at |f| ≥ min_bps, one position per name (the books read apart). Two runs: hold 288 (1d,
+               primary) and hold 48 (4h); `--execs taker maker`, 200 draws each (the shuffle null re-walks the fit, as R14's).
+Cost:          the members on `ft2 costwide`'s pooled candle proxy (it over-prices thin names, R10; R18's traded member cells paid 16.5 bps a
+               round trip as a taker), the twelve on their tape; every money row read as priced and with spread + impact doubled; fees VIP 0.
+               `maker_trade` is not priced (R39 has no constants for the members).
+Read:          `ft2 membersbook <run>` → output/membersbook/<run>/read.md (and csvs). (A) the held-out IC on the members' cells — R18's
+               statistic: `ceiling._ic_pooled` of ẑ with the realised z minus the mean over the members present at the bar (≥ 5), t clustered
+               by day (HAC lags by hold) — pooled, per fold, per group; (B) the same on the twelve's cells (their residual against the
+               twelve present), pooled, per fold, per name; (C) at 1d only: the members' model against R18's forecast on the same member
+               cells (`output/backtest/r18_transferbook_1d/forecast.parquet`, group 0, joined on t × symbol), the day-paired difference
+               and its t; (D) `ic_needed` per universe, horizon and execution from the run's own numbers — P2 #7's formula, the traded cells'
+               mean round trip ÷ (Z_TOP × 1.2533 × the mean |label| in bps) — read beside (A) and (B); (M) the books, members and the twelve
+               apart: taker and maker, net [95 %], hedged net, the flip null (R18's `screen.book`), costs doubled, per fold, long / short.
+Null:          the day-clustered t is the bar for an IC (R14's, R18's); the harness's label-shuffle and flip nulls on the net; the flip
+               null in the split books.
+Validity:      read first, or the run is void and the cause found before any number: (1) the harness's causal check (block 0 of each fold)
+               passes; (2) meta counts zero training rows of the twelve and zero training rows outside a member's blocks; (3) every member
+               cell with a forecast is a block member (the read recomputes R18's mask); (4) the four groups hold 47 names each and no name is
+               in two; (5) the read's label equals `backtest.labels` on every cell (R18's `cells`); (6) at 1d, R18's file holds ≥ 95 % of
+               this run's member cells for (C); (7) the twelve's decisions carry the fifth model (a `group` tag of 9 in forecast.parquet).
+Gate:          stage 1 on F1+F2; the family is FOUR ICs (two universes × two horizons; the one-sided bar for four at 5 %: t ≥ 2.24). Per row:
+               CLEARS — t ≥ 2.24 AND IC ≥ its ic_needed_maker AND both folds' ICs positive; REAL, NOT FUNDED — t ≥ 2.24 and IC under
+               ic_needed_maker (P2 #7's 4h row on the twelve); CLOSED — IC + 1.96·se under ic_needed_maker; else NOT DETECTABLE with the
+               MDE (2.8 se). (M) is read for a row that CLEARS: net > 0, hedged net > 0, flip p ≤ 0.05 as priced → CANDIDATE, and stage 2 is
+               that run once on F3+F4's members (`--universe f34`, `ft2/screen_members_f34.csv`, 216 names, unread for any candle model)
+               with the horizon and the sign fixed — on Vadim's go, behind the stop (`--registration R53`); a CLEARS without money is a
+               described fact and the next question is execution, not a variant. No variant on these cells under this registration: no
+               other feature set, alpha grid, group count, min_bps, hold, universe cut or learner. Not blocked: a non-linear learner on the
+               same cells as a new registration whose family counts these four (decision AI's AI6), only if a row here is at least REAL.
+Expectation:   (A) 1d: IC −0.005 … +0.012, t −1 … +2 (se ≈ 0.007; R12's 0.0075 the prior) — NOT DETECTABLE or CLOSED the likeliest;
+               (B) 1d on the twelve: −0.01 … +0.03 (se ≈ 0.015; R14's own 0.033 is the in-family ceiling); (A) 4h: +0.010 … +0.030,
+               t 2 … 6 (the ridge holds the 1h and 4h returns R37's reversal lives in) under ic_needed ≈ 0.045 taker / ≈ 0.03 maker —
+               REAL, NOT FUNDED the likeliest; (B) 4h: +0.01 … +0.03 (R38's 0.013 held out among the twelve, R37's 0.023). (C) +0.000 …
+               +0.010, t 0 … 1.5. (M) members 1d: gross 0 … +10, net −15 … −5 a trade (R18 −7.9); 4h: gross +2 … +8, net under −10; the
+               twelve's books inside noise. The named likeliest verdict: 0 of 4 CLEAR, the 4h members' row REAL, the 1d members' row with
+               an upper bound under 0.02 — U7 closed by measurement. Cost: CPU on the work VM, two runs of 2–5 h each (the shuffle null
+               re-walks 80 ridges of ≤ 700,000 rows per draw), the reads minutes. Stage 2's power, named now: ≈ 800,000 cells, se ≈ 0.007.
+Commands:      on the work VM — `vm.sh bgsh r53 'python -m ft2 backtest membersbook --universe screen --param hold=288 --execs taker maker
+               --name r53_membersbook_1d & python -m ft2 backtest membersbook --universe screen --param hold=48 --execs taker maker --name
+               r53_membersbook_4h & wait; python -m ft2 membersbook r53_membersbook_1d; python -m ft2 membersbook r53_membersbook_4h'` →
+               `vm.sh pull` → output/membersbook/r53_membersbook_{1d,4h}/read.md.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
