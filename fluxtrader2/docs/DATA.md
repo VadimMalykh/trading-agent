@@ -268,6 +268,26 @@ USDT-quoted) on 2026-10-18: BTC's next-day at-the-money straddle 865 / 875 USDT 
 5 bps, 2.5 %: an order of magnitude tighter than Deribit's touch the same minute, with no public history to say since when. Tardis lists
 `binance-european-options` from 2023-06-15 under the same plans and free days.
 
+### straddle_1d (the one-day at-the-money straddle on BTC and ETH, F1+F2; R55) — `data/straddle_1d.parquet`: `(currency, day) → spot_00, strike, call, put, c_last, p_last, c_last_ts, p_last_ts, c_trades_24h, p_trades_24h, c_open_00, p_open_00, c_traded_00, p_traded_00, settle, settle_bars, parity, covered, skip`; `data/straddle_hedge.parquet`: `(currency, day, i) → ts, price`; `data/straddle_touch.parquet`: `(currency, day, leg) → name, first_ts, bid, ask, spread_med_h0, updates_h0, spot`
+
+`ft2 straddle fetch|quotes|ingest|inventory` (`ft2/straddle.py`; raw one JSON a day a name under `data/raw/external/deribit/straddle/
+<CUR>/`, the free-day quote files under `data/raw/external/tardis/quotes/<day>/`). **Fetched 2026-10-18 on the work VM** from Deribit's
+public chart endpoint (DATA.md `deribit_options`): for each of F1+F2's 489 days and each name the perpetual's 1-minute bars over the 32
+hours from 00:00 (1,920 bars in one call: the spot = the 00:00 bar's open; the hedge's prices = the close of the bar ending at each hour;
+the settlement = the mean close 07:30 → 07:59 of d + 1, the perpetual's TWAP standing in for the index's), and the daily-expiry
+at-the-money call and put (`<CUR>-<d+1>-<K>-C/P`, expiring 08:00 UTC of d + 1, K the served strike nearest the spot) as hourly bars over
+[d − 1, d + 1 08:00). **Every day had a served pair (489 / 489 a name).** The entry price is each leg's LAST TRADE before 00:00 (the close
+of the last hourly bar with volume that ends at or before 00:00): the median age of that trade is under an hour on both names; the
+00:00 bar itself holds a trade on both legs on 323 (BTC) / 292 (ETH) of the days. **Covered** (both legs traded in the 24 hours before,
+|C − P − (S − K) / S| ≤ 0.5 % of spot, ≥ 25 settlement bars, the path whole): **BTC 424 / 489 (87 %; F1 96 %, F2 78 %), ETH 438 / 489
+(90 %; 96 %, 83 %)**; skipped: a leg untraded in the 24 hours 33 / 14, parity 32 / 37, settlement 0, path 0 — F2's thinner months are
+2024's. The straddle at the last trades: median 1.97 % (BTC; p10 – p90 1.25 – 2.95) / 2.15 % (ETH; 1.34 – 3.20) of spot. **The touch**
+(`straddle_touch`, Tardis's free first-of-month days, the two legs' `quotes` files, ≈ 0.3 MB each, fetched from the VM after its daily
+limit reset): the at-the-money straddle's bid–ask at the first quote at or after 00:00 on each of the 16 days a name — **median 20 bps of
+spot on both names** (BTC range 11 – 60, ETH 10 – 35; 7 – 21 % of the straddle's mid; the median spread over hour 0 the same 20). **Rule
+for any read: the entry is the last trade before 00:00 and nothing after it; the settlement is the 07:30 → 07:59 TWAP; a day outside
+`covered` is not a trading day.**
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
