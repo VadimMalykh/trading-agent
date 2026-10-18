@@ -200,6 +200,17 @@ close, 1 of 2 at 5–6 h, and **24 of 24 final from 9 h on**. Rule for any featu
 next calendar day** (12 h after the close); the all-data table is the final value and must not be read earlier. A fetch on
 a holiday or before the US close sees a blank last row (the day in progress), which the parser drops.
 
+### dvol (Deribit's 30-day implied volatility index, daily; P8 R54, §9 #7) — `data/dvol.parquet`: `(currency, day) → open, high, low, close`
+
+Deribit's DVOL — the 30-day implied volatility of the currency's options, annualised %, one daily candle per UTC day — from the public,
+keyless JSON-RPC endpoint `public/get_volatility_index_data` (`ft2 dvol fetch|ingest|inventory`, `ft2/dvol.py`; raw under
+`data/raw/external/deribit/`, a dated JSON per fetch). **Measured 2026-10-18 (`output/dvol_inventory.md`):** BTC and ETH 2021-03-24 →
+2026-10-17, 2,034 days each, no day missing inside, open 32–156 (BTC) and 31–193 (ETH), median 55 / 69; SOL 2022-05-04 → 2022-11-25
+only (206 days; the index stopped) — no fold covered, so SOL is outside every read. F1–F5 covered 100 % for BTC and ETH. The candle's
+`open` equals the previous candle's `close` on 93 % (BTC) / 91 % (ETH) of days (the rest differ in the last decimals: the index is
+published continuously and the daily candle's open is the first print after midnight). **Rule for any feature: the value known at
+00:00 UTC of day d is the OPEN of day d's candle; a registration reads `open` and nothing else of the row** (R54's validity (1)).
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
