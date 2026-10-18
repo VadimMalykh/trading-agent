@@ -76,7 +76,7 @@ def _world(tmp_path, monkeypatch, **kw):
 
 
 def _stage1(m, tmp_path):
-    return m.stage1(run="transfer", pairs=NAMES, members=str(tmp_path / "m.csv"), twelve_run="transfer", jobs=1, out=Path("output/audit/r50_test"), gap=5,
+    return m.stage1(run="transfer", pairs=[BTC, *NAMES], members=str(tmp_path / "m.csv"), twelve_run="transfer", jobs=1, out=Path("output/audit/r50_test"), gap=5,
                     state_daily=None, min_shifts=10)
 
 
@@ -131,6 +131,11 @@ def test_a_planted_lag_clears_stage_1_adding_to_the_plain_reversal_and_is_confir
     v = s["validity"]
     assert v["status"] == "PASS" and v["whole_days"] and v["shifts"] == v["shifts_expected"] >= 10 and v["btc_hour_max_abs_diff"] == 0.0
     assert all(c > 0.95 for c in v["outside"]["cover"].values()) and all(c > 0.95 for c in v["twelve"]["cover"].values())
+    # BTC is in the twelve's frame but not a cell of the read: its cells are dropped before the coverage is counted (the real frame's first run
+    # counted them in the denominator and failed validity (4) at 0.906)
+    tw = v["twelve"]["cells_read"]
+    assert tw["btc_dropped"] > 0 and tw["read"] == tw["frame"] - tw["btc_dropped"] and tw["read"] == v["twelve"]["cells"] - tw["btc_dropped"]
+    assert v["outside"]["cells_read"]["btc_dropped"] == 0
     tab = pd.read_csv("output/audit/r50_test/features.csv").set_index(["universe", "feature", "hold"])
     assert len(tab) == 2 * 4 * 3 and tab["family"].sum() == 12
     for uni in ("outside", "twelve"):
@@ -152,7 +157,7 @@ def test_a_planted_lag_clears_stage_1_adding_to_the_plain_reversal_and_is_confir
         assert (out / f).exists(), f
     assert "CLEARS" in (out / "stage1.md").read_text() and "stage 2 RUNS" in (out / "stage1.md").read_text()
     # stage 2 on the same cells as the confirmation half
-    s2 = m.stage2(members_csv=tmp_path / "m.csv", pairs=NAMES, twelve_run=None, fold_names=["F1"], jobs=1, out=out, gap=5, min_shifts=10)
+    s2 = m.stage2(members_csv=tmp_path / "m.csv", pairs=[BTC, *NAMES], twelve_run=None, fold_names=["F1"], jobs=1, out=out, gap=5, min_shifts=10)
     assert s2["validity"]["status"] == "PASS" and s2["validity"]["outside"]["cells_not_members"] == 0 and s2["validity"]["stage1_written"] == s["written"]
     res = pd.DataFrame(s2["rows"]).set_index(["universe", "feature", "hold"])
     for uni in ("outside", "twelve"):
@@ -172,7 +177,7 @@ def test_a_world_without_the_lag_clears_nothing_and_stage_2_is_not_run(tmp_path,
     tab = pd.read_csv("output/audit/r50_test/features.csv")
     fam = tab[tab["family"]]
     assert (fam["verdict"] != "CLEARS").all() and (fam["ic_c"].abs() < 0.08).all(), fam[["universe", "feature", "hold", "ic_c", "u", "verdict"]]
-    s2 = m.stage2(members_csv=tmp_path / "m.csv", pairs=NAMES, twelve_run=None, fold_names=["F1"], jobs=1, out=Path("output/audit/r50_test"), gap=5)
+    s2 = m.stage2(members_csv=tmp_path / "m.csv", pairs=[BTC, *NAMES], twelve_run=None, fold_names=["F1"], jobs=1, out=Path("output/audit/r50_test"), gap=5)
     assert s2["verdict"] == "NOTHING TO CONFIRM" and not s2["confirmed"] and not Path("output/audit/r50_test/features_f34.csv").exists()
     assert "NOTHING TO CONFIRM" in Path("output/audit/r50_test/stage2.md").read_text()
     assert m.verdict1({"family": True, "feature": "lead_1h", "u": 3.0, "p_family": 0.01, "parts_same_sign": True, "ic_c": 0.05, "se": 0.01, "u_delta": 1.0}) == "CLEARS AS THE PLAIN REVERSAL"

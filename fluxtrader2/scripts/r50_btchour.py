@@ -79,6 +79,11 @@ def features(hidx: pd.DatetimeIndex, names: list[str], close_h: pd.DataFrame, bt
 def _universe(tag: str, A: dict, holds=HOLDS, btc_5m: pd.Series | None = None) -> dict:
     """One universe's features, labels at every hold and BTC's hour on its grid."""
     M, names, grid, cell, latency = A["M"], A["names"], A["grid"], A["cell"], A["latency"]
+    n_frame = int(cell.to_numpy().sum())
+    if BTC in names:                                                           # BTC's own cells are NOT cells here (its beta 1, its lag 0 by definition)
+        cell = cell.copy()
+        cell[BTC] = False
+        cell = cell.where(cell.sum(axis=1) >= MIN_PAIRS, False)
     idx = M.index[M.index >= grid[0] - WARM]
     close = M.close.loc[idx, names]
     sig = _derive(close)["sig"]["1w"]
@@ -94,7 +99,8 @@ def _universe(tag: str, A: dict, holds=HOLDS, btc_5m: pd.Series | None = None) -
     cover = {k: float(Fg[k].notna().to_numpy().sum() / n_cells) for k in FAMILY}
     yb = {h: bt.labels(M, h, latency).loc[grid, names].where(cell) for h in holds}
     move = {h: float(yb[h].sub(yb[h].mean(axis=1), axis=0).abs().stack().mean()) for h in holds}
-    return {"tag": tag, "F": Fg, "Z": Z, "b_1h": rb[at], "grid": grid, "cell": cell, "names": names, "A": A, "cover": cover, "move": move}
+    return {"tag": tag, "F": Fg, "Z": Z, "b_1h": rb[at], "grid": grid, "cell": cell, "names": names, "A": A, "cover": cover, "move": move,
+            "cells": {"frame": n_frame, "read": int(cell.to_numpy().sum()), "btc_dropped": int(n_frame - cell.to_numpy().sum())}}
 
 
 # ---- the F3+F4 members' cells ----------------------------------------------------------------------------------------------------------------
@@ -286,7 +292,7 @@ def stage1(run: str = RUN_F12, pairs: list[str] | None = None, members: str | No
     U = [_universe("outside", A, holds, btc_5m), _universe("twelve", B, holds, btc_5m)]
     gv, ks, day, nd = _grid_checks(U, gap)
     v = {"registration": "R50", "stage": 1, "run": run, "folds": list(fold_names), "holds": list(holds), **gv,
-         "outside": {**A["validity"], "cover": U[0]["cover"]}, "twelve": {**B["validity"], "cover": U[1]["cover"]}}
+         "outside": {**A["validity"], "cover": U[0]["cover"], "cells_read": U[0]["cells"]}, "twelve": {**B["validity"], "cover": U[1]["cover"], "cells_read": U[1]["cells"]}}
     v["status"] = "PASS" if (A["validity"]["status"] == "PASS" and B["validity"]["status"] == "PASS" and gv["whole_days"] and gv["shifts"] == gv["shifts_expected"]
                              and gv["shifts"] >= min_shifts and gv["btc_hour_max_abs_diff"] == 0.0 and all(c >= COVER_BAR for u in U for c in u["cover"].values())) else "FAIL"
     (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
@@ -369,7 +375,7 @@ def stage2(members_csv: Path | str = MEMBERS_F34, pairs: list[str] | None = None
     U = [_universe("outside", A, holds, btc_5m), _universe("twelve", B, holds, btc_5m)]
     gv, ks, day, nd = _grid_checks(U, gap)
     v = {"registration": "R50", "stage": 2, "folds": list(fold_names), "holds": holds, "cleared_from_stage1": cleared, "stage1_written": s1["written"], **gv,
-         "outside": {**A["validity"], "cover": U[0]["cover"]}, "twelve": {**B["validity"], "cover": U[1]["cover"]}}
+         "outside": {**A["validity"], "cover": U[0]["cover"], "cells_read": U[0]["cells"]}, "twelve": {**B["validity"], "cover": U[1]["cover"], "cells_read": U[1]["cells"]}}
     v["status"] = "PASS" if (A["validity"]["status"] == "PASS" and B["validity"]["status"] == "PASS" and A["validity"].get("cells_not_members", 0) == 0
                              and A["validity"].get("cells_outside_folds", 0) == 0 and gv["whole_days"] and gv["shifts"] == gv["shifts_expected"] and gv["shifts"] >= min_shifts
                              and gv["btc_hour_max_abs_diff"] == 0.0 and all(c >= COVER_BAR for u in U for c in u["cover"].values())) else "FAIL"
