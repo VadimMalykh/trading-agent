@@ -240,10 +240,16 @@ def validity(run: Path, o: pd.DataFrame, mem: pd.DataFrame, meta: dict, excl: li
     v["member_cells_outside_blocks"] = int((~m["ok"].fillna(False).astype(bool)).sum())
     v["(3) every member cell is a block member"] = "PASS" if v["member_cells_outside_blocks"] == 0 else "FAIL"
     grp = o[o["universe"] == "members"].groupby("symbol")["group"].agg(["nunique", "first"])
-    sizes = grp["first"].value_counts().sort_index()
     names = sorted(set(mem["symbol"]) - set(excl))
-    v["groups"] = {int(k): int(n) for k, n in sizes.items()}
-    v["(4) groups even, no name in two"] = "PASS" if (grp["nunique"] == 1).all() and set(grp.index) <= set(names) and (sizes.max() - sizes.min() <= 1) and len(sizes) == int(p["groups"]) else "FAIL"
+    assigned = pd.Series({s: i % int(p["groups"]) for i, s in enumerate(names)})          # the strategy's static assignment
+    sizes = assigned.value_counts().sort_index()
+    scored = grp["first"].value_counts().sort_index()
+    v["groups"] = {int(k): int(n) for k, n in sizes.items()}                              # as assigned (the registration's "47 names each")
+    v["groups_scored"] = {int(k): int(n) for k, n in scored.items()}                      # names with at least one scored cell
+    v["names_never_scored"] = sorted(set(names) - set(grp.index))                         # members of blocks before the first refit only
+    v["first_scored_bar"] = str(o["t"].min())
+    same = all(int(assigned.get(s, -1)) == int(g) for s, g in grp["first"].items())
+    v["(4) groups even, no name in two"] = "PASS" if (grp["nunique"] == 1).all() and set(grp.index) <= set(names) and same and (sizes.max() - sizes.min() <= 1) and len(sizes) == int(p["groups"]) else "FAIL"
     v["(5) label"] = "PASS"                                                       # `cells` computes y from backtest.labels on every cell
     v["(7) excluded names carry the TWELVE tag"] = "PASS" if set(o.loc[o["symbol"].isin(excl), "group"].unique()) <= {TWELVE} and set(o.loc[o["group"] == TWELVE, "symbol"]) <= set(excl) else "FAIL"
     if int(p["hold"]) == 288 and reference is not None and reference.exists():
@@ -257,6 +263,31 @@ def validity(run: Path, o: pd.DataFrame, mem: pd.DataFrame, meta: dict, excl: li
         v["(6) R18's file covers this run's member cells"] = "n/a (hold ≠ 288 or no reference)"
     v["status"] = "PASS" if all(x == "PASS" for k, x in v.items() if k.startswith("(") and x != "n/a (hold ≠ 288 or no reference)") else "FAIL"
     return v
+
+
+FEATURES = ["ret_15m", "ret_1h", "ret_4h", "ret_1d", "ret_1w", "relret_1h", "relret_4h", "relret_1d", "volratio_1h", "volratio_1d", "hour_sin", "hour_cos"]
+
+
+def features_ic(o: pd.DataFrame, M: bt.Market, p: dict, nd: int, lags: int) -> pd.DataFrame:
+    """DIAGNOSTIC, post hoc (added after the first read of R53, 2026-10-18), not a candidate and not a variant: each of the ridge's twelve
+    inputs, as the strategy computed them, correlated with the same label residual on the same cells, beside the ridge's forecast —
+    to see what the fitted combination did with what its inputs carry (R37: the plain hourly reversal reads +0.018 at 4h on these cells)."""
+    s = MembersBook(hold=int(p["hold"]), min_bps=float(p["min_bps"]), cap=float(p["cap"]), groups=int(p["groups"]), grid=int(p["grid"]),
+                    min_pairs=int(p["min_pairs"]), exclude=p.get("exclude", ""), members=p.get("members", ""))
+    s._ensure(M)
+    ts = pd.DatetimeIndex(s._ts)
+    r, c = ts.get_indexer(pd.DatetimeIndex(o["t"])), M.columns.get_indexer(o["symbol"])
+    ok = (r >= 0) & (c >= 0)
+    X = np.stack([s._X[i] for i in r[ok]])[np.arange(ok.sum()), c[ok], :]                  # (cells × feature), the design the ridge saw
+    rows = []
+    for u in ("members", "twelve"):
+        mu = (o["universe"].to_numpy()[ok] == u)
+        for k, name in enumerate(FEATURES):
+            d = o[ok][mu].assign(zhat=X[mu, k])
+            d = d[np.isfinite(d["zhat"])]
+            rows.append({"universe": u, "input": name, **_ic(d, nd, lags)})
+        rows.append({"universe": u, "input": "the ridge's forecast", **_ic(o[o["universe"] == u], nd, lags)})
+    return pd.DataFrame(rows)
 
 
 def paired_r18(o: pd.DataFrame, reference: Path, nd: int, lags: int) -> dict:
@@ -334,6 +365,7 @@ def read(run: str, draws: int = 200, members: str | None = None, reference: Path
     execs = [e for e in ("taker", "maker") if (run_dir / f"fills_{e}.parquet").exists()]
     fills = {e: pd.read_parquet(run_dir / f"fills_{e}.parquet") for e in execs}
     need = ic_needed(o, fills, excl)
+    finputs = features_ic(o, M, p, nd, lags)
     dec = pd.read_parquet(run_dir / "decisions.parquet")
     starts = pd.DatetimeIndex(sorted(mem["block"].unique()))
     dec["block"] = starts[starts.searchsorted(pd.DatetimeIndex(dec["t"]), side="right") - 1]
@@ -365,6 +397,7 @@ def read(run: str, draws: int = 200, members: str | None = None, reference: Path
     money.to_csv(out / "money.csv", index=False)
     verdicts.to_csv(out / "verdicts.csv", index=False)
     pd.DataFrame([paired]).to_csv(out / "paired_r18.csv", index=False)
+    finputs.to_csv(out / "features_ic.csv", index=False)
     (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
     h = {288: "1d", 48: "4h"}.get(hold, f"{hold} bars")
     md = [f"# The members' own ridge — `{run}` (`ft2 membersbook`, R53), hold {h}\n",
@@ -386,6 +419,9 @@ def read(run: str, draws: int = 200, members: str | None = None, reference: Path
     else:
         md += ["\n## (C) Paired against R18's forecast\n", f"\nnot read (hold {h}, or no reference file; common cells {paired.get('common_cells', 0)}).\n"]
     md += ["\n## (M) The books, members and the excluded names apart\n", money.round(2).to_markdown(index=False), "\n",
+           "\n## Diagnostic (post hoc, added 2026-10-18 after R53's first read; not a candidate, not a variant): the ridge's inputs on these cells\n",
+           "\nEach input as the strategy computed it, correlated with the same label residual on the same cells, beside the ridge's forecast.\n",
+           finputs.round(4).to_markdown(index=False), "\n",
            "\n## Per name\n", per_name.round(4).to_markdown(index=False), "\n"]
     txt = "\n".join(md)
     (out / "read.md").write_text(txt)

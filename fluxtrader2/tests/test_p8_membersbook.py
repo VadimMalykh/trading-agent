@@ -88,5 +88,7 @@ def test_the_read_finds_the_planted_signal_on_both_universes_and_prices_the_book
     assert money.loc[("members", "taker"), "trades"] + money.loc[("twelve", "taker"), "trades"] == res["trades"]      # the two books are the run's book
     assert money.loc[("members", "taker"), "gross"] > 1 and 0 < money.loc[("members", "taker"), "flip_p"] <= 1
     need = pd.read_csv(out / "ic_needed.csv")
+    fi = pd.read_csv(out / "features_ic.csv").set_index(["universe", "input"])
+    assert len(fi) == 26 and fi.loc[("members", "ret_1h"), "ic"] > 0 and fi.loc[("members", "ret_1h"), "cells"] == m["cells"]       # the planted momentum shows in the input the ridge saw
     assert len(need) == 4 and (need["ic_needed"] > 0).all()
     assert "not read" in txt and "**PASS**" in txt
