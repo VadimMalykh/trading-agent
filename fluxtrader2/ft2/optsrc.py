@@ -355,7 +355,7 @@ def audit_tardis(today: pd.Timestamp | None = None) -> dict:
     b = _get(u, raw=True)
     if isinstance(b, (bytes, bytearray)):
         _save(RAW_TARDIS / "quotes_2023-06-01_BTC-2JUN23-27250-C.csv.gz", b)
-        q = pd.read_csv(io.BytesIO(b))
+        q = pd.read_csv(io.BytesIO(b), compression="gzip")
         q["ts"] = pd.to_datetime(q["timestamp"], unit="us", utc=True)
         h0 = q[q["ts"] < pd.Timestamp("2023-06-01 01:00", tz="UTC")]
         rep["quote_file_sample"] = {"instrument": "BTC-2JUN23-27250-C", "columns": list(q.columns.drop("ts")), "rows": int(len(q)), "gz_kb": round(len(b) / 1e3),

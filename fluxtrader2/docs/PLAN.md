@@ -1331,6 +1331,8 @@ R55 is registered (§8) against the free sources — no purchase. The options:
   Options plan 8,400 USD (4 years: 2022-10 →), or Academic 4,200 with a university e-mail. Not before R55's read; not recommended now.
 - **(AM3) AL2 / AK3 beside** — the weekly reversal on the members, one shot on F3+F4; unchanged, independent.
 Recommended: AM1 now (AM3 in parallel if wanted). Needed from Vadim: the pick; on AM2 the budget word is "not now" by this recommendation.
+**DECIDED 2026-10-19, Vadim's "AM1": R55 run as registered (§8) — `ft2 straddle fetch|quotes|ingest|inventory` then `ft2 varbook` on the
+work VM, F1+F2 only, nothing in money; AM2 not taken; AM3 stays open beside.**
 
 **Decision AL (2026-10-18) — after R54 (2 of 4 ALIVE: the candle-built realised-vol forecast adds ΔR² +0.11 / +0.07 to Deribit's implied
 at ONE day on BTC / ETH, both folds; nothing at a week, where the implied is the whole forecast). WRITTEN 2026-10-18 — OPEN, Vadim's.**

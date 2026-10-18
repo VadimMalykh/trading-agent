@@ -99,6 +99,16 @@ def cmd_magvol(args):
     print(f"wrote {magvol.OUT / args.name}/")
 
 
+def cmd_straddle(args):
+    from . import straddle
+    straddle.main(args.action, args.currencies, args.start, args.end)
+
+
+def cmd_varbook(args):
+    from . import varbook
+    varbook.main(args.name)
+
+
 def cmd_optsrc(args):
     from . import optsrc
     optsrc.main(args.action, args.sources)
@@ -400,6 +410,13 @@ def main(argv=None):
     mvp.add_argument("--holds", nargs="*", type=int, default=[1, 7], help="horizons in days (default 1 7)")
     mvp.add_argument("--names", nargs="*", default=None, help="the family's names (default BTCUSDT ETHUSDT)")
     mvp.add_argument("--name", default="f12", help="output directory under output/magvol/")
+    stp = sub.add_parser("straddle", help="R55: the one-day at-the-money straddle's history on BTC and ETH from Deribit's public chart endpoint and its touch on Tardis's free days → data/raw/external/deribit/straddle/, data/straddle_*.parquet, output/straddle_inventory.md (see ft2/straddle.py)")
+    stp.add_argument("action", choices=["fetch", "quotes", "ingest", "inventory"])
+    stp.add_argument("--currencies", nargs="*", default=None, help="default BTC ETH")
+    stp.add_argument("--start", default=None, help="fetch: first day (default F1's)")
+    stp.add_argument("--end", default=None, help="fetch: end, exclusive (default F2's)")
+    vbp = sub.add_parser("varbook", help="R55: the one-day variance position signed by R54's forecast against the straddle's own implied, hedged, at Deribit's prices and the project's hedge costs → output/varbook/<name>/ (see ft2/varbook.py)")
+    vbp.add_argument("--name", default="f12")
     osp = sub.add_parser("optsrc", help="P8 (decision AL1, after R54): the option-price source audit — what Deribit's public API, Tardis's free days and Binance's option archive serve for a one-day straddle's price, spread and fees → data/raw/external/{deribit/audit,tardis,binance_options}/, output/optsrc_audit.md (see ft2/optsrc.py)")
     osp.add_argument("action", choices=["audit"])
     osp.add_argument("--sources", nargs="*", default=None, help="deribit tardis binance (default all)")
@@ -429,7 +446,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "optsrc": cmd_optsrc, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
