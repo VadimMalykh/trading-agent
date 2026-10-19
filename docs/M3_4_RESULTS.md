@@ -265,3 +265,8 @@ In plain terms: a resting buy fills **because** the price came down through it, 
 
 **What this study cannot do** (§7): it cannot measure our own queue position, because no order was ever placed and there is no private fill history — §2.3 is a *model* of the queue and every number here inherits its crudeness. And it cannot fix the collector's 200-trade cap retroactively; raising that limit (or moving the tape to the uncapped WebSocket stream) fixes it going forward and is worth doing regardless of this verdict.
 
+
+
+---
+
+*2026-10-19:* the four limits this study named — zero policy trades in the window, the censored tape, the calm month, the price path kept out of the cost — are the design of [BOOK_WAVE2_PLAN §M1](./BOOK_WAVE2_PLAN.md), registered that day: the maker path priced on the policy's own entries and exits with the archive's uncensored `aggTrades`, net return per trade. This document's numbers are its baseline and are not revised by it.

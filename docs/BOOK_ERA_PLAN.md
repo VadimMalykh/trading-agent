@@ -370,6 +370,8 @@ regime hypothesis is the one book item still standing.
 
 ### §R.4 — X7: a book observable as the size-ladder key. 🟡 EXPLORATION GATE PASSED 2026-09-15 (weakly); confirmation parked to 2027-03-10
 
+*2026-10-19:* a second route to this confirmation is registered as [BOOK_WAVE2_PLAN §K1](./BOOK_WAVE2_PLAN.md) — the key rebuilt from the archive's trade count, volume and open interest (no spread: the archive's `bookTicker` ends 2024-03-30), checked against this section's key on the book era, then read on untouched history under this section's statistic and rule. Its outcome decides whether the 2027-03-10 look is the second confirmation, is cancelled, or stands.
+
 **RESULT, read 2026-09-15.** Log `logs/bookladder_explore_20260915.log`. Population: s1/s2/s3,
 ≈97.8k bars × 8 pairs, 2026-07-18 21:15 → 2026-09-03. **Harness check PASS at both coverages:**
 every key arm and the flat arm take the incumbent's trades exactly (670 at cov 0.05, 304 at 0.02),

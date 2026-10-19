@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
@@ -437,3 +437,310 @@ M3_EXPORT_DIR=/workspace/train/output/book_era2 ./scripts/m3.sh -m m3 bookdyn 2>
 ```
 
 **Needed from Vadim: nothing** until the gate is read.
+
+---
+
+## K1 — X7's ladder key read on archive history instead of waiting for 2027-03-10 — 🔵 REGISTERED 2026-10-19, before any code
+
+**Written 2026-10-19 on Vadim's "let's go with 1 and 2" (chat; this is item 2), before any
+archive file beyond the format listing was fetched, before any number below existed. Nothing
+served changes on any outcome.**
+
+### In plain terms
+
+X7 found, on the 43-day book era, that sizing each trade by how *quiet* the whole market is
+(low spreads, few trades, little volume, flat open interest → bigger size) beat the live rule of
+sizing by BTC's last-day move, but only weakly, on bars that B1/B2 had already read. Its one
+clean confirmation was parked to **2027-03-10** because confirmation needs about six months of
+untouched bars and the collector's book history began in July 2026. This registration asks the
+same question on history the collector never saw: Binance's public archive carries, per 5-minute
+bar and back to 2020, the **trade count**, the **traded volume** and (every 5 minutes) the **open
+interest** — three of X7's four ingredients. The fourth, the **spread**, is not in the archive
+after **2024-03-30** (`bookTicker` daily files stop there; checked 2026-10-19 on BTC and SOL, 404
+afterwards), so the archive key is built from three ingredients and must first be shown to be the
+*same* key where both exist. If it is, X7's confirmation can be read now on seven months of the
+served checkpoint's own predictions, plus a year and a half of fold-era predictions as a
+replication, and the 2027-03-10 forward look becomes the second confirmation rather than the first.
+
+### Data, fixed now
+
+* **Archive, three sources, all `data.binance.vision`, sha256-verified as `archiveoi.fetch` does.**
+  `klines` 5m monthly files (`count`, `volume` per bar) and `metrics` 5m daily files
+  (`sum_open_interest`; X8's reduced parquet is reused as is, with its +5 min relabel), twelve
+  pairs, **2024-10-01 → 2026-09-30**. Not used: `bookDepth` (bands, no touch — L1's product),
+  `bookTicker` (ends 2024-03-30), `aggTrades` (K1 needs per-bar counts only; the klines carry
+  them). Expected size: tens of MB.
+* **The archive observables**, per (pair, 5m bar), named with a prefix so no table can be mistaken
+  for B0's: `a_trade_count` = klines `count`; `a_trade_vol` = klines `volume` (base units, as the
+  collector's `trades.volume`); `a_oi_chg` = the bar-to-bar percentage change of the archive OI
+  series aligned exactly as `sidetable.add_open_interest` aligns the collector's (`data/features.py`'s
+  derivation; zero past the same 8 h cap). `has_a_trades = 1` where the kline exists, `has_a_oi = 1`
+  where the OI row exists. Written to `ml/train/output/archive/archive_key_5m_<sha8>.parquet`.
+* **The key.** `bookregime.observables` unchanged — within-pair percentile rank over the
+  evaluation window's bars, the cross-pair mean at each timestamp, the composite = mean of the
+  three market-wide ranks, negated for `_lo`. Name: **`a_composite3_lo`**. The ranks are taken
+  **within each population window** below, as B2 and X7 took them (a non-causal convention, kept
+  because it is the registered construction; a trailing-30-day causal rank is printed as a
+  secondary, information only).
+* **Populations.**
+  * **P1 — decides.** The served checkpoint's own dump, `eval_preds_20261003T191545Z` (X8″ s3,
+    the one serving since 2026-10-04), horizon 240, all twelve pairs, bars **2025-12-14 09:35 →
+    2026-07-17 00:00 UTC** — every bar before the book era's first bar (07-18 21:15); none was read
+    by B1, B2 or X7. ≈ 215 days, one checkpoint, as the forward confirmation would be.
+  * **P2 — replication, reported, not deciding.** The fold era `walkforward_x8`, F3 + F2 + F1
+    restricted to bars **before 2025-12-14 09:35** (so P1 and P2 share no bar), three seeds a
+    fold, pooled with the §9.6 statistic; F0 is excluded (it is P1's window plus the book era).
+* **Entries — identical in every arm.** M3-2's winner rule (`WINNER_SPEC`) at **coverage 0.05**,
+  cut per dump over that population's bars, side from the 240m head, 240-minute hold, serial per
+  pair; bars where the incumbent key or the archive key is missing are dropped from the population
+  before the cut, as X7 did. Cov 0.02 printed for information.
+* **Arms.** `incumbent` (`btc_absret_1d`, `regime.build` from the dump's own BTC rows), `flat`
+  (size 1), **`a_composite3_lo`** — the one key under test. Quintile edges over the population's
+  own bars, `backtest.run` with `size_by_regime=True`; nothing else differs.
+
+### Prerequisite — the archive key IS X7's key (exit = VOID)
+
+Read **before** either population, on the bars X7 itself read (book era, the eight book pairs,
+2026-07-18 21:15 → 2026-09-03, the s1/s2/s3 repaired dumps, `bookregime.restrict` to bars with
+book, tape and OI present — X7's population reproduced from `logs/bookladder_explore_20260915.log`'s
+own counts, 670 trades at cov 0.05): build `a_composite3_lo` from the archive and
+`book_composite_lo` from `book_era_5m.parquet` on the same bars, then:
+
+1. **Harness replay:** the incumbent's 670 trades and X7's `book_composite_lo` contrast **+13.46**
+   at cov 0.05 reproduce from the collector table (a check that the harness is X7's).
+2. **Rank agreement:** Spearman between `a_composite3_lo` and `book_composite_lo` over the
+   population's bars **≥ 0.80**.
+3. **Rung agreement:** the ladder rung assigned per incumbent trade (⅓ … 5⁄3) is **identical on
+   ≥ 70 %** of the 670 trades and never more than one rung apart on ≥ 95 %.
+4. **Per-ingredient check, reported:** Spearman of `a_trade_count` vs the collector's
+   `trade_count`, `a_trade_vol` vs `trade_vol`, `a_oi_chg` vs `oi_chg`, per pair. The tape is
+   censored at 200 trades a poll (M3_4 §1.2), so the first two are expected to agree on the
+   quiet side and compress on the busy side; OI should agree as X8's identity did.
+
+Any of 1–3 failing → **K1 VOID**: the archive cannot carry X7's key, nothing further is read, X7's
+confirmation stays on 2027-03-10 exactly as registered. No re-cut of the composite (e.g. two
+ingredients, another orientation) is permitted — that would be a new key, which §R.4 forbids.
+
+### The statistic and the rule — §R.4's, verbatim where it can be
+
+Contrast = **`a_composite3_lo` − `incumbent`, net bps per unit of notional**, cluster-robust on UTC
+exit days (`walkforward.paired_notional_diff_bps`); reported beside it: key − flat, incumbent −
+flat (E), each arm's per-notional net at the measured cost, cov 0.02. **Harness check first:**
+every arm's trade set equals the incumbent's exactly and every size is a ladder rung.
+
+**CONFIRMED iff the 95 % lower bound of the contrast on P1 is > 0.** NOT CONFIRMED is "not
+detectable" unless P1's interval also excludes E on that window. P2 is printed with the same
+statistic; if P1 confirms and P2's point estimate is negative, the result is written **CONFIRMED,
+REPLICATION FAILED** and carries that line into anything it licenses. One look at P1; one at P2.
+
+### What each outcome licenses
+
+* **CONFIRMED** → *writing* a served-change registration for the ladder key (the same thing §R.4's
+  forward confirmation would license), which is also an engineering item: the collector's `candles`
+  table stores no trade count (migration `20260717000001`), so a live key needs the kline poll to
+  keep `count` and `volume` (Binance's kline payload carries both) or the uncensored tape — that
+  registration says which, and the live key must be the archive key's construction, not B0's. The
+  2027-03-10 forward look stays as registered and becomes the second confirmation.
+* **NOT CONFIRMED** → book-keyed sizing closes **now**, on the strength §R.4 wrote ("no other key,
+  construction, coverage or window"); the 2027-03-10 look is cancelled, the BACKLOG row closed.
+  Not detectable (interval spans zero and E) → X7 stays parked to 2027-03-10, unchanged.
+* **VOID** → nothing changes anywhere.
+
+### Expectation, recorded before the run
+
+**Prerequisite: likely passes** (three of four ingredients, the market-wide mean is dominated by
+trade count and volume, which the spread tracks). **P1: not detectable, leaning negative.** The
+book era's +13.46 was mostly "not the incumbent" (the incumbent ladder was −8.4 against flat
+there); on the fold era the incumbent key was certified, so on P1 it is probably positive and the
+challenger's margin over it smaller than the forecast MDE of 11.1. A CONFIRMED here would be a
+real surprise and gets the six-month forward look as its second confirmation regardless.
+
+### Contamination, stated
+
+P1's bars were read by X8″'s training-time validation (model selection) and P2's by the fold
+certification and by M3's choice of the incumbent key — the incumbent is in-sample there, which
+biases **against** the challenger, the conservative direction. No book test has read either.
+
+### Code, planned (none written)
+
+`ml/train/m3/archivekey.py`: `fetch` (klines 5m + the existing metrics reduction), `reduce`
+(the parquet above), `check` (the prerequisite), and a `--book-table` option on `bookladder`
+so `bookregime.observables` runs unchanged on the archive table; `--stage archive-confirm`
+refuses unless `check` has written its PASS marker. Tests: the OI alignment equals
+`sidetable.add_open_interest` on a synthetic series; the composite equals a hand computation.
+
+### Commands
+
+```sh
+./scripts/m3.sh -m m3 archivekey fetch --from 2024-10-01 --to 2026-09-30
+./scripts/m3.sh -m m3 archivekey reduce
+M3_EXPORT_DIR=/workspace/train/output/book_era M3_ERA=repaired \
+  ./scripts/m3.sh -m m3 archivekey check 2>&1 | tee logs/k1_check_$(date +%Y%m%d).log      # prerequisite; exit 2 = VOID
+M3_ERA=repaired ./scripts/m3.sh -m m3 bookladder --stage archive-confirm --population P1 \
+  2>&1 | tee logs/k1_p1_$(date +%Y%m%d).log
+M3_ERA=walkforward_x8 ./scripts/m3.sh -m m3 bookladder --stage archive-confirm --population P2 \
+  2>&1 | tee logs/k1_p2_$(date +%Y%m%d).log
+```
+
+**Needed from Vadim: nothing** until the outcome is read. CPU only, `ml_analysis`.
+
+---
+
+## M1 — the maker path priced on the policy's own entries, with an uncensored tape — 🔵 REGISTERED 2026-10-19, before any code
+
+**Written 2026-10-19 on Vadim's "let's go with 1 and 2" (this is item 1), before any archive
+trade file was fetched, before any number below existed. Nothing served changes on any outcome.**
+
+### What the record already says — and what this adds
+
+A maker-versus-taker study exists: **M3-4** ([M3_4_PROTOCOL](./M3_4_PROTOCOL.md),
+[M3_4_RESULTS](./M3_4_RESULTS.md), August 2026). It measured a taker round trip of **9.84 bps** at
+$10,000 (11.84 at the verified 5-bps taker fee), a maker saving of **+3.60** on the cost arithmetic
+alone, and **adverse selection negative in 16 of 16 pair-side cells** — a resting order fills
+because the price is coming through it. Its verdict: a fee-rebate accounting gain, not a trading
+gain; do not build the maker arm on it. Its own stated limits: the window held **zero policy
+trades** (the policy's last entry before the window was 2026-07-16), the month was the calmest of
+the period while the policy trades the violent bars, the tape was **censored at 200 trades a poll**
+(biasing fills downward where they matter), and §3's adverse drift was measured at 60 s and kept
+out of the cost by design because the policy's return already contains it.
+
+M1 removes those four limits at once and asks the one question M3-4 could not: **on the trades the
+4h policy actually takes, does entering (and exiting) with a resting order beat crossing, after
+the price path over the whole 4-hour hold is counted?** The P&L accounting makes adverse selection
+and the chase a line in the ledger rather than a side panel.
+
+### In plain terms
+
+Every policy trade is scored as if it were entered two ways: **cross** at the bar close (what the
+pilot does now, at the verified 5 bps fee) or **rest** a limit at the touch for 60 seconds and
+cross if still unfilled (the maker path the executor does not have, M3_5 §3.1). The exit at +4 h
+is scored the same two ways. Each trade then has two net returns; the difference, averaged per
+unit of notional over thousands of the policy's own trades, is the number. Binance's public
+archive supplies every trade printed (`aggTrades`, uncensored), so fills are judged on the full
+tape; the collector's book supplies the quotes where it exists (from 2026-07-17), and before that
+the quotes are read off the tape itself, after a calibration that says how well that works.
+
+### Population — the policy's own trades, two strata
+
+* **A (decides).** The served checkpoint's dump `eval_preds_20261003T191545Z`, horizon 240, twelve
+  pairs, **2025-12-14 09:35 → 2026-09-09 20:05**, entries by `WINNER_SPEC` at **coverage 0.05**
+  (cut over the dump's window), serial per pair, 240-minute hold — the backtester's own trade list
+  for the served policy. Expected several thousand trades (the harness prints the count before
+  anything is priced). The book-era bars inside A were read by B1/B2/X7 for a *return* question;
+  M1 asks a *fill* question about the same entries and states that here rather than pretending
+  the bars are untouched.
+* **B (direction check, reported).** The forward ledger's actual `policy` entries from
+  2026-10-07 (57 closed at writing) and the `explore_cov05` entries (153 closed) as a second line,
+  at the read date, with their real `entry_ts`. The 38 pilot (`live`) fills on shared entries give
+  a **measured** taker entry: pilot `entry_price` against the paper arm's — descriptive, a reality
+  check on the taker arm's model, no bar.
+
+**Entry moment T** = the close of the 5-minute bar the signal was scored on; **exit moment** =
+T + 240 min. Pinned mechanically: on B, the paper arm's `entry_price` must equal the candle close
+at T for ≥ 99 % of entries (the live engine books the bar close), and A's `ts` is mapped to T by
+the same candle match on the overlap. A mismatch is a harness defect, fixed and recorded.
+
+### Data, fixed now
+
+* **Tape:** archive `aggTrades` daily files (`data/futures/um/daily/aggTrades/<SYM>/`), only the
+  pair-days that hold an entry or exit moment, sha256-verified, **streamed**: the rows in
+  [T − 120 s, T + 1,800 s] around each moment are kept (`output/makerpath/tape_windows.parquet`),
+  the zip is discarded. Estimated ≈ 2,000 pair-days × 2–20 MB downloaded, under 200 MB retained.
+  Columns used: price, quantity, `transact_time`, `is_buyer_maker`.
+* **Quotes, two legs:**
+  * **Quoted leg** (moments ≥ 2026-07-17 21:13, the collector's book): `orderbook_levels` (20
+    levels suffice for the walk at the sizes below; `b0p/a0p/b0q/a0q`), exported for the moment
+    windows only (`BOOK_FILTER` on [T − 60 s, T + 300 s]), nearest row ≤ 15 s before the moment,
+    M3-4 §2.4's 30 s staleness cap. M3-4 §2.3's **three-branch fill rule verbatim** (certain fill
+    `low < P`; queue-conditional Σ same-side aggressor volume ≥ Q₀ + S; else cross at T + W), on
+    the uncensored tape.
+  * **Tape leg** (moments before 2026-07-17): the touch is read off the tape — `P_bid(T)` = price
+    of the last trade with `is_buyer_maker = true` in [T − 60 s, T], `P_ask(T)` the last with
+    `false`; `M_T` their mean; a moment with either side missing is **stale** and dropped (counted,
+    §2.4). Fill rule: **branch 1 only** (a trade printed strictly through P within W) — no Q₀ exists,
+    so queue-conditional fills count as unfilled; this is the conservative side. The touch rule
+    (any trade at P or better) is printed as the optimistic bound, information only.
+* **Sizes:** notional **$1,000 primary** (the pilot's next scale), $100 (the pilot today) and
+  $10,000 (M3-4's primary) as the ladder, converted at `M_T`. On the tape leg the taker fill at
+  $100 / $1,000 is the touch (no walk is possible); at $10,000 the tape leg is not scored.
+* **W = 60 s primary**, 30 and 300 s sensitivity — M3-4 §2.2 unchanged.
+* **Fees: the verified account tier, taker 5.0 / maker 2.0 bps per side** (REAL_MONEY_TRACK §7
+  row 1), passed as parameters; `execcost.py`'s 4.0 / 2.0 constants are M3-4's record and are not
+  edited.
+
+### Prerequisite — the tape-implied touch is the book's touch (a bar, not a void)
+
+On the quoted leg's moments (expected ≥ 1,000, book era to 2026-09-09 plus B): the tape-implied
+`P_bid`/`P_ask` against the collector's `b0p`/`a0p` at the same moment. **PASS iff** each side agrees
+within one tick on ≥ 80 % of moments per pair-side **and** the branch-1 fill verdict computed from
+the tape touch equals the one from the book touch on ≥ 90 % of moments. FAIL → the tape leg is
+reported descriptively only and the decision below is read on the **quoted leg alone** (A's
+2026-07-18 → 09-09 trades plus B); the study is not void, it is shorter.
+
+### Arms, per trade, identical trade sets
+
+| arm | entry | exit |
+|---|---|---|
+| `TAKER` | cross at T: `1e4·(walk_ask(T,S) − M_T)/M_T + 5.0` (M3-4 §2.6; tape leg: `P_ask`) | cross at T + 240 m, mirrored |
+| `MAKER→TAKER` | rest at the touch at T; filled → `1e4·(P − M_T)/M_T + 2.0`; unfilled → cross at T + W against `M_T` | the same rule at T + 240 m |
+
+Each arm's **net return per trade** = side × (exit fill ÷ entry fill − 1) − fees, in bps of notional,
+so the price path between a late fill and the exit is inside the number. `MAKER→TAKER` with the
+**filled subset only** is printed as a diagnostic and never decides (conditioning on a fill is the
+error M3-4 §3 names).
+
+### The statistic and the rule
+
+**S1 = `MAKER→TAKER` − `TAKER`, net bps per unit of notional**, paired on identical trades,
+cluster-robust on UTC exit days (`walkforward.paired_notional_diff_bps`), stratum A, W = 60 s,
+$1,000. **The maker path is WORTH BUILDING iff S1's 95 % lower bound > 0 on A and S1's point
+estimate on B has the same sign.** Otherwise **NOT WORTH BUILDING** at this hold and these sizes,
+and M3-4's verdict stands with the policy's own entries now measured. B's own interval is printed
+(it will be wide); the sensitivities (W, size, the filled-only diagnostic, per pair, per side,
+entries vs exits, the pilot's 38 measured taker fills against the model) are printed and never
+promote.
+
+**Harness checks before S1 is read (falsifiable):** every arm has exactly A's trade set; on the
+M3-4 pairs and window (08-05 → 09-10) the `TAKER` arm's per-pair entry cost at $10,000 reproduces
+M3-4 §1's `C_taker` within ±1.0 bps (the tape is different, the book is the same — a larger gap is
+a defect); the uncensored tape's count per 5 m bar ≥ the collector's `trade_count` on every bar
+compared (a check on the archive).
+
+### What each outcome licenses
+
+* **WORTH BUILDING** → *writing* a served-change registration for a maker entry/exit path in the
+  executor, **pilot arm only** (the paper arms keep booking the bar close — they are the scored
+  rule and stay comparable), with a paired forward design of its own; nothing is built or deployed
+  on this read.
+* **NOT WORTH BUILDING** → the executor stays taker; the BACKLOG maker line closes for the 4h
+  policy. No re-cut by pair, side, size or window to find a subset that passes.
+
+### Expectation, recorded before the run
+
+Fill rate at 60 s on the policy's entries **below** M3-4's 70–92 %: the policy enters with the
+move, and a resting order on the wrong side of a move does not fill. S1 positive by a few bps
+round trip at most (6 bps of fee saving at the verified tier against 1–2 bps of adverse selection
+per side and the chase on the unfilled third), interval plausibly spanning zero. The pilot's 38
+measured entries should sit within ±2 bps of the modelled taker cost; if they do not, that line
+matters more than S1.
+
+### Code, planned (none written)
+
+`ml/train/m3/makerpath.py`: `entries` (the trade lists for A and B, the candle match), `fetch`
+(streamed aggTrades windows), `calibrate` (the prerequisite), `read` (arms, S1, the tables), with
+`execcost.py`'s arithmetic imported and its fees parameterised. One ladder export for the moment
+windows via `scripts/gcp_m3_export.sh` (`ONLY=book_raw`, `BOOK_FILTER` built by `entries`). Tests:
+the three-branch rule on a synthetic tape reproduces M3-4's worked cases; net return under each
+arm equals a hand computation; the streamed window extraction keeps exactly the rows in range.
+
+### Commands
+
+```sh
+./scripts/m3.sh -m m3 makerpath entries 2>&1 | tee logs/m1_entries_$(date +%Y%m%d).log       # counts, pair-days, the BOOK_FILTER
+OUT=ml/train/output/makerpath_book ONLY=book_raw BOOK_FILTER="$(cat ml/train/output/makerpath/book_filter.sql)" ./scripts/gcp_m3_export.sh
+./scripts/m3.sh -m m3 makerpath fetch 2>&1 | tee logs/m1_fetch_$(date +%Y%m%d).log
+./scripts/m3.sh -m m3 makerpath calibrate 2>&1 | tee logs/m1_calibrate_$(date +%Y%m%d).log   # prerequisite: PASS / FAIL (tape leg descriptive)
+./scripts/m3.sh -m m3 makerpath read 2>&1 | tee logs/m1_read_$(date +%Y%m%d).log
+```
+
+**Needed from Vadim: nothing** until S1 is read. CPU only; ≈ 20 GB streamed, < 1 GB kept.
