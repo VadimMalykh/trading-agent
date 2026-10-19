@@ -470,6 +470,24 @@ Run 2026-09-13 on the seven: consistency ok, TEXTURE banner, R4 empty (no refusa
 Run 2026-09-15 on the same seven with R5: consistency ok (entry prices match the bars), TEXTURE;
 R5 fired one extension and swallowed one later trade — texture, not a number.
 
+**Run 2026-10-19 — reading #1 of the schedule, at 57 closed policy trades**
+(`logs/forward_ledger_20261019.log`; entries 10-07 → 10-18, 12 entry days; consistency ok;
+one checkpoint, the served cut and the frozen ladder on every row). Per unit of notional,
+day-clustered: **R0** policy +36.5 [−51.8, +124.8] vs flat_size +32.1 [−42.9, +107.2],
+contrast +4.4 [−21.5, +46.3]. **R1** tight − marginal: cov 0.015 −40.6 [−121, +98] (n 15 / 42);
+0.01288 +30.2 [−134, +154] (7 / 50); 0.01 +78.2 [−175, +381] (4 / 53). **R2** top quintile +161
+(n 10, 3 days) vs below −5.6 (47), contrast +167 [−15, +362]. **R3** in-set +63 (41) vs excluded
+−27 (16), +90 [−6, +325]. **R4** four suppressed trades (the −50/day limit on 10-08) at +116;
+counterfactual arm +42.5 vs recorded +36.5. **R5** counterfactual +88.9 vs recorded +36.5,
+**contrast +52.3 [+0.4, +117.3]**, Σ net +2,980 bps × size; 13 extensions, 5 later trades
+swallowed, 52 counterfactual trades, mean hold 314 m. R5's is the only interval clear of zero,
+by its lower edge, on twelve days. As registered that **licenses writing** §9.7's served-change
+registration — writing it now with the served change gated on reading #2 at 100, or waiting for
+#2, is Vadim's decision (BACKLOG handoff, E3). Nothing served changes on this reading. *Val
+expectation, noted the same day (NEXT_TRAINING_PLAN §2 X8″-6):* wherever this ledger is set
+against the served checkpoint's val numbers, X8″'s six-seed family — plateau LB 0.5323
+(0.5242 all-epoch), cov-0.02 gross +17.5 bps — replaces the three-seed 0.5349 / +21.4.
+
 ---
 
 ## §5 — Where the live rule differs from the backtested one
@@ -483,7 +501,7 @@ from. None of them is a re-tune of the policy.
 | 2 | **Regime quintile edges come from a trailing 30 days of BTC klines**, not from the split's bar distribution. | Same reason, plus it is re-derivable from the exchange after a restart. As of 2026-08-28 the live p80 edge is 1.77% against §1.8's published 4.31%, so **the whole size ladder is currently calibrated to a calm market** — sizes will be 5/3 on moves that would have been mid-bucket during the evaluation period. This is the intended behaviour of a relative ladder, but it means live sizing is not comparable to backtest sizing bar-for-bar. |
 | 3 | **The ranking population is bars actually observed**, not a complete 5-minute grid. | A slow or failed inference cycle simply produces no bar. It stays an honest sample of market states, but it means "2% of bars" is 2% of *seen* bars. `signal_liveness.bars_last_24h` is how you check the grid is not full of holes. |
 | 4 | **Entry price is the signal's price, up to ~30 seconds stale.** | The signal engine polls on its own 30-second cycle and the policy decides on its own. The backtest enters at the bar. |
-| 5 | **`RiskManager` attaches a stop and a target; the paper arms ignore them.** | The M3-2 policy has neither — it was scored on a fixed four-hour hold, and a barrier exit scored against a fixed-horizon return is precisely the policy mismatch C4b was filed for. On the `auto` path they are attached as a catastrophe brake, and **that brake is an unmeasured deviation** which must be priced (M3-0b's price path is what would let us price it) before real money. |
+| 5 | **`RiskManager` attaches a stop and a target; the paper arms ignore them.** | The M3-2 policy has neither — it was scored on a fixed four-hour hold, and a barrier exit scored against a fixed-horizon return is precisely the policy mismatch C4b was filed for. On the `auto` path they are attached as a catastrophe brake, and **that brake is an unmeasured deviation** which must be priced (M3-0b's price path is what would let us price it) before real money. *2026-10-19:* the micro-pilot (REAL_MONEY_TRACK §7) carries this brake on the exchange and it is now measured there: 13 of its 38 trades stopped and 2 hit the target, and the brake is ~80 % of the pilot's −1,662-bps gross gap to the `policy` arm on the shared entries (≈ 35 bps a trade; X6 priced it at ~30 offline). The `live` arm is therefore not a reading of the scored rule while the brake is on. |
 | 6 | **The cost charged is the measured one, and it is measured in the wrong regime.** | M3-4's window is the calmest month of the period and holds none of the policy's trades. Cost rises with volatility (9.77 → 10.09 bps across BTC-vol quintiles) and this policy trades the high end. Treat live net numbers as the optimistic end by a few tenths of a bp. |
 
 ---

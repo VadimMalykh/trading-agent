@@ -471,3 +471,49 @@ exchange at their timer (an exchange-filled row closes on the exchange in every 
 
 **Reinstall on another instance:** nothing beyond the repo and `.env` — the pilot is app
 config, the `live` rows live in `paper_trades`, no timer or service is installed.
+
+**Read 2026-10-19 — what the pilot is running, and why its ledger differs from the three paper
+arms' (Vadim's question).** The pilot runs the same model, cut and decision as the paper
+`policy` arm — checkpoint `d4621b0f…` (X8″ seed 3) bound, cut 0.5860595703125, twelve pairs,
+`executor.mode: simulation`, `live_orders: true`, user-data stream connected, no mismatches,
+app code `88d1d11` on the VM (the commits after it touch `ml/` and `docs/` only). It is not a
+different algorithm. Its 38 closed trades (10-07 → 10-18) read **−2.4 net bps a trade, −$0.83
+realised**, against `policy` +42.3 (57 trades), `flat_size` +32.1 (61), `explore_cov05` +7.3
+(152). Three structural differences account for it, measured on `paper_trades` (fifth start):
+
+1. **The exchange brake — about 80 % of the gap.** `LivePilot.check` attaches the 2 % stop and
+   4 % target `RiskManager` would (`STOP_LOSS_PCT` / `TAKE_PROFIT_RATIO`); the three paper arms
+   have no exit but the four-hour timer (M3_5 §5 row 5 — every one of their 270 closed rows is
+   `exit_reason: timer`). **13 of the 38 live trades stopped, 2 hit the target.** On the 38
+   entries both arms took: the 13 stopped were −1,444 bps gross on the policy arm and −2,350 on
+   the pilot (gap **−906** — four were policy winners by the timer: SOL 10-13 +499 against −161
+   stopped, AVAX 10-08 +73 / −283, WLD 10-11 +48 / −242, ZEC 10-12 −25 / −247); the 2 targets
+   +1,158 / +741 (**−417**, the cap); the 23 timer exits +2,237 / +1,898 (**−339**, fills).
+   Total −1,662 bps gross over 38 trades, −1,323 of it the brake — ≈ 35 bps a trade against
+   X6's offline price of ~30 per notional for the same brake. Policy net on the 38: +1,438;
+   live −91.
+2. **Four slots and a shared account — the other 20 %, and a selection effect.** 19 of the 57
+   policy entries were not mirrored: 14 at `max_positions` (signal clusters of 6–9 inside
+   twenty minutes on 10-07, 10-08 and 10-17; BTC 10-14 14:55 with four open), and **all 5 ADA
+   entries** as a foreign position — the account holds Vadim's manual ADA (`[LIVE] ADAUSDT: the
+   account already holds a position the pilot does not own … not mirrored`, 10-12 14:55; the
+   only rule that fits 10-08 15:25 and 10-13 00:50, when slots were free). The 19 missed were
+   +973 bps net on the policy arm (+51 a trade, the arm's own average; ADA 10-13 +668 the
+   largest single trade of the ledger).
+3. **Fills — not the cause.** Mean entry slippage against the policy row's price −2.5 bps over
+   the 38 (+10.8 adverse on the timer exits, −30.6 favourable on the stopped — they were filled
+   better and stopped anyway); cost 10 bps (two taker legs) against paper's 12.4 measured; BTC
+   fills at 0.001 BTC ($84 notional, as recorded 10-07).
+
+Nothing is broken: the pilot does what this section says — mirror, brake, cap — and the brake's
+mechanics are now proven on 15 exchange exits, which was one of its four stated jobs. What the
+read shows is that the brake it inherited from `RiskManager` is a different policy from the one
+the paper test scores and §4.3 reads, so the `live` arm cannot be read against the paper arms
+while it is on. **Decision for Vadim (BACKLOG handoff E2):** (a) keep the brake — the pilot
+stays an operations test and its P&L is not compared to the paper arms; (b) **remove the stop
+and target from the pilot so it mirrors the scored timer-only rule** (recommended now that the
+brake is proven: `LivePilot.check` returns no `stop_loss` / `take_profit`, the timed close
+stays, the daily / total loss limits remain the real-money cover; a code change, tests, and an
+app recreate with no `live` row open); (c) with either, raise `LIVE_PILOT_MAX_POSITIONS` so
+clusters are mirrored — 8 × $100 exceeds the $500 budget, so it means a smaller notional or
+more capital. Until (b) is done, do not quote the `live` arm's numbers beside the paper arms'.
