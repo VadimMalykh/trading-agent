@@ -1341,7 +1341,7 @@ before it is named. WRITTEN 2026-10-19 — OPEN, Vadim's.**
 Where the record stands: every data source in §9 is audited, read, or closed by a stated reason; the state line on the market-wide rules
 closed today (R58 / R59); R14's spent trades take no more cuts (AA8); the members carry no candle model (R53); the one unread event kind
 (delistings and monitoring tags) has 24 events. What is left is time-gated (AQ3 / AQ6 at R17), low (AQ5, AA7, R50's asymmetry), or new.
-- **(AT1) fluxtrader1's registered queue — recommended as the research with the most expected value in hand.** [fluxtrader1] K1, M1 and X14
+- **(AT1) fluxtrader1's registered queue — WITHDRAWN as a fluxtrader2 option the same day (Vadim: "How did we switch to Fluxtrader1?"): it is the other project's, not overdue, and does not belong in this decision; kept as a labelled cross-reference only.** [fluxtrader1] K1, M1 and X14
   were REGISTERED 2026-10-19 and are not built: K1 (X7's ladder key from the archive's trade count, volume and open interest, then the
   served dump's untouched bars), M1 (the maker path priced on the policy's own entries with uncensored aggTrades), X14 (the mark–index
   premium as an M2 feature group). Three registered questions with written gates and unseen bars; CPU, no GPU keystroke. A fresh session
@@ -1361,8 +1361,8 @@ closed today (R58 / R59); R14's spent trades take no more cuts (AA8); the member
 - **(AT3) delistings and monitoring tags as per-name events** — 24 events on members in all folds together; not detectable by
   construction (MDE in the hundreds of bps). Not proposed.
 - **(AT4) P7's clock alone** — the standing lines at R17; rejected as a mode by Vadim 2026-10-19; it is what runs beside AT1 / AT2 anyway.
-Recommended: AT1 in a fresh fluxtrader1 session; AT2 is the one new fluxtrader2 line and runs beside it on Vadim's word (a day, the work VM
-for the fetch, nothing registered until the audit is in). Needed from Vadim: the pick (AT1, AT2, or both in that order).
+Recommended: AT2 — the one new fluxtrader2 line (a day, the work VM for the fetch, nothing registered until the audit is in). Needed from
+Vadim: the word on AT2.
 
 
 **Decision AR (2026-10-19) — after R58 (the state audit: R8 CLEARS at V90 — the market's bounce in an uptrend pays +106.5 a trade [lo +65]
