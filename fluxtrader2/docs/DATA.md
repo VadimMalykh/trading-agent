@@ -305,6 +305,25 @@ spot on both names (the same as R55's Tardis median on the daily straddle). **Ru
 09:00 after the previous expiry and nothing after it; the settlement is the 07:30 → 07:59 TWAP; a month outside `covered` is not a month.**
 Re-fetch with `ft2 varmonth fetch` (a file already on disk is not fetched again; `--end` moves the last expiry).
 
+### coinbase_1h (Coinbase Exchange spot, hourly, the twelve's <BASE>-USD products and USDT-USD; decision AT2, §9 #10) — `data/coinbase_1h.parquet`: `(product, symbol, ts, ts_known, open, high, low, close, volume)`
+
+`ft2 coinbase products|fetch|ingest|audit` (`ft2/coinbase.py`; raw one JSON a product a month under `data/raw/external/coinbase/<PRODUCT>/`,
+`daily.json` the daily bars from 2015 for the first bar, `products_<date>.json` the listing). **Fetched 2026-10-19 on the work VM** from
+Coinbase Exchange's public, keyless REST API (`/products/<id>/candles`, 300 candles a call, `time` the bucket's START in seconds UTC; the
+bucket in progress is served and is dropped on ingest). **Measured (`output/coinbase_audit.md`):** 13 of 13 products listed and online.
+Hourly bars from 2023-04-01 (the first hour asked) on BTC, ETH, SOL, ADA, AVAX, LINK, DOGE, ZEC and USDT (first daily bars 2015-07-20,
+2016-05-18, 2021-06-17, 2021-03-18, 2021-09-30, 2019-06-27, 2021-06-03, 2020-12-08, 2021-05-04); XRP from 2023-07-13 (relisted; F1 70 %);
+PEPE from 2024-11-13 (F3 70 %); WLD from 2025-04-30 (F4 on); HYPE from 2026-02-05 (F5 87 %). Completeness 99.97 % of the hours 2023-05-01 →
+2026-09-15 on the long names: two gaps of 6 hours common to every product (Coinbase's outages). **The premium** (at each hour's END, Coinbase's
+close over Binance's 5m close ending at the same stamp, minus one, bps; 1000PEPE ÷ 1,000): the raw gap carries the USDT rate (USDT-USD median
+0.99995, p1 0.99839, p99 1.00107 → +0.5 bps at the median, ± 16 at the tails), so the ADJUSTED premium (÷ USDT-USD of the same hour) is the
+series — BTC +3.1 bps (sd 4.1), ETH +2.9 (4.2), SOL +3.6 (6.1), DOGE +3.3 (7.2), XRP +3.4 (8.1), AVAX +3.9 (9.9), LINK +3.4 (11.0), ADA +4.4
+(18.3), PEPE +3.4 (20.1), ZEC +9.2 (48.5), WLD +9.4 (49.4); autocorrelation at 1 h 0.89 / 0.90 (BTC / ETH) down to 0.05 (PEPE), at 24 h 0.79 /
+0.84 (BTC / ETH), 0.1–0.5 the rest; flat by hour of day; the mean cross-name correlation 0.46, the first component 25 %. **Rule for any
+feature: a bar is read at `ts_known` = its start + 1 h and nothing earlier; the 5m decision bars inside an hour carry the last bar whose
+`ts_known` ≤ t; the adjusted premium is the quantity, the raw one is not read; ZEC's and WLD's series are thin-book noise (sd ≈ 48 bps) and
+a feature on them is described, not counted.** The serving lag after an hour boundary: see the line below once measured.
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
