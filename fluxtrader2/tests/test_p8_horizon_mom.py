@@ -103,3 +103,31 @@ def test_a_name_without_funding_is_dropped_and_too_many_void_the_run(tmp_path):
     v = json.loads(Path("output/horizon/mom_void/validity.json").read_text())
     assert v["status"] == "FAIL" and v["names_dropped_under_funding_cover"] == NAMES[:4] and v["dropped_share"] > 0.10
     assert "VOID" in Path("output/horizon/mom_void/horizon.md").read_text() and not Path("output/horizon/mom_void/signals.csv").exists()
+
+
+def test_r57_the_weekly_preset_reads_the_week_at_a_week_with_the_sign_negative_and_guards_the_confirmation_folds(tmp_path):
+    """R57: the same frame with one signal (the week's move) at one hold (a week), the gap 7 + 7 + 1 = 15 days, the registered sign
+    NEGATIVE — on the planted momentum world the row CLEARS WITH THE OPPOSITE SIGN; the confirmation folds refuse a read without a
+    registration before anything is computed; the verdict is one-sided on the registered side."""
+    members = _world(tmp_path)
+    with pytest.raises(SystemExit):
+        hz.run_mom(NAMES, hz.REV_HOLDS, hz.REV_REFS, jobs=1, members=members, fold_names=("F3", "F4"), family=hz.REV_FAMILY, described={},
+                   window_days=hz.REV_WINDOW_DAYS, sign=hz.REV_SIGN, name="rev1w_guard")
+    assert not Path("output/horizon/rev1w_guard/validity.json").exists()
+    md = hz.run_mom(NAMES, hz.REV_HOLDS, hz.REV_REFS, jobs=1, members=members, family=hz.REV_FAMILY, described={}, window_days=hz.REV_WINDOW_DAYS,
+                    sign=hz.REV_SIGN, name="rev1w_t", strategy="horizon --rev1w")
+    v = json.loads(Path("output/horizon/rev1w_t/validity.json").read_text())
+    assert v["status"] == "PASS" and v["sign"] == -1.0 and v["gap_days"] == 15 and v["window_days"] == 7 and v["after_ref_bars"] == 288
+    assert v["shifts"] == v["shifts_expected"] == v["days"] - 2 * 15 + 1 and v["signal_windows_bars"] == {"mom_1w": 2016} and v["holds"] == [2016] and v["refs"] == [288]
+    tab = pd.read_csv("output/horizon/rev1w_t/signals.csv").set_index(["signal", "hold"])
+    assert len(tab) == 2 and bool(tab.loc[("mom_1w", 2016), "family"]) and tab.loc[("mom_1w", 288), "verdict"] == "reference"
+    g = tab.loc[("mom_1w", 2016)]
+    assert g["m_c"] > 17.6 and abs(g["u"]) >= 2 and g["verdict"] == "CLEARS WITH THE OPPOSITE SIGN", dict(g)       # the planted momentum, read against a reversal's sign
+    assert g["p_family"] == g["p_single"]                                                                             # a family of one
+    assert "the registered sign NEGATIVE (reversal)" in md and "`ft2 horizon --rev1w`" in md
+    sh = pd.read_parquet("output/horizon/rev1w_t/shifts.parquet")
+    assert set(sh["signal"]) == {"mom_1w"} and sh["shift"].max() == v["days"] - 15
+    # the verdict on the registered side
+    base = {"u": -3.0, "p_family": 0.01, "folds_same_sign": True, "after_same_sign": True, "se": 10.0}
+    assert hz.mom_verdict({**base, "m_c": -60.0}, sign=-1.0) == "CLEARS" and hz.mom_verdict({**base, "m_c": 60.0, "u": 3.0}, sign=-1.0) == "CLEARS WITH THE OPPOSITE SIGN"
+    assert hz.mom_verdict({**base, "m_c": 10.0, "u": 1.0}, sign=-1.0) == "CLOSED" and hz.mom_verdict({**base, "m_c": -10.0, "u": -1.0}, sign=-1.0) == "NOT DETECTABLE"

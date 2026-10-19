@@ -182,6 +182,16 @@ def cmd_pool(args):
 
 def cmd_horizon(args):
     from . import horizon
+    if args.rev1w:                                            # R57: the weekly reversal on the members, one shot on F3+F4 (the F1+F2 reference with --folds F1 F2)
+        from . import folds
+        from .universe import F34_MEMBERS_CSV, screen_symbols
+        fold_names = tuple(args.folds or ("F3", "F4"))
+        members = F34_MEMBERS_CSV if fold_names == ("F3", "F4") else None
+        out_name = args.name or ("rev1w_f" + "".join(f[1:] for f in fold_names))
+        print(horizon.run_mom(screen_symbols(members), horizon.REV_HOLDS, horizon.REV_REFS, name=out_name, members=members, end=folds.bounds(fold_names[-1])[1],
+                              fold_names=fold_names, family=horizon.REV_FAMILY, described={}, window_days=horizon.REV_WINDOW_DAYS, sign=horizon.REV_SIGN,
+                              registration=args.registration, strategy="horizon --rev1w", jobs=int(os.environ.get("FT2_JOBS", "4"))))
+        return print(f"wrote {horizon.OUT / out_name}/")
     if args.mom:                                              # R43: the slow cross-section on the members' own cells
         from .universe import screen_symbols
         out_name = args.name or horizon.MOM_NAME
@@ -397,6 +407,9 @@ def main(argv=None):
     hz.add_argument("--holds", nargs="*", type=int, default=None, help="in 5m bars (default 864 2016; with --pre 2016)")
     hz.add_argument("--pre", action="store_true", help="R23: the open-interest score on the months before F1 (ft2/screen_members_pre.csv) → output/horizon/pre/horizon.md")
     hz.add_argument("--mom", action="store_true", help="R43: the 188 screener members' 4- and 12-week trailing return at 14- and 28-day holds, R22's frame → output/horizon/mom_screen/horizon.md")
+    hz.add_argument("--rev1w", action="store_true", help="R57: the week's move (mom_1w) at a one-week hold on F3+F4's 216 members, one shot, the registered sign negative, gap 15 days → output/horizon/rev1w_f34/ (with --folds F1 F2 the reference on the 188, rev1w_f12)")
+    hz.add_argument("--folds", nargs="*", default=None, help="--rev1w: the folds (default F3 F4)")
+    hz.add_argument("--registration", default=None, help="--rev1w: R<n> — required for confirmation folds (logged once the number exists)")
     hz.add_argument("--book", action="store_true", help="R35: the month-mean of the ±1 % imbalance and the raw imbalance at 3 and 7 days on the names whose book is in hand → output/horizon/book_<universe>/horizon.md")
     hz.add_argument("--universe", choices=["both", "new", "screen"], default=None, help="--book only: `both` — the twelve and universe.NEW (default, R35); `new` — the 32 alone; `screen` — the 188 screener members (R36)")
     hz.add_argument("--name", help="output directory under output/horizon/ (default: the run's name; with --pre, pre)")
