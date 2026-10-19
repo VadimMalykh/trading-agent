@@ -113,7 +113,7 @@ def report(gated_dir: Path = OUT / GATED, calm_dir: Path = OUT / CALM, out: Path
     all_row = tk.loc["all"].to_dict()
     by_fold = {fo: float(tk.loc[fo, "net"]) for fo in FOLDS if fo in tk.index}
     p = null_p(nul, float(all_row["net"]))
-    last = pd.Timestamp(pd.to_datetime(f["t"], utc=True).max()) if len(f) else folds.bounds("F4")[1]
+    last = folds.bounds(FOLDS[-1])[1] - bt.BAR            # the folds' own end, not the last fill: every scored day of both halves is in the table
     hy_g = halfyears(f, meta["params"]["hold"], last)
     v, lines = verdict(all_row, by_fold, p)
     maker = res[(res["exec"] == "maker") & (res["scope"] == "all")]

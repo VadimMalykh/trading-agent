@@ -111,3 +111,4 @@ def test_the_calm_half_through_the_script_equals_the_harness_and_the_report_read
     md = (out / "r59" / "r59.md").read_text()
     assert "VERDICT:" in md and "calm half" in md and "By calendar half-year" in md
     assert len(j["gated"]["halfyears"]) >= 1 and all(r["trades"] > 0 for r in j["gated"]["halfyears"])
+    assert all(np.isfinite(r["net"]) and np.isfinite(r["lo"]) for r in j["gated"]["halfyears"] + j["calm"]["halfyears"] if r["trades"] > 0)
