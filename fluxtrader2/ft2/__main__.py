@@ -95,7 +95,7 @@ def cmd_dvol(args):
 
 def cmd_coinbase(args):
     from . import coinbase
-    coinbase.main(args.action, args.start, args.end, args.products)
+    coinbase.main(args.action, args.start, args.end, args.products, args.universe, args.listed_only)
 
 
 def cmd_magvol(args):
@@ -445,7 +445,10 @@ def main(argv=None):
     cbp.add_argument("action", choices=["products", "fetch", "ingest", "audit"])
     cbp.add_argument("--start", default="2023-04-01", help="fetch: the first hour asked for")
     cbp.add_argument("--end", default=None, help="fetch: the last hour (default now)")
-    cbp.add_argument("--products", nargs="*", default=None, help="a subset of the products (default all of coinbase.PRODUCTS)")
+    cbp.add_argument("--products", nargs="*", default=None, help="a subset of the products (default all of the universe's)")
+    cbp.add_argument("--universe", choices=["twelve", "members"], default="twelve",
+                     help="twelve (default): the twelve's products → data/coinbase_1h.parquet; members (AX1 (i)): the screener's members' <BASE>-USD products → data/coinbase_1h_members.parquet, output/coinbase_members_audit.md")
+    cbp.add_argument("--listed-only", action="store_true", help="fetch: skip the products the saved listing does not list (run `products` first)")
     mvp = sub.add_parser("magvol", help="P8 (R54): magnitude against implied — the candle-built realised-vol forecast against DVOL in forecasting BTC's and ETH's realised volatility at 1 and 7 days → output/magvol/<name>/magvol.md (see ft2/magvol.py)")
     mvp.add_argument("--holds", nargs="*", type=int, default=[1, 7], help="horizons in days (default 1 7)")
     mvp.add_argument("--names", nargs="*", default=None, help="the family's names (default BTCUSDT ETHUSDT)")
