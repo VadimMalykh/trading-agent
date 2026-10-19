@@ -324,6 +324,39 @@ feature: a bar is read at `ts_known` = its start + 1 h and nothing earlier; the 
 `ts_known` ≤ t; the adjusted premium is the quantity, the raw one is not read; ZEC's and WLD's series are thin-book noise (sd ≈ 48 bps) and
 a feature on them is described, not counted.** The serving lag after an hour boundary, measured 2026-10-19 14:00 UTC with six polls over 2.6 minutes (`coinbase.live_lag`): the completed bar ending 14:00 was served at the first poll, 22 s after the boundary, with the in-progress bucket beside it on every poll — the lag is under 22 s. R60 reads a bar only from `ts_known` + 5 min on, a margin of more than ten times that.
 
+### coinbase_1h_members (Coinbase Exchange spot, hourly, the screener's members' <BASE>-USD products; decision AX1 (i), §9 #10) — `data/coinbase_1h_members.parquet`: the same columns as `coinbase_1h`
+
+`ft2 coinbase products|fetch --listed-only|ingest|audit --universe members` (`scripts/ax1_chain.sh`; the raw month files shared with the
+twelve's under `data/raw/external/coinbase/<PRODUCT>/`; the twelve's `data/coinbase_1h.parquet` is never rewritten — a separate parquet).
+The universe: every member base of `ft2/screen_members.csv` and `screen_members_f34.csv` (310 symbols; a 1000× / 1M× contract's base
+with the multiple divided — 1000SHIB ÷ 1,000, 1MBABYDOGE ÷ 1,000,000) as a `<BASE>-USD` product, plus USDT-USD. **Fetched 2026-10-19 on
+the work VM, 15:53 → 19:42 UTC** (an unlisted product answers 404 on every call, so `--listed-only` skips the 149 the listing does not
+hold). **Measured (`output/coinbase_members_audit.md` / `.json`, `coinbase_members_premium.parquet`):** 161 of the 310 member bases are
+listed (144 online, 17 delisted), 159 have hourly bars. Per 60-name block the members with a bar inside the block and ≥ 90 % of the
+block's hours covered: 31 … 46 on F1+F2's 18 blocks (median ≈ 40; 2024-05 → 2024-08 the low, 31 … 35), 26 … 46 on F3+F4's 17
+(2024-11 the low). Of the 159 with bars, 121 cover ≥ 90 % of their own member hours, 10 between 50 and 90 %, 27 under 50 % (listed on
+Coinbase after their membership — 44 of the 159 first traded on Coinbase in 2025, 17 in 2024; the mean cover of F1 / F2 / F3 / F4 / F5
+0.55 / 0.59 / 0.68 / 0.83 / 0.86, the median ≥ 0.9 in every fold). Completeness over 2023-05-01 → 2026-09-15 median 85 % (the late
+listings), the hourly holes median 50 a name (Coinbase serves no bucket for an hour without a trade, so a thin product has holes; six names
+have an unchanged close on more than 20 % of their hours — GTC 36 %, MASK 30 %, 1INCH 24 %, STRK, ENJ, BOND), the largest gap 289 h.
+**The adjusted premium** (R60's definition) across the 158 names with a series: the level median +4.3 bps (a quarter of the names
+between +1.9 and +7.3 — the twelve's +3 … +4 again), sd median 29 bps (18 names ≤ 15, 62 between 15 and 30, 73 above 30 — against the
+twelve's 4 … 20 on the liquid names and 48 on ZEC / WLD); the autocorrelation at 1 h median 0.33, at 24 h 0.09. Two kinds of bad series,
+both named by the sd: (a) **a different asset on the two venues** — a persistent offset with the autocorrelation at 1 h ≈ 1: OCEAN (mean
+−396 bps, sd 1,110; the ASI merger), MKR (−157, sd 597, delisted 2026-01-12; the SKY migration), VOXEL (−130, sd 739), AUDIO (+33, sd 376),
+ENJ (+200, sd 352, delisted 2024-06-14), GMT (+19, sd 124) — their premium is not a premium; (b) **thin books** — a wide sd with a low
+autocorrelation (SPX sd 100 at 0.05; AVNT 157; MOVE 157; ORCA 82). The mean cross-name correlation of the premium 0.28 (the twelve's 0.46);
+the first component is not computable on the ragged panel (NaN). By hour of day the mean is +2 bps at every hour but 22 UTC (+5.2) and
+23 (+3.1). **The volume share (AX2, described):** Coinbase's hourly USD volume over Binance's hourly USDT volume on the perpetual, per
+name — the median 2.1 % (p10 0.5 %, p90 6.4 % within a name; across names the quartiles 1.1 … 4.8 %), the log share's deviation from its
+trailing month has sd 0.84 (a loud, name-specific quantity), and its correlation with the adjusted premium is nil (median −0.025, positive
+on 26 % of the names) — US participation surging on a name does not move the price gap. The twelve's share is not computed (their audit
+predates the column). **Rule for any feature: R60's rule holds (`ts_known` = the bar's start + 1 h; the adjusted premium; the last bar
+whose `ts_known` ≤ t — so a thin name's premium is STALE for the hours it has no bar); a registration on the members names its sd cut in
+advance — at the twelve's ZEC / WLD level (sd ≤ 48 bps) 121 of the 158 series stay and ≈ 37 … 43 members a block carry one on F1+F2, at
+sd ≤ 30 (the twelve's liquid level) 80 stay and ≈ 24 … 34 a block; the six different-asset names fall at either cut.** What follows is
+decision AY (P8).
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
