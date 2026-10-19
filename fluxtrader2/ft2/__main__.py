@@ -93,6 +93,11 @@ def cmd_dvol(args):
     dvol.main(args.action, args.currencies, args.start)
 
 
+def cmd_coinbase(args):
+    from . import coinbase
+    coinbase.main(args.action, args.start, args.end, args.products)
+
+
 def cmd_magvol(args):
     from . import magvol
     print(magvol.run(args.holds, args.names, args.name))
@@ -429,6 +434,11 @@ def main(argv=None):
     dvp.add_argument("action", choices=["fetch", "ingest", "inventory"])
     dvp.add_argument("--currencies", nargs="*", default=None, help="default BTC ETH SOL")
     dvp.add_argument("--start", default="2021-01-01", help="fetch: the first day asked for")
+    cbp = sub.add_parser("coinbase", help="P8 (decision AT2): the Coinbase spot premium per name as a source — products, hourly candles from the public API → data/raw/external/coinbase/, data/coinbase_1h.parquet, output/coinbase_audit.md (see ft2/coinbase.py)")
+    cbp.add_argument("action", choices=["products", "fetch", "ingest", "audit"])
+    cbp.add_argument("--start", default="2023-04-01", help="fetch: the first hour asked for")
+    cbp.add_argument("--end", default=None, help="fetch: the last hour (default now)")
+    cbp.add_argument("--products", nargs="*", default=None, help="a subset of the products (default all of coinbase.PRODUCTS)")
     mvp = sub.add_parser("magvol", help="P8 (R54): magnitude against implied — the candle-built realised-vol forecast against DVOL in forecasting BTC's and ETH's realised volatility at 1 and 7 days → output/magvol/<name>/magvol.md (see ft2/magvol.py)")
     mvp.add_argument("--holds", nargs="*", type=int, default=[1, 7], help="horizons in days (default 1 7)")
     mvp.add_argument("--names", nargs="*", default=None, help="the family's names (default BTCUSDT ETHUSDT)")
@@ -476,7 +486,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
