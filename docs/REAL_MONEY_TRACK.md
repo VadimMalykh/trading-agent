@@ -564,5 +564,17 @@ docker compose logs app | grep "MICRO-PILOT IS ON"      # expect "… 2x, max 8 
 Expected on `/api/health`: `live_pilot.stop_pct 0.1`, `take_profit_pct 0.2`, `max_positions 8`,
 `leverage 2`, `enabled true`, `refusal null`, the policy block unchanged (`checkpoint_bound true`,
 cut 0.5860595703125 — the forward clock is untouched by this; the pilot is not the registered
-test). The first `live` trade after the deploy: its `stop_order_id` order on the exchange sits
+test).
+
+**DEPLOYED 2026-10-19 on Vadim's "Deploy", by Claude over `gcloud compute ssh`.** First recreate
+07:35:08 UTC with nothing open: the app came up with 8 slots at 2x but `stop_pct 0.02` — the
+compose service passes an explicit list of `LIVE_PILOT_*` variables and the new one was not in
+it (`0710e1d` adds `LIVE_PILOT_STOP_PCT: ${LIVE_PILOT_STOP_PCT:-}`); second recreate 07:38 UTC,
+again with nothing open. Verified 07:40:36 UTC: `live_pilot.stop_pct 0.1`, `take_profit_pct 0.2`,
+`max_positions 8`, `leverage 2`, `enabled true`, `refusal null`, `open 0`; `checkpoint_bound true`,
+`served_candle_interval 5m`, `served_closed_bars_only true`, cut 0.5860595703125, `last_error`
+null, inference ok, `executor.mode simulation`, `live_orders true`, user stream connected; boot
+log `MICRO-PILOT IS ON … 2x, max 8 open`; `.env` backed up as `.env.bak_20261019`. The forward
+clock is untouched (same start, same checkpoint). The `live` arm's rows before 07:38 UTC carry
+the 2 % brake and are not read beside the paper arms; from the next `live` entry on they are. The first `live` trade after the deploy: its `stop_order_id` order on the exchange sits
 10 % from the fill. From that trade on the `live` arm can be read beside `policy` on shared entries.
