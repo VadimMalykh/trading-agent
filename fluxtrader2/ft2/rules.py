@@ -171,6 +171,33 @@ class TrendFall(Strategy):
                               why=f"basket fell ≥{self.fall:g}σ in 4h, {self.trend_days}d trend up")
 
 
+class TrendFallV90(TrendFall):
+    """R59: R8 (`TrendFall`, unchanged) traded only at bars whose volatility regime is `state` — R58's V90 by R58's three lines on the
+    harness's own panel: b1 the basket's 5m move in bps, sig its sd over the trailing `v_days` × 288 bars (min 80 %), ref the median
+    of sig over the trailing `v_ref_days` × 288 bars (min 50 %); V90 = +1 where sig < ref (calm), −1 where sig > ref (volatile), 0
+    where either is undefined (no trade). The close of bar t enters, as R8's own trigger does. state −1 is the registered rule;
+    state +1 is the described calm half (`scripts/r59_read.py calm`), not a registration."""
+    name = "trendfall4h_v90"
+
+    def __init__(self, state: int = -1, v_days: int = 90, v_ref_days: int = 365, fall: float = 2.0, trend_days: int = 30, hold: int = 48):
+        super().__init__(fall, trend_days, hold)
+        self.state, self.v_days, self.v_ref_days = int(state), int(v_days), int(v_ref_days)
+
+    @staticmethod
+    def v90(close: pd.DataFrame, v_days: int = 90, v_ref_days: int = 365) -> pd.Series:
+        b1 = basket(np.log(close).diff() * 1e4)
+        k, kr = v_days * 288, v_ref_days * 288
+        sig = b1.rolling(k, min_periods=int(k * 0.8)).std()
+        ref = sig.rolling(kr, min_periods=int(kr * 0.5)).median()
+        return pd.Series(np.where(sig.notna() & ref.notna(), np.where(sig < ref, 1, np.where(sig > ref, -1, 0)), 0), index=close.index).astype(int)
+
+    def decide(self, M: Market, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
+        d = super().decide(M, a, b)
+        v = self.v90(M.close, self.v_days, self.v_ref_days)
+        keep = v.reindex(pd.DatetimeIndex(d["t"])).to_numpy() == self.state
+        return d[keep].reset_index(drop=True).assign(why=f"{d['why'].iloc[0] if len(d) else ''}; V90 = {self.state:+d}")
+
+
 class IndexHour(Strategy):
     """R31: the US index's last hour, traded at its sign on the whole basket. At a bar t = H + `lag` bars, where H is an hour's
     close, f = R30's ix_1h at H (`Market.extra["ix_1h"]`, NaN unless the index was open at H and at H − 1 h); |f| ≥ `theta` →
@@ -244,4 +271,4 @@ class Trend1d(Strategy):
                               why=f"basket's {self.trend_days}d return at its sign, at {self.hour:02d}:00 UTC, every pair")
 
 
-STRATEGIES = {Trend1d.name: Trend1d, IndexHour.name: IndexHour, BookImbalance.name: BookImbalance, TrendFall.name: TrendFall, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
+STRATEGIES = {Trend1d.name: Trend1d, IndexHour.name: IndexHour, BookImbalance.name: BookImbalance, TrendFall.name: TrendFall, TrendFallV90.name: TrendFallV90, Reversal.name: Reversal, RankReversal.name: RankReversal, RankContinuation.name: RankContinuation, Panic.name: Panic}
