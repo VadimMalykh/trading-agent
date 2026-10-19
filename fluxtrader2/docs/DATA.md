@@ -322,7 +322,7 @@ series — BTC +3.1 bps (sd 4.1), ETH +2.9 (4.2), SOL +3.6 (6.1), DOGE +3.3 (7.2
 0.84 (BTC / ETH), 0.1–0.5 the rest; flat by hour of day; the mean cross-name correlation 0.46, the first component 25 %. **Rule for any
 feature: a bar is read at `ts_known` = its start + 1 h and nothing earlier; the 5m decision bars inside an hour carry the last bar whose
 `ts_known` ≤ t; the adjusted premium is the quantity, the raw one is not read; ZEC's and WLD's series are thin-book noise (sd ≈ 48 bps) and
-a feature on them is described, not counted.** The serving lag after an hour boundary: see the line below once measured.
+a feature on them is described, not counted.** The serving lag after an hour boundary, measured 2026-10-19 14:00 UTC with six polls over 2.6 minutes (`coinbase.live_lag`): the completed bar ending 14:00 was served at the first poll, 22 s after the boundary, with the in-progress bucket beside it on every poll — the lag is under 22 s. R60 reads a bar only from `ts_known` + 5 min on, a margin of more than ten times that.
 
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
