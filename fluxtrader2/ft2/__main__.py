@@ -248,12 +248,22 @@ def cmd_costpre(args):
     print(cost.prehistory(args.symbols or PAIRS))
 
 
+def coinbase_mult() -> dict[str, float]:
+    """The members' contract multiples (1000× / 1M×) for the premium, from the Coinbase universe table."""
+    from . import coinbase
+    return coinbase.universe("members")["mult"]
+
+
 def cmd_ceiling(args):
     from . import ceiling, market
     if args.target == "pairs" and args.family == "coinbase":     # R60: the Coinbase spot premium per name, P2's frame
         from . import cb_ext
-        if args.folds or args.universe:
-            raise SystemExit("--family coinbase reads P2's cells, F1+F2, on the twelve; --folds is for --target basket, --universe for --family depth")
+        if args.folds or (args.universe and args.universe != "members"):
+            raise SystemExit("--family coinbase reads P2's cells, F1+F2 — on the twelve, or with --universe members on the screener's members (R62); --folds is for --target basket")
+        if args.universe == "members":                            # R62: the breadth step on the screener's F1+F2 members
+            cb_ext.run_members(args.taker_bps, args.maker_bps, args.fee_source, list(PAIRS), args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")),
+                               mult=coinbase_mult())
+            return print(f"wrote {cb_ext.MEMBERS_OUT_MD} and {cb_ext.MEMBERS_OUT_DIR}/")
         cb_ext.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")))
         return print(f"wrote {cb_ext.OUT_MD} and {cb_ext.OUT_DIR}/")
     if args.target == "pairs" and args.family == "depth":        # R33: the ±1 % imbalance demeaned by its trailing month, P2's frame
@@ -368,7 +378,7 @@ def main(argv=None):
                         "`etf` — the spot-ETF flows, F2 only → output/market_etf.md (see ft2/market_ext.py). --target pairs (R33): `depth` — the ±1 % book "
                         "imbalance demeaned by its trailing month, P2's cells → output/ceiling_depth.md (see ft2/book_ext.py); (R60): `coinbase` — the Coinbase spot "
                         "premium per name, its deviation from its trailing month and its 24-h change, P2's cells → output/ceiling_coinbase.md (see ft2/cb_ext.py)")
-    g.add_argument("--universe", choices=["new", "both"], default=None, help="--family depth only (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md; `both` — the twelve and the 32 pooled, a described row → output/ceiling_depth_both.md")
+    g.add_argument("--universe", choices=["new", "both", "members"], default=None, help="--family depth (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md; `both` — the twelve and the 32 pooled, a described row → output/ceiling_depth_both.md. --family coinbase (R62): `members` — the screener's F1+F2 members kept by ft2/cb_members_r62.csv → output/ceiling_coinbase_members.md")
     b = sub.add_parser("backtest", help="P3: a strategy through the harness → output/backtest/<name>/ (see ft2/backtest.py)")
     b.add_argument("strategy", help="a name in backtest.STRATEGIES / rules.STRATEGIES, e.g. coin")
     b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")

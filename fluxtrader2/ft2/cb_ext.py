@@ -29,6 +29,23 @@ its day-shuffle null reproduce `output/ceiling/ic.parquet` and `noise_ic.parquet
 hourly bar used has ts_known + MARGIN ≤ t, and N_CHECK random scored cells of the registered names recomputed straight from the
 premium rows equal the frame's values; (3) coverage — COVER_MIN per name on the scored cells, ≥ MIN_PAIRS names on ≥ 95 % of the
 scored bars. FAIL on any → `validity.json` says so, exit 2, no row of the registered features is written. No confirmation fold is read.
+
+R62 — the breadth step (PLAN §8 R62; `--universe members` → output/ceiling_coinbase_members.md, output/ceiling_coinbase_members/):
+the SAME feature on the screener's F1+F2 members (`data/coinbase_1h_members.parquet`, the archive klines under the collector's bars),
+`run_members`. The universe is FROZEN in `ft2/cb_members_r62.csv` (every member name with a series, the audit's adjusted-premium sd,
+`r62` = kept at sd ≤ R62_SD_CUT); a name's cells are those where it is a member of the bar's block (`audit.member_mask`, R20's frame) —
+the registered frame is the kept names' `cbprem_dev` masked to membership. The family = DEV × 4h / 1d on the relative bet (TWO cells; the
+24-h change CLOSED on the twelve, reported beside without a gate); both nulls on DEV only; the sign fixed POSITIVE (R62_SIGN — R60's found
+sign); the gate R34's: p_family ≤ 0.05 AND the sign AND both folds AND |IC| ≥ BAR_TWELVE = 0.0159 (the twelve's relative maker bar at
+1d as a NUMBER — the members have no maker measurement; their TAKER bar from the cost proxy is reported beside, `book_ext.taker_bar`).
+Described beside, no nulls, no verdict: the level and the change on the kept names, DEV on the TIGHT subset (sd ≤ TIGHT_SD) and on the
+THIN names (sd > R62_SD_CUT), the volume share's deviation `cbvol_dev` (AX2: log(Coinbase's hourly USD volume / Binance's hourly USDT
+volume) minus its trailing-month mean, over the trailing sd; sign free), the relative 1d IC per block. Validity FIRST: (1) the frame is
+R60's — this module on the twelve, R60's names and source, reproduces R60's saved screen rows (LVL, DEV, CHG; ic, t, every bet × horizon)
+and DEV's day-shuffle null's t per draw to TOL; (2) known-at on the members' frame as R60's (every cell; N_CHECK recomputed); (3)
+membership asserted on every registered value, ≥ BLOCK_MIN_NAMES kept names with a value on ≥ BLOCK_COVER of the scored bars of EVERY
+block, ≥ MIN_PAIRS names on ≥ 95 % of the scored bars; (4) the list's md5 and kept count written, the list self-consistent (`r62` =
+sd ≤ cut, every kept name with a series). FAIL on any → exit 2, VOID.
 """
 from __future__ import annotations
 
@@ -38,8 +55,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import ceiling, coinbase as cb, folds
-from .book_ext import SHIFT_MIN, fold_ics, shift_feature
+from . import ceiling, coinbase as cb, data, folds
+from .book_ext import SHIFT_MIN, fold_ics, shift_feature, taker_bar
 from .ceiling import HORIZONS, MDE_K, MIN_PAIRS, NULL_HORIZONS, Z_CLIP, _null_feature
 
 OUT_MD = Path("output/ceiling_coinbase.md")
@@ -69,15 +86,16 @@ DRAWS = ceiling.DRAWS
 
 
 # ---- the hourly series and the features ----------------------------------------------------------------------------------------------
-def hourly(symbols: list[str], path: Path | str = cb.PARQUET) -> pd.DataFrame:
+def hourly(symbols: list[str], path: Path | str = cb.PARQUET, slices: tuple[str, ...] = ("candles_5m",), mult: dict[str, float] | None = None) -> pd.DataFrame:
     """The adjusted premium (bps) per name on a full hourly grid of `ts_known` — NaN where the hour is missing; the names in
-    `symbols` that have Coinbase rows, in `symbols`' order."""
+    `symbols` that have Coinbase rows, in `symbols`' order. `slices`: Binance's candle slices in order (the later bar wins); `mult`:
+    the contracts' multiples (the twelve's `coinbase.MULT` when None)."""
     d = cb.load(path)
     d = d[d["symbol"].isna() | d["symbol"].isin(symbols)]
     stamps = pd.DatetimeIndex(sorted(d["ts_known"].unique()))
     have = [s for s in symbols if s in set(d["symbol"].dropna().astype(str))]
-    bn = cb.binance_close_at(have, stamps) if have else pd.DataFrame(index=stamps)
-    P = cb.premium(d, bn)
+    bn = cb.binance_close_at(have, stamps, slices) if have else pd.DataFrame(index=stamps)
+    P = cb.premium(d, bn, mult)
     W = P.pivot(index="ts_known", columns="symbol", values="prem_adj_bps")
     grid = pd.date_range(W.index.min().floor("h"), W.index.max().floor("h"), freq="h")
     return W.reindex(index=grid, columns=[s for s in have if s in W.columns])
@@ -110,9 +128,10 @@ def used_hours(G: pd.DataFrame, idx: pd.DatetimeIndex, cols: list[str]) -> pd.Da
     return to_panel(U, idx, cols)
 
 
-def features(idx: pd.DatetimeIndex, cols: list[str], names: list[str], path: Path | str = cb.PARQUET) -> tuple[dict[str, pd.DataFrame], pd.DataFrame, pd.DataFrame]:
+def features(idx: pd.DatetimeIndex, cols: list[str], names: list[str], path: Path | str = cb.PARQUET, slices: tuple[str, ...] = ("candles_5m",),
+             mult: dict[str, float] | None = None) -> tuple[dict[str, pd.DataFrame], pd.DataFrame, pd.DataFrame]:
     """(the three 5m frames on `cols` for the names in `names` that have the source, the used-hour frame, the hourly grid)."""
-    G = hourly(names, path)
+    G = hourly(names, path, slices, mult)
     H = features_hourly(G)
     return {k: to_panel(v, idx, cols) for k, v in H.items()}, used_hours(G, idx, cols), G
 
@@ -369,5 +388,325 @@ def _void(validity: dict, out_md: Path, out_dir: Path, taker_bps, maker_bps, fee
     validity["status"] = "FAIL"
     (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
     out_md.write_text("".join(_head(validity, taker_bps, maker_bps, fee_source, sidx, s, cols) + ["\n**The read is VOID: no row of the registered features was computed.**\n"]))
+    print(f"validity FAIL — the read is void; wrote {out_md}", flush=True)
+    raise SystemExit(2)
+
+
+# ====================================================================================================================================
+# R62 — the breadth step: the same feature on the screener's F1+F2 members (PLAN §8 R62)
+# ====================================================================================================================================
+R62_CSV = Path(__file__).with_name("cb_members_r62.csv")      # frozen with the registration: symbol, sd_adj_bps, r62
+R62_SD_CUT = 48.0                          # bps: the twelve's ZEC / WLD level — a name above it is THIN (described, not registered)
+TIGHT_SD = 30.0                            # bps: the twelve's liquid level — the TIGHT subset (described)
+R62_SIGN = +1.0                            # the registered sign: R60's found sign — a name bid up on Coinbase against its month OUTPERFORMS
+BAR_TWELVE = 0.0159                        # the twelve's relative maker bar at 1d (R60, recomputed) — the gate's size condition as a NUMBER
+BAR_TOL = 2e-4                             # R60's saved bar must sit within this of BAR_TWELVE
+BLOCK_MIN_NAMES = 20                       # validity (3): kept names with a value on ≥ BLOCK_COVER of EVERY block's scored bars
+BLOCK_COVER = 0.90
+MEMBERS_SLICES = ("candles_5m_archive", "candles_5m")        # the members' candles: the archive under the collector's bars, the later winning
+MEMBERS_START = pd.Timestamp("2023-04-01", tz="UTC")         # the members' panel: a month before F1 (the 1w lookback and the trailing month)
+VOL = "cbvol_dev"                          # AX2, described: the volume share's deviation from its trailing month
+TIGHT, THIN = f"{DEV}_tight", f"{DEV}_thin"
+MEMBERS_OUT_MD = Path("output/ceiling_coinbase_members.md")
+MEMBERS_OUT_DIR = Path("output/ceiling_coinbase_members")
+R62_FAMILY = ((DEV, h) for h in FAMILY_HZ)
+
+
+def r62_list(path: Path | str = R62_CSV, cut: float = R62_SD_CUT, tight: float = TIGHT_SD) -> dict:
+    """The frozen list: (kept, tight, thin, md5, the self-consistency check). `r62` must equal sd ≤ cut on every row."""
+    import hashlib
+    raw = Path(path).read_bytes()
+    L = pd.read_csv(path)
+    sd = pd.to_numeric(L["sd_adj_bps"], errors="coerce")
+    kept = list(L.loc[L["r62"].astype(bool), "symbol"])
+    consistent = bool(((sd <= cut).fillna(False) == L["r62"].astype(bool)).all())
+    return {"kept": kept, "tight": list(L.loc[(sd <= tight).fillna(False), "symbol"]), "thin": list(L.loc[(sd > cut).fillna(False), "symbol"]),
+            "md5": hashlib.md5(raw).hexdigest(), "n_kept": len(kept), "n_rows": int(len(L)), "consistent": consistent, "sd": dict(zip(L["symbol"], sd))}
+
+
+def member_panel(symbols: list[str], start: pd.Timestamp = MEMBERS_START, end: pd.Timestamp = ceiling.END, slices: tuple[str, ...] = MEMBERS_SLICES) -> dict[str, pd.DataFrame]:
+    """P2's panel on the members: every slice in order, the later slice's bar winning at the same key (the archive under the collector's
+    bars — the slices the audit's premium used), cut to [start, end]."""
+    cols_ = ["symbol", "open_time", "high", "low", "close", "volume"]
+    parts = []
+    for sl in slices:
+        if (data.PROC / f"{sl}.parquet").exists() or (data.PROC / sl).is_dir():
+            try:
+                parts.append(data.load(sl, columns=cols_, symbols=symbols))
+            except ValueError:
+                pass
+    c = pd.concat(parts, ignore_index=True)
+    c["symbol"] = c["symbol"].astype(str)
+    c = c.drop_duplicates(["symbol", "open_time"], keep="last")
+    ot = pd.DatetimeIndex(c["open_time"])
+    c["t"] = (ot.tz_localize("UTC") if ot.tz is None else ot.tz_convert("UTC")) + ceiling.BAR
+    c = c[(c["t"] >= start) & (c["t"] <= end)]
+    c["dv"] = c["volume"] * c["close"]
+    idx = pd.date_range(c["t"].min(), c["t"].max(), freq="5min", name="t")
+    cols = [s for s in symbols if s in set(c["symbol"])]
+    return {k: c.pivot(index="t", columns="symbol", values=k).reindex(index=idx, columns=cols) for k in ("close", "high", "low", "dv")}
+
+
+def membership(idx: pd.DatetimeIndex, cols: list[str], members_csv: Path | str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(bar × name: is the name a member of the bar's block — R20's frame, `audit.member_mask`; the (block, symbol) rows read)."""
+    from .audit import member_mask
+    from .universe import MEMBERS_CSV
+    m = pd.read_csv(members_csv or MEMBERS_CSV, usecols=["block", "symbol"])
+    m["block"] = pd.to_datetime(m["block"], utc=True)
+    M = member_mask(m, np.asarray(cols, dtype=str), idx)
+    return pd.DataFrame(M, index=idx, columns=cols), m
+
+
+def mask_members(F: dict[str, pd.DataFrame], M: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    return {k: v.where(M.to_numpy()) for k, v in F.items()}
+
+
+def volume_share_hourly(symbols: list[str], path: Path | str, slices: tuple[str, ...]) -> pd.DataFrame:
+    """AX2: log(Coinbase's hourly USD volume / Binance's hourly USDT volume) per name on the hourly grid of `ts_known` (NaN where either
+    is missing or zero)."""
+    d = cb.load(path)
+    d = d[d["symbol"].notna() & d["symbol"].isin(symbols)]
+    cbv = d.assign(usd=lambda x: x["volume"] * x["close"]).pivot_table(index="ts_known", columns="symbol", values="usd", aggfunc="last")
+    bnv = cb.binance_dvol_hour(list(cbv.columns), cbv.index, slices)
+    share = (cbv / bnv.reindex(columns=cbv.columns)).replace([np.inf, -np.inf], np.nan)
+    ls = np.log(share.where(share > 0))
+    grid = pd.date_range(ls.index.min().floor("h"), ls.index.max().floor("h"), freq="h")
+    return ls.reindex(grid)
+
+
+def volume_dev(LS: pd.DataFrame) -> pd.DataFrame:
+    m = LS.rolling(MONTH, min_periods=MIN_MONTH).mean()
+    sd = LS.rolling(MONTH, min_periods=MIN_MONTH).std()
+    return (LS - m) / sd
+
+
+def reproduction_r60(sc: pd.DataFrame, null: pd.DataFrame, saved: Path = OUT_DIR, tol: float = TOL) -> dict:
+    """Validity (1) of R62: this module on the twelve against R60's saved screen — LVL / DEV / CHG's ic and t on every bet × horizon
+    (`screen.parquet`) and DEV's day-shuffle null's ic and t per draw (`null_shuffle.parquet`)."""
+    if not (saved / "screen.parquet").exists() or not (saved / "null_shuffle.parquet").exists():
+        return {"status": "MISSING", "note": f"{saved}/screen.parquet or null_shuffle.parquet not found"}
+    key = ["bet", "horizon", "feature"]
+    old = pd.read_parquet(saved / "screen.parquet")
+    old = old[old["feature"].isin([LVL, DEV, CHG])].set_index(key)
+    new = sc[sc["feature"].isin([LVL, DEV, CHG])].set_index(key)
+    j = new[["ic", "t"]].join(old[["ic", "t"]], rsuffix="_r60", how="inner").dropna()
+    diff = {c: float((j[c] - j[f"{c}_r60"]).abs().max()) if len(j) else np.nan for c in ("ic", "t")}
+    oldn = pd.read_parquet(saved / "null_shuffle.parquet")
+    oldn = oldn[(oldn["feature"] == DEV) & (oldn["draw"] > 0)].set_index([*key, "draw"])
+    newn = null[(null["feature"] == DEV) & (null["draw"] > 0)].set_index([*key, "draw"])
+    jn = newn[["ic", "t"]].join(oldn[["ic", "t"]], rsuffix="_r60", how="inner").dropna()
+    diff |= {f"null_{c}": float((jn[c] - jn[f"{c}_r60"]).abs().max()) if len(jn) else np.nan for c in ("ic", "t")}
+    ok = len(j) == len(old.dropna(subset=["ic", "t"])) > 0 and len(jn) == len(newn.dropna()) > 0 and all(np.isfinite(v) and v <= tol for v in diff.values())
+    return {"status": "PASS" if ok else "FAIL", "rows_compared": int(len(j)), "rows_r60": int(len(old.dropna(subset=["ic", "t"]))),
+            "null_rows_compared": int(len(jn)), "null_rows_this_run": int(len(newn.dropna())), "max_abs_diff": diff}
+
+
+def block_coverage(Freg: pd.DataFrame, s: np.ndarray, m: pd.DataFrame, kept: list[str], min_names: int = BLOCK_MIN_NAMES, cover: float = BLOCK_COVER,
+                   min_pairs: int = MIN_PAIRS, bars_min_share: float = BARS_MIN_SHARE) -> tuple[dict, pd.DataFrame]:
+    """Validity (3): per block (its start to the next start, the last to the end of the scored bars) the kept members with a value on
+    ≥ `cover` of the block's scored bars — ≥ `min_names` in EVERY block; ≥ `min_pairs` names on ≥ `bars_min_share` of the scored bars."""
+    Fs = Freg[s]
+    idx = Fs.index
+    starts = pd.DatetimeIndex(sorted(m["block"].unique()))
+    rows = []
+    for i, b in enumerate(starts):
+        e = starts[i + 1] if i + 1 < len(starts) else idx[-1] + ceiling.BAR
+        inb = (idx >= b) & (idx < e)
+        syms = [x for x in m.loc[m["block"] == b, "symbol"] if x in kept]
+        have = [x for x in syms if x in Fs.columns]
+        cov = Fs.loc[inb, have].notna().mean() if inb.any() and have else pd.Series(dtype=float)
+        rows.append({"block": b, "scored_bars": int(inb.sum()), "members_kept": len(syms), "with_a_series": len(have),
+                     "covered": int((cov >= cover).sum()), "cover_mean": float(cov.mean()) if len(cov) else np.nan})
+    B = pd.DataFrame(rows)
+    scored_blocks = B[B["scored_bars"] > 0]
+    bars = float((Fs.notna().sum(axis=1) >= min_pairs).mean())
+    short = scored_blocks[scored_blocks["covered"] < min_names]
+    ok = len(scored_blocks) > 0 and short.empty and bars >= bars_min_share
+    return {"status": "PASS" if ok else "FAIL", "blocks_scored": int(len(scored_blocks)), "covered_min": int(scored_blocks["covered"].min()) if len(scored_blocks) else 0,
+            "covered_median": float(scored_blocks["covered"].median()) if len(scored_blocks) else np.nan, "covered_max": int(scored_blocks["covered"].max()) if len(scored_blocks) else 0,
+            "blocks_under_minimum": [str(b.date()) for b in short["block"]], "min_names": min_names, "cover": cover,
+            "bars_with_min_pairs": round(bars, 4), "bars_min_share": bars_min_share}, B
+
+
+def block_ics(daily: pd.DataFrame, m: pd.DataFrame, feature: str = DEV, bet: str = BET, h: str = PRIMARY) -> pd.DataFrame:
+    """The relative 1d IC inside each block (the mean of the daily IC over the block's days, its plain se), described."""
+    g = daily[(daily["feature"] == feature) & (daily["bet"] == bet) & (daily["horizon"] == h)].dropna(subset=["ic"])
+    starts = pd.DatetimeIndex(sorted(m["block"].unique()))
+    day = pd.DatetimeIndex(g["day"])
+    day = day.tz_localize("UTC") if day.tz is None else day.tz_convert("UTC")
+    pos = starts.searchsorted(day, side="right") - 1
+    rows = []
+    for i, b in enumerate(starts):
+        x = g["ic"].to_numpy()[pos == i]
+        rows.append({"block": b, "days": int(len(x)), "ic": float(x.mean()) if len(x) else np.nan, "se": float(x.std(ddof=1) / np.sqrt(len(x))) if len(x) > 1 else np.nan})
+    return pd.DataFrame(rows)
+
+
+def verdict_r62(ic: float, se: float, p_family: float, same_sign_folds: bool, bar: float = BAR_TWELVE, sign: float = R62_SIGN) -> str:
+    if p_family <= 0.05 and same_sign_folds and abs(ic) >= bar:
+        return "CLEARS" if ic * sign > 0 else "CLEARS WITH THE OPPOSITE SIGN"
+    if abs(ic) + 1.96 * se < bar:
+        return "CLOSED"
+    return "NOT DETECTABLE"
+
+
+def run_members(taker_bps: float, maker_bps: float, fee_source: str, twelve: list[str], draws: int = DRAWS, seed: int = 0, shift_min: int = SHIFT_MIN,
+                jobs: int = 1, path: Path | str = cb.MEMBERS_PARQUET, twelve_path: Path | str = cb.PARQUET, r60: Path = OUT_DIR, csv: Path | str = R62_CSV,
+                members_csv: Path | str | None = None, slices: tuple[str, ...] = MEMBERS_SLICES, mult: dict[str, float] | None = None,
+                liquid: list[str] = LIQUID, n_check: int = N_CHECK, start: pd.Timestamp = MEMBERS_START, block_min_names: int = BLOCK_MIN_NAMES,
+                out_md: Path = MEMBERS_OUT_MD, out_dir: Path = MEMBERS_OUT_DIR) -> str:
+    """R62. Validity (1) on the twelve first (R60's frame reproduced), then the members' frame, validity (2) … (4), then the screen."""
+    from joblib import Parallel, delayed
+    out_dir.mkdir(parents=True, exist_ok=True)
+    L = r62_list(csv)
+    kept, tight, thin = L["kept"], L["tight"], L["thin"]
+    validity = {"registration": "R62", "folds": list(folds.EXPLORATION), "draws": draws, "seed": seed, "shift_min": shift_min, "source": str(path),
+                "universe_file": {"path": str(csv), "md5": L["md5"], "n_kept": L["n_kept"], "n_rows": L["n_rows"], "consistent": L["consistent"],
+                                  "status": "PASS" if L["consistent"] and L["n_kept"] > 0 else "FAIL"},
+                "gate": {"bar_twelve": BAR_TWELVE, "sign": R62_SIGN, "family": [(DEV, h) for h in FAMILY_HZ]}}
+
+    # validity (1) FIRST: this module on the twelve, R60's names and source, against R60's saved screen and DEV's shuffle null
+    print(f"validity (1): R60's frame on the twelve — the three features and DEV's {draws} day shuffles against {r60}/…", flush=True)
+    P12 = ceiling.panel(twelve)
+    D12 = ceiling.derive(P12)
+    s12, idx12, cols12 = D12["scored"], D12["lr"].index, list(D12["lr"].columns)
+    F12 = restrict(features(idx12, cols12, liquid, twelve_path)[0], liquid)
+    sc12, _ = ceiling.ic_screen(D12, F12, set())
+    Zs12 = {h: D12["z"][h][s12].clip(-Z_CLIP, Z_CLIP).to_numpy() for h in HZ}
+    Zr12 = {h: D12["zres"][h][s12].to_numpy() for h in HZ}
+    null12 = _null_feature(DEV, F12[DEV][s12], Zs12, Zr12, draws, seed)
+    validity["reproduction"] = reproduction_r60(sc12, null12, r60)
+    saved_mv = pd.read_parquet(r60 / "move_vs_cost.parquet") if (r60 / "move_vs_cost.parquet").exists() else None
+    if saved_mv is not None:
+        sm = saved_mv[(saved_mv["bet"] == BET) & (saved_mv["horizon"] == PRIMARY)]
+        validity["gate"]["bar_r60_saved"] = float(sm["ic_needed_maker"].iloc[0]) if len(sm) else np.nan
+        validity["gate"]["bar_status"] = "PASS" if len(sm) and abs(float(sm["ic_needed_maker"].iloc[0]) - BAR_TWELVE) <= BAR_TOL else "FAIL"
+    else:
+        validity["gate"]["bar_status"] = "MISSING"
+    del P12, D12, F12, Zs12, Zr12
+    if validity["reproduction"]["status"] != "PASS" or validity["universe_file"]["status"] != "PASS" or validity["gate"]["bar_status"] != "PASS":
+        return _void_members(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+
+    # the members' panel and frames; validity (2) known-at on the kept names (unmasked), (3) membership and coverage, before any IC
+    print("the members' panel…", flush=True)
+    names = sorted(set(kept) | set(thin))
+    P = member_panel(names, start, ceiling.END, slices)
+    D = ceiling.derive(P)
+    idx, cols, s = D["lr"].index, list(D["lr"].columns), D["scored"]
+    sidx = idx[s]
+    validity |= {"scored_bars": int(s.sum()), "days": int(len(np.unique(sidx.floor("D")))), "names_in_panel": len(cols), "first": str(sidx[0]), "last": str(sidx[-1]),
+                 "kept_in_panel": int(sum(c in cols for c in kept)), "thin_in_panel": int(sum(c in cols for c in thin))}
+    print("the hourly premium → the frames; the volume share…", flush=True)
+    F_all, U, G = features(idx, cols, names, path, slices, mult)
+    F_kept = restrict(F_all, kept)
+    validity["known_at"] = known_at(F_kept, U, G, s, kept, n_check, seed)
+    M, m = membership(idx, cols, members_csv)
+    F = mask_members(F_kept, M)
+    validity["membership"] = {"status": "PASS" if bool((F[DEV].notna() & ~M).to_numpy().sum() == 0) else "FAIL",
+                              "values_off_membership": int((F[DEV].notna() & ~M).to_numpy().sum()), "values_on": int(F[DEV][s].notna().to_numpy().sum()),
+                              "values_before_the_mask": int(F_kept[DEV][s].notna().to_numpy().sum())}
+    validity["coverage"], B = block_coverage(F[DEV], s, m, kept, block_min_names)
+    validity["status"] = "PASS" if all(validity[k]["status"] == "PASS" for k in ("reproduction", "universe_file", "known_at", "membership", "coverage")) else "FAIL"
+    if validity["status"] != "PASS":
+        return _void_members(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    B.to_parquet(out_dir / "blocks.parquet", index=False)
+    head = _head_members(validity, taker_bps, maker_bps, fee_source)
+
+    # the screen: the registered frame; the described rows
+    print("screen: the registered feature; the level, the change, the tight and the thin subsets, the volume share…", flush=True)
+    LS = volume_share_hourly(kept, path, slices)
+    Fv = mask_members({VOL: to_panel(volume_dev(LS), idx, cols)}, M)
+    F_desc = {TIGHT: mask_members(restrict(F_all, tight), M)[DEV], THIN: mask_members(restrict(F_all, thin), M)[DEV], VOL: Fv[VOL]}
+    sc, daily = ceiling.ic_screen(D, {DEV: F[DEV], LVL: F[LVL], CHG: F[CHG], **F_desc}, set())
+    Zs = {h: D["z"][h][s].clip(-Z_CLIP, Z_CLIP).to_numpy() for h in HZ}
+    Zr = {h: D["zres"][h][s].to_numpy() for h in HZ}
+    print(f"nulls on {DEV}: {draws} day shuffles and {draws} whole-day shifts…", flush=True)
+    null_shuffle, null_shift = Parallel(n_jobs=min(jobs, 2) if jobs > 1 else 1)(
+        [delayed(_null_feature)(DEV, F[DEV][s], Zs, Zr, draws, seed), delayed(shift_feature)(DEV, F[DEV], D, s, draws, seed, shift_min)])
+
+    # the bars: the twelve's maker bar as a number; the members' taker bar from their proxy
+    print("the bars…", flush=True)
+    ct, _ = ceiling.bar_cost(idx, cols, taker_bps, maker_bps)
+    bars_taker = {h: taker_bar(D, ct, h) for h in HORIZONS}
+    cost_cover = float(ct[s].notna().to_numpy().mean())
+
+    rows = sc.merge(fold_ics(daily), on=["bet", "horizon", "feature"], how="left")
+    rows["ic_se"] = rows["ic_mde"] / MDE_K
+    rows["bar_maker_twelve"] = np.where(rows["horizon"] == PRIMARY, BAR_TWELVE, np.nan)
+    rows["bar_taker_members"] = rows["horizon"].map(bars_taker)
+    for c in ("p_single_shuffle", "p_single_shift", "p_fw_shuffle", "p_fw_shift"):
+        rows[c] = np.nan
+    for i, r in rows.iterrows():
+        if r["feature"] == DEV and r["bet"] in ("directional", "relative") and r["horizon"] in HZ:
+            rows.loc[i, "p_single_shuffle"] = single_p(null_shuffle, r["bet"], DEV, r["horizon"], r["t"])
+            rows.loc[i, "p_single_shift"] = single_p(null_shift, r["bet"], DEV, r["horizon"], r["t"])
+    cells = [(DEV, h) for h in FAMILY_HZ]
+    fam_rows = rows[(rows["bet"] == BET) & (rows["feature"] == DEV) & rows["horizon"].isin(FAMILY_HZ)]
+    t_real = {(r["feature"], r["horizon"]): r["t"] for _, r in fam_rows.iterrows()}
+    pf1, b1 = family_p(null_shuffle, cells, t_real)
+    pf2, b2 = family_p(null_shift, cells, t_real)
+    for i, r in fam_rows.iterrows():
+        rows.loc[i, ["p_fw_shuffle", "p_fw_shift"]] = [pf1[r["feature"], r["horizon"]], pf2[r["feature"], r["horizon"]]]
+    rows["p_family"] = rows[["p_fw_shuffle", "p_fw_shift"]].max(axis=1)
+    rows["verdict"] = ""
+    for i, r in rows.loc[fam_rows.index].iterrows():
+        v = verdict_r62(r["ic"], r["ic_se"], r["p_family"], bool(r["folds_same_sign"]))
+        rows.loc[i, "verdict"] = v if r["horizon"] == PRIMARY else v + " (reported, not gated)"
+    rows.loc[rows["feature"] == LVL, "verdict"] = "described (the level)"
+    rows.loc[rows["feature"] == CHG, "verdict"] = "described (the 24-h change; CLOSED on the twelve, not carried)"
+    rows.loc[rows["feature"] == TIGHT, "verdict"] = f"described (sd ≤ {TIGHT_SD:g}, {len(tight)} names)"
+    rows.loc[rows["feature"] == THIN, "verdict"] = f"described (sd > {R62_SD_CUT:g}, {len(thin)} names)"
+    rows.loc[rows["feature"] == VOL, "verdict"] = "described (AX2: the volume share's deviation; sign free)"
+    desc = describe_names(F, s, kept)
+    desc["sd_audit_bps"] = desc["symbol"].map(L["sd"])
+    bi = block_ics(daily, m)
+
+    rows.to_parquet(out_dir / "screen.parquet", index=False)
+    daily.to_parquet(out_dir / "ic_daily.parquet", index=False)
+    null_shuffle.to_parquet(out_dir / "null_shuffle.parquet", index=False)
+    null_shift.to_parquet(out_dir / "null_shift.parquet", index=False)
+    pd.DataFrame({"horizon": list(bars_taker), "ic_needed_taker_members": list(bars_taker.values()), "bar_maker_twelve": BAR_TWELVE, "cost_cover": cost_cover}).to_parquet(out_dir / "move_vs_cost.parquet", index=False)
+    desc.to_parquet(out_dir / "names.parquet", index=False)
+    B.merge(bi, on="block", how="left").to_parquet(out_dir / "blocks.parquet", index=False)
+
+    show = lambda df, digits=4: df.round(digits).to_markdown(index=False)                    # noqa: E731
+    cols_show = ["bet", "horizon", "feature", "ic", "t", "ic_se", "ic_mde", "days", "months_same_sign", "ic_F1", "ic_F2", "folds_same_sign",
+                 "p_single_shuffle", "p_single_shift", "p_fw_shuffle", "p_fw_shift", "p_family", "bar_maker_twelve", "bar_taker_members", "verdict"]
+    g = rows[(rows["feature"] == DEV) & (rows["bet"] == BET) & (rows["horizon"] == PRIMARY)].iloc[0]
+    md = head + [f"\n## Verdict by R62's gate — `{DEV}`, {BET}, {PRIMARY}, on the kept members: **{g['verdict']}**\n",
+                 f"\nIC {g['ic']:+.4f} (t {g['t']:+.2f}, se {g['ic_se']:.4f}, MDE {g['ic_mde']:.4f}); p_family {g['p_family']:.3f} (day shuffles {g['p_fw_shuffle']:.3f}, whole-day "
+                 f"shifts {g['p_fw_shift']:.3f}; single {g['p_single_shuffle']:.3f} / {g['p_single_shift']:.3f}); F1 {g['ic_F1']:+.4f}, F2 {g['ic_F2']:+.4f} "
+                 f"({'same sign' if g['folds_same_sign'] else 'signs differ'}); months the same sign {g['months_same_sign']:.2f}; the gate's bar {BAR_TWELVE} (the twelve's "
+                 f"maker bar at {PRIMARY}, a number); the members' own taker bar {bars_taker[PRIMARY]:.4f} (the cost proxy covers {cost_cover:.0%} of the scored cells); "
+                 f"the registered sign {'positive' if R62_SIGN > 0 else 'negative'}.\n"]
+    fam = (rows["feature"] == DEV) & rows["horizon"].isin(HZ) & rows["bet"].isin(["directional", "relative"])
+    md += ["\n## The family (relative, 4h / 1d) with the directional bet and 1h beside — the registered feature\n",
+           "`p_fw_*` = the share of a null's draws whose largest |t| over the TWO family cells is at or above the real |t|; `p_single_*` = the cell alone; `p_family` = the larger "
+           "of the two nulls' family-wise p. `ic_F1`, `ic_F2` = the HAC mean of the daily IC inside each fold. `bar_maker_twelve` = the gate's number; `bar_taker_members` = "
+           "the members' taker bar from their cost proxy at the horizon.\n", show(rows[fam][cols_show]), "\n",
+           "\n## Described beside (no nulls, no verdict): the level, the 24-h change, the tight and the thin subsets, the volume share's deviation; 15m and the vol bet\n",
+           show(rows[~fam][cols_show[:12] + ["bar_taker_members", "verdict"]]), "\n",
+           "\n## The nulls' family bars (largest |t| over the two cells, per draw)\n", "```\n", json.dumps({"shuffle": b1, "shift": b2}, indent=1), "\n```\n",
+           f"\n## By block — the kept members present and the relative {PRIMARY} IC inside the block (described)\n", show(B.merge(bi, on="block", how="left").assign(block=lambda d: d["block"].dt.date)), "\n",
+           "\n## The kept names on their member cells\n", show(desc), "\n"]
+    out_md.write_text("".join(md))
+    print(f"{DEV} {BET} {PRIMARY} on the members: {g['verdict']}; wrote {out_md} and {out_dir}/", flush=True)
+    return "".join(md)
+
+
+def _head_members(validity: dict, taker_bps, maker_bps, fee_source) -> list[str]:
+    return [f"# R62 — the Coinbase premium's deviation at breadth: the screener's F1+F2 members (`ft2 ceiling --target pairs --family coinbase --universe members`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC\n",
+            f"\n**Folds read:** {'+'.join(folds.EXPLORATION)} (embargoed) on the members' cells (a name's cells while a member of the bar's block); every source cut at "
+            f"{ceiling.END:%Y-%m-%d}. The universe `{validity['universe_file']['path']}` (md5 {validity['universe_file']['md5']}, {validity['universe_file']['n_kept']} kept). "
+            f"Fees (input): taker {taker_bps} bps, maker {maker_bps} bps — {fee_source}.\n",
+            f"\n## Validity — read first: **{validity.get('status', 'FAIL')}**\n", "```\n", json.dumps(validity, indent=1, default=str), "\n```\n"]
+
+
+def _void_members(validity: dict, out_md: Path, out_dir: Path, taker_bps, maker_bps, fee_source):
+    validity["status"] = "FAIL"
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    out_md.write_text("".join(_head_members(validity, taker_bps, maker_bps, fee_source) + ["\n**The read is VOID: no row of the registered feature was computed on the members.**\n"]))
     print(f"validity FAIL — the read is void; wrote {out_md}", flush=True)
     raise SystemExit(2)
