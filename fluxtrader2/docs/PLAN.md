@@ -1363,6 +1363,21 @@ closed today (R58 / R59); R14's spent trades take no more cuts (AA8); the member
 - **(AT4) P7's clock alone** — the standing lines at R17; rejected as a mode by Vadim 2026-10-19; it is what runs beside AT1 / AT2 anyway.
 Recommended: AT2 — the one new fluxtrader2 line (a day, the work VM for the fetch, nothing registered until the audit is in). Needed from
 Vadim: the word on AT2.
+**DECIDED 2026-10-19, Vadim's "Yes, let's go with that": AT2 OPENED — the Coinbase spot premium SOURCE AUDIT, written here before any
+fetch. `ft2 coinbase products|fetch|ingest|audit` (`ft2/coinbase.py`), the chain `scripts/at2_chain.sh` on the work VM. The products: for
+each of the twelve its `<BASE>-USD` product on Coinbase Exchange (PEPE at 1 : 1000 against Binance's 1000PEPEUSDT) plus `USDT-USD` as the
+control (Binance's perpetual is in USDT, Coinbase's spot in USD: the raw gap carries the USDT rate; the adjusted premium divides it out).
+The fetch: hourly candles from 2023-04-01 (a month before F1) to today, raw one JSON a product a month under
+`data/raw/external/coinbase/<PRODUCT>/<yyyy-mm>.json`; daily candles from 2015 for each product's FIRST bar. The parquet
+`data/coinbase_1h.parquet`: (product, symbol, ts the bar's START, ts_known = ts + 1 h, open, high, low, close, volume) — the bar that
+starts at H is final at H + 1 h and is read only from there. The audit (`output/coinbase_audit.md`, nothing priced): per product the
+first daily bar, the hourly extent, completeness over 2023-05-01 → the end (hours present over hours expected), the gaps > 1 h and the
+largest, the cover of F1–F5's scored hours; the premium at each hour's end = Coinbase's close over Binance's 5m close at the same stamp
+minus one, in bps, raw and USDT-adjusted: mean, median, sd, p10 / p90, the autocorrelation at 1 h and 24 h, the share of hours with |p| >
+10 bps, the mean by hour of day (US hours), the mean off-diagonal correlation across names (one market-wide number, or per name); the
+serving lag measured live (the seconds between the last complete bar's end and its appearance). A DATA.md section and a §9 line
+whatever comes out. The registration condition as written in AT2: a point-in-time series with ≥ 8 names and a year of history;
+then R20's frame. Nothing is registered by this audit.**
 
 
 **Decision AR (2026-10-19) — after R58 (the state audit: R8 CLEARS at V90 — the market's bounce in an uptrend pays +106.5 a trade [lo +65]
