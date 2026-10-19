@@ -288,6 +288,23 @@ spot on both names** (BTC range 11 – 60, ETH 10 – 35; 7 – 21 % of the stra
 for any read: the entry is the last trade before 00:00 and nothing after it; the settlement is the 07:30 → 07:59 TWAP; a day outside
 `covered` is not a trading day.**
 
+### varmonth (the monthly at-the-money straddle on BTC and ETH, 2020-05 → today; decision AQ2) — no table: raw one JSON a month a name under `data/raw/external/deribit/varmonth/<CUR>/<expiry>.json`; the priced rows `output/varmonth/all/months.csv`
+
+`ft2 varmonth fetch|run` (`ft2/varmonth.py`). **Fetched 2026-10-19 on the work VM** from Deribit's public chart endpoint (DATA.md
+`deribit_options`): for each monthly expiry (the last Friday of the month, 08:00 UTC; BTC from 2020-05-29, ETH from 2020-07-31; 76 / 74
+months to 2026-09-25) one file holding the perpetual's hourly bars from the previous expiry's 08:00 to the settlement, the perpetual's
+1-minute bars 07:30 → 08:00 of the settlement day, and the at-the-money monthly call and put (`<CUR>-<expiry>-<K>-C/P`, K the served
+strike nearest the perpetual's close at 09:00 UTC after the previous expiry, the nearest strikes tried in turn) as hourly bars over the
+48 hours around the entry. The entry is each leg's LAST TRADE at or before 09:00; the settlement the 1-minute TWAP 07:30 → 07:59 (≥ 25
+bars). **Covered (both legs traded in the 24 h before, |C − P − (S − K) / S| ≤ 1 % of spot, the hourly path whole, the settlement window
+whole): BTC 45 / 76, ETH 40 / 74**; skipped: a leg untraded in the 24 h 17 / 16, parity 13 / 14 (nearly all +1 … +2.8 %, the two legs'
+last trades hours apart), no served pair 1 / 4 (2021-12 BTC; 2021-02 / 03 / 06 / 09 ETH); the uncovered months crowd 2020–21. The covered
+straddle's median 11 % (BTC) / 14 % (ETH) of spot; the break-even vol 0.49 / 0.62 against the month's realised 0.50 / 0.65. **The touch**
+(`live_touch`, the live book of the front monthly at-the-money straddle on the day of the run, `get_book_summary_by_currency`): 20 bps of
+spot on both names (the same as R55's Tardis median on the daily straddle). **Rule for any read: the entry is the last trade at or before
+09:00 after the previous expiry and nothing after it; the settlement is the 07:30 → 07:59 TWAP; a month outside `covered` is not a month.**
+Re-fetch with `ft2 varmonth fetch` (a file already on disk is not fetched again; `--end` moves the last expiry).
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
