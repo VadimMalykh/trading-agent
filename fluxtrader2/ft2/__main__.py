@@ -109,6 +109,11 @@ def cmd_varbook(args):
     varbook.main(args.name)
 
 
+def cmd_varmonth(args):
+    from . import varmonth
+    varmonth.main(args.action, args.currencies, args.end, args.name)
+
+
 def cmd_magvolq(args):
     from . import magvolq
     magvolq.main(args.name)
@@ -435,6 +440,11 @@ def main(argv=None):
     stp.add_argument("--end", default=None, help="fetch: end, exclusive (default F2's)")
     vbp = sub.add_parser("varbook", help="R55: the one-day variance position signed by R54's forecast against the straddle's own implied, hedged, at Deribit's prices and the project's hedge costs → output/varbook/<name>/ (see ft2/varbook.py)")
     vbp.add_argument("--name", default="f12")
+    vmp = sub.add_parser("varmonth", help="decision AQ2 (a described row): the variance premium at a MONTHLY tenor on BTC and ETH — the at-the-money straddle sold after the previous monthly expiry, hedged daily and hourly, settled at expiry, Deribit's expired-option bars → data/raw/external/deribit/varmonth/, output/varmonth/<name>/ (see ft2/varmonth.py)")
+    vmp.add_argument("action", choices=["fetch", "run"])
+    vmp.add_argument("--currencies", nargs="*", default=None, help="default BTC ETH")
+    vmp.add_argument("--end", default=None, help="fetch: the last expiry to ask for (default yesterday)")
+    vmp.add_argument("--name", default="all", help="run: output directory under output/varmonth/")
     mqp = sub.add_parser("magvolq", help="R56: R54's forecast against the ONE-DAY implied — does the candle-and-index forecast add to the straddle's own break-even volatility in forecasting BTC's and ETH's realised volatility over the next day? → output/magvolq/<name>/ (see ft2/magvolq.py)")
     mqp.add_argument("--name", default="f12", help="output directory under output/magvolq/")
     osp = sub.add_parser("optsrc", help="P8 (decision AL1, after R54): the option-price source audit — what Deribit's public API, Tardis's free days and Binance's option archive serve for a one-day straddle's price, spread and fees → data/raw/external/{deribit/audit,tardis,binance_options}/, output/optsrc_audit.md (see ft2/optsrc.py)")
@@ -466,7 +476,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":

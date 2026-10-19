@@ -8516,7 +8516,14 @@ The null:      the state series circularly shifted by every admissible whole-day
                leaves that D(d) (the states defined on part of the span move their window with the shift; stated, not corrected). Per
                member: the two-sided p = the share of shifts with |D_ks(d)| ≥ |D_ks| (no sign registered: a state may help or hurt).
                Family-wise p = the share of shifts with max over the members of |D(d)| / sd ≥ the observed max of |D| / sd, sd the sd of
-               that member's D over the shifts.
+               that member's D over the shifts. **AMENDED 2026-10-19, before any fill was read, on the planted-world test (validity (5)):
+               the family by the min-P rule — each shift's |D(d)| is ranked within its own member's null (p_m(d) = the share of that
+               member's shifts at or above it), the family's statistic per shift is the smallest of the members' ranks, and a member's
+               family-wise p = the share of shifts whose smallest rank is at or under that member's own two-sided p. Why: a persistent
+               state's |D| / sd under its own shift null is capped near 2 whatever the effect (the shifted series stays half-aligned with
+               the state), so the max-z family as first written was biased toward the fast states — on the planted world the planted
+               state read p 0.01 alone, 0.19 under max-z and 0.026 under min-P. The licensed member per rule is the smallest per-member p
+               (the larger |z| on a tie). Nothing else of the registration changed; z and the MDE stay as described.**
 Validity:      read first; a failure voids the read: (1) the fills loaded reproduce the record — R8 3,384 trades at +51.91, R32 14,672 at
                +10.67 (size-weighted, within 0.05); (2) coverage: a state defined on < 50 % of a rule's trades is NOT READABLE on that
                rule and leaves the family (the family-wise p over the members that remain; the share stated); a half with < 10 % of the
@@ -8542,7 +8549,8 @@ Gate:          a member CLEARS if the family-wise p ≤ 0.05 at the observed max
                half's net lower bound (95 %, day-clustered) > 0 — the state must name a LOSING period, not a weaker one. A member at
                family-wise p ≤ 0.05 without (i) and (ii) is "SPLITS WITHOUT A LOSING HALF": a described fact, licenses nothing. Otherwise
                NOT CLEAR (NOT DETECTABLE if |D| < MDE, CLOSED if |D| + 1.96 sd < MDE). One member may clear per rule; a second member
-               clearing on the same rule is reported, not licensed beside the first (the maximal z is the licensed one).
+               clearing on the same rule is reported, not licensed beside the first (the smallest per-member p is the licensed one —
+               amended with the family rule above).
                What a clear LICENSES: ONE registration — the rule gated on that state (trading its better half only), read ONCE on F3+F4
                (unspent for R8 and R32), the half and the gate written before the read; for R8 that read reverses Vadim's decision of
                2026-09-22 ("leave it parked, do not read F3–F5 for it") and needs his word again — F3+F4 hold ≈ 1,100 R8 trades
