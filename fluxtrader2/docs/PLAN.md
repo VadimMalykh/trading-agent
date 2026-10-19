@@ -1336,6 +1336,9 @@ costs at Deribit's touch with an hourly hedge. The options:
   loses; it is listed because the gate names the venue. Not recommended before AN2.
 - **(AN4) AK3 / AL2 beside** — the weekly reversal on the members, one shot on F3+F4; unchanged.
 Recommended: AN2 now (a day), AN1 recorded with its number; AN4 in parallel if wanted; AN3 not now. Needed from Vadim: the pick.
+**DECIDED 2026-10-19, Vadim's "AN2": R56 REGISTERED (§8) — R54's contrast with the one-day implied (the straddle's break-even volatility from
+R55's table) in DVOL's place, F1+F2, a family of two at t ≥ 1.96, no fetch; AN1 recorded with its number after the read; AN3 not taken;
+AN4 stays open beside.**
 
 **Decision AM (2026-10-18) — after the AL1 audit (DATA.md `deribit_options`, `tardis`, `binance_options`; `output/optsrc_audit.md`).
 WRITTEN 2026-10-18 — OPEN, Vadim's.** What the audit settled: the one-day straddle's daily price history is FREE — Deribit's own chart
@@ -8076,6 +8079,63 @@ Result:        **Read 2026-10-19 (the block registered in 0a52bd4 before any ser
                a variant here — but the venue cannot help a forecast that has no sign; it could only cheapen the carry. The magnitude
                frame as a forecast-driven product is CLOSED by this read (R54's finding stands as a fact about the 30-day index); what
                remains is a carry, decision AN. No variant on these days.
+
+### R56 — magvolq: R54's forecast against the ONE-DAY implied — does the candle-and-index forecast add to the straddle's own break-even volatility in forecasting BTC's and ETH's realised volatility over the next day? (registered 2026-10-19 on Vadim's "AN2" (P8 decision AN), before any code was written; read —)
+Question:      R54 found the candles add a tenth of tomorrow's log realised variance beyond the 30-DAY implied index; R55 priced a
+               one-day position on that forecast and found its sign carries nothing against the one-day option's own price — a
+               diagnostic correlation of −0.03 (BTC) / +0.12 (ETH) between the forecast's excess over the straddle's break-even
+               volatility and the realised excess. This is R54's contrast made once more with the ONE-DAY implied in DVOL's place, so
+               that the frame closes (or re-opens) on a number with a t, in the units the record already uses (ΔR²).
+Data:          (1) `data/straddle_1d.parquet` (R55's table, DATA.md `straddle_1d`), the covered days of F1+F2 per name: the one-day
+               implied Q(d) = log σ_q(d), σ_q = (c_last + p_last) / (0.8 × √(32 / 8760)) — the legs' last traded prices before 00:00 of d
+               in units of spot; the constant shifts Q by a number, so the 0.8 and the tenor cannot move the contrast (a test shows it to
+               1e-9). (2) `output/magvol/f12/loss.csv` (R54's per-day file, sha256 5cd44912… as R55 recorded; hold 1): the target y =
+               log RV_1(d) (the 24 hours from 00:00 of d) and R54's walk-forward out-of-sample forecasts ŷ_{I+C}, ŷ_I, ŷ_C — taken as
+               written, nothing inside them refitted. No fetch; nothing from the VM's bars; nothing from F3–F5.
+Models:        per name three OLS fits with an intercept — Q (y ~ 1 + Q), Q+F (y ~ 1 + Q + ŷ_{I+C}), F (y ~ 1 + ŷ_{I+C}) — walked
+               forward INSIDE F1+F2 (σ_q exists only on the covered days): refitted every 30 days on the covered days from the first
+               whose target window (d + 1) ended at or before the block's first day, ≥ 60 rows, scored on the covered days of the block;
+               the first blocks (≈ the first three months of F1) are unscored. Two or three parameters a fit: the within-fold fit is a
+               calibration of two known forecasts, not a search; the days are R54's own scored days and R55's covered days, both spent.
+Statistic:     R54's: the per-day loss difference L_Q − L_{Q+F} (positive: the forecast improves on the one-day implied), its Newey–West
+               mean over days (lags 2), t, and the same in R² units (÷ the scored days' mean total variance); per fold; the MDE (2.8 se)
+               and the upper bound (mean + 1.96 se).
+Family:        TWO rows — BTC and ETH at 1 day, the contrast Q vs Q + ŷ_{I+C}; the one-sided bar for two at 5 %: t ≥ 1.96. ALIVE: t ≥
+               1.96 and ΔR² ≥ 0.02 and both folds positive; CLOSED: ΔR² + 1.96 se < 0.02; else NOT DETECTABLE with its MDE.
+Described:     the reverse L_F − L_{Q+F} (the one-day implied beyond R54's forecast); Q + ŷ_I and Q + ŷ_C against Q (does the 30-day
+               index alone, or the candles alone, add to the one-day implied); R54's own contrast L_I − L_{I+C} on the SAME scored days
+               from the file (no refit — does R54's effect survive on this subset of days); the plain correlation R55 reported,
+               corr(ŷ_{I+C} − Q, y − Q), on the scored days; the out-of-sample R² of Q, F and Q+F per fold; the coefficients at the last
+               refit (the slope of y on Q — the one-day implied's own calibration). No verdict on any of them.
+Validity:      read first, or the run is void and the cause found: (1) R54's file unchanged — its sha256 equals R55's recorded
+               5cd4491265f56739807897baf27c84539436991ce0ec5e6a503f3ca5ad6116ff, the columns `yhat_I+C`, `yhat_I`, `yhat_C`, `y` at hold 1,
+               970 rows; (2) coverage — the covered days with a forecast ≥ 80 % of each name's fold days with a forecast (R55 read
+               87 / 90 %), 50 … 80 % read with the share in every row, < 50 % VOID; (3) Q known at 00:00 — every covered day's two entry
+               timestamps (`c_last_ts`, `p_last_ts`) are before 00:00 of d, and y is R54's target from 00:00 of d (no day's Q reads a bar
+               of the day it forecasts); (4) every refit's training rows ended at or before its block's first day (R54's (4)); (5) the
+               scored days ≥ 250 a name and ≥ 60 in F1 (the fold-sign condition needs a fold; fewer → the row NOT DETECTABLE by
+               construction and said so); (6) the test — a planted market where the realised volatility is the straddle's implied plus
+               noise and the forecast is noise reads CLOSED; the same with the forecast carrying the realised beyond the implied reads
+               ALIVE; the 0.8 and the tenor changed leave every ΔR² unchanged to 1e-9; a planted forecast row on an uncovered day is not
+               scored.
+Folds read:    F1+F2 (exploration), on R55's covered days; nothing from F3–F5; no harness.
+Gate:          a row ALIVE → the magnitude frame RE-OPENS at one day against the one-day implied: R55's sign was the raw ŷ against σ_q,
+               and an ALIVE here says a CALIBRATED sign (the Q+F fit's forecast against Q) is the one to price — a NEW registration (the
+               calibrated sign on R55's priced days, F1+F2, before any venue question), not a variant here. Nothing ALIVE → decision AN's
+               AN1 recorded with this number: the magnitude frame CLOSED for a product, R54 a fact about the 30-day index, P2 #1's
+               multiplier what it is, the §7 row; CLOSED on both says "shown absent", NOT DETECTABLE says "unseen at this power" — the
+               record carries which. No variant on these days: no other forecast column, horizon, tenor, fit window or feature.
+Expectation:   written before any code. The one-day implied is the better one-day forecast: Q's out-of-sample R² 0.40 … 0.55 against R54's
+               I + C at 0.35 / 0.40 on the same days; the reverse row (Q beyond F) ALIVE-sized, +0.10 … +0.25 on both names. R54's own
+               contrast on the subset ≈ +0.10 / +0.06 (it survives the days). The family: ΔR² ≈ the square of R55's correlation —
+               0.00 … 0.01 on BTC, 0.01 … 0.02 on ETH — with a se of 0.01 … 0.02 on ≈ 330 … 380 scored days; the likeliest verdict,
+               named: 0 of 2 ALIVE — BTC CLOSED (upper under 0.02) or NOT DETECTABLE at the edge, ETH NOT DETECTABLE with a positive mean
+               under the bar (t 1 … 2). The honest note: an ALIVE on ETH would say R55's sign RULE failed where the information did not —
+               the raw forecast sits at the wrong level against σ_q (R54 fitted it to DVOL's scale, not the straddle's) — and the gate
+               sends that to a calibrated-sign registration, not back to R55; named unlikely on BTC, possible on ETH.
+Commands:      on the work VM (the straddle table lives there) — `ft2 magvolq` → output/magvolq/f12/ — `magvolq.md`, `rows.csv`,
+               `r2.csv`, `loss.csv`, `coef.csv`, `blocks.csv`, `validity.json` → `vm.sh pull`.
+Result:        — (filled once, after the read)
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
