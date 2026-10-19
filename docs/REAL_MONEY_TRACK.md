@@ -433,6 +433,7 @@ the backtested edge (+33 bps, 1 bp = 0.01%) is ~$0.33 a trade; R0–R5 never rea
 | `LIVE_PILOT_DAILY_LOSS_USD` | 10 | realised loss since 00:00 UTC after which entries stop for the day |
 | `LIVE_PILOT_MAX_TOTAL_LOSS_USD` | 100 | **kill level**: cumulative realised loss after which the pilot stays off until raised |
 | `LIVE_PILOT_CAPITAL_USD` | 500 | informational (reported on `/api/health`), the budget decided above |
+| `LIVE_PILOT_STOP_PCT` | unset → `STOP_LOSS_PCT` (0.02) | **added 2026-10-19:** the pilot's own stop as a fraction; the target is `TAKE_PROFIT_RATIO` × it. The VM is to run **0.10** (below) |
 
 Limits are computed from the `live` rows in `paper_trades` on every entry, so a restart cannot
 reset them (`Trading.LivePilot`). ⚠️ **BTCUSDT cannot trade at $100**: its minimum order is
@@ -517,3 +518,51 @@ stays, the daily / total loss limits remain the real-money cover; a code change,
 app recreate with no `live` row open); (c) with either, raise `LIVE_PILOT_MAX_POSITIONS` so
 clusters are mirrored — 8 × $100 exceeds the $500 budget, so it means a smaller notional or
 more capital. Until (b) is done, do not quote the `live` arm's numbers beside the paper arms'.
+
+**Decided 2026-10-19, Vadim's word: "increase stop to 8–10 % (measure first what's better). Also
+allow more than 4 positions."** Measured first, on the VM's 1-minute candles against every closed
+paper trade of the fifth start (57 `policy`, 152 `explore_cov05`; the worst intrabar move against
+the entry inside the four hours):
+
+| stop | policy trades it fires on (of 57) | gross change vs the timer | explore trades (of 152) |
+|---:|---:|---:|---:|
+| 2 % | 19 | −1,825 bps | 41 |
+| 3 % | 10 | −659 | 24 |
+| 5 % | 3 | −399 | 11 |
+| 6 % | 3 | −699 | 5 |
+| 7 % | 1 | −223 | 5 |
+| **8 %** | **0** | 0 | 2 (both WLD shorts, −8.9 / −10.0 %) |
+| **10 %** | **0** | 0 | **0** |
+
+Median worst move −1.05 % (policy) / −1.16 % (explore); worst −7.9 % (WLD short, 10-10) / −10.0 %.
+Every stop that fires loses against the timer at every level, as M3_0B §5 found offline (the
+barrier ladder is monotone: the wider, the closer to the fixed hold). **10 % chosen**: nothing in
+209 trades reached it, 2 % beyond the worst; the target at `TAKE_PROFIT_RATIO` × 10 % = 20 %
+never fires (best move +10.7 %). The pilot therefore mirrors the scored timer exit and keeps a
+catastrophe cover. **Code (`1ee6302`):** `LIVE_PILOT_STOP_PCT` → `LivePilot` config `stop_pct`,
+the brake reads it, `/api/health` `live_pilot.stop_pct` / `take_profit_pct` report it; tests
+green (146 + 18). **Slots:** the account's USDT wallet is $434 (available $513 with the manual
+ADA long's unrealised +$93; ADA 1,326 at 20x, $293 notional — the position that blocks ADA for
+the pilot), so at 1x only four $100 slots fit; **8 slots at 2x** ($50 margin each, $400 — the
+same $100 notional and the same P&L per trade; clusters of up to nine signals were seen) is the
+setting. Leverage is set per symbol at order time and never touches the manual ADA position.
+Next divergence to watch, not changed: the pilot's `$10/day` entry stop is 1.25 % of $800
+deployed where the paper arm's is 5 % of $1,000; it has not fired yet.
+
+**Deploy — Vadim runs it (the session's deploy step was refused by the tool's production
+guard), with no `live` or A/B row open (`/api/health` → `live_pilot.open` 0 and `ab[].open` 0):**
+```sh
+gcloud compute ssh --zone me-central1-b fluxtrader-1 --project fluxtrader
+cd ~/trading_agent && git pull origin main && git log --oneline -1          # expect 1ee6302 or later
+curl -s localhost:4000/api/health | python3 -c 'import json,sys; h=json.load(sys.stdin); print("open:", h["live_pilot"]["open"], [a["open"] for a in h["ab"]])'
+cp .env .env.bak_20261019
+printf 'LIVE_PILOT_STOP_PCT=0.10\nLIVE_PILOT_MAX_POSITIONS=8\nLIVE_PILOT_LEVERAGE=2\n' >> .env
+docker compose up -d app            # recreate — `restart` does not re-read .env; ~10 min of degraded book cadence follows (M3_5 §2)
+sleep 90 && curl -s localhost:4000/api/health | python3 -c 'import json,sys; h=json.load(sys.stdin); print(h["live_pilot"]); print("bound:", h["policy"]["checkpoint_bound"], h["policy"]["frozen_threshold"])'
+docker compose logs app | grep "MICRO-PILOT IS ON"      # expect "… 2x, max 8 open"
+```
+Expected on `/api/health`: `live_pilot.stop_pct 0.1`, `take_profit_pct 0.2`, `max_positions 8`,
+`leverage 2`, `enabled true`, `refusal null`, the policy block unchanged (`checkpoint_bound true`,
+cut 0.5860595703125 — the forward clock is untouched by this; the pilot is not the registered
+test). The first `live` trade after the deploy: its `stop_order_id` order on the exchange sits
+10 % from the fill. From that trade on the `live` arm can be read beside `policy` on shared entries.
