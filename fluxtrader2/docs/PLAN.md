@@ -1429,6 +1429,30 @@ Ranked:
 Recommended: AQ1 now (a day, no fold spent, the one line §7 itself asks for), AQ2 beside it as a described row (a day; the scope word on
 a yield before any registration), AQ6 written into R17's block when either is done. AQ3 only after R17; AQ4 not; AQ5 low. Needed from
 Vadim: the pick, and on AQ2 the scope word (a short-volatility yield on Deribit — in or out of this project's scope).
+**DECIDED 2026-10-19, Vadim's "AQ1 + AQ2, yes in scope": (AQ1) REGISTERED as R58 (§8) before any code — the state audit on R8's and
+R32's saved fills, five states (S90, V90, DVOL, PREM, SESSION), R45's frame and null, a family of nine, the gate's "names a losing half"
+lines, F3+F4 the one read a clear licenses (R8's needs Vadim's word again). (AQ2) the scope word IN: the monthly-tenor variance premium
+on BTC and ETH is WRITTEN as a described row (AA5's form: no registration, no gate, no verdict; its tables fixed here before the code),
+`ft2 varmonth` — the rows: for each monthly expiry E (Deribit's last Friday of the month, 08:00 UTC; the instrument by its deterministic
+name on the chart endpoint, the at-the-money strike nearest the spot on the currency's grid, nearest first until both legs are served; a
+month with no served pair skipped and counted) the straddle SOLD in the first hour after the previous expiry E₋₁ (the entry at 09:00 UTC
+of E₋₁'s Friday: the spot = the perpetual's hourly close at 09:00, each leg at the close of its last hourly bar with a trade ending at or
+before 09:00 — R55's rule — screened by put–call parity within 1 % of spot, the legs traded within the 24 h before), held to E and settled
+at the perpetual's 07:30 → 08:00 TWAP of E (R55's stand-in for the delivery price); σ_q = m / (0.8 √T) the straddle's own break-even vol;
+the Black–Scholes delta at σ_q hedged DAILY at 08:00 UTC (the primary row) and HOURLY (beside) at the project's taker cost (5 bps + half
+BTCUSDT's / ETHUSDT's calibrated spread of the day, `cost_daily`; the median where the day is absent), unwound at settlement; the crossing =
+half the touch of the front monthly at-the-money straddle in today's live book (one constant a name, measured by the audit's `book_straddle`
+at the row's run and recorded; a 2 × touch sensitivity row beside); the fees 0.03 % of spot a leg at entry and 0.015 % at delivery, each
+capped at 12.5 % of the leg's premium. Per month and name: gross and net in bps of spot (the short's: m − |S_T − K| / S + the hedge's PnL,
+less the costs), the cost split, σ_q against the month's realised vol, the hedge's units; the tables: by year 2020 → 2026 and by fold
+(FP, F0, F1 … F5), the mean and the Newey–West se (1 lag) over months and its t, the worst month, the share of losing months, the
+drawdown of the summed series, the unhedged short beside, the daily-against-hourly difference. Validity lines, read first: the month's
+hourly path complete, parity, the entry legs traded, the settlement window ≥ 25 bars; a planted market (a GBM at a realised vol below a
+planted σ_q) reads the Black–Scholes gain within its se; months skipped by cause. Written before any fetch: the arithmetic's ≈ +2 … +3
+bps of spot a day hedged daily on BTC and ≈ 0 hedged hourly, ETH ≈ 0; t ≈ 1.3 … 2 over ≈ 77 months — NOT DETECTABLE in money is the
+expected reading, and the row decides nothing: what it licenses is a scope decision by Vadim with the numbers, a registration after it
+only on a forward paper book (the history is not a confirmation fold for a yield). Code: `ft2/varmonth.py` (`ft2 varmonth fetch|run`),
+`tests/test_varmonth.py`, the chain `scripts/r58_chain.sh` (R58's read, then the varmonth fetch and run, serial on the work VM).**
 
 **Decision AP (2026-10-19) — after R57 (the weekly reversal on F3+F4's members: the row CLEARS WITH THE OPPOSITE SIGN at the bar's edge,
 M_c +196 a leg, u 2.23, p 0.046 — no reversal; the week's winners' mean continued, carried by 2025's tail and the losers' continued fall;
@@ -8453,6 +8477,93 @@ Result:        **Read 2026-10-19 (the block registered in 36954ea before any cod
                for it; no other window, hold, tenth, skip, weighting or universe cut on mom_1w on the members. What the non-read closes, in
                the registration's words: a reversal worth more than 115 bps a leg a week on the members in 2024-09 → 2025-12 — and this
                read says more: at that power the sign was the other way. Decision AP written.
+
+### R58 — the state audit on the parked market-wide rules: which measured state, known at the decision, names R8's and R32's losing periods in advance? Read on the saved fills of `trendfall4h` and `trend1d` (registered 2026-10-19 on Vadim's "AQ1 + AQ2, yes in scope" (P8 decision AQ), before any code was written and before any state was computed on these fills; read —)
+Question:      Decision AQ (x): R8 (`trendfall4h` — buy every pair for 4 hours after the basket fell ≥ 2 of its 4h sigmas while its 30-day
+               trend is up: +51.9 bps a trade after costs on 3,384 trades over 2020-05 → 2024-08, p 0.005, parked by its own gate on
+               2022's −5.9 against a bar of −5 and three losing half-years: 2022-H1 −17.9, 2023-H1 −24.1, 2024-H2 −92.4) and R32
+               (`trend1d` — the basket's 30-day sign traded on every pair for a day: +10.7 on 14,672 trades, three of five years losing)
+               are parked by YEARS, not by cost, and §7's revival trigger for R8 is "a measured observable that separates the losing
+               half-years — a new ceiling registration". Does a market state known at the decision bar split either rule into a losing
+               half and a paying half, on the trades it already made? R45's frame: a ceiling registration on SAVED fills, every cell
+               already read and priced, nothing new read, nothing re-run; not a strategy and not a switch.
+Observables:   five states at the decision bar t, each +1 / −1 / 0 (undefined), each a function of information at or before t — the
+               twelve's panel `ceiling.panel(PAIRS, F5's end, PRE_START)` as R45 (the archive's klines under the collector's from
+               2019-12-31), `data/dvol.parquet` (R54's rule: the OPEN of day d is the value known at 00:00 UTC of d) and `index_1m`
+               (R26's rule: a minute stamped ts is known from ts + 1 min; "open" = a minute in force within `OPEN_WITHIN`):
+               (a) S90 — R45's exactly: sign(blr(t) − blr(t − 90 × 288)), the basket's 90-day sign; +1 = rising.
+               (b) V90 — the basket's realised 5m volatility over the trailing 90 days (`b1`'s rolling sd, ≥ 80 % of the bars) BELOW the
+                   median of its own trailing 365 days (≥ 50 % present): +1 = calm, −1 = volatile; defined from ≈ 2020-10.
+               (c) DVOL — BTC's DVOL open of t's UTC day BELOW the median of the opens of the trailing 365 days (≥ 90 present): +1 = low
+                   implied, −1 = high; defined from 2021-06-22 (the index starts 2021-03-24).
+               (d) PREM — BTC's DVOL open of t's UTC day ABOVE BTC's trailing 30-day realised vol at t (the sd of BTCUSDT's 5m log moves
+                   over 30 × 288 bars, annualised × 100): +1 = the implied above the realised (a positive premium), −1 = below; from
+                   2021-03-24.
+               (e) SESSION — the US100 index futures trading at t (R30's `ix_open`): +1 = open (weekday hours), −1 = closed (the weekend,
+                   the daily break, holidays); from 2020-01.
+               Nothing in a state uses a bar after t; (c) and (d) are one series for the whole basket (BTC's), stated.
+Cells:         two rule sets, the fills as the harness saved them (taker; `net_bps`, `size`; the unpriced dropped): R8 =
+               `output/backtest/trendfall4h/fills_taker.parquet` (3,384 priced of 3,423; decisions on the 4h grid, FP+F0+F1+F2); R32 =
+               `output/backtest/trend1d/fills_taker.parquet` (14,672 priced; decisions at 00:00 UTC, the same folds). Each trade joined
+               to each state at its decision time t. The NET row only: both rules trade every pair at once, so the hedged row is the
+               costs by state and nothing else (R45 on R32: "degenerate by construction"); R8's fills carry no hedged net; not read.
+Statistic:     per rule k and state s: D_ks = the size-weighted mean net on the trades decided in state +1 minus the same in state −1 (bps
+               a trade); each half's mean with a 95 % interval clustered by decision day (as the harness's); the halves' trade counts.
+               The family: 5 states on R8 + 4 on R32 (S90 on R32 is R45's number, +38.2 at p 0.152, and is not read again) = 9 members.
+The null:      the state series circularly shifted by every admissible whole-day shift d (90 ≤ d ≤ span − 90 over the panel's 2019-12-31
+               → 2026-09-15, ≈ 2,270 shifts; a shift keeps each state's persistence and its time of day); under each shift D_ks(d) on
+               every member, the same d on every state at once (the states' cross-correlations kept). A trade whose shifted state is 0
+               leaves that D(d) (the states defined on part of the span move their window with the shift; stated, not corrected). Per
+               member: the two-sided p = the share of shifts with |D_ks(d)| ≥ |D_ks| (no sign registered: a state may help or hurt).
+               Family-wise p = the share of shifts with max over the members of |D(d)| / sd ≥ the observed max of |D| / sd, sd the sd of
+               that member's D over the shifts.
+Validity:      read first; a failure voids the read: (1) the fills loaded reproduce the record — R8 3,384 trades at +51.91, R32 14,672 at
+               +10.67 (size-weighted, within 0.05); (2) coverage: a state defined on < 50 % of a rule's trades is NOT READABLE on that
+               rule and leaves the family (the family-wise p over the members that remain; the share stated); a half with < 10 % of the
+               covered trades likewise; (3) known-at: on 20 decision bars drawn at random, every state recomputed on the panel, the dvol
+               table and the index minutes cut at t equals the full-series value; (4) the episodes: per state the daily-sampled sign
+               changes and the runs ≥ 7 days over the span and inside each rule's bars, and the share of bars in +1 — the read's first
+               line; (5) DVOL read from `open` only; the index's known-at R26's; the planted-world test green (a world whose bounce pays
+               only in a planted phase of each state reads CLEARS on that state with the planted sign and NOT CLEAR on the others; a
+               state undefined on half the span reports its coverage and leaves the family when under the floor).
+Folds read:    none. Every bar in these sets was read by R8 and R32 under their registrations; a re-reading of saved fills, as R45 was;
+               the guard is not involved; no fold is spent. The twelve's panel, the dvol table and the index minutes are loaded only to
+               compute the state series (bars already seen by R6, R8, R26, R30, R32, R54).
+Power:         written before the read. R8: se 13.0 on 3,384 trades → each half's se ≈ 18 at a 60 / 40 split, D's trade-level se ≈ 26;
+               R45's null sd on comparable sets ran 0.7–1.3 × the trade-level se (A 20.5 against 30; B 25.9 against 20), so the MDE
+               (2.8 × the null's sd) ≈ 55 … 95 at one member and higher at the family bar of nine. The failing half-years sit 60 … 190
+               below the rest (2022-H1 −18, 2023-H1 −24, 2024-H2 −92 against +44 … +103): a state that puts all three in its worse half
+               with few good months beside them gives D ≈ 60 … 100 — detectable if the sort is clean, not otherwise. R32: se 11 → D's
+               se ≈ 22, R45's null sd 26 → MDE ≈ 73; S90's +38 was not detectable there, so only a state that splits R32 by ≥ 70 can
+               read. (c) and (d) see 2021-03 → 2024-08 of R8's bars (≈ 79 % of its trades; the three bad half-years inside, 2020-11 →
+               2021-05's best months outside — the power lost with it stated by (2)). The episode count is the null's effective sample,
+               as R45 found (36 runs ≥ 7 d for S90 over the span).
+Gate:          a member CLEARS if the family-wise p ≤ 0.05 at the observed maximum AND (i) the worse half's net ≤ 0 AND (ii) the better
+               half's net lower bound (95 %, day-clustered) > 0 — the state must name a LOSING period, not a weaker one. A member at
+               family-wise p ≤ 0.05 without (i) and (ii) is "SPLITS WITHOUT A LOSING HALF": a described fact, licenses nothing. Otherwise
+               NOT CLEAR (NOT DETECTABLE if |D| < MDE, CLOSED if |D| + 1.96 sd < MDE). One member may clear per rule; a second member
+               clearing on the same rule is reported, not licensed beside the first (the maximal z is the licensed one).
+               What a clear LICENSES: ONE registration — the rule gated on that state (trading its better half only), read ONCE on F3+F4
+               (unspent for R8 and R32), the half and the gate written before the read; for R8 that read reverses Vadim's decision of
+               2026-09-22 ("leave it parked, do not read F3–F5 for it") and needs his word again — F3+F4 hold ≈ 1,100 R8 trades
+               (se ≈ 22, MDE ≈ 45 on net; the gate halves the trades → MDE ≈ 65: a true +52 in the better half confirms about one time
+               in two). What it CANNOT license: any variant or re-run of R8 or R32 on seen bars; a second family of states on these
+               fills (AA8's rule — this family is the one look); a state-gated rule on R14 (its states are R45's); a regime-switched
+               strategy. What a non-read CLOSES: the state line on the market-wide rules — R8 and R32 stay parked by years with no
+               observable in hand that names them; the line re-opens only with a NEW observable not in this family, by a new registration.
+Expectation:   validity PASS; S90 +1 on ≈ 51 % of the span (R45), V90 and DVOL ≈ 50 % by construction, PREM ≈ 60–70 % (the premium is
+               positive on most days), SESSION ≈ 65 % (five days in seven less the break); episodes: S90 36 runs ≥ 7 d (R45), V90 and
+               DVOL fewer (slower series), PREM more, SESSION ≈ 2 a week. R8: at S90, 2022-H1 and 2024-H2 fall in the falling half and
+               2023-H1 in the rising → D positive, p 0.1 … 0.3; at V90 and DVOL the sign unknown (2022-H1 volatile and high-implied,
+               2023-H1 calm with a falling implied: the two worst half-years sit on opposite sides of a vol state — the likeliest reason
+               nothing clears); at PREM unknown; at SESSION about half the trades in closed hours, D inside noise. R32: the DVOL states'
+               D with the long side's sign, inside noise. The likeliest verdict: NOTHING CLEARS at the family bar, one member at p 0.1 …
+               0.3; CLEARS one time in five. Nothing in money is decided either way.
+Code:          `scripts/r58_state.py` (`r45_state.py` generalised to a rule set, a state set and the family; the clustered lower bounds;
+               the half-year table), `tests/test_p8_state58.py`, the chain `scripts/r58_chain.sh` on the work VM (the dvol table from R54
+               and `index_1m` from R26 are there); output `output/backtest/r58_state/` — state.md, state.json, shifts.parquet,
+               by_state.csv, halfyears.csv, episodes.csv.
+Result:        —
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
