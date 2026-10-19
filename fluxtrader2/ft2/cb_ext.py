@@ -5,7 +5,8 @@
 ONE source: `data/coinbase_1h.parquet` (AT2's ingest, DATA.md `coinbase_1h`) — Coinbase Exchange's hourly USD bars per product with
 `ts_known` = the bar's start + 1 h — through `coinbase.premium`: the USDT-adjusted premium in bps at each hour's end (Coinbase's close
 over Binance's 5m close ending at the same stamp, the USDT-USD close divided out, the 1000× contract divided). The series per name is
-put on a full hourly grid of `ts_known` (a missing hour is NaN; a value is carried over at most STALE missing hours). THREE bar × name
+put on a full hourly grid of `ts_known` (a missing hour is NaN; EACH feature's value is carried over at most STALE missing hours of that
+feature — `recompute_cell`'s docstring states the rule; `known_at` reports the cells carried beyond the level's hour). THREE bar × name
 features on P2's 5m panel, each read at the bar t from the LAST hourly bar whose ts_known + MARGIN (one 5m bar, the serving lag's
 margin) ≤ t — the grid's hour floor(t − 5 min):
     cbprem          the adjusted level — DESCRIBED, not gated (a series this slow is flattered by a day-shuffle null, R6; judged by
@@ -163,22 +164,31 @@ def reproduction(sc: pd.DataFrame, null: pd.DataFrame, saved: Path = SAVED, feat
             "null_rows_compared": int(len(jn)), "null_rows_this_run": int(len(newn.dropna())), "max_abs_diff": diff}
 
 
+def _at_hour(g: pd.Series, k: pd.Timestamp) -> tuple[float, float, float]:
+    """(level, dev, chg) at the grid hour k by hand from the rows present: the row at k (else all NaN); the trailing MONTH grid hours
+    ending at k (≥ MIN_MONTH present) for the mean and sd; the row LAG_1D hours earlier."""
+    if k not in g.index:
+        return np.nan, np.nan, np.nan
+    v = float(g.loc[k])
+    win = g.loc[k - (MONTH - 1) * HOUR:k]
+    if len(win) < MIN_MONTH:
+        return v, np.nan, np.nan
+    m, sd = float(win.mean()), float(win.std(ddof=1))
+    prev = g.get(k - LAG_1D * HOUR, np.nan)
+    return v, (v - m) / sd, (v - float(prev)) / sd
+
+
 def recompute_cell(g: pd.Series, t: pd.Timestamp) -> tuple[float, float, float, float]:
     """(level, dev, chg, the used hour) at the 5m bar t straight from one name's premium rows `g` (indexed by ts_known, the rows
-    present), with the module's definitions applied by hand: the last row with ts_known ≤ t − MARGIN and not older than STALE hours
-    after it; the trailing MONTH grid bars ending at that row (≥ MIN_MONTH present) for the mean and sd; the row LAG_1D hours earlier."""
+    present), with the module's definitions applied by hand. The carry is the frame's (`to_panel`: `ffill(limit=STALE)` on EACH
+    hourly feature): a feature at t is its value at the grid hour key = floor(t − MARGIN) if finite, else its last finite value at
+    key − 1 h or key − 2 h (STALE) — so after a hole, the 24-h change (whose lagged bar is missing) or the deviation (whose window is
+    short) may be carried for up to STALE hours under a fresh level; never a later one. The used hour is the level's."""
     key = (t - MARGIN).floor("h")
-    before = g.loc[:key]
-    if before.empty or key - before.index[-1] > STALE * HOUR:
-        return np.nan, np.nan, np.nan, np.nan
-    k0, v = before.index[-1], float(before.iloc[-1])
-    win = before.loc[k0 - (MONTH - 1) * HOUR:]
-    used = float(k0.value // 3_600_000_000_000)
-    if len(win) < MIN_MONTH:
-        return v, np.nan, np.nan, used
-    m, sd = float(win.mean()), float(win.std(ddof=1))
-    prev = g.get(k0 - LAG_1D * HOUR, np.nan)
-    return v, (v - m) / sd, (v - float(prev)) / sd, used
+    vals = [_at_hour(g, key - d * HOUR) for d in range(STALE + 1)]
+    out = [next((x[i] for x in vals if np.isfinite(x[i])), np.nan) for i in range(3)]
+    used = next((float((key - d * HOUR).value // 3_600_000_000_000) for d in range(STALE + 1) if (key - d * HOUR) in g.index), np.nan)
+    return out[0], out[1], out[2], used
 
 
 def known_at(F: dict[str, pd.DataFrame], U: pd.DataFrame, G: pd.DataFrame, s: np.ndarray, names: list[str], n_check: int = N_CHECK,
@@ -203,8 +213,23 @@ def known_at(F: dict[str, pd.DataFrame], U: pd.DataFrame, G: pd.DataFrame, s: np
         for a, b in zip(got, exp):
             worst = max(worst, 0.0 if np.isnan(a) and np.isnan(b) else abs(a - b) if np.isfinite(a) and np.isfinite(b) else np.inf)
     ok = not late.any() and not stale.any() and worst <= tol
+    # reported: the scored cells where a feature is carried BEYOND the level's used hour (finite at t, NaN at the used hour)
+    H = features_hourly(G)
+    g0 = float(G.index[0].value // 3_600_000_000_000)
+    carried = {}
+    for k in (DEV, CHG):
+        n = 0
+        for j, c in enumerate(cols):
+            if c not in H[k].columns:
+                continue
+            u = Us[:, j]
+            fin = np.isfinite(u) & np.isfinite(F[k][s][c].to_numpy())
+            pos = (u[fin] - g0).astype(int)
+            n += int(np.isnan(H[k][c].to_numpy()[pos]).sum())
+        carried[k] = n
     return {"status": "PASS" if ok else "FAIL", "cells_with_a_value": int(has.sum()), "cells_read_too_early": int(late.sum()),
-            "cells_older_than_stale": int(stale.sum()), "recomputed": int(n_check), "max_abs_diff": float(worst), "margin": str(MARGIN), "stale_hours": STALE}
+            "cells_older_than_stale": int(stale.sum()), "cells_feature_carried_beyond_the_level": carried, "recomputed": int(n_check),
+            "max_abs_diff": float(worst), "margin": str(MARGIN), "stale_hours": STALE}
 
 
 def coverage(F: dict[str, pd.DataFrame], s: np.ndarray, cover_min: dict[str, float] = COVER_MIN, min_pairs: int = MIN_PAIRS,

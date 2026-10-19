@@ -14,7 +14,7 @@ import pytest
 
 from ft2 import cb_ext as cx, ceiling, coinbase as cb
 from ft2.cb_ext import CHG, DEV, LVL, THIN, TIGHT, VOL
-from tests.test_p8_cb_ext import DAYS, LIQ, PAIRS, START, _world
+from tests.test_p8_cb_ext import DAYS, HOLE, LIQ, PAIRS, START, _world
 
 MEM = [f"M{i:02d}USDT" for i in range(1, 11)] + ["LATEUSDT", "THINUSDT"]       # LATE a member of the second block only; THIN above the cut
 KEPT = MEM[:-1]
@@ -146,3 +146,26 @@ def test_a_planted_continuation_on_the_members_is_found_on_their_member_cells_wi
     assert "## Validity — read first: **PASS**" in md and "## Verdict by R62's gate" in md and "## By block" in md
     for f_ in ("null_shuffle", "null_shift", "ic_daily", "move_vs_cost", "names", "blocks"):
         assert Path(f"output/ceiling_coinbase_members/{f_}.parquet").exists()
+
+
+def test_the_carry_is_per_feature_and_the_hand_recomputation_follows_it(tmp_path):
+    """The day after BTC's five-hour hole the 24-h change has no lagged bar at 06:00 … 10:00 while the level is present: the frame carries
+    the 05:00 change for two hours (06:05, 07:05) and nothing after (08:05 …); `recompute_cell` says the same, and `known_at` counts the
+    carried cells (the void of R62's first run on the work VM, 2026-10-19: the hand rule had said NaN under a fresh level)."""
+    _world(tmp_path)
+    D = ceiling.derive(ceiling.panel(PAIRS))
+    idx = D["lr"].index
+    F, U, G = cx.features(idx, list(D["lr"].columns), LIQ, "data/coinbase_1h.parquet")
+    g = G["BTCUSDT"].dropna()
+    day_after = HOLE[0] + pd.Timedelta("1d")
+    for off, carried in (("5min", True), ("1h5min", True), ("2h5min", False), ("4h5min", False)):
+        t = day_after + pd.Timedelta(off)
+        got = [F[k]["BTCUSDT"].loc[t] for k in (LVL, DEV, CHG)]
+        exp = cx.recompute_cell(g, t)
+        assert np.isfinite(got[0]) and np.isfinite(got[1]) and np.isfinite(got[2]) == carried, off
+        for a, b in zip(got, exp[:3]):
+            assert (np.isnan(a) and np.isnan(b)) or abs(a - b) < 1e-9, off
+        assert exp[3] == float((t - cx.MARGIN).floor("h").value // 3_600_000_000_000)                     # the used hour is the level's own
+    assert abs(F[CHG]["BTCUSDT"].loc[day_after + pd.Timedelta("5min")] - F[CHG]["BTCUSDT"].loc[day_after - pd.Timedelta("55min")]) < 1e-12   # the 05:00 change carried
+    ka = cx.known_at(F, U, G, D["scored"], LIQ, n_check=200)
+    assert ka["status"] == "PASS" and ka["cells_feature_carried_beyond_the_level"][CHG] == 2 * 12 and ka["cells_feature_carried_beyond_the_level"][DEV] == 0
