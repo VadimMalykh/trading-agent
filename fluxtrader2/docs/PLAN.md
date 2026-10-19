@@ -1335,6 +1335,9 @@ know (R56); the §7 row holds the numbers. What is still open from decision AK's
 - **(AO4) P7 alone** — the forward test runs regardless; this is the "nothing new" option and not recommended by the standing rule
   (research runs in parallel).
 Recommended: AO1 now; AO3 if Vadim wants a new list beside it; AO2 and AO4 not. Needed from Vadim: the pick.
+**DECIDED 2026-10-19, Vadim's "AO1, then let's handoff for the next session": R57 REGISTERED (§8) — the weekly reversal on F3+F4's 216
+members, one shot, sign negative fixed, R43's frame at a 15-day gap, the F1+F2 reference beside; run and read this session, then the
+handoff (README status, PLAN P8 header, the next decision written). AO3 not taken now; AO2 and AO4 not.**
 
 **Decision AN (2026-10-19) — after R55 (0 of 2 FUNDED: the one-day straddle signed by R54's forecast, hedged, gross +11 / +20 bps a day
 and real, net −27 / −19 and CLOSED by its upper bound; the always-short row's gross larger than the forecast's on BTC; the forecast's
@@ -8191,6 +8194,84 @@ Result:        **Read 2026-10-19 (the block registered in e2de21c before any cod
                product (the §7 row), R54 stands as a fact about the 30-day index, P2 #1's multiplier stays what it is. Per the honest
                note: ETH's calibrated slope on F (0.20) is the only trace, and it is unseen at this power (MDE 0.033 against +0.008) —
                a calibrated-sign registration is NOT licensed (it needed ALIVE). No variant on these days.
+
+### R57 — the weekly reversal on the members, one shot: the week's move against the peers, held a week, on F3+F4's 216 members in money (registered 2026-10-19 on Vadim's "AO1" (P8 decision AO), before any code was written and before any cell of F3+F4 was read for it; read —)
+Question:      R43's reference row — outside its family, deciding nothing — read `mom_1w` (the name's own return over the last 7 days)
+               at a one-week hold on the 188 members of F1+F2 at −58 bps a leg (u −1.41 under the shift null, IC −0.048 with HAC t −3.3):
+               the names that rose most against their peers over a week fell back against them over the next, by three times the 17.6
+               round trip, with a reversal's sign. F1+F2's cells have been seen for it, so the one clean test is a single read on F3+F4's
+               members, unspent for THIS question (R44 and R52 spent them for momentum and unlocks). Does the week's move reverse over
+               the next week on names and months that did not choose it — in the MEAN, in bps a leg, in actual returns with funding
+               inside, by more than the round trip? The mechanism is R37's cross-sectional reversal (+0.02 … +0.03 IC at 1–4 h on these
+               cells, under its cost bar) at a slower clock, where one round trip is paid against a week's dispersion.
+Cells:         the 216 members of F3+F4 (`ft2/screen_members_f34.csv`: 17 blocks of 60, 2024-09-03 → 2025-12-29, frozen by R25) on the
+               HOURLY grid of F3+F4 (minute 0), embargoed (2024-09-03 → 2026-01-01, 485 days), every source cut at F4's end; a cell is a
+               (bar, name) with the name a member of the block the bar falls in (`audit.member_mask`), the signal present and the label
+               present; the market `backtest.market(members, F4's end)` from `ceiling.START` (the archive's klines and funding for the
+               F3+F4 members through 2025-12-31 as R25 fetched them and R44 checked them, DATA.md). The twelve are never members.
+Holds:         ONE, fixed: 2,016 bars (7 days). Reference hold: 288 (one day; validity (2), and "the first day" — the fast part R37
+               measured). Cells in the last 2,016 bars of F4 have no label and are not read.
+Label:         `horizon.labels`, unchanged (R43's): exit / entry − 1 from the close one bar after t to the close 2,016 bars later, actual
+               returns, MINUS the funding a long pays over those bars on the position's value, bps. Against the peers: the statistic's
+               own top-minus-bottom.
+Signal:        ONE, known strictly before t: `mom_1w` = close[t] / close[t − 2,016] − 1 (closes at or before t); ranked inside the bar
+               against the peers, no demeaning, no skip. Registered sign: NEGATIVE (reversal). No second signal, window or hold.
+Statistic:     R22's M by `horizon._tenths`: per bar with ≥ 20 cells that have the signal and the label, k = the tenth of them, rounded;
+               the mean label of the k highest by the signal minus that of the k lowest, HALVED — bps a leg of a top-against-bottom book
+               before trading costs, funding inside; averaged per day; M = the mean over days. Two-sided; a sort the wrong way round is
+               "with the opposite sign".
+Null:          R22's: the labels move by a whole number of days, the same for every name and bar (a circular shift of the scored days,
+               time of day kept), EVERY admissible shift — admissible if no day receives the labels of a day nearer than gap = 7 (the
+               signal's window) + 7 (the hold) + 1 = 15 days in either direction: nd − 2 × 15 + 1 = 456 shifts on 485 days (R43's gap
+               was 113 for its 12-week window; the gap is the frame's rule applied to this window, fixed here before the read). Centre
+               and se = the mean and sd of M over the shifts; M_c = M − centre; u = M_c / se; the family is ONE row, so the family-wise
+               p is the row's own. The HAC se over days (lags 8) reported beside, deciding nothing.
+Cost:          17.6 bps a leg, FIXED (R43's on the members); the F3+F4 cells' own proxy taker round trip on the extreme tenths reported
+               beside; funding inside the label. No maker price.
+Described:     deciding nothing — M per fold (F3, F4); the part of M earned AFTER the first day (Y[2,016] − Y[288], the slow part R37
+               could not see); the funding's part; the top and the bottom tenth against the peers (which side carries it); M with every
+               label clipped at ±3,000 bps; the tenths' means and medians; the rank IC with its HAC t; the one-day reference row. And,
+               as the like-for-like reference, THE SAME PRESET ON F1+F2's 188 members (`rev1w_f12`: the same signal, hold, gap of 15 and
+               456 shifts, cells already seen by R43 — no fold spent, nothing decided by it): R43's −58 was read under a 113-day gap and
+               260 shifts; the reference re-reads it under this registration's null so the two samples are compared on one frame.
+Validity:      read first, or the run is void (exit 2, nothing of the family written, the read NOT logged — the fold is not spent by a
+               void run): (1) every scored day holds 24 bars; the shift count equals nd − 2 × 15 + 1 and is ≥ 20; (2) the label at 288
+               bars before funding equals `backtest.labels`' unit converted to actual returns on every cell to 1e-9; (3) the signal is
+               causal: recomputed on the market cut at the midpoint of F3+F4, every value at or before the midpoint identical (and a
+               planted series in the tests); (4) funding present — at least one funding EVENT of the archive inside the first day's
+               window (R43′'s check: a zero rate is an event) on ≥ 95 % of a name's labelled cells, else the name is dropped and listed;
+               more than 21 names (10 %) dropped voids the run; a member with no labelled cell listed apart; (5) 17 blocks of 60, 216
+               members, every member with bars; (6) the cell count per hold written; (7) the guard: F3 and F4 are read under
+               `--registration R57` and logged to `output/backtest/confirmation_reads.csv` once the number exists — a second read is
+               refused by the code.
+Commands:      on the work VM — `FT2_JOBS=4 ft2 horizon --rev1w --registration R57` → output/horizon/rev1w_f34/ (horizon.md, signals.csv,
+               tenths.csv, shifts.parquet, validity.json), then the reference `FT2_JOBS=4 ft2 horizon --rev1w --folds F1 F2` →
+               output/horizon/rev1w_f12/ (no guard: exploration cells). Minutes each (one signal, two holds, 456 shifts).
+Folds read:    F3+F4 (confirmation), ONCE, for this question only; the reference on F1+F2's seen cells. Nothing from F5; no harness.
+Gate:          validity PASS, then the one row, with the registered sign: CLEARS if M_c < −17.6 AND |u| ≥ 2 AND p ≤ 0.05 AND M negative in
+               F3 and in F4 AND the part after the first day negative; the same with M_c > +17.6 is "CLEARS WITH THE OPPOSITE SIGN"
+               (recorded, nothing licensed); CLOSED if M_c − 1.96 se > −17.6 (even the lower bound does not reach the cost: the reversal
+               shown smaller than a round trip); NOT DETECTABLE otherwise, with its MDE (2.8 se).
+               CLEARS → licenses ONE registration: the smallest priced book at mom_1w / 2,016 on the members through the harness, explored
+               on F1+F2 (its cells seen, so a HYPOTHESIS), with no confirmation fold left for it but F5 — named now so the licence is
+               understood as narrow. NOT DETECTABLE or CLOSED → the weekly reversal on the members is PARKED: F3+F4 spent for this
+               question, no other window, hold, tenth, skip, weighting or universe cut on mom_1w on the members under any later
+               registration without a new source; R37's hourly reversal stands as the fact (under its cost bar) and this read says the
+               week's clock does not rescue it at the power in hand. What a non-read closes, in words: "a reversal of the week's move
+               worth more than 115 bps a leg a week on the members, in 2024-09 → 2025-12" — smaller ones stay unseen, not refuted.
+Power:         stated before the read: R43's reference row had se 40.8 at a week under its null; with 216 members and the same 485 days
+               the se is expected 35 … 50 → MDE 100 … 140 against the −58 seen; CLEARS needs |M_c| ≥ 2 se ≈ 80 … 100; CLOSED needs
+               M_c > +60 … +80 (a momentum of the week's move) and is out of reach for a reversal. The read can find a large reversal or
+               say "not detectable"; it cannot rule a small one out — and the registration says so before the number.
+Expectation:   validity PASS, no name under the funding cover; cells ≈ 700,000 at 288 and ≈ 690,000 at 2,016 (the F1+F2 counts; 216
+               names over 17 blocks). M_c in −100 … +10 (the F1+F2 −58; R29's launches and 2025's memecoin market in these months argue
+               both ways); the first day's part the larger part (R37's fast reversal), the part after the first day inside noise; the
+               medians negative at every tenth (the members' right skew, as R43 found); the F1+F2 reference under the 15-day gap within
+               15 bps of R43's −58 with a se within 10 of 40.8. The likeliest verdict, named: NOT DETECTABLE (two chances in three), CLEARS
+               one in five, CLEARS WITH THE OPPOSITE SIGN one in ten, CLOSED under one in twenty. A clear needs the F3+F4 effect to be
+               half again F1+F2's; the honest note is that this read is made for the record's completeness (the one standing line of
+               decision AK's queue) more than for its power.
+Result:        — (filled once, after the read)
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
