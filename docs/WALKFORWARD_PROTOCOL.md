@@ -1916,10 +1916,10 @@ veto against a large loss, not a measurement of X8's gain; do not read a NOT DET
   over X0, 0.001 over the bar on an SE of 0.0026. Three more seeds of the same recipe (X8″-6,
   NEXT_TRAINING_PLAN §2) read the six-seed family at −0.0012 on the registered fallback /
   +0.0065 on plateau means — **MOVED ON THREE, NOT ON SIX**. The served X8″ s3 stands (this
-  section's reads do not stop a forward start; the ledger does). **Proposed rule for this
-  section, Vadim decides, not in force until he does:** a promotion read whose margin over the
+  section's reads do not stop a forward start; the ledger does). **Rule, IN FORCE from 2026-10-19 on Vadim's "E1 - ok":** a promotion read whose margin over the
   bar is under one SE needs six seeds of the candidate before promotion; the six-seed family
   mean then replaces the three-seed one as the val expectation the forward ledger is read against.
+  It applies to every promotion read from here on; X8″'s own promotion is not reopened by it.
 
 ### 10.5 The run queue — twelve runs, strictly serial, launched by Vadim
 

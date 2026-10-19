@@ -5,8 +5,13 @@ defmodule FluxTrader.Trading.LivePilot do
   ## What it is
 
   Every time the paper `policy` arm opens a row, this arm places the same side on the
-  exchange at a small **flat** notional, holds it for the same four hours behind the same
-  2% / 4% brake, and books the exchange's fills under arm `live`. The executor's mode stays
+  exchange at a small **flat** notional, holds it for the same four hours behind a stop and a
+  target, and books the exchange's fills under arm `live`. The stop is `LIVE_PILOT_STOP_PCT`
+  (the target `TAKE_PROFIT_RATIO` times it); without that variable it is `RiskManager`'s 2 %.
+  🔴 2026-10-19 (REAL_MONEY_TRACK §7): the 2 % stop fired on 13 of the pilot's first 38 trades
+  and was ~80 % of its gap to the paper arm — a 2 % brake on a rule scored with a four-hour
+  timer is a different rule. The VM runs 10 %: no paper trade of the fifth start (209, worst
+  −7.9 %) reached it, so the pilot mirrors the scored exit and the stop is a catastrophe cover. The executor's mode stays
   `simulation`: the `policy` and `flat_size` rows stay paper, so the registered forward A/B
   is untouched — which is the objection REAL_MONEY_TRACK §4 raised against switching the VM
   to `auto`.
@@ -45,7 +50,9 @@ defmodule FluxTrader.Trading.LivePilot do
     leverage: 1,
     max_positions: 4,
     daily_loss_usd: 10.0,
-    max_total_loss_usd: 100.0
+    max_total_loss_usd: 100.0,
+    # nil → RiskManager's STOP_LOSS_PCT (2 %); the VM sets LIVE_PILOT_STOP_PCT=0.10.
+    stop_pct: nil
   ]
 
   def arm, do: @arm
@@ -111,6 +118,8 @@ defmodule FluxTrader.Trading.LivePilot do
       notional_usd: cfg[:notional_usd],
       leverage: cfg[:leverage],
       max_positions: cfg[:max_positions],
+      stop_pct: stop_loss_pct(),
+      take_profit_pct: stop_loss_pct() * take_profit_ratio(),
       daily_loss_usd: cfg[:daily_loss_usd],
       max_total_loss_usd: cfg[:max_total_loss_usd],
       open: MapSet.size(Ledger.open_pairs(@arm)),
@@ -119,13 +128,20 @@ defmodule FluxTrader.Trading.LivePilot do
     }
   end
 
-  # The same 2% stop and 2:1 target `RiskManager` attaches, read from the same config so the
-  # pilot's brake is the one REAL_MONEY_TRACK Q2 decided and X6 priced.
+  # The stop is the pilot's own `stop_pct` when set (LIVE_PILOT_STOP_PCT), else the 2 % stop
+  # `RiskManager` attaches on the auto path; the target is TAKE_PROFIT_RATIO times the stop
+  # either way (at 10 % that is 20 % — effectively never, as the timer-only rule intends).
   defp brake(%{side: side, entry_price: p}, multiple) do
     p * (1 + side * multiple * stop_loss_pct())
   end
 
-  defp stop_loss_pct, do: Keyword.get(trading(), :stop_loss_pct, 0.02)
+  defp stop_loss_pct do
+    case config()[:stop_pct] do
+      pct when is_number(pct) and pct > 0 -> pct * 1.0
+      _ -> Keyword.get(trading(), :stop_loss_pct, 0.02)
+    end
+  end
+
   defp take_profit_ratio, do: Keyword.get(trading(), :take_profit_ratio, 2.0)
   defp trading_mode, do: Keyword.get(trading(), :mode, "simulation")
   defp trading, do: Application.get_env(:fluxtrader, :trading, [])

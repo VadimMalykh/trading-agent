@@ -114,7 +114,10 @@ if config_env() != :test do
     leverage: pilot_int.("LIVE_PILOT_LEVERAGE", 1),
     max_positions: pilot_int.("LIVE_PILOT_MAX_POSITIONS", 4),
     daily_loss_usd: pilot_float.("LIVE_PILOT_DAILY_LOSS_USD", 10.0),
-    max_total_loss_usd: pilot_float.("LIVE_PILOT_MAX_TOTAL_LOSS_USD", 100.0)
+    max_total_loss_usd: pilot_float.("LIVE_PILOT_MAX_TOTAL_LOSS_USD", 100.0),
+    # The pilot's own stop as a fraction (0.10 = 10 %); unset → RiskManager's STOP_LOSS_PCT.
+    # Widened 2026-10-19 after the 2 % stop ate the pilot's edge (REAL_MONEY_TRACK §7).
+    stop_pct: pilot_float.("LIVE_PILOT_STOP_PCT", nil)
 
   # No policy entries for the first minutes of an app start — see `PolicyEngine` init.
   config :fluxtrader, :policy_boot_grace_s, pilot_int.("POLICY_BOOT_GRACE_S", 300)

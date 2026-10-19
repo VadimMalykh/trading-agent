@@ -131,6 +131,32 @@ defmodule FluxTrader.Trading.LivePilotTest do
     assert closed.exit_price == Fake.fill_price()
   end
 
+  test "LIVE_PILOT_STOP_PCT widens the pilot's stop and the target follows the ratio; unset keeps RiskManager's 2 %" do
+    pilot(stop_pct: 0.10)
+    boot([signal("BTCUSDT", 0.97)])
+
+    [{:place_algo_order, [stop]}, {:place_algo_order, [target]}] = Fake.calls(:place_algo_order)
+    assert stop[:triggerPrice] == 90_000.0
+    assert target[:triggerPrice] == 120_000.0
+    assert LivePilot.status().stop_pct == 0.10
+    assert_in_delta LivePilot.status().take_profit_pct, 0.20, 1.0e-9
+
+    # The paper arms are untouched by the pilot's brake: still the timer, still paper.
+    [p] = Ledger.open_trades("policy")
+    assert p.fill_source == "paper"
+
+    # A short's stop sits above the entry, the target below.
+    assert {:ok, order} = LivePilot.check(%{pair: "ETHUSDT", side: -1, entry_price: 2_000.0})
+    assert_in_delta order.stop_loss, 2_200.0, 1.0e-6
+    assert_in_delta order.take_profit, 1_600.0, 1.0e-6
+
+    # Unset (nil) and a non-positive value fall back to RiskManager's stop.
+    for bad <- [nil, 0, -0.1] do
+      pilot(stop_pct: bad)
+      assert LivePilot.status().stop_pct == 0.02
+    end
+  end
+
   test "the pilot's limits come from its own ledger rows: open count, daily loss, total loss" do
     pilot(max_positions: 1, daily_loss_usd: 10.0, max_total_loss_usd: 100.0)
     d = %{pair: "ETHUSDT", side: 1, entry_price: 2_000.0}
