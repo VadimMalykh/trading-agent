@@ -735,3 +735,343 @@ def _void_members(validity: dict, out_md: Path, out_dir: Path, taker_bps, maker_
     out_md.write_text("".join(_head_members(validity, taker_bps, maker_bps, fee_source) + ["\n**The read is VOID: no row of the registered feature was computed on the members.**\n"]))
     print(f"validity FAIL — the read is void; wrote {out_md}", flush=True)
     raise SystemExit(2)
+
+
+# ---- R64: the Korean premium at breadth (PLAN §8 R64; `--family krw --universe members` → output/ceiling_krw_members.md) ------------------
+# R62's screen with the SOURCE swapped: Bithumb's BTC-RELATIVE premium (`krw.premium`'s prem_btc_bps — the control KRW-USDT is young, the
+# adjusted premium has no F1+F2 history) on the screener's F1+F2 members, the kept names FROZEN in ft2/krw_members_r64.csv at R64_SD_CUT on
+# the BTC-relative sd, the registered feature KDEV = the deviation from the trailing month, the family KDEV × 4h / 1d relative, both nulls,
+# the sign POSITIVE (R60 / R62's), the gate R62's (BAR_TWELVE as the number, the members' taker bar beside). Described beside, no nulls, no
+# verdict: the level, the 24-h change, the tight and thin subsets, the ADJUSTED premium's deviation on its hours (KADJ), Upbit's deviation on
+# its own names at the same cut read at run time (UPDEV), the KRW volume share's deviation (KVOL; the KRW/USDT scale left in — it cancels
+# in the deviation), and THE OVERLAP: on the scored member cells where both the Korean kept deviation and R62's kept Coinbase deviation
+# have a value, CB_SAME (R62's feature there), KR_SAME (the Korean one there) and KR_ORTH = KR_SAME − β × CB_SAME with ONE pooled slope
+# over those cells (overlap.parquet: cells, names, β, the correlation before, the correlation after = 0 by construction — validity (5)).
+# Validity FIRST: (1) the new path on the COINBASE members' source (R62's parquet, list, slices) WITHOUT the nulls reproduces R62's saved
+# screen rows (LVL, DEV, CHG, TIGHT, THIN, VOL; ic, t, every bet × horizon) to TOL; (2) known-at on the Korean frame; (3) membership and
+# block coverage (BLOCK_MIN_NAMES, BLOCK_COVER); (4) the list's md5, kept count and self-consistency; (5) the overlap's construction.
+# R62's `run_members`, `r62_list`, `reproduction_r60` are not edited; the shared helpers are the same objects.
+KR_PARQUET = Path("data/krw_1h_bithumb.parquet")
+UP_PARQUET = Path("data/krw_1h_upbit.parquet")
+R64_CSV = Path("ft2/krw_members_r64.csv")
+R64_SD_CUT = 48.0                          # bps: R62's cut, on the BTC-relative sd over the audit window
+KLVL, KDEV, KCHG = "krprem", "krprem_dev", "krprem_chg_1d"
+KTIGHT, KTHIN = f"{KDEV}_tight", f"{KDEV}_thin"
+KADJ, UPDEV, KVOL = "krprem_adj_dev", "upprem_dev", "krvol_dev"
+CB_SAME, KR_SAME, KR_ORTH = "cbprem_dev_same", "krprem_dev_same", "krprem_dev_orth"
+R64_OUT_MD = Path("output/ceiling_krw_members.md")
+R64_OUT_DIR = Path("output/ceiling_krw_members")
+AUDIT_WINDOW = (pd.Timestamp("2023-05-01", tz="UTC"), pd.Timestamp("2026-09-15", tz="UTC"))     # the sd cut's window (DATA.md's audit)
+
+
+def _list(path: Path | str, cut: float, tight: float, col: str, flag: str) -> dict:
+    """A frozen list (R62's form): (kept, tight, thin, md5, the self-consistency check `flag` = sd ≤ cut on every row)."""
+    import hashlib
+    raw = Path(path).read_bytes()
+    L = pd.read_csv(path)
+    sd = pd.to_numeric(L[col], errors="coerce")
+    kept = list(L.loc[L[flag].astype(bool), "symbol"])
+    consistent = bool(((sd <= cut).fillna(False) == L[flag].astype(bool)).all())
+    return {"kept": kept, "tight": list(L.loc[(sd <= tight).fillna(False), "symbol"]), "thin": list(L.loc[(sd > cut).fillna(False), "symbol"]),
+            "md5": hashlib.md5(raw).hexdigest(), "n_kept": len(kept), "n_rows": int(len(L)), "consistent": consistent, "sd": dict(zip(L["symbol"], sd))}
+
+
+def r64_list(path: Path | str = R64_CSV, cut: float = R64_SD_CUT, tight: float = TIGHT_SD) -> dict:
+    return _list(path, cut, tight, "sd_btc_bps", "r64")
+
+
+def hourly_krw(symbols: list[str], path: Path | str = KR_PARQUET, slices: tuple[str, ...] = MEMBERS_SLICES, mult: dict[str, float] | None = None,
+               value: str = "prem_btc_bps") -> pd.DataFrame:
+    """The Korean premium (bps) per name on a full hourly grid of `ts_known` — NaN where the hour is missing; `value` = prem_btc_bps (the
+    BTC-relative premium: BTC's own rows are loaded for the ratio whether or not BTC is in `symbols`) or prem_adj_bps (through KRW-USDT)."""
+    from . import krw
+    d = krw.load(path)
+    d = d[d["symbol"].isna() | d["symbol"].isin(set(symbols) | {krw.BTC})]
+    stamps = pd.DatetimeIndex(sorted(d["ts_known"].unique()))
+    present = set(d["symbol"].dropna().astype(str))
+    have = [s for s in symbols if s in present]
+    bn_syms = sorted(set(have) | ({krw.BTC} if krw.BTC in present else set()))
+    bn = cb.binance_close_at(bn_syms, stamps, slices) if bn_syms else pd.DataFrame(index=stamps)
+    P = krw.premium(d, bn, mult if mult is not None else {s: cb.mult_of(s) for s in bn_syms})
+    W = P.pivot(index="ts_known", columns="symbol", values=value)
+    grid = pd.date_range(W.index.min().floor("h"), W.index.max().floor("h"), freq="h")
+    return W.reindex(index=grid, columns=[s for s in have if s in W.columns])
+
+
+def features_src(idx: pd.DatetimeIndex, cols: list[str], names: list[str], source: str, path: Path | str, slices: tuple[str, ...],
+                 mult: dict[str, float] | None = None, value: str = "prem_btc_bps") -> tuple[dict[str, pd.DataFrame], pd.DataFrame, pd.DataFrame]:
+    """`features` with the source chosen: "coinbase" (R62's `hourly`) or "krw" (`hourly_krw`). The frames are keyed LVL / DEV / CHG
+    whatever the source, so `known_at`, `describe_names` and `recompute_cell` read them unchanged."""
+    G = hourly(names, path, slices, mult) if source == "coinbase" else hourly_krw(names, path, slices, mult, value)
+    H = features_hourly(G)
+    return {k: to_panel(v, idx, cols) for k, v in H.items()}, used_hours(G, idx, cols), G
+
+
+def volume_share_hourly_krw(symbols: list[str], path: Path | str, slices: tuple[str, ...]) -> pd.DataFrame:
+    """AX2 on the KRW venue: log(the venue's hourly KRW volume / Binance's hourly USDT volume) per name on the hourly grid — the KRW/USDT
+    scale left in (it cancels in the deviation from the trailing month)."""
+    from . import krw
+    d = krw.load(path)
+    d = d[d["symbol"].notna() & d["symbol"].isin(symbols)]
+    kv = d.pivot_table(index="ts_known", columns="symbol", values="volume_krw", aggfunc="last")
+    bnv = cb.binance_dvol_hour(list(kv.columns), kv.index, slices)
+    share = (kv / bnv.reindex(columns=kv.columns)).replace([np.inf, -np.inf], np.nan)
+    ls = np.log(share.where(share > 0))
+    grid = pd.date_range(ls.index.min().floor("h"), ls.index.max().floor("h"), freq="h")
+    return ls.reindex(grid)
+
+
+def frames(L: dict, source: str, path: Path | str, slices: tuple[str, ...], mult: dict[str, float] | None, members_csv: Path | str | None,
+           start: pd.Timestamp = MEMBERS_START, end: pd.Timestamp | None = None) -> dict:
+    """R62's members' frame on a source: the panel on the kept and thin names, the three frames (keyed LVL / DEV / CHG) on the kept names
+    masked to membership, the used hours and the hourly grid, the membership mask and rows, the described frames (TIGHT, THIN, VOL)."""
+    kept, tight, thin = L["kept"], L["tight"], L["thin"]
+    names = sorted(set(kept) | set(thin))
+    P = member_panel(names, start, end or ceiling.END, slices)
+    D = ceiling.derive(P)
+    idx, cols, s = D["lr"].index, list(D["lr"].columns), D["scored"]
+    F_all, U, G = features_src(idx, cols, names, source, path, slices, mult)
+    F_kept = restrict(F_all, kept)
+    M, m = membership(idx, cols, members_csv)
+    F = mask_members(F_kept, M)
+    LS = volume_share_hourly(kept, path, slices) if source == "coinbase" else volume_share_hourly_krw(kept, path, slices)
+    Fv = mask_members({"vol": to_panel(volume_dev(LS), idx, cols)}, M)["vol"]
+    F_desc = {"tight": mask_members(restrict(F_all, tight), M)[DEV], "thin": mask_members(restrict(F_all, thin), M)[DEV], "vol": Fv}
+    return {"names": names, "kept": kept, "tight": tight, "thin": thin, "D": D, "idx": idx, "cols": cols, "s": s, "F_all": F_all, "F_kept": F_kept, "F": F,
+            "U": U, "G": G, "M": M, "m": m, "F_desc": F_desc}
+
+
+def screen_frames_r62(fr: dict) -> dict[str, pd.DataFrame]:
+    """R62's screen dictionary from a frame set — the six features R62 wrote, by R62's names."""
+    return {DEV: fr["F"][DEV], LVL: fr["F"][LVL], CHG: fr["F"][CHG], TIGHT: fr["F_desc"]["tight"], THIN: fr["F_desc"]["thin"], VOL: fr["F_desc"]["vol"]}
+
+
+def reproduction_r62(sc: pd.DataFrame, saved: Path = MEMBERS_OUT_DIR, tol: float = TOL) -> dict:
+    """Validity (1) of R64: the new source path on the Coinbase members against R62's saved screen — every row of the six features (ic, t,
+    every bet × horizon); the nulls are not redrawn."""
+    if not (saved / "screen.parquet").exists():
+        return {"status": "MISSING", "note": f"{saved}/screen.parquet not found"}
+    feats = [LVL, DEV, CHG, TIGHT, THIN, VOL]
+    key = ["bet", "horizon", "feature"]
+    old = pd.read_parquet(saved / "screen.parquet")
+    old = old[old["feature"].isin(feats)].set_index(key)
+    new = sc[sc["feature"].isin(feats)].set_index(key)
+    j = new[["ic", "t"]].join(old[["ic", "t"]], rsuffix="_r62", how="inner").dropna()
+    diff = {c: float((j[c] - j[f"{c}_r62"]).abs().max()) if len(j) else np.nan for c in ("ic", "t")}
+    n_old = int(len(old.dropna(subset=["ic", "t"])))
+    ok = len(j) == n_old > 0 and all(np.isfinite(v) and v <= tol for v in diff.values())
+    return {"status": "PASS" if ok else "FAIL", "rows_compared": int(len(j)), "rows_r62": n_old, "max_abs_diff": diff}
+
+
+def overlap(kr_dev: pd.DataFrame, cb_dev: pd.DataFrame, s: np.ndarray) -> tuple[dict[str, pd.DataFrame], dict]:
+    """The overlap rows: on the cells where both deviations have a value, CB_SAME, KR_SAME and KR_ORTH = KR_SAME − β × CB_SAME, β one pooled
+    least-squares slope over the SCORED common cells; the summary with the correlations before and after (the latter 0 by construction)."""
+    cb_dev = cb_dev.reindex(columns=kr_dev.columns)
+    both = kr_dev.notna() & cb_dev.notna()
+    cbs, krs = cb_dev.where(both), kr_dev.where(both)
+    x, y = cbs[s].to_numpy().ravel(), krs[s].to_numpy().ravel()
+    ok = np.isfinite(x) & np.isfinite(y)
+    x, y = x[ok], y[ok]
+    if len(x) < 2 or np.var(x) == 0:
+        beta, corr = np.nan, np.nan
+    else:
+        beta = float(np.cov(x, y, ddof=0)[0, 1] / np.var(x))
+        corr = float(np.corrcoef(x, y)[0, 1])
+    orth = krs - (beta if np.isfinite(beta) else 0.0) * cbs
+    o = orth[s].to_numpy().ravel()[ok]
+    corr_after = float(np.corrcoef(x, o)[0, 1]) if len(x) > 2 and np.std(o) > 0 else np.nan
+    names = [c for c in both.columns if both[c][s].any()]
+    return {CB_SAME: cbs, KR_SAME: krs, KR_ORTH: orth}, {"cells": int(ok.sum()), "names": len(names), "beta": beta, "corr_before": corr, "corr_after": corr_after,
+                                                          "status": "PASS" if np.isfinite(corr_after) and abs(corr_after) <= 1e-6 else "FAIL"}
+
+
+def upbit_names(path: Path | str, cut: float = R64_SD_CUT, window: tuple[pd.Timestamp, pd.Timestamp] = AUDIT_WINDOW, members: list[str] | None = None,
+                slices: tuple[str, ...] = MEMBERS_SLICES) -> dict:
+    """The described Upbit row's names: the member names whose BTC-relative premium has sd ≤ cut over the audit window — read at run time,
+    not frozen (a described row)."""
+    G = hourly_krw(members or [], path, slices) if members else pd.DataFrame()
+    if G.empty:
+        return {"kept": [], "sd": {}, "n_series": 0}
+    w = G[(G.index >= window[0]) & (G.index <= window[1])]
+    sd = w.std()
+    return {"kept": sorted(sd[sd <= cut].index), "sd": {k: float(v) for k, v in sd.round(3).items()}, "n_series": int(sd.notna().sum())}
+
+
+def run_r64(taker_bps: float, maker_bps: float, fee_source: str, draws: int = DRAWS, seed: int = 0, shift_min: int = SHIFT_MIN, jobs: int = 1,
+            path: Path | str = KR_PARQUET, up_path: Path | str | None = UP_PARQUET, cb_path: Path | str = cb.MEMBERS_PARQUET, r62: Path = MEMBERS_OUT_DIR,
+            csv: Path | str = R64_CSV, cb_csv: Path | str = R62_CSV, members_csv: Path | str | None = None, slices: tuple[str, ...] = MEMBERS_SLICES,
+            mult: dict[str, float] | None = None, n_check: int = N_CHECK, start: pd.Timestamp = MEMBERS_START, end: pd.Timestamp | None = None,
+            block_min_names: int = BLOCK_MIN_NAMES, r60: Path = OUT_DIR, out_md: Path = R64_OUT_MD, out_dir: Path = R64_OUT_DIR) -> str:
+    """R64. Validity (1) on the Coinbase members first (R62's frame reproduced through the new path, no nulls), then the Korean frame,
+    validity (2) … (5), then the screen with the described rows and the overlap."""
+    from joblib import Parallel, delayed
+    out_dir.mkdir(parents=True, exist_ok=True)
+    end = end or ceiling.END
+    L = r64_list(csv)
+    kept, tight, thin = L["kept"], L["tight"], L["thin"]
+    validity = {"registration": "R64", "folds": list(folds.EXPLORATION), "draws": draws, "seed": seed, "shift_min": shift_min, "source": str(path), "upbit_source": str(up_path),
+                "universe_file": {"path": str(csv), "md5": L["md5"], "n_kept": L["n_kept"], "n_rows": L["n_rows"], "consistent": L["consistent"],
+                                  "status": "PASS" if L["consistent"] and L["n_kept"] > 0 else "FAIL"},
+                "gate": {"bar_twelve": BAR_TWELVE, "sign": R62_SIGN, "family": [(KDEV, h) for h in FAMILY_HZ]}}
+
+    # validity (1) FIRST: the new path on the Coinbase members' source against R62's saved screen rows
+    print(f"validity (1): R62's frame on the Coinbase members through the source path — the six features against {r62}/screen.parquet…", flush=True)
+    Lcb = r62_list(cb_csv)
+    frc = frames(Lcb, "coinbase", cb_path, slices, mult, members_csv, start, end)
+    sc_cb, _ = ceiling.ic_screen(frc["D"], screen_frames_r62(frc), set())
+    validity["reproduction"] = reproduction_r62(sc_cb, r62)
+    validity["reproduction"]["cb_list"] = {"path": str(cb_csv), "md5": Lcb["md5"], "n_kept": Lcb["n_kept"]}
+    saved_mv = pd.read_parquet(r60 / "move_vs_cost.parquet") if (r60 / "move_vs_cost.parquet").exists() else None
+    if saved_mv is not None:
+        sm = saved_mv[(saved_mv["bet"] == BET) & (saved_mv["horizon"] == PRIMARY)]
+        validity["gate"]["bar_r60_saved"] = float(sm["ic_needed_maker"].iloc[0]) if len(sm) else np.nan
+        validity["gate"]["bar_status"] = "PASS" if len(sm) and abs(float(sm["ic_needed_maker"].iloc[0]) - BAR_TWELVE) <= BAR_TOL else "FAIL"
+    else:
+        validity["gate"]["bar_status"] = "MISSING"
+    if validity["reproduction"]["status"] != "PASS" or validity["universe_file"]["status"] != "PASS" or validity["gate"]["bar_status"] != "PASS":
+        return _void_r64(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+    cb_dev_hourly = frc["G"]                                          # kept for the overlap's frame on the Korean panel (the same source rows)
+    del frc, sc_cb
+
+    # the Korean frame; validity (2) known-at, (3) membership and coverage, before any IC
+    print("the Korean members' panel and frames…", flush=True)
+    fr = frames(L, "krw", path, slices, mult, members_csv, start, end)
+    D, idx, cols, s, F, M, m = fr["D"], fr["idx"], fr["cols"], fr["s"], fr["F"], fr["M"], fr["m"]
+    sidx = idx[s]
+    validity |= {"scored_bars": int(s.sum()), "days": int(len(np.unique(sidx.floor("D")))), "names_in_panel": len(cols), "first": str(sidx[0]), "last": str(sidx[-1]),
+                 "kept_in_panel": int(sum(c in cols for c in kept)), "thin_in_panel": int(sum(c in cols for c in thin))}
+    validity["known_at"] = known_at(fr["F_kept"], fr["U"], fr["G"], s, kept, n_check, seed)
+    validity["membership"] = {"status": "PASS" if bool((F[DEV].notna() & ~M).to_numpy().sum() == 0) else "FAIL",
+                              "values_off_membership": int((F[DEV].notna() & ~M).to_numpy().sum()), "values_on": int(F[DEV][s].notna().to_numpy().sum()),
+                              "values_before_the_mask": int(fr["F_kept"][DEV][s].notna().to_numpy().sum())}
+    validity["coverage"], B = block_coverage(F[DEV], s, m, kept, block_min_names)
+
+    # the overlap: R62's kept Coinbase deviation on the Korean panel's cells, masked to R62's kept names and to membership
+    print("the overlap with the Coinbase deviation…", flush=True)
+    Hcb = features_hourly(cb_dev_hourly)[DEV]
+    cb_dev = mask_members({DEV: restrict({DEV: to_panel(Hcb, idx, cols)}, Lcb["kept"])[DEV]}, M)[DEV]
+    F_ov, ov = overlap(F[DEV], cb_dev, s)
+    validity["overlap"] = ov
+    validity["status"] = "PASS" if all(validity[k]["status"] == "PASS" for k in ("reproduction", "universe_file", "known_at", "membership", "coverage", "overlap")) else "FAIL"
+    if validity["status"] != "PASS":
+        return _void_r64(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+
+    # the described rows: the adjusted premium's deviation; Upbit's deviation at the same cut, read at run time
+    print("the described rows: the adjusted premium, Upbit…", flush=True)
+    Hadj = features_hourly(hourly_krw(kept, path, slices, mult, "prem_adj_bps"))[DEV]
+    F_adj = mask_members({KADJ: restrict({KADJ: to_panel(Hadj, idx, cols)}, kept)[KADJ]}, M)[KADJ]
+    F_up = None
+    if up_path is not None and Path(up_path).exists():
+        up = upbit_names(up_path, R64_SD_CUT, AUDIT_WINDOW, sorted(set(m["symbol"])), slices)
+        validity["upbit"] = {"n_series": up["n_series"], "n_kept": len(up["kept"]), "kept": up["kept"], "sd": up["sd"]}
+        if up["kept"]:
+            Hup = features_hourly(hourly_krw(up["kept"], up_path, slices, mult))[DEV]
+            F_up = mask_members({UPDEV: restrict({UPDEV: to_panel(Hup, idx, cols)}, up["kept"])[UPDEV]}, M)[UPDEV]
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    B.to_parquet(out_dir / "blocks.parquet", index=False)
+    head = _head_r64(validity, taker_bps, maker_bps, fee_source)
+
+    # the screen: the registered feature; the described rows; the overlap
+    print("screen: the registered feature; the level, the change, the tight and thin subsets, the adjusted premium, Upbit, the volume share, the overlap…", flush=True)
+    feats = {KDEV: F[DEV], KLVL: F[LVL], KCHG: F[CHG], KTIGHT: fr["F_desc"]["tight"], KTHIN: fr["F_desc"]["thin"], KADJ: F_adj, KVOL: fr["F_desc"]["vol"], **F_ov}
+    if F_up is not None:
+        feats[UPDEV] = F_up
+    sc, daily = ceiling.ic_screen(D, feats, set())
+    Zs = {h: D["z"][h][s].clip(-Z_CLIP, Z_CLIP).to_numpy() for h in HZ}
+    Zr = {h: D["zres"][h][s].to_numpy() for h in HZ}
+    print(f"nulls on {KDEV}: {draws} day shuffles and {draws} whole-day shifts…", flush=True)
+    null_shuffle, null_shift = Parallel(n_jobs=min(jobs, 2) if jobs > 1 else 1)(
+        [delayed(_null_feature)(KDEV, F[DEV][s], Zs, Zr, draws, seed), delayed(shift_feature)(KDEV, F[DEV], D, s, draws, seed, shift_min)])
+
+    print("the bars…", flush=True)
+    ct, _ = ceiling.bar_cost(idx, cols, taker_bps, maker_bps)
+    bars_taker = {h: taker_bar(D, ct, h) for h in HORIZONS}
+    cost_cover = float(ct[s].notna().to_numpy().mean())
+
+    rows = sc.merge(fold_ics(daily), on=["bet", "horizon", "feature"], how="left")
+    rows["ic_se"] = rows["ic_mde"] / MDE_K
+    rows["bar_maker_twelve"] = np.where(rows["horizon"] == PRIMARY, BAR_TWELVE, np.nan)
+    rows["bar_taker_members"] = rows["horizon"].map(bars_taker)
+    for c in ("p_single_shuffle", "p_single_shift", "p_fw_shuffle", "p_fw_shift"):
+        rows[c] = np.nan
+    for i, r in rows.iterrows():
+        if r["feature"] == KDEV and r["bet"] in ("directional", "relative") and r["horizon"] in HZ:
+            rows.loc[i, "p_single_shuffle"] = single_p(null_shuffle, r["bet"], KDEV, r["horizon"], r["t"])
+            rows.loc[i, "p_single_shift"] = single_p(null_shift, r["bet"], KDEV, r["horizon"], r["t"])
+    cells = [(KDEV, h) for h in FAMILY_HZ]
+    fam_rows = rows[(rows["bet"] == BET) & (rows["feature"] == KDEV) & rows["horizon"].isin(FAMILY_HZ)]
+    t_real = {(r["feature"], r["horizon"]): r["t"] for _, r in fam_rows.iterrows()}
+    pf1, b1 = family_p(null_shuffle, cells, t_real)
+    pf2, b2 = family_p(null_shift, cells, t_real)
+    for i, r in fam_rows.iterrows():
+        rows.loc[i, ["p_fw_shuffle", "p_fw_shift"]] = [pf1[r["feature"], r["horizon"]], pf2[r["feature"], r["horizon"]]]
+    rows["p_family"] = rows[["p_fw_shuffle", "p_fw_shift"]].max(axis=1)
+    rows["verdict"] = ""
+    for i, r in rows.loc[fam_rows.index].iterrows():
+        v = verdict_r62(r["ic"], r["ic_se"], r["p_family"], bool(r["folds_same_sign"]))
+        rows.loc[i, "verdict"] = v if r["horizon"] == PRIMARY else v + " (reported, not gated)"
+    words = {KLVL: "described (the level)", KCHG: "described (the 24-h change)", KTIGHT: f"described (sd ≤ {TIGHT_SD:g}, {len(tight)} names)",
+             KTHIN: f"described (sd > {R64_SD_CUT:g}, {len(thin)} names)", KADJ: "described (the ADJUSTED premium's deviation, on its hours — KRW-USDT from 2023-12)",
+             UPDEV: f"described (Upbit's BTC-relative deviation, {len(validity.get('upbit', {}).get('kept', []))} names at the same cut, read at run time)",
+             KVOL: "described (AX2: the KRW volume share's deviation; sign free)",
+             CB_SAME: f"described (R62's Coinbase deviation on the {ov['cells']} common scored cells, {ov['names']} names)",
+             KR_SAME: "described (the Korean deviation on the same cells)",
+             KR_ORTH: f"described (the Korean deviation with the Coinbase one taken out: β {ov['beta']:.3f}, corr before {ov['corr_before']:.3f})"}
+    for f_, w in words.items():
+        rows.loc[rows["feature"] == f_, "verdict"] = w
+    desc = describe_names(F, s, kept)
+    desc["sd_audit_bps"] = desc["symbol"].map(L["sd"])
+    bi = block_ics(daily, m, feature=KDEV)
+
+    rows.to_parquet(out_dir / "screen.parquet", index=False)
+    daily.to_parquet(out_dir / "ic_daily.parquet", index=False)
+    null_shuffle.to_parquet(out_dir / "null_shuffle.parquet", index=False)
+    null_shift.to_parquet(out_dir / "null_shift.parquet", index=False)
+    pd.DataFrame({"horizon": list(bars_taker), "ic_needed_taker_members": list(bars_taker.values()), "bar_maker_twelve": BAR_TWELVE, "cost_cover": cost_cover}).to_parquet(out_dir / "move_vs_cost.parquet", index=False)
+    desc.to_parquet(out_dir / "names.parquet", index=False)
+    B.merge(bi, on="block", how="left").to_parquet(out_dir / "blocks.parquet", index=False)
+    pd.DataFrame([ov]).to_parquet(out_dir / "overlap.parquet", index=False)
+
+    show = lambda df, digits=4: df.round(digits).to_markdown(index=False)                    # noqa: E731
+    cols_show = ["bet", "horizon", "feature", "ic", "t", "ic_se", "ic_mde", "days", "months_same_sign", "ic_F1", "ic_F2", "folds_same_sign",
+                 "p_single_shuffle", "p_single_shift", "p_fw_shuffle", "p_fw_shift", "p_family", "bar_maker_twelve", "bar_taker_members", "verdict"]
+    g = rows[(rows["feature"] == KDEV) & (rows["bet"] == BET) & (rows["horizon"] == PRIMARY)].iloc[0]
+    md = head + [f"\n## Verdict by R64's gate — `{KDEV}`, {BET}, {PRIMARY}, on the kept members: **{g['verdict']}**\n",
+                 f"\nIC {g['ic']:+.4f} (t {g['t']:+.2f}, se {g['ic_se']:.4f}, MDE {g['ic_mde']:.4f}); p_family {g['p_family']:.3f} (day shuffles {g['p_fw_shuffle']:.3f}, whole-day "
+                 f"shifts {g['p_fw_shift']:.3f}; single {g['p_single_shuffle']:.3f} / {g['p_single_shift']:.3f}); F1 {g['ic_F1']:+.4f}, F2 {g['ic_F2']:+.4f} "
+                 f"({'same sign' if g['folds_same_sign'] else 'signs differ'}); months the same sign {g['months_same_sign']:.2f}; the gate's bar {BAR_TWELVE} (the twelve's "
+                 f"maker bar at {PRIMARY}, a number); the members' own taker bar {bars_taker[PRIMARY]:.4f} (the cost proxy covers {cost_cover:.0%} of the scored cells); "
+                 f"the registered sign {'positive' if R62_SIGN > 0 else 'negative'}.\n"]
+    fam = (rows["feature"] == KDEV) & rows["horizon"].isin(HZ) & rows["bet"].isin(["directional", "relative"])
+    ovl = rows["feature"].isin([CB_SAME, KR_SAME, KR_ORTH]) & rows["bet"].isin(["directional", "relative"]) & rows["horizon"].isin(HZ)
+    md += ["\n## The family (relative, 4h / 1d) with the directional bet and 1h beside — the registered feature\n",
+           "`p_fw_*` = the share of a null's draws whose largest |t| over the TWO family cells is at or above the real |t|; `p_single_*` = the cell alone; `p_family` = the larger "
+           "of the two nulls' family-wise p. `ic_F1`, `ic_F2` = the HAC mean of the daily IC inside each fold. `bar_maker_twelve` = the gate's number; `bar_taker_members` = "
+           "the members' taker bar from their cost proxy at the horizon.\n", show(rows[fam][cols_show]), "\n",
+           f"\n## The overlap (described, no nulls): R62's Coinbase deviation and the Korean one on the SAME scored member cells, and the Korean one orthogonalised to Coinbase's\n",
+           "```\n", json.dumps(ov, indent=1, default=str), "\n```\n", show(rows[ovl][cols_show[:12] + ["bar_taker_members", "verdict"]]), "\n",
+           "\n## Described beside (no nulls, no verdict): the level, the 24-h change, the tight and the thin subsets, the adjusted premium's deviation, Upbit's deviation, the volume share's deviation; 15m and the vol bet\n",
+           show(rows[~fam & ~ovl][cols_show[:12] + ["bar_taker_members", "verdict"]]), "\n",
+           "\n## The nulls' family bars (largest |t| over the two cells, per draw)\n", "```\n", json.dumps({"shuffle": b1, "shift": b2}, indent=1), "\n```\n",
+           f"\n## By block — the kept members present and the relative {PRIMARY} IC inside the block (described)\n", show(B.merge(bi, on="block", how="left").assign(block=lambda d: d["block"].dt.date)), "\n",
+           "\n## The kept names on their member cells\n", show(desc), "\n"]
+    out_md.write_text("".join(md))
+    print(f"{KDEV} {BET} {PRIMARY} on the members: {g['verdict']}; wrote {out_md} and {out_dir}/", flush=True)
+    return "".join(md)
+
+
+def _head_r64(validity: dict, taker_bps, maker_bps, fee_source) -> list[str]:
+    return [f"# R64 — the Korean premium's deviation at breadth: the screener's F1+F2 members on Bithumb (`ft2 ceiling --target pairs --family krw --universe members`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC\n",
+            f"\n**Folds read:** {'+'.join(folds.EXPLORATION)} (embargoed) on the members' cells (a name's cells while a member of the bar's block); every source cut at "
+            f"{ceiling.END:%Y-%m-%d}. The universe `{validity['universe_file']['path']}` (md5 {validity['universe_file']['md5']}, {validity['universe_file']['n_kept']} kept). "
+            f"The quantity: the BTC-RELATIVE premium (the FX and the market-wide premium divided out; the control KRW-USDT is young). Fees (input): taker {taker_bps} bps, maker {maker_bps} bps — {fee_source}.\n",
+            f"\n## Validity — read first: **{validity.get('status', 'FAIL')}**\n", "```\n", json.dumps(validity, indent=1, default=str), "\n```\n"]
+
+
+def _void_r64(validity: dict, out_md: Path, out_dir: Path, taker_bps, maker_bps, fee_source):
+    validity["status"] = "FAIL"
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    out_md.write_text("".join(_head_r64(validity, taker_bps, maker_bps, fee_source) + ["\n**The read is VOID: no row of the registered feature was computed on the members.**\n"]))
+    print(f"validity FAIL — the read is void; wrote {out_md}", flush=True)
+    raise SystemExit(2)
