@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-20): §K1 READ — VOID at its prerequisite, 2026-10-20, before either population was touched: the harness replays X7 exactly (670 trades, +13.46), but the archive's three-ingredient composite is NOT X7's key on the book era — Spearman 0.51 against the bar 0.80, the same ladder rung on 44.6 % of the 670 trades against 70 % (within one rung 79.0 % against 95 %). Nothing changes anywhere; X7's confirmation stays on 2027-03-10 as §R.4 registered it (result block in §K1). Earlier status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
@@ -440,11 +440,61 @@ M3_EXPORT_DIR=/workspace/train/output/book_era2 ./scripts/m3.sh -m m3 bookdyn 2>
 
 ---
 
-## K1 — X7's ladder key read on archive history instead of waiting for 2027-03-10 — 🔵 REGISTERED 2026-10-19, before any code
+## K1 — X7's ladder key read on archive history instead of waiting for 2027-03-10 — ⚫ VOID 2026-10-20 at the prerequisite (registered 2026-10-19, before any code)
 
 **Written 2026-10-19 on Vadim's "let's go with 1 and 2" (chat; this is item 2), before any
 archive file beyond the format listing was fetched, before any number below existed. Nothing
 served changes on any outcome.**
+
+### Result — VOID at the prerequisite, read 2026-10-20 (`logs/k1_check_20261020.log`)
+
+**Run as registered, in order: `archivekey fetch` (288 monthly 5m `klines` files, 12 pairs,
+2024-10 → 2026-09, sha256-verified, every pair complete, HYPE from its 2025-05-30 listing;
+`klines_um_5m_fcb8442a.parquet`), `archivekey reduce` (X8's `metrics_um_5m_83c85bd7.parquet`
+reused with the +5 min relabel; 2,453,346 bars, OI present on 97.7 % — the 2.3 % is 2026-09-14
+onward, past the metrics file's end and outside every K1 window; `archive_key_5m_bb7c984e.parquet`),
+then `archivekey check` on X7's own population (M3_ERA=repaired, the eight book pairs,
+M3_EXPORT_DIR=book_era; 97,697–97,913 bars a seed, 2026-07-18 21:15 → 2026-09-03). The
+construction tests (`tests/test_archivekey.py`, 5 green) pin the OI alignment to
+`sidetable.add_open_interest` on a synthetic series and the composite to a hand computation.**
+
+| prerequisite | bar | measured | |
+|---|---|---|---|
+| 1. harness replay | 670 trades, +13.46 | 670 trades, `book_composite_lo` − incumbent **+13.46** [−7.97, +34.89], E −8.38; every arm the incumbent's trades exactly | PASS |
+| 2. rank agreement | Spearman ≥ 0.80 | **0.512** over 97,913 bars (0.511 over 12,670 timestamps); the archive row present on all 115,365 of X7's bars | **FAIL** |
+| 3. rung agreement | identical ≥ 70 %, within one ≥ 95 % | **44.6 %** identical, **79.0 %** within one, 21.0 % two or more rungs apart, on all 670 | **FAIL** |
+
+**K1 is VOID: the archive cannot carry X7's key.** By §K1 nothing further was read — neither
+P1 nor P2 was loaded, no look marker exists — and nothing changes anywhere: X7's confirmation
+stays on **2027-03-10**, key `book_composite_lo`, exactly as §R.4 registered it; the BACKLOG
+row X7 is unchanged, row X15 closed.
+
+**Why it failed (prerequisite 4, description only — no re-cut was made or is permitted).** Two
+sources, the larger one not the missing spread:
+
+* **The tape ingredients are different observables, not the same one measured twice.** The
+  collector's `trade_count` / `trade_vol` on the 5m grid are the LAST ~10-second poll at the
+  bar (`window_start` is the last trade of a poll, asof within 5 min — bookprep, sidetable),
+  censored at 200 trades a poll; the archive's are the bar's full 5-minute totals. Per pair
+  the Spearman is 0.48–0.75 for the count and 0.38–0.55 for the volume; the open-interest
+  change, which both sides derive the same way from the same series, agrees at 0.87–0.89
+  (X8's identity, again). Market-wide ranks: count 0.73, volume 0.64, OI 0.88.
+* **The spread is a quarter of X7's composite** and is not in the archive. The collector's OWN
+  three-ingredient composite (count, volume, OI — the spread left out) ranks the bars at
+  Spearman **0.70** against the archive's three, and at **0.85** against X7's four — so the
+  tape sampling costs about 0.30 of rank agreement and the missing spread about 0.15.
+
+For the record, not a result: on this population the archive key's contrast is +12.41 [−9.49,
++34.31] against X7's +13.46 — nearly the same money from rungs that agree on fewer than half
+the trades, which says the book-era number is as loose as its interval, not that the keys are
+interchangeable.
+
+**What this leaves.** The archive carries X7's *idea* (quiet market → bigger size) but not X7's
+*key*, and §R.4 admits no other key before the forward look. A live key the archive could
+confirm would be a NEW registration with its own exploration — the archive's three ingredients
+on the book era score as a key only under a fresh §B2-style gate, and the engineering note in
+"What each outcome licenses" (the kline poll keeps `count` and `volume`) would belong to it.
+Not proposed here; it is a brainstorm item, not a follow-up.
 
 ### In plain terms
 

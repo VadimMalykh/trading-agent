@@ -1154,6 +1154,13 @@ def cmd_bookentry(args) -> int:
 def cmd_bookladder(args) -> int:
     """BOOK_ERA_PLAN §R.4 — X7: a book observable as the size-ladder key."""
     from . import bookladder
+    if args.stage == "archive-confirm":
+        # BOOK_WAVE2_PLAN §K1: X7's key rebuilt from the archive, read on P1 / P2. Refuses
+        # without `archivekey check`'s PASS marker, and refuses a second look at a population.
+        from . import archivekey
+        if not args.population:
+            raise SystemExit("--stage archive-confirm needs --population P1|P2")
+        return archivekey.confirm_report(WINNER_SPEC, args.population, table=args.book_table)
     return bookladder.report(WINNER_SPEC, stage=args.stage,
                              exploration_recorded=args.exploration_recorded, config=args.config)
 
@@ -1750,7 +1757,12 @@ def main() -> int:
                         "size ladder keyed on a book observable instead of btc_absret_1d; explore on "
                         "the book era (M3_ERA=repaired, M3_EXPORT_DIR=book_era), confirm once on "
                         "forward policy_bars on or after 2027-03-10")
-    bl.add_argument("--stage", choices=["explore", "confirm"], required=True)
+    bl.add_argument("--stage", choices=["explore", "confirm", "archive-confirm"], required=True)
+    bl.add_argument("--population", choices=["P1", "P2"], default=None,
+                    help="--stage archive-confirm only (BOOK_WAVE2_PLAN §K1): P1 decides, P2 replicates")
+    bl.add_argument("--book-table", default=None,
+                    help="--stage archive-confirm only: the archive key parquet (default: the one the "
+                         "PASS marker names)")
     bl.add_argument("--exploration-recorded", action="store_true",
                     help="required by --stage confirm: the exploration table and key are in §R.4")
     bl.add_argument("--config", default=None, help="--stage confirm only: the key from §R.4")
@@ -1791,6 +1803,8 @@ def main() -> int:
     _ladderspan.add_parser(sub)
     from . import archivebook as _archivebook
     _archivebook.add_parser(sub)
+    from . import archivekey as _archivekey
+    _archivekey.add_parser(sub)
     sub.add_parser("bookdyn", help="BOOK_WAVE2_PLAN §D1: twelve book-dynamics columns from the "
                    "snapshot stream through B1's gate (§4.1 verbatim); M3_EXPORT_DIR=book_era2"
                    ).set_defaults(fn=lambda a: __import__("m3.bookdyn", fromlist=["report"]).report())
