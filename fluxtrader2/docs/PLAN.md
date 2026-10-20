@@ -1398,6 +1398,12 @@ Ranked:
   wide kimchi premium as a state (one series — decision H; AA8).
 Recommended: BB1 step (i) now (the audit on the work VM; nothing registered until it is in), BB2 written beside it. Needed from Vadim: the word
 on BB1 (or BB6).
+**DECIDED 2026-10-20, Vadim's "BB1": step (i) OPENED the same day — `ft2 krw markets|fetch|ingest|audit --venue upbit|bithumb` (`ft2/krw.py`,
+on `coinbase.py`'s functions: the member symbols and multiples, Binance's 5m closes from the archive klines, the member-hours cover and the
+per-block breadth), `scripts/bb1_chain.sh` (the two venues fetched in parallel on the work VM), tests on planted candles; the audit's
+quantities: the raw ratio (KRW per USDT × the premium), the KRW-USDT-adjusted premium, the BTC-RELATIVE premium (the FX and the
+market-wide premium removed without a control — the quantity a within-hour rank reads), the stamp's alignment from the last tick, the
+KRW volume share. The DATA.md section, the §9 line and step (ii)'s decision follow the audit. Nothing registered.**
 
 **Decision BA (2026-10-20) — after R63: the asymmetry is a confirmed fact under every money bar; what now? WRITTEN 2026-10-20 — OPEN, Vadim's.**
 R63 CONFIRMED on F3+F4's members all three cells of `bx_1h` after a BTC fall with the registered sign (IC_c −0.012 / −0.023 / −0.021 at

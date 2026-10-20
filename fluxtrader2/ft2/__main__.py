@@ -98,6 +98,11 @@ def cmd_coinbase(args):
     coinbase.main(args.action, args.start, args.end, args.products, args.universe, args.listed_only)
 
 
+def cmd_krw(args):
+    from . import krw
+    krw.main(args.action, args.venue, args.start, args.end, args.markets, args.listed_only)
+
+
 def cmd_magvol(args):
     from . import magvol
     print(magvol.run(args.holds, args.names, args.name))
@@ -459,6 +464,13 @@ def main(argv=None):
     cbp.add_argument("--universe", choices=["twelve", "members"], default="twelve",
                      help="twelve (default): the twelve's products → data/coinbase_1h.parquet; members (AX1 (i)): the screener's members' <BASE>-USD products → data/coinbase_1h_members.parquet, output/coinbase_members_audit.md")
     cbp.add_argument("--listed-only", action="store_true", help="fetch: skip the products the saved listing does not list (run `products` first)")
+    krp = sub.add_parser("krw", help="P8 (decision BB1 (i)): the Korean premium per name as a source — Upbit's / Bithumb's KRW markets for the twelve and the screener's members, hourly candles from the public API → data/raw/external/<venue>/, data/krw_1h_<venue>.parquet, output/krw_<venue>_audit.md (see ft2/krw.py)")
+    krp.add_argument("action", choices=["markets", "fetch", "ingest", "audit"])
+    krp.add_argument("--venue", choices=["upbit", "bithumb"], required=True)
+    krp.add_argument("--start", default="2023-04-01", help="fetch: the first hour asked for")
+    krp.add_argument("--end", default=None, help="fetch: the last hour (default now)")
+    krp.add_argument("--markets", nargs="*", default=None, help="a subset of the markets (default all KRW-<BASE> of the twelve and the members, plus KRW-USDT)")
+    krp.add_argument("--listed-only", action="store_true", help="fetch: skip the markets the saved listing does not hold (run `markets` first)")
     mvp = sub.add_parser("magvol", help="P8 (R54): magnitude against implied — the candle-built realised-vol forecast against DVOL in forecasting BTC's and ETH's realised volatility at 1 and 7 days → output/magvol/<name>/magvol.md (see ft2/magvol.py)")
     mvp.add_argument("--holds", nargs="*", type=int, default=[1, 7], help="horizons in days (default 1 7)")
     mvp.add_argument("--names", nargs="*", default=None, help="the family's names (default BTCUSDT ETHUSDT)")
@@ -506,7 +518,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
