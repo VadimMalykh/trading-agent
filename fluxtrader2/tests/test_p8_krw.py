@@ -68,16 +68,18 @@ def test_paging_walks_backwards_from_to_and_keeps_the_window_oldest_first(monkey
 
     def fake(u, **kw):
         calls.append(u)
-        to = pd.Timestamp(u.split("to=")[1].split("&")[0].rstrip("Z"), tz="UTC")
+        to = pd.Timestamp(u.split("to=")[1].split("&")[0].rstrip("Z"), tz="UTC") - pd.Timedelta(hours=OFFSET[0])   # the venue's reading of `to`
         return [_row(to - i * krw.HOUR, 1.0) for i in range(1, krw.MAX_BARS + 1)]              # newest first, strictly before `to`
+    OFFSET = [0]
     monkeypatch.setattr(krw, "_get", fake)
     monkeypatch.setattr(krw.time, "sleep", lambda s: None)
-    for venue, suffix in (("upbit", "Z"), ("bithumb", "")):
+    for venue, suffix, off in (("upbit", "Z", 0), ("bithumb", "", 9)):              # Bithumb reads the bare stamp as KST: written +9 h
         calls.clear()
-        U = {"api": "x", "to_suffix": suffix, "venue": venue}
+        OFFSET[0] = off
+        U = {"api": "x", "to_suffix": suffix, "venue": venue, "to_offset_h": off}
         rows = krw._candles(U, "KRW-BTC", T0, T0 + pd.Timedelta(hours=500))
-        assert len(calls) == 3 and all(c.endswith(f"T00:00:00{suffix}&count=200") or "to=" in c for c in calls)
-        assert calls[0].split("to=")[1].split("&")[0] == f"2023-05-21T20:00:00{suffix}"
+        assert len(calls) == 3 and all("to=" in c and c.endswith("&count=200") for c in calls)
+        assert calls[0].split("to=")[1].split("&")[0] == f"{pd.Timestamp('2023-05-21T20:00:00') + pd.Timedelta(hours=off):%Y-%m-%dT%H:%M:%S}{suffix}"
         assert len(rows) == 500 and rows[0]["candle_date_time_utc"] == "2023-05-01T00:00:00" and rows[-1]["candle_date_time_utc"] == "2023-05-21T19:00:00"
 
 
@@ -103,7 +105,7 @@ def test_ingest_drops_the_bucket_in_progress_and_the_premium_is_the_planted_gap(
     P2 = krw.premium(kr[kr["market"] != "KRW-USDT"], bn, U["mult"])
     assert P2["prem_adj_bps"].isna().all() and np.isfinite(P2["prem_btc_bps"]).sum() == len(P2)
     a = krw.alignment(kr)
-    assert a["share_tick_inside_hour"] == 1.0 and a["median_tick_offset_s"] == 1800
+    assert a["share_tick_inside_hour"] == 1.0 and a["share_tick_at_end"] == 0.0 and a["median_tick_offset_s"] == 1800
 
 
 def test_the_audit_counts_the_hole_and_writes_the_tables_and_the_row(tmp_path, monkeypatch):

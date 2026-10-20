@@ -5,7 +5,8 @@ source     Upbit's and Bithumb's public, keyless quotation APIs, the same shape 
            NEWEST first, every candle strictly before `to`; `candle_date_time_utc` is the bar's START (no zone, UTC), `trade_price` its
            close, `candle_acc_trade_price` its KRW volume, `timestamp` the last tick's ms. An hour without a trade has no candle. The
            bucket in progress is served (its close moves) and is DROPPED on ingest: a bar that starts at H is final at H + 1 h. Upbit's `to`
-           takes the `Z` suffix, Bithumb's refuses it; Upbit's API refuses TLS from some networks (the laptop) and answers from GCP.
+           takes the `Z` suffix and is UTC; Bithumb's refuses a zone and reads the bare stamp as KST (so it is written +9 h), and its
+           `timestamp` on a finished bar is the bar's END, not a tick; Upbit's API refuses TLS from some networks (the laptop), answers from GCP.
 markets    KRW-<BASE> for every base of the twelve and of the screener's members (`ft2/screen_members.csv`, `screen_members_f34.csv`; a
            1000× / 1M× contract's base with the multiple divided, as `coinbase.base` / `mult_of`), plus KRW-USDT, the control: Binance's
            perpetual is quoted in USDT and the venue in KRW, so the raw ratio is a KRW/USDT rate times the premium; the ADJUSTED premium
@@ -37,7 +38,8 @@ import pandas as pd
 from . import coinbase as cb
 from . import data, folds
 
-VENUES = {"upbit": {"api": "https://api.upbit.com/v1", "to_suffix": "Z"}, "bithumb": {"api": "https://api.bithumb.com/v1", "to_suffix": ""}}
+VENUES = {"upbit": {"api": "https://api.upbit.com/v1", "to_suffix": "Z", "to_offset_h": 0},
+          "bithumb": {"api": "https://api.bithumb.com/v1", "to_suffix": "", "to_offset_h": 9}}     # Bithumb reads a bare `to` as KST (UTC+9)
 UA = {"User-Agent": "fluxtrader2-research/1.0", "Accept": "application/json"}
 PAUSE = 0.12                 # both venues publish ≈ 10 quotation requests a second an IP
 MAX_BARS = 200
@@ -117,8 +119,10 @@ def markets_file(U: dict) -> pd.DataFrame | None:
 
 
 # ---- candles -----------------------------------------------------------------------------------------------------------------
-def _stamp(ts: pd.Timestamp, suffix: str) -> str:
-    return f"{ts.tz_convert('UTC'):%Y-%m-%dT%H:%M:%S}{suffix}"
+def _stamp(ts: pd.Timestamp, suffix: str, offset_h: int = 0) -> str:
+    """`to` in the venue's own convention: Upbit reads `…Z` as UTC; Bithumb refuses a zone and reads the bare stamp as KST, so the UTC
+    instant is written shifted by +9 h (found 2026-10-20: the first fetch lost the 9 newest bars of every 200-bar page — 4.5 % of hours)."""
+    return f"{ts.tz_convert('UTC') + pd.Timedelta(hours=offset_h):%Y-%m-%dT%H:%M:%S}{suffix}"
 
 
 def _parse_start(s: str) -> pd.Timestamp:
@@ -131,7 +135,7 @@ def _candles(U: dict, market: str, a: pd.Timestamp, b: pd.Timestamp) -> list[dic
     out: dict[str, dict] = {}
     to = b
     while to > a:
-        res = _get(f"{U['api']}/candles/minutes/60?market={market}&to={_stamp(to, U['to_suffix'])}&count={MAX_BARS}")
+        res = _get(f"{U['api']}/candles/minutes/60?market={market}&to={_stamp(to, U['to_suffix'], U.get('to_offset_h', 0))}&count={MAX_BARS}")
         if not res or not isinstance(res, list):
             break
         starts = [_parse_start(r["candle_date_time_utc"]) for r in res]
@@ -254,7 +258,7 @@ def alignment(kr: pd.DataFrame) -> dict:
         return {"bars": 0}
     d = (g["last_tick"] - g["ts"]).dt.total_seconds()
     return {"bars": int(len(g)), "share_tick_inside_hour": float(((d >= 0) & (d < 3600)).mean()), "share_tick_before_start": float((d < 0).mean()),
-            "share_tick_after_end": float((d >= 3600).mean()), "median_tick_offset_s": float(d.median())}
+            "share_tick_at_end": float((d == 3600).mean()), "share_tick_after_end": float((d > 3600).mean()), "median_tick_offset_s": float(d.median())}
 
 
 def live_lag(U: dict, market: str = "KRW-BTC", now: pd.Timestamp | None = None) -> dict:
