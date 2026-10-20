@@ -421,8 +421,9 @@ KST stamps) and the refetch 14:25 → 15:57 in 8 partitions (`scripts/bb1_bithum
 **Rule for any feature: R60's (`ts_known` = the bar's start + 1 h; the last bar whose `ts_known` ≤ t; a thin name's premium a MISSING
 value where its bars are more than STALE hours apart); the quantity the BTC-RELATIVE premium (the adjusted one has no F1+F2 history on
 either venue); a registration names its venue and its sd cut in advance — at R62's 48 on the BTC-relative sd, Bithumb keeps ≈ 130 of
-186 series and ≈ 25 … 36 members a block on F1+F2's blocks from 2023-10-30, Upbit ≈ 85 of 113 and ≈ 15 … 27.** What follows is
-decision BC (P8).
+186 series and ≈ 25 … 36 members a block on F1+F2's blocks from 2023-10-30, Upbit ≈ 85 of 113 and ≈ 15 … 27.** What followed:
+decision BC → R64 (§8), read 2026-10-21: the Bithumb deviation CLOSED at 1d on the members (+0.002) and a fact of the hours (+0.007 at 1h,
++0.006 at 4h, both folds); Upbit's +0.015 at 4h; the Coinbase deviation on the same cells +0.014 at 1d. Parked in §7.
 
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
