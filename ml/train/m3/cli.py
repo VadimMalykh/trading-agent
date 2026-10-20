@@ -1805,6 +1805,8 @@ def main() -> int:
     _archivebook.add_parser(sub)
     from . import archivekey as _archivekey
     _archivekey.add_parser(sub)
+    from . import archiveprem as _archiveprem
+    _archiveprem.add_parser(sub)
     sub.add_parser("bookdyn", help="BOOK_WAVE2_PLAN §D1: twelve book-dynamics columns from the "
                    "snapshot stream through B1's gate (§4.1 verbatim); M3_EXPORT_DIR=book_era2"
                    ).set_defaults(fn=lambda a: __import__("m3.bookdyn", fromlist=["report"]).report())

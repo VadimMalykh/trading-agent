@@ -30,7 +30,7 @@ def test_layout_and_group():
     groups, cols = F.resolve_feature_groups("legacy,depth")
     assert groups == ["legacy", "depth"] and len(cols) == 23
     assert cols[:19] == F.LEGACY_FEATURE_COLS and cols[19:] == F.DEPTH_COLS
-    assert F.ALL_FEATURE_COLS[34:38] == F.DEPTH_COLS and F.ALL_FEATURE_COLS[-4:] == F.DEPTH1_COLS
+    assert F.ALL_FEATURE_COLS[34:38] == F.DEPTH_COLS and F.ALL_FEATURE_COLS[38:42] == F.DEPTH1_COLS   # fixed slots; X14 appends `prem` after
     assert "BTCUSDT" not in F.DEPTH_SERVED_PAIRS and "ETHUSDT" not in F.DEPTH_SERVED_PAIRS
     assert len(F.DEPTH_SERVED_PAIRS) == 10
 

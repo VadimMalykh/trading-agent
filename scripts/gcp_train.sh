@@ -193,7 +193,7 @@ CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT \
 DIR_MAG_WEIGHT DIR_MAG_WEIGHT_CLIP DIR_MAG_WEIGHT_POWER \
 LABEL_MODE TB_TP_MULT TB_SL_MULT TB_VOL_WINDOW TB_MIN_BARRIER \
 VN_VOL_WINDOW VN_MIN_SIGMA VN_CALIB_END \
-CANDLE_INTERVAL FEATURE_GROUPS ARCHIVE_OI ARCHIVE_OI_SHIFT_MIN OI_JOIN_AT_CLOSE ARCHIVE_DEPTH \
+CANDLE_INTERVAL FEATURE_GROUPS ARCHIVE_OI ARCHIVE_OI_SHIFT_MIN OI_JOIN_AT_CLOSE ARCHIVE_DEPTH ARCHIVE_PREM \
 NORM_DEGENERATE_STD NORM_CLIP NORM_LEGACY_BROKEN_STD \
 BOOK_MAX_AGE_MIN TRADES_MAX_AGE_MIN FUNDING_OI_MAX_AGE_MIN \
 GATE_THRESHOLD SERVE_TARGET_COVERAGE \
@@ -273,6 +273,7 @@ if [[ -z "$EVAL_ONLY_CKPT" ]]; then
   _recipe_cmp ALIGN_AGE_FIX       "0"                                   "${ALIGN_AGE_FIX:-0}"
   _recipe_cmp OI_JOIN_AT_CLOSE    "0"                                   "${OI_JOIN_AT_CLOSE:-0}"
   _recipe_cmp ARCHIVE_DEPTH       ""                                    "${ARCHIVE_DEPTH:-}"
+  _recipe_cmp ARCHIVE_PREM        ""                                    "${ARCHIVE_PREM:-}"
 
   # OI_JOIN_AT_CLOSE reads the archive one bucket past the close unless the archive rows
   # are re-labelled (config.py; features.build_feature_frame refuses it too, but only after
@@ -913,6 +914,15 @@ if [[ -n \"\${ARCHIVE_DEPTH:-}\" ]]; then
     export ARCHIVE_DEPTH=\"/workspace/train/output/archive/\$(basename \"\$ARCHIVE_DEPTH\")\"
   fi
   echo \"=== ARCHIVE_DEPTH (X8c) -> \$ARCHIVE_DEPTH ===\"
+fi
+# X14: ARCHIVE_PREM names the reduced mark/index premium parquet; same handling.
+if [[ -n \"\${ARCHIVE_PREM:-}\" ]]; then
+  if [[ \"\$ARCHIVE_PREM\" == gs://* ]]; then
+    mkdir -p \$HOME/\$REMOTE_REPO_NAME/ml/train/output/archive
+    gcloud storage cp \"\$ARCHIVE_PREM\" \$HOME/\$REMOTE_REPO_NAME/ml/train/output/archive/
+    export ARCHIVE_PREM=\"/workspace/train/output/archive/\$(basename \"\$ARCHIVE_PREM\")\"
+  fi
+  echo \"=== ARCHIVE_PREM (X14) -> \$ARCHIVE_PREM ===\"
 fi
 
 # --- GPU vs CPU docker runner ------------------------------------------------

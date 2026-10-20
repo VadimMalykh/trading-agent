@@ -153,6 +153,22 @@ DEPTH_BANDS = {
     "1": (DEPTH1_COLS, DEPTH1_SERVED_PAIRS, DEPTH1_BAND_BPS),
 }
 
+# X14 (NEXT_TRAINING_PLAN §2 X14, registered 2026-10-19): the mark–index premium — how far the
+# perpetual trades from its index right now, the continuous quantity funding averages. The
+# same series on both sides: the archive's markPriceKlines ÷ indexPriceKlines 5m closes before
+# the collector's first mark row, the collector's `funding_rates` poll (mark_price, index_price)
+# after. Taken AS OF THE BAR CLOSE on both sides (the archive row is the close; the collector's
+# is the last poll at or before it — the decision runs 120 s after the close, so the value
+# exists), with its own 10-minute staleness cap that FIRES as registered: the age is computed
+# unit-aware here regardless of ALIGN_AGE_FIX, because this group has no bit-identity to keep
+# with a banked checkpoint and "at most 10 minutes old" is the registration.
+PREM_COLS = [
+    "prem_bps",    # (mark ÷ index − 1) × 10⁴ as of the bar close
+    "prem_d1h",    # prem_bps minus its value 60 minutes earlier (0 when either is masked)
+    "has_prem",    # 1 where the value is present and at most PREM_MAX_AGE_MIN old
+]
+PREM_MAX_AGE_MIN = 10.0
+
 _FEATURE_GROUPS = {
     "legacy": LEGACY_FEATURE_COLS,
     "multiscale": OWN_PAIR_MULTISCALE_COLS,
@@ -160,8 +176,9 @@ _FEATURE_GROUPS = {
     "flow": FLOW_COLS,
     "depth": DEPTH_COLS,
     "depth1": DEPTH1_COLS,
+    "prem": PREM_COLS,
 }
-_GROUP_ORDER = ["legacy", "multiscale", "market", "flow", "depth", "depth1"]
+_GROUP_ORDER = ["legacy", "multiscale", "market", "flow", "depth", "depth1", "prem"]
 
 
 def resolve_feature_groups(spec: str):
@@ -198,7 +215,7 @@ def resolve_feature_groups(spec: str):
 # a 30-column checkpoint would be rebuilt from a 25-column list.
 ALL_FEATURE_COLS = (
     LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS + FLOW_COLS + DEPTH_COLS
-    + DEPTH1_COLS
+    + DEPTH1_COLS + PREM_COLS
 )
 
 ACTIVE_FEATURE_GROUPS, FEATURE_COLS = resolve_feature_groups(FEATURE_GROUPS)
@@ -367,6 +384,38 @@ def depth_features(bands: pd.DataFrame, grid: pd.Index, max_age_min: float,
     out[col_d1h] = np.where(ok, d1h, 0.0)
     out[col_rel] = np.where(ok, rel, 0.0)
     out[col_has] = ok.astype(np.float32)
+    return out
+
+
+def prem_features(prem: pd.DataFrame, grid: pd.Index, max_age_min: float, bars_1h: int,
+                  bar_min: int) -> pd.DataFrame:
+    """X14: the three `prem` columns on the candle grid.
+
+    `prem` has columns ts, premium_bps (db.load_premium: archive bar closes, then the
+    collector's polls, each stamped when its value was true). Bar T takes the last row at or
+    before T + `bar_min` (its close) and is masked when that row is absent or older than
+    `max_age_min` at the close. Masked -> all three columns 0 (the presence column 0).
+    """
+    out = pd.DataFrame(index=grid)
+    n = len(grid)
+    if prem is None or prem.empty:
+        for c in PREM_COLS:
+            out[c] = 0.0
+        return out
+    src = prem.set_index("ts").sort_index()
+    close = pd.DatetimeIndex(grid) + pd.Timedelta(minutes=bar_min)
+    aligned = src.reindex(close, method="ffill")
+    src_ts = pd.DatetimeIndex(src.index).to_series(index=src.index).reindex(close, method="ffill")
+    src_ts = pd.DatetimeIndex(src_ts)
+    age_min = ((close - src_ts) / pd.Timedelta(minutes=1)).to_numpy(np.float64)
+    age_min = np.where(np.asarray(src_ts.isna()) | ~np.isfinite(age_min), np.inf, age_min)
+    val = pd.to_numeric(aligned["premium_bps"], errors="coerce").to_numpy(np.float64)
+    ok = np.isfinite(val) & (age_min <= max_age_min)
+    v = pd.Series(np.where(ok, val, np.nan), index=grid)
+    d1h = (v - v.shift(bars_1h)).to_numpy(np.float64)
+    out["prem_bps"] = np.where(ok, val, 0.0)
+    out["prem_d1h"] = np.where(ok & np.isfinite(d1h), d1h, 0.0)
+    out["has_prem"] = ok.astype(np.float32)
     return out
 
 
@@ -569,6 +618,14 @@ def build_feature_frame(
                                bars_for_minutes(candle_interval, 1440), tag=tag)
         for c in gcols:
             feat[c] = depth[c].to_numpy()
+    # X14: the premium group, only on request; the archive precedes the collector in
+    # training (db.ARCHIVE_PREM), the collector alone in serving.
+    if any(c in PREM_COLS for c in cols):
+        prem = db.load_premium(symbol, since=min_time)
+        pf = prem_features(prem, feat.index, PREM_MAX_AGE_MIN, bars_for_minutes(candle_interval, 60),
+                           BAR_MINUTES_BY_INTERVAL[candle_interval])
+        for c in PREM_COLS:
+            feat[c] = pf[c].to_numpy()
     missing = [c for c in cols if c not in feat.columns]
     if missing:
         raise ValueError(f"build_feature_frame: unknown feature columns {missing}")

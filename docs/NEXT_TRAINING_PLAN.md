@@ -1921,7 +1921,7 @@ Go/no-go on the launcher's lines: `FEATURE_GROUPS: incumbent='legacy' this run='
 
 **Needed from Vadim:** the three serial launches once prerequisite 1′ has passed (Claude runs it and reports) and X8″-6 is DONE.
 
-#### X14 — the mark–index premium as a feature group, from Binance's archive, served from the collector's mark and index prices. WRITTEN 2026-10-19 on Vadim's "Ok let's test", before any archive row was fetched, any code written or any number read
+#### X14 — the mark–index premium as a feature group, from Binance's archive, served from the collector's mark and index prices. WRITTEN 2026-10-19 on Vadim's "Ok let's test", before any archive row was fetched, any code written or any number read. 🔵 PREREQUISITES 1–3 DONE 2026-10-20 — identity PASS on all twelve pairs, `premium_5m_83931c45.parquet` uploaded, code and tests in; READY TO LAUNCH (Vadim's three serial seeds)
 
 **Plain language first.** A perpetual has no expiry; the exchange keeps its price near the spot index with funding payments. The model already sees the funding rate (an 8-hour number) and open interest. It does not see the **premium itself** — how far the contract trades above or below its index right now — which is the continuous quantity funding averages, and a direct reading of how crowded and leveraged positioning is. This is information from outside the perp candle, the same kind as the open-interest history that was the one input ever to move the model (X8), and Binance's public archive carries it for every served pair back to 2022, so it sits inside the training window where the order book does not. **Narrower than first described in chat:** the perp-vs-*Binance-spot* basis is **not** in this test — five served pairs have no like-for-like Binance spot symbol and the collector does not poll spot — and the archive's `premiumIndexKlines` (the impact-mid premium) is not served live either. What *is* the same series on both sides is **mark ÷ index − 1**: the archive's `markPriceKlines` and `indexPriceKlines` (5m closes) and the collector's `funding_rates.mark_price` / `index_price` (every ~78 s from `/fapi/v1/premiumIndex`, live since 2026-07-17 on BTC / ETH / SOL, 07-21 DOGE / HYPE / WLD, 07-25 ZEC, 07-27 1000PEPE, 08-14 ADA / AVAX / LINK / XRP). Binance's mark price is the index plus a 30-second moving average of the impact-mid premium (clamped by the funding basis), so mark ÷ index − 1 is a smoothed near-real-time premium — not the 8-hour funding number. Measured on the collector 2026-10-19: median −0.9 … −5.1 bps per pair, p99 |premium| 6.6 … 17.5 bps.
 
@@ -1957,6 +1957,70 @@ FEATURE_GROUPS=legacy,prem SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # then S
 ```
 
 **Needed from Vadim:** nothing until Claude reports the identity PASS and the parquet uploaded; then the three serial launches.
+
+**Prerequisites 1–3 DONE 2026-10-20 (Claude), in the registered order, nothing shaped by a result.**
+
+* **Fetch** (`m3 archiveprem fetch`, `logs/X14_fetch_20261020.log`): 1,597 sha256-verified files —
+  monthly 5m `markPriceKlines` + `indexPriceKlines` 2022-08 → 2026-09 for the twelve pairs
+  (every pair complete from its listing: 1000PEPE 2023-05-05, WLD 2023-07-24, HYPE 2025-05-30,
+  the rest 2022-08-01; 107 "missing" files are pre-listing months), plus the 1m files for the
+  overlap (monthly 2026-07 → 09, daily 2026-10-01 → 10-18) for the identity. One trap found and
+  fixed before any parquet was read: the two series name their zips identically, so the cache
+  carries the series name — the first pass had silently "cached" the index files as copies of the
+  mark files (the cache was wiped and refetched; the 1m index parquet is the index).
+* **Reduce** (`logs/X14_reduce_20261020.log`): **`output/archive/premium_5m_83931c45.parquet`**,
+  4,769,432 rows (12 pairs; 1,440 mark bars without an index bar dropped, AVAX 863 / BTC 575 /
+  the rest ≤ 1), `ts` = the bar's CLOSE (open + 5 min) so the loader's asof at the close needs no
+  shift knob; `premium_bps` median −0.8 (1000PEPE) … −4.2 (SOL) per pair, p99 |x| 9.4 (BTC) …
+  27.7 (ZEC) bps — the collector's 2026-10-19 scale (−0.9 … −5.1, 6.6 … 17.5) over four years;
+  constant nowhere. **Uploaded:** `gs://fluxtrader-train-artifacts/archive/premium_5m_83931c45.parquet`
+  (145.5 MB, beside X8's `metrics_um_5m_83c85bd7`).
+* **Prerequisite 1, the identity (`logs/X14_identity_20261020.log`): PASS on all twelve pairs.**
+  1,131,411 collector polls exported 2026-07-17 → 10-20; the archive's 1m closes against the last
+  poll of the same minute, n = 73,017 (LINK) … 104,812 (SOL) per pair:
+
+  | pair | med \|D\| | med \|S\| | p99 \|D\| | p99 \|S\| | bias |
+  |---|---|---|---|---|---|
+  | BTC | 0.29 | 0.50 | 2.5 | 3.0 | −0.01 |
+  | ETH | 0.37 | 0.60 | 3.2 | 3.9 | −0.02 |
+  | SOL | 0.53 | 0.66 | 3.0 | 3.2 | 0.00 |
+  | XRP (the tightest tail) | 0.50 | 0.57 | 3.6 | 3.1 (≤ 1.5×) | −0.01 |
+  | 1000PEPE (the widest) | 2.33 | 4.00 | 17.0 | 20.3 | 0.00 |
+
+  Every pair: median |D| under median |S|, p99 |D| under 1.5 × p99 |S| (XRP the only one above
+  1×), the median signed difference −0.03 … 0.00 bps. The two sources are two samplings of one
+  series.
+* **Prerequisite 3, code (commit after this block):** `features.PREM_COLS` / group `prem`
+  (`_GROUP_ORDER` after `depth1`, `ALL_FEATURE_COLS[42:45]`), `features.prem_features` (the join
+  at the bar close, the 10-minute cap computed unit-aware so it FIRES as registered regardless
+  of `ALIGN_AGE_FIX` — a new group has no bit-identity to keep), `db.load_premium` (archive rows
+  strictly before the collector's first mark row, then the collector's polls with both prices;
+  the `Archive premium:` line per pair), `db.ARCHIVE_PREM` + `archive_prem_sha`, checkpoint meta
+  `archive_prem`, launcher `ARCHIVE_PREM` (env key, recipe-drift line, copy block),
+  `m3 archiveprem fetch / reduce / check`, `scripts/fetch_archive_prem.sh` +
+  `archive_prem_check.sh`. Tests `tests/test_prem_features.py` (7 green in `ml_trainer`: layout
+  `[42:45]`, the three columns at the close and no lookahead on a poll after it, the mask and
+  the cap on a planted hole, the union boundary, the 5m reduction with a missing and a
+  non-positive index bar, the kline parser, the bar on a planted offset and on planted spikes);
+  `test_depth_features` pinned to its fixed slots `[38:42]` (it had asserted "last four").
+  Not touched: the serve path (`prem_bps` from `funding_rates` and `/health`) — licensed only by
+  MOVED.
+* **Prerequisite 4** is read from each log after its DONE, as written.
+
+**Launch block (Vadim), after `git push origin main` — the launcher clones origin:**
+```sh
+git push origin main
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export DUMP_MAX_AGE_MIN=100000
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet
+export ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1
+export ARCHIVE_PREM=gs://fluxtrader-train-artifacts/archive/premium_5m_83931c45.parquet
+unset VAL_OFFSET VAL_FRACTION TRAIN_FRACTION ALLOW_RECIPE_DRIFT SPLIT_EMBARGO ALIGN_AGE_FIX ARCHIVE_DEPTH
+FEATURE_GROUPS=legacy,prem SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # then SEED=2, SEED=3 after each DONE
+./scripts/gcp_logs.sh <run_id> > logs/X14_s1.log                        # X14_s2, X14_s3 — never --save
+```
 
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 

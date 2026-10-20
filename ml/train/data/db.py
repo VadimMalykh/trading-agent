@@ -462,6 +462,77 @@ def load_depth_bands(
     return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
 
 
+# X14 (NEXT_TRAINING_PLAN §2 X14): the mark–index premium, mark ÷ index − 1 in bps, for the
+# `prem` feature group. Serving reads the collector's `funding_rates` poll (mark_price,
+# index_price every ~78 s from /fapi/v1/premiumIndex, live since 2026-07-17 on the first
+# pairs); training additionally takes the archive's 5m closes (`m3 archiveprem reduce`:
+# markPriceKlines ÷ indexPriceKlines, one row per pair-bar, `ts` = the bar's CLOSE) for every
+# timestamp BEFORE the collector's first mark row — X8's union. Unset ARCHIVE_PREM = the
+# collector only, which is what serving always sees. The file's sha8 is meta["archive_prem"].
+ARCHIVE_PREM = os.environ.get("ARCHIVE_PREM", "").strip()
+_archive_prem_cache: Optional[pd.DataFrame] = None
+PREMIUM_BPS = 1.0e4
+
+
+def archive_prem_sha() -> Optional[str]:
+    if not ARCHIVE_PREM:
+        return None
+    stem = os.path.splitext(os.path.basename(ARCHIVE_PREM))[0]
+    return stem.rsplit("_", 1)[-1]
+
+
+def _archive_prem() -> pd.DataFrame:
+    global _archive_prem_cache
+    if _archive_prem_cache is None:
+        if not os.path.exists(ARCHIVE_PREM):
+            raise FileNotFoundError(f"ARCHIVE_PREM={ARCHIVE_PREM!r} does not exist in the container")
+        df = pd.read_parquet(ARCHIVE_PREM, columns=["symbol", "ts", "premium_bps"])
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        _archive_prem_cache = df.sort_values(["symbol", "ts"]).reset_index(drop=True)
+    return _archive_prem_cache
+
+
+def load_premium(
+    symbol: str,
+    since: Optional[str] = None,
+) -> pd.DataFrame:
+    """(ts, premium_bps) for one pair: the collector's polls with both prices present,
+    preceded by the archive's bar-close rows when ARCHIVE_PREM is set. Every row is stamped
+    at the moment its value was true (a poll's wall clock; a kline's close), so the feature's
+    asof at the bar close needs no shift knob."""
+    params: dict = {"symbol": symbol}
+    clauses = ["symbol = :symbol", "mark_price IS NOT NULL", "index_price IS NOT NULL", "index_price > 0"]
+    if since:
+        clauses.append("ts >= :since")
+        params["since"] = since
+    sql = f"""
+        SELECT ts, mark_price, index_price
+        FROM funding_rates
+        WHERE {' AND '.join(clauses)}
+        ORDER BY ts ASC
+    """
+    df = _read_sql(sql, params)
+    if not df.empty:
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        df["premium_bps"] = (df["mark_price"].astype(float) / df["index_price"].astype(float) - 1.0) * PREMIUM_BPS
+    df = df[["ts", "premium_bps"]] if not df.empty else pd.DataFrame({"ts": pd.Series(dtype="datetime64[ns, UTC]"),
+                                                                       "premium_bps": pd.Series(dtype="float64")})
+    if not ARCHIVE_PREM:
+        return df
+    arch = _archive_prem()
+    a = arch[arch["symbol"] == symbol][["ts", "premium_bps"]]
+    if since:
+        a = a[a["ts"] >= pd.Timestamp(since, tz="UTC")]
+    if not df.empty:
+        a = a[a["ts"] < df["ts"].iloc[0]]
+    print(f"Archive premium: {symbol} {len(a)} archive rows "
+          f"{'—' if a.empty else a['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} -> "
+          f"{'—' if a.empty else a['ts'].iloc[-1].strftime('%Y-%m-%d %H:%M')}, "
+          f"collector from {'—' if df.empty else df['ts'].iloc[0].strftime('%Y-%m-%d %H:%M')} "
+          f"({len(df)} rows), sha8={archive_prem_sha()}")
+    return pd.concat([a, df], ignore_index=True).sort_values("ts").reset_index(drop=True)
+
+
 def load_whitelist_pairs(fallback: list | None = None) -> list:
     """
     Pairs from app_settings (UI whitelist), else symbols that have candles,
