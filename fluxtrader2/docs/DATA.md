@@ -357,6 +357,73 @@ advance — at the twelve's ZEC / WLD level (sd ≤ 48 bps) 121 of the 158 serie
 sd ≤ 30 (the twelve's liquid level) 80 stay and ≈ 24 … 34 a block; the six different-asset names fall at either cut.** What follows is
 decision AY (P8).
 
+### krw_1h_upbit, krw_1h_bithumb (Upbit's and Bithumb's KRW spot, hourly, the twelve's and the screener's members' KRW-<BASE> markets and KRW-USDT; decision BB1 (i), §9 #11) — `data/krw_1h_<venue>.parquet`: `(venue, market, symbol, ts, ts_known, open, high, low, close, volume_krw, volume, last_tick)`
+
+`ft2 krw markets|fetch --listed-only|ingest|audit --venue upbit|bithumb` (`scripts/bb1_chain.sh`, the two venues in parallel; raw month files
+under `data/raw/external/<venue>/<MARKET>/`, the listing beside them). The universe: KRW-<BASE> for every base of the twelve and of the 310
+member bases (a 1000× / 1M× contract's base with the multiple divided), plus KRW-USDT — the control that turns a KRW price into a USDT one on
+the venue itself. Both APIs are Upbit's shape (`/v1/candles/minutes/60?market=&to=&count=200`, newest first, strictly before `to`,
+`candle_date_time_utc` the bar's START; an hour without a trade has no candle; the bucket in progress is served and is DROPPED on ingest).
+**Two venue conventions found the hard way:** Upbit's `to` takes `Z` and is UTC; Bithumb's refuses a zone and reads the bare stamp as
+KST, so the first Bithumb fetch (UTC stamps) lost the 9 newest bars of every 200-bar page — 4.5 % of hours, a hole every page, completeness
+0.95 at best (`output/krw_bithumb_audit_void1.md`); refetched the same day with the stamp written +9 h. Bithumb's `timestamp` on a finished
+bar is the bar's END, not a tick (23 % of its bars sat exactly there); Upbit's is the last tick (99.6 % inside the hour). Upbit's API
+refuses TLS from the laptop and answers from GCP. The API is latency-bound at ≈ 1.3 s a call from the VM (far under its 10-a-second limit):
+one market's 43 months take ≈ 4.3 min, so a venue is fetched in parallel partitions.
+**Fetched 2026-10-20 on the work VM:** Upbit 07:07 → 13:29 UTC (136 markets; a helper took the tail), Bithumb 07:07 → 14:15 (void, the
+KST stamps) and the refetch 14:25 → 15:57 in 8 partitions (`scripts/bb1_bithumb_refetch.sh`). **Measured (`output/krw_<venue>_audit.md` /
+`.json`, `krw_<venue>_premium.parquet`):**
+- **Listing and history.** Upbit lists 136 of the 322 bases asked (the twelve and the 310 member bases), Bithumb 195 — both more than
+  Coinbase's 161 — every listed market with hourly bars; the first bar in 2023 / 2024 / 2025 / 2026 for 54 / 21 / 43 / 18 of Upbit's and
+  96 / 39 / 54 / 6 of Bithumb's (the member names of F1+F2 reached Korea later than Coinbase on Upbit, earlier on Bithumb). Of the 310
+  members, 70 cover ≥ 90 % of their own member hours on Upbit and 128 on Bithumb (Coinbase 121). **Per 60-name block (R62's frame, the
+  members with ≥ 90 % of the block's hours):** Upbit 14 … 30 on F1+F2's 18 blocks (median ≈ 21; 2024-06 → 2024-08 the low) and 18 … 33
+  on F3+F4's 17; Bithumb 21 … 39 on F1+F2 (median 31½; ≥ 30 on 12 of the 18, every block from 2023-10-30 on; the first five 21 … 31) and
+  33 … 48 on F3+F4. Coinbase was 31 … 46 / 26 … 46.
+- **Completeness.** Over 2023-05-01 → 2026-09-15 the median name 56 % (Upbit) / 76 % (Bithumb) — the late listings; the liquid names
+  99.8 % on both. An hour without a trade has no candle, so a thin name has holes: the median name 26 holes over an hour on Upbit, 347 on
+  Bithumb; the largest gap is the venue's own, 5 … 9 h on every Upbit name and 11 h on every Bithumb name (common outages). An unchanged
+  close on 12 % (Upbit) / 8 % (Bithumb) of the median name's hours. Alignment: Upbit's `timestamp` is the last tick, inside the hour on
+  99.6 % of bars (median 59.5 min after the start); Bithumb's is the bar's END on a finished bar (23 % exactly there, 77 % inside) — on both
+  venues `candle_date_time_utc` is the START, and a bar is known at `ts_known` = start + 1 h and nothing earlier; the bucket in progress is
+  served by both and dropped.
+- **KRW-USDT, the control, is YOUNG:** listed on Bithumb 2023-12-07 and on Upbit 2024-06-07 (the rate 1,334 … 1,538 KRW, median ≈ 1,430),
+  so the ADJUSTED premium (the name's KRW price over its USDT price on the same venue) exists on no F1+F2 hour before 2023-12 (Bithumb) /
+  2024-06 (Upbit). The BTC-RELATIVE premium — the name's KRW/USDT ratio over BTC's, the FX and the market-wide Korean premium removed by
+  construction — covers every hour of every name and is the quantity a within-hour rank screen reads; on the hours both exist the two agree
+  on the liquid names (BTC's adjusted premium +3.5 … +4.2 bps, sd 9 … 12, the same on both venues).
+- **The level.** The adjusted premium's median across names +5.2 bps on Bithumb (2023-12 →), +6.7 on Upbit (2024-06 →): the Korean price of
+  a name sits a few bps ABOVE its USDT price on the same venue — Coinbase's +4.3 again, not a kimchi premium (that one lives in KRW-USDT
+  against the dollar and is divided out). The market-wide premium (the median adjusted premium across names each hour) is +5 … +8 bps in
+  every quarter but 2024Q4 (−2, sd 35) and 2025Q4 (+9 … +15, sd 28 … 35), sd over hours 16 … 19 bps, autocorrelation at 24 h 0.13 / 0.21.
+  Flat by hour of day (the median name's mean 1 … 3 bps at every UTC hour, 6 … 7 at 22 … 00 UTC on Upbit; the KST day against the US
+  hours 1.7 vs 1.5 on Bithumb, 2.9 vs 3.0 on Upbit).
+- **The within-name variation — BB1's question.** The premium's sd per name, median across names: 36.7 bps adjusted / 35.2 BTC-relative on
+  Bithumb (4 names ≤ 15, 45 between 15 and 30, 89 between 30 and 48, 33 between 48 and 100, 15 above), 35.4 / 36.6 on Upbit — against
+  Coinbase's 29. Autocorrelation at 1 h 0.31 (Bithumb) / 0.47 … 0.56 (Upbit) against Coinbase's 0.33; at 24 h 0.07 / 0.17 against 0.09.
+  Like for like on R62's own quantity (the deviation from the name's trailing 30-day mean; the different-asset and thin names out on every
+  venue by the same cut, |mean| < 200 and sd < 300), the median name's sd of the deviation over F1+F2's hours: **Coinbase 17.5, Upbit 23.0
+  (× 1.3), Bithumb 29.6 (× 1.7)**; the sd of the hourly change 20.3 / 25.1 / 38.8; over all hours 28.3 / 35.6 / 33.9 (× 1.2 — Coinbase's
+  late-listed names are the noisy ones, Korea's are not). The cross-sectional sd of the BTC-relative premium within an hour on F1+F2: 32.7 bps
+  across ≈ 85 names on Bithumb, 19.2 across ≈ 49 on Upbit. The mean cross-name correlation of the BTC-relative premium 0.16 (Bithumb) / 0.29
+  (Upbit) against Coinbase's 0.28.
+- **Bad series, by the same two signatures as Coinbase's:** (a) a different asset or unit on the two venues — a persistent offset with the
+  autocorrelation at 1 h ≈ 1: STRAX (−9,250 bps on both venues; the 2024 token swap), WAVES (−310 … −340, sd 850), ENJ (−117, sd 490,
+  Bithumb), CRV (+950, sd 5,360, Bithumb), KAVA (+386, sd 1,870, Upbit), AUDIO (Bithumb); (b) thin books — EDU (sd 1,874 at acf 0), CYBER,
+  MINA, ORCA, MOVE, 0G, 1000FLOKI, REZ; PEPE's BTC-relative premium sits at +46 with sd 188 on Bithumb (a 1000× contract divided; the KRW
+  price's tick). The audit's sd names them all; a registration cuts at a stated sd before any label is joined, as R62 did at 48.
+- **The volume share (AX2's form, described):** the venue's hourly volume in USDT over Binance's hourly USDT volume on the perpetual, per
+  name — **Upbit median 9.5 %** (p10 2.8 %, p90 25 % within a name; across names the quartiles 4.5 … 18 %; Coinbase was 2.1 %), Bithumb
+  1.3 % (quartiles 0.6 … 2.7 %); the log share's deviation from its trailing month has sd 0.76 / 1.16; its correlation with the adjusted
+  premium nil on both (median +0.016 / +0.002). Upbit is the larger market in these names by far; the premium does not follow its surges.
+- **Serving, live:** both APIs serve the bucket in progress and the complete bars at the hour; the API is latency-bound (≈ 1.3 s a call from
+  the VM, far under the 10 a second allowed), so a live hourly read is one call a name.
+**Rule for any feature: R60's (`ts_known` = the bar's start + 1 h; the last bar whose `ts_known` ≤ t; a thin name's premium a MISSING
+value where its bars are more than STALE hours apart); the quantity the BTC-RELATIVE premium (the adjusted one has no F1+F2 history on
+either venue); a registration names its venue and its sd cut in advance — at R62's 48 on the BTC-relative sd, Bithumb keeps ≈ 130 of
+186 series and ≈ 25 … 36 members a block on F1+F2's blocks from 2023-10-30, Upbit ≈ 85 of 113 and ≈ 15 … 27.** What follows is
+decision BC (P8).
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
