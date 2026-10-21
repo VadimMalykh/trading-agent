@@ -27,6 +27,12 @@ if config_env() == :prod do
     http: [ip: {0, 0, 0, 0}, port: port],
     secret_key_base: secret_key_base
 
+  # The collector's extra 5m-candle poll for the served bar (collector.ex, M3_5 §4.5);
+  # 0 disables it. Pair it with ml_inference's CANDLE_SETTLE_S: 40 s with the poll on,
+  # 120 s without.
+  config :fluxtrader,
+    candle_fast_poll_ms: String.to_integer(System.get_env("CANDLE_FAST_POLL_MS") || "15000")
+
   config :fluxtrader, :trading,
     # Defaults mirror config.exs; see there for why the position cap tracks the served
     # universe and why min_confidence is 0.0.

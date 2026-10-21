@@ -136,6 +136,7 @@ defmodule FluxTraderWeb.DashboardLiveTest do
         symbol: "BNBUSDT",
         price: 100.0,
         timestamp: DateTime.utc_now(),
+        bar_open_time: FluxTrader.Trading.Policy.bar_ts(DateTime.utc_now()),
         horizons: %{
           "240" => %{"direction" => "up", "confidence" => 0.9, "gated" => false}
         }

@@ -48,6 +48,9 @@ services:
       # Ecto per-query logging, off by default — see config/runtime.exs for why.
       # Set to `debug` only for a debugging session; it costs ~1 GB of log a day.
       ECTO_LOG_LEVEL: ${ECTO_LOG_LEVEL:-false}
+      # The collector's 15 s re-read of the 5m candles (M3_5 §4.5); 0 disables it — then
+      # ml_inference's CANDLE_SETTLE_S below must go back to 120.
+      CANDLE_FAST_POLL_MS: ${CANDLE_FAST_POLL_MS:-15000}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-only-secret-key-base-that-is-at-least-64-bytes-long-for-phoenix-to-start}
@@ -114,6 +117,10 @@ services:
       PRIMARY_HORIZON: ${PRIMARY_HORIZON:-30}
       HORIZONS_MINUTES: ${HORIZONS_MINUTES:-5,30,60}
       WHITELIST_PAIRS: ${WHITELIST_PAIRS:-BTCUSDT,ETHUSDT,SOLUSDT}
+      # How long after a 5m close serve.py trusts the stored bar (db.py default 120 s, the
+      # 60 s poll's worst case plus margin). 40 s rides on the collector's 15 s fast poll
+      # (CANDLE_FAST_POLL_MS above): ≤ ~20 s to the final row, 20 s margin. M3_5 §4.5.
+      CANDLE_SETTLE_S: ${CANDLE_SETTLE_S:-40}
       OMP_NUM_THREADS: 2
     ports:
       - "8001:8001"

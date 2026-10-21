@@ -88,6 +88,16 @@ READ_AT = 50
 
 ARM_POLICY, ARM_FLAT = "policy", "flat_size"
 
+# The ledger's `bar_ts` convention changed with the served clock fix (M3_5_INTEGRATION §4.5):
+# before the deploy `bar_ts` was the wall clock floored to the grid — the scored bar's open
+# + 10 min on 99.7 % of rows; from the deploy it IS the scored bar's open (= the dump's `ts`,
+# `candles.open_time`). Set to the deploy's UTC timestamp when it happens; None = not deployed.
+# Both the entry check (`check_bars`) and R5's lookup at (pair, exit_after_ts) name the same
+# informational bar under either convention, so neither reading changes; only trades that
+# straddle the boundary (open at the deploy) see a different exit bar, and `makerpath.py`
+# shifts stratum B's signal bar by two bars only before it.
+BAR_KEY_CHANGE_UTC = None   # e.g. pd.Timestamp("2026-10-21 13:00:00", tz="UTC")
+
 
 # ---------------------------------------------------------------------------------------
 # Loading
@@ -140,6 +150,23 @@ def check_bars(led: Ledger, bars: pd.DataFrame) -> list[str]:
         problems.append(f"{missing} policy trades have no policy_bars row at their entry bar")
     if mismatch:
         problems.append(f"{mismatch} policy trades' entry_price != the bar's stored price")
+    # §4.5's parity line (printed, not a blocker: a `closed_at_mark` fallback legitimately
+    # differs): on bar-keyed rows the exit price must be the stored price of the bar at
+    # `exit_after_ts` — the exit bar's close, bar for bar with fwd_ret_240.
+    if BAR_KEY_CHANGE_UTC is not None:
+        q = p[p["entry_ts"] >= BAR_KEY_CHANGE_UTC]
+        hit = miss = absent = 0
+        for r in q.itertuples():
+            key = (r.pair, r.exit_after_ts)
+            if key not in bars.index:
+                absent += 1
+            elif np.isclose(float(bars.loc[key, "price"]), r.exit_price, rtol=1e-6):
+                hit += 1
+            else:
+                miss += 1
+        print(f"exit-bar parity (rows since {BAR_KEY_CHANGE_UTC:%Y-%m-%d %H:%M} UTC): "
+              f"{hit} exits at the exit bar's close, {miss} elsewhere (closed_at_mark or a brake), "
+              f"{absent} with no bar at exit_after_ts")
     return problems
 
 

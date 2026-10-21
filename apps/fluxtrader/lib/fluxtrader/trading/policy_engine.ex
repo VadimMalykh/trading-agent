@@ -95,6 +95,21 @@ defmodule FluxTrader.Trading.PolicyEngine do
   `bar_already_recorded` and never decided, so the ledger row IS the score the policy acted
   on. See M3_FIDELITY_RESULTS §7.6.
 
+  **The row is keyed on the served bar, and the exit on its bar too (2026-10-21,
+  M3_5_INTEGRATION §4.5).** `bar_ts` was the wall clock floored to the grid; `serve.py` scores
+  the last *settled* closed bar, so for the first two minutes of every bar the row stamped B
+  carried the close of the bar that closed at B − 5 min (99.7 % of 57,515 rows) and the order
+  went out ≈ 7 minutes after the price it was booked at (BOOK_WAVE2_PLAN §M1 Result). Now
+  `predict.ex` carries `last_closed_bar_open_time` as `bar_open_time`, `to_bar/2` stamps
+  `ts` with it, and the row is recorded and decided on the first tick that bar is served —
+  settle + one inference cycle + one tick after its close, ≈ 1.5–2 min with the 40 s settle.
+  `bar_ts` now equals the dump's `ts` and `candles.open_time`, so `price` is the close AT
+  `bar_ts` + 5 min; `exit_after_ts` = `bar_ts` + 240 min is the exit bar's open and the
+  position closes on the tick THAT bar is served, at its close (`close_due/3`), which is
+  `fwd_ret_240`'s exit — bar for bar. A signal without the stamp is `signal_unusable`; a due
+  trade whose exit bar is not yet served is `close_deferred_bar_pending`; after
+  `@exit_bar_grace_s` without it the close falls back to the mark as `closed_at_mark`.
+
   Every opened row is stamped with the checkpoint and the ladder p80 in force
   (`paper_trades.checkpoint`, `.ladder_p80`), so the forward ledger is kept across swaps and
   scored per rule or pooled, instead of being truncated (§9.6).
@@ -159,6 +174,10 @@ defmodule FluxTrader.Trading.PolicyEngine do
   @prune_every_ticks 2_880
   # A mark older than this is not good enough to close a position against.
   @stale_price_s 600
+  # How long after `exit_after_ts` (the exit bar's open) a close waits for that bar to be
+  # scored before falling back to the mark: the bar closes at +300 s, settles at
+  # +CANDLE_SETTLE_S, and is served within one inference cycle (~90 s) and one tick (30 s).
+  @exit_bar_grace_s 900
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -316,12 +335,17 @@ defmodule FluxTrader.Trading.PolicyEngine do
     # Filtered BEFORE record_bars, not at entry: a bar that reaches policy_bars joins the
     # population the 2% rank is taken over, so an unserved pair recorded here would move the
     # cut even though it could never be traded.
-    {bars, unserved} =
-      state.signals_fun.()
-      |> Enum.flat_map(&List.wrap(to_bar(&1, regime, now)))
-      |> Enum.split_with(&served?(&1.pair, served))
+    signals = state.signals_fun.()
+    all_bars = Enum.flat_map(signals, &List.wrap(to_bar(&1, regime)))
+    {bars, unserved} = Enum.split_with(all_bars, &served?(&1.pair, served))
 
-    state = count_skips(state, :not_served, length(unserved))
+    state =
+      state
+      # A signal with no 240m head, no price, or no closed-bar stamp (a serve.py that
+      # predates `last_closed_bar_open_time`) is not a bar. Counted, never guessed at: keying
+      # it on the wall clock instead would bring the 7-minute clock back silently.
+      |> count_skips(:signal_unusable, length(signals) - length(all_bars))
+      |> count_skips(:not_served, length(unserved))
 
     # One decision per bar. `record_bars/2` hands back only the bars THIS tick put on file;
     # a bar already recorded by an earlier tick — the engine ticks every 30 s and inference
@@ -335,7 +359,7 @@ defmodule FluxTrader.Trading.PolicyEngine do
       |> count_skips(:bar_not_recorded, unrecorded)
       |> refresh_rolling_threshold(now)
       |> refresh_last_cut_exceeded()
-      |> close_due(now)
+      |> close_due(now, all_bars)
       |> open_unless_booting(fresh, now)
       |> maybe_prune(now)
 
@@ -741,16 +765,25 @@ defmodule FluxTrader.Trading.PolicyEngine do
     |> Map.put(:ladder_p80, Policy.frozen_ladder_p80())
   end
 
-  defp close_due(state, now) do
+  # The exit is keyed on a bar, like the entry. `exit_after_ts` is the OPEN of the 48th bar
+  # after the entry bar (`Policy.decide/3`); the position closes on the tick that bar is
+  # first served, at its close — `fwd_ret_240`'s exit price, bar for bar. Before that bar is
+  # scored the trade is not due, whatever the wall clock says (`close_deferred_bar_pending`).
+  # If the bar never comes — the pair dropped from the served set, inference down — the close
+  # falls back to the marked price after `@exit_bar_grace_s` and is counted `closed_at_mark`,
+  # so a position cannot stay open on a pair nobody scores any more.
+  defp close_due(state, now, bars) do
+    by_pair = Map.new(bars, &{&1.pair, &1})
+
     now
     |> Ledger.due_trades()
     |> Enum.reduce(state, fn trade, acc ->
-      case exit_price(acc, trade.pair) do
-        {:ok, price} ->
+      case exit_for(acc, trade, Map.get(by_pair, trade.pair), now) do
+        {:ok, price, how} ->
           case Executor.close(trade, price) do
             {:ok, closed} ->
               RiskManager.record_closed_trade(closed)
-              count_decision(acc, :closed)
+              count_decision(acc, how)
 
             {:error, :already_closed} ->
               # A brake filled and the user-data stream booked it between this tick's
@@ -761,12 +794,28 @@ defmodule FluxTrader.Trading.PolicyEngine do
               count_decision(acc, :close_failed)
           end
 
-        {:error, _} ->
+        {:defer, reason} ->
           # Leave it open and try again next tick. Closing at a stale or invented price
           # would put a fabricated number into the ledger the whole experiment is scored on.
-          count_decision(acc, :close_deferred_no_price)
+          count_decision(acc, reason)
       end
     end)
+  end
+
+  defp exit_for(state, trade, bar, now) do
+    cond do
+      bar != nil and DateTime.compare(bar.ts, trade.exit_after_ts) != :lt ->
+        {:ok, bar.price, :closed}
+
+      DateTime.diff(now, trade.exit_after_ts) >= @exit_bar_grace_s ->
+        case exit_price(state, trade.pair) do
+          {:ok, price} -> {:ok, price, :closed_at_mark}
+          {:error, _} -> {:defer, :close_deferred_no_price}
+        end
+
+      true ->
+        {:defer, :close_deferred_bar_pending}
+    end
   end
 
   # ------------------------------------------------------------------ bars and prices
@@ -774,17 +823,28 @@ defmodule FluxTrader.Trading.PolicyEngine do
   # Confidence and side come from the 240-minute head, which is the horizon M3-2 searched
   # and selected on. If a served checkpoint does not carry that head there is no policy to
   # run — falling back to another horizon would be running a different, unscored rule.
-  defp to_bar(signal, regime, now) do
+  #
+  # `ts` is the scored bar itself — the open time of the closed bar the features end on,
+  # which `serve.py` reports and `predict.ex` carries as `bar_open_time` — NOT the wall clock
+  # floored to the grid. Until 2026-10-21 it was the wall clock: in the first two minutes of
+  # a bar the served bar was the one that closed five minutes earlier, so the row stamped B
+  # carried the B − 10 min close on 99.7 % of rows and the order went out ≈ 7 min after the
+  # price it was booked at (BOOK_WAVE2_PLAN §M1 Result). Keyed on the bar, the row is recorded
+  # and decided on the first tick the bar is served — settle + one inference cycle + one tick
+  # after its close — and `bar_ts` equals the dump's `ts` and `candles.open_time`, so
+  # `price` is `candles.close` at `bar_ts`.
+  defp to_bar(signal, regime) do
     h = to_string(Policy.signal_horizon_m())
 
     with %{} = horizons <- Map.get(signal, :horizons),
          %{} = head <- Map.get(horizons, h),
          conf when is_number(conf) <- get_in_any(head, "confidence"),
          dir when is_binary(dir) <- get_in_any(head, "direction"),
-         price when is_number(price) <- Map.get(signal, :price) do
+         price when is_number(price) <- Map.get(signal, :price),
+         %DateTime{} = bar_open <- Map.get(signal, :bar_open_time) do
       %{
         pair: Map.get(signal, :symbol),
-        ts: Policy.bar_ts(Map.get(signal, :timestamp) || now),
+        ts: Policy.bar_ts(bar_open),
         confidence: conf * 1.0,
         side: side_of(dir),
         price: price * 1.0,

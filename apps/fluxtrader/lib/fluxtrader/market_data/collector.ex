@@ -25,6 +25,17 @@ defmodule FluxTrader.MarketData.Collector do
   @trade_interval_ms 5_000
   @slow_interval_ms 60_000
   @ratio_interval_ms 60_000
+  # The served bar's poll (2026-10-21, M3_5_INTEGRATION §4.5). `:poll_candles` walks four
+  # intervals over twelve pairs serially and reschedules itself AFTER it finishes, so its
+  # period is 60 s plus the poll's own duration — measured 65–85 s on the VM — and a just-
+  # closed 5m bar's row could stay the in-bar snapshot for that long (M3_FIDELITY §7.6:
+  # 7–93 s). `serve.py` therefore trusted a bar only 120 s after its close (CANDLE_SETTLE_S).
+  # This timer re-reads the policy's own interval alone, every 15 s (twelve weight-1 calls
+  # → 48 weight a minute, nothing against the 2,400 cap), so the final row lands within
+  # ~20 s of the close and the settle can be 40 s. 0 disables it (config
+  # `:candle_fast_poll_ms`, env CANDLE_FAST_POLL_MS); the 60 s poll is unchanged beside it.
+  @default_candle_fast_poll_ms 15_000
+  @policy_candle_interval "5m"
 
   # Positioning / sentiment ratios (B4.2, docs/BOOK_ERA_PLAN.md).
   #
@@ -102,6 +113,7 @@ defmodule FluxTrader.MarketData.Collector do
     Process.send_after(self(), :poll_slow, 3_000)
     Process.send_after(self(), :poll_candles, 4_000)
     Process.send_after(self(), :poll_ratios, 5_000)
+    schedule_fast_candles(6_000)
 
     Logger.info("MarketData.Collector started for #{inspect(pairs)}")
     {:ok, state}
@@ -187,6 +199,21 @@ defmodule FluxTrader.MarketData.Collector do
     end)
 
     Process.send_after(self(), :poll_candles, @slow_interval_ms)
+    {:noreply, state}
+  end
+
+  def handle_info(:poll_candles_fast, state) do
+    Enum.each(state.pairs, fn pair ->
+      try do
+        collect_candles(pair, @policy_candle_interval)
+      rescue
+        e -> Logger.warning("poll_candles_fast crashed for #{pair}: #{Exception.message(e)}")
+      catch
+        :exit, reason -> Logger.warning("poll_candles_fast exit for #{pair}: #{inspect(reason)}")
+      end
+    end)
+
+    schedule_fast_candles(candle_fast_poll_ms())
     {:noreply, state}
   end
 
@@ -278,6 +305,14 @@ defmodule FluxTrader.MarketData.Collector do
       {:error, reason} ->
         Logger.debug("Raw book levels skip #{symbol}: #{inspect(reason)}")
     end
+  end
+
+  defp candle_fast_poll_ms do
+    Application.get_env(:fluxtrader, :candle_fast_poll_ms, @default_candle_fast_poll_ms)
+  end
+
+  defp schedule_fast_candles(delay_ms) do
+    if candle_fast_poll_ms() > 0, do: Process.send_after(self(), :poll_candles_fast, delay_ms)
   end
 
   defp book_depth_limit do

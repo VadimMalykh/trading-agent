@@ -62,11 +62,16 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     Repo.insert_all(FluxTrader.Trading.PolicyBar, rows)
   end
 
+  # `ts` stands for the served bar: the engine keys the row on `bar_open_time` (the closed
+  # bar the features end on), never on `timestamp` (the wall clock at the poll).
   defp signal(opts) do
+    ts = Keyword.get(opts, :ts, DateTime.utc_now())
+
     %{
       symbol: Keyword.fetch!(opts, :symbol),
       price: Keyword.get(opts, :price, 100_000.0),
-      timestamp: Keyword.get(opts, :ts, DateTime.utc_now()),
+      timestamp: DateTime.utc_now(),
+      bar_open_time: Keyword.get(opts, :bar, Policy.bar_ts(ts)),
       horizons: %{
         "240" => %{
           "direction" => Keyword.get(opts, :direction, "up"),
@@ -615,14 +620,92 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
 
 
-  test "the hold expires, the position closes at the marked price, and the slot comes back" do
+  # Entry on the bar two back, `exit_after_ts` brought forward to the bar one back, so the
+  # exit bar is in the past and can be served by a later tick. Returns the open trade.
+  defp open_then_bring_the_hold_forward(exit_bar) do
+    :ok = PolicyEngine.refresh()
+    assert [trade] = Ledger.open_trades("policy")
+    assert %{open_positions: 1} = RiskManager.get_stats()
+
+    trade
+    |> Ecto.Changeset.change(exit_after_ts: exit_bar)
+    |> Repo.update!()
+
+    trade
+  end
+
+  test "the hold expires on its exit BAR: the position closes at that bar's close, and the slot comes back" do
     now = DateTime.utc_now()
     fill_the_diagnostic_window(now)
+    entry_bar = Policy.bar_ts(DateTime.add(now, -600, :second))
+    exit_bar = DateTime.add(entry_bar, 300, :second)
 
-    # The signal is served once, so the second tick closes without re-entering. (Re-entering
-    # on the same bar as the exit is what `backtest.py` does — it retires expired positions
-    # before considering entries — but it would obscure what this test is checking.)
-    {:ok, box} = Agent.start_link(fn -> [signal(symbol: "BTCUSDT", confidence: 0.95)] end)
+    # Tick 1 serves the entry bar; tick 2 serves the exit bar 30 bps higher. (Re-entering on
+    # the exit bar is what `backtest.py` does — it retires expired positions before
+    # considering entries — but it would obscure what this test is checking.)
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar)],
+        [signal(symbol: "BTCUSDT", confidence: 0.50, bar: exit_bar, price: 100_000.0 * 1.003)]
+      ],
+      regime(0.05)
+    )
+
+    trade = open_then_bring_the_hold_forward(exit_bar)
+    assert trade.entry_ts == entry_bar
+
+    :ok = PolicyEngine.refresh()
+
+    assert Ledger.open_trades("policy") == []
+    closed = Repo.get!(PaperTrade, trade.id)
+    assert closed.status == "closed"
+    # The exit price is the exit bar's close, not a mark read at the tick.
+    assert closed.exit_price == 100_000.0 * 1.003
+    # gross - cost x size, exactly as metrics.summarise books it.
+    assert_in_delta closed.gross_bps, 30.0 * 5 / 3, 1.0e-3
+    assert_in_delta closed.net_bps, 30.0 * 5 / 3 - 10.017 * 5 / 3, 1.0e-3
+    # The slot went back to the risk manager and the P&L was booked against the daily limit.
+    assert %{open_positions: 0} = RiskManager.get_stats()
+    assert RiskManager.get_stats().daily_pnl > 0.0
+    assert PolicyEngine.status().decisions[:closed] == 1
+  end
+
+  test "a due trade whose exit bar is not yet served stays open, and is counted" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    entry_bar = Policy.bar_ts(DateTime.add(now, -600, :second))
+    exit_bar = DateTime.add(entry_bar, 300, :second)
+
+    # Tick 2 still serves the ENTRY bar (inference has not reached the exit bar yet); the wall
+    # clock is past `exit_after_ts`, which is not enough. Tick 3 serves the exit bar.
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar)],
+        [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar, price: 90_000.0)],
+        [signal(symbol: "BTCUSDT", confidence: 0.50, bar: exit_bar, price: 101_000.0)]
+      ],
+      regime(0.05)
+    )
+
+    trade = open_then_bring_the_hold_forward(exit_bar)
+
+    :ok = PolicyEngine.refresh()
+    assert [_still_open] = Ledger.open_trades("policy")
+    assert PolicyEngine.status().decisions[:close_deferred_bar_pending] == 1
+
+    :ok = PolicyEngine.refresh()
+    assert Ledger.open_trades("policy") == []
+    assert Repo.get!(PaperTrade, trade.id).exit_price == 101_000.0
+  end
+
+  test "an exit bar that never comes: the close falls back to the mark after the grace, and says so" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    entry_bar = Policy.bar_ts(DateTime.add(now, -3600, :second))
+    # The exit bar's open is more than the grace (900 s) ago and nobody serves it.
+    exit_bar = DateTime.add(entry_bar, 300, :second)
+
+    {:ok, box} = Agent.start_link(fn -> [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar)] end)
 
     pid =
       start_supervised!(
@@ -637,30 +720,50 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
          ]}
       )
 
-    :ok = PolicyEngine.refresh()
-    assert [trade] = Ledger.open_trades("policy")
-    assert %{open_positions: 1} = RiskManager.get_stats()
+    trade = open_then_bring_the_hold_forward(exit_bar)
 
-    # Mark the pair 30 bps up, the way a live signal broadcast would.
+    # The mark, the way a live signal broadcast would set it.
     send(pid, {:signal, %{symbol: "BTCUSDT", price: 100_000.0 * 1.003}})
-    # Bring the 4h hold forward instead of waiting four hours.
-    past = DateTime.utc_now() |> DateTime.add(-1, :second) |> DateTime.truncate(:second)
-
-    trade
-    |> Ecto.Changeset.change(exit_after_ts: past)
-    |> Repo.update!()
-
     :ok = PolicyEngine.refresh()
 
     assert Ledger.open_trades("policy") == []
     closed = Repo.get!(PaperTrade, trade.id)
-    assert closed.status == "closed"
-    # gross - cost x size, exactly as metrics.summarise books it.
-    assert_in_delta closed.gross_bps, 30.0 * 5 / 3, 1.0e-3
-    assert_in_delta closed.net_bps, 30.0 * 5 / 3 - 10.017 * 5 / 3, 1.0e-3
-    # The slot went back to the risk manager and the P&L was booked against the daily limit.
-    assert %{open_positions: 0} = RiskManager.get_stats()
-    assert RiskManager.get_stats().daily_pnl > 0.0
+    assert closed.exit_price == 100_000.0 * 1.003
+    assert PolicyEngine.status().decisions[:closed_at_mark] == 1
+    assert PolicyEngine.status().decisions[:closed] == nil
+  end
+
+  test "the row is keyed on the served bar, not on the wall clock at the poll" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    bar = Policy.bar_ts(DateTime.add(now, -900, :second))
+
+    # Two polls a bar apart on the wall clock, the same served bar: one row, at the bar.
+    tick1 = Map.put(signal(symbol: "BTCUSDT", confidence: 0.50, bar: bar), :timestamp, now)
+    tick2 = Map.put(signal(symbol: "BTCUSDT", confidence: 0.95, bar: bar), :timestamp, DateTime.add(now, 300, :second))
+    start_engine_seq([[tick1], [tick2]], regime(0.05))
+    :ok = PolicyEngine.refresh()
+    :ok = PolicyEngine.refresh()
+
+    import Ecto.Query, only: [from: 2]
+    assert [row] = Repo.all(from(b in FluxTrader.Trading.PolicyBar, where: b.pair == "BTCUSDT"))
+    assert row.bar_ts == bar
+    assert row.confidence == 0.50
+    assert PolicyEngine.status().skips[:bar_already_recorded] == 1
+  end
+
+  test "a signal without a closed-bar stamp is not a bar: dropped and counted, never keyed on the clock" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+
+    old_serve = signal(symbol: "BTCUSDT", confidence: 0.95) |> Map.delete(:bar_open_time)
+    start_engine([old_serve], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    assert Ledger.open_trades("policy") == []
+    assert PolicyEngine.status().skips[:signal_unusable] == 1
+    import Ecto.Query, only: [from: 2]
+    assert Repo.aggregate(from(b in FluxTrader.Trading.PolicyBar, where: b.pair == "BTCUSDT"), :count) == 0
   end
 
   test "when the risk manager refuses, nothing is opened and the refusal is counted" do

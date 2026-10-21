@@ -65,6 +65,7 @@ defmodule FluxTrader.Trading.LivePilotTest do
       symbol: symbol,
       price: 100_000.0,
       timestamp: DateTime.utc_now(),
+      bar_open_time: Policy.bar_ts(DateTime.utc_now()),
       horizons: %{"240" => %{"direction" => "up", "confidence" => confidence, "gated" => false}}
     }
   end

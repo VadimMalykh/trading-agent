@@ -135,6 +135,16 @@ def _newest(dirname: str, prefix: str) -> str:
     return os.path.join(dirname, fs[-1])
 
 
+
+def _ledger_shift_ns(ledger_bar_ts):
+    """Nanoseconds from a ledger row's `bar_ts` back to its signal bar's open: two bars before
+    the clock fix's deploy, zero from it (forward.BAR_KEY_CHANGE_UTC; None = not deployed)."""
+    from . import forward as _fwd
+    ts = np.asarray(ledger_bar_ts, dtype="int64")
+    if _fwd.BAR_KEY_CHANGE_UTC is None:
+        return np.full(ts.shape, 2 * BAR_NS, dtype="int64")
+    return np.where(ts >= int(pd.Timestamp(_fwd.BAR_KEY_CHANGE_UTC).value), 0, 2 * BAR_NS).astype("int64")
+
 def stratum_b(path: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """The forward ledger's closed `policy` and `explore_cov05` entries, plus the `live` pilot
     fills (returned apart). `entry_ts` is the bar OPEN (= policy_bars.bar_ts)."""
@@ -146,11 +156,12 @@ def stratum_b(path: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     b = closed[closed["arm"].isin(B_ARMS)].copy()
     b["stratum"] = "B"
     b["ledger_bar_ts"] = b["entry_ts"].astype("int64")
-    # The served row's `bar_ts` is stamped 10 minutes AFTER the open of the bar whose close it books
+    # The served row's `bar_ts` was stamped 10 minutes AFTER the open of the bar whose close it books
     # (policy_bars.price == the candle close at bar_ts − 10 min on 99.7 % of 57,515 rows, 2026-10-21;
     # the entry pin below holds only there). The SIGNAL bar's open is therefore bar_ts − 10 min and
-    # T, its close, bar_ts − 5 min — the registered T, read off the pin's own evidence.
-    b["entry_ts"] = b["ledger_bar_ts"] - 2 * BAR_NS
+    # T, its close, bar_ts − 5 min — the registered T, read off the pin's own evidence. From the
+    # clock fix's deploy (forward.BAR_KEY_CHANGE_UTC, M3_5 §4.5) `bar_ts` IS the signal bar's open.
+    b["entry_ts"] = b["ledger_bar_ts"] - _ledger_shift_ns(b["ledger_bar_ts"])
     b["exit_ts_actual"] = b["exit_ts"].astype("int64")
     b["exit_ts"] = b["entry_ts"] + HOLD_NS                 # the bar whose close is T + 240 min
     b["inserted_at"] = pd.to_datetime(b["inserted_at"], utc=True).astype("int64")
@@ -161,7 +172,7 @@ def stratum_b(path: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     b = b.rename(columns={"entry_price": "ledger_entry_price", "exit_price": "ledger_exit_price"})
     live = closed[closed["arm"] == PILOT_ARM].copy()
     live["ledger_bar_ts"] = live["entry_ts"].astype("int64")
-    live["entry_ts"] = live["ledger_bar_ts"] - 2 * BAR_NS
+    live["entry_ts"] = live["ledger_bar_ts"] - _ledger_shift_ns(live["ledger_bar_ts"])
     live["inserted_at"] = pd.to_datetime(live["inserted_at"], utc=True).astype("int64")
     live["side"] = np.where(live["side"].astype(str).str.lower().isin(["long", "buy", "1", "1.0"]), 1, -1)
     _p(f"stratum B: {path} — {len(b)} closed rows ({b['arm'].value_counts().to_dict()}), "
