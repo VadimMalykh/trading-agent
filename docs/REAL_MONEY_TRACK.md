@@ -409,6 +409,40 @@ one-way), and any automatic switch to production. `TRADING_MODE=auto` on `fluxtr
 without `BINANCE_TESTNET=true` would trade real money on the next signal — it is a deliberate
 act, and §4 says the evidence for it does not exist yet.
 
+### §6.4 — The maker path on the testnet, 2026-10-21 (M2's prerequisite 2; fresh demo keys, run locally by Claude)
+
+`mix flux.testnet_smoke --maker --wait-seconds 60 --hold-seconds 30`, BTCUSDT, 5x, ~60 USDT
+(the demo's minimum notional is 50). Verbatim, keys omitted:
+
+```
+Trading host: https://demo-fapi.binance.com  symbol: BTCUSDT  leverage: 5
+filters: step 0.0001 tick 0.1 min_notional 50.0
+  position (before): amt=0.0000 entry=0.0 mark=84531.85634058 upnl=0.00000000 lev=5
+mark price (premiumIndex): 84527.30972332
+OPEN  BUY ~7.1e-4 @ ~84527.30972332 (notional ~60.0 USDT) — MAKER PATH, rest 60 s
+  filled qty=0.0007 avg=84513.9 order=28644424699
+  entry leg: maker_then_taker rest=84494.6 waited=60.3s vwap=84513.9 qty=0.0007 fee=5.0bps touch=84494.6/84513.9 limit_order=28644423465
+  stop=1000000250300233 target=1000000250300236
+HOLD 30s
+  position (during): amt=0.0007 entry=84513.90000000001 mark=84513.90000000 upnl=0.00000000 lev=5
+CLOSE SELL reduceOnly 0.0007
+  exit leg: maker rest=84514.2 waited=2.2s vwap=84514.2 qty=0.0007 fee=2.0bps touch=84513.9/84514.2 limit_order=28644426612
+  filled qty=0.0007 avg=84514.2 order=28644426612 reason=timer
+  round trip: 0.04 bps before fees
+  position (after): amt=0.0000 entry=0.0 mark=84514.20000000 upnl=0.00000000 lev=5
+TESTNET_OK — open, brake, close and reconcile all succeeded on BTCUSDT (maker path: entry maker_then_taker, exit maker)
+```
+
+What it shows: the GTX rested at the bid for the full 60 s on a 2.3-bps demo spread, was
+cancelled (`limit_order` ≠ the fill's order) and the remainder crossed at the ask — the
+`maker_then_taker` branch, the fee 5.0; the brakes went on after the settle; the exit rested
+at the ask and filled as a maker in 2.2 s, fee 2.0; flat before and after, no order left.
+Both branches of the path, the brake and the reconcile exercised on the exchange's own
+answers. *A first run the same minute went down the taker path because the task compiled on
+the way in and ran the already-loaded old beam (AGENTS.md's "compile first" rule) — the
+taker round trip it made is the §6.1 path and is not this record.* The demo keys are not
+stored anywhere in the repo or on the VM.
+
 ## §7 — The micro-pilot: real orders at ~$100 a trade, paper test untouched (built 2026-09-21)
 
 **Needed from Vadim: a Binance API key with futures-trading rights (no withdrawal rights,
