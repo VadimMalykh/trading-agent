@@ -27,7 +27,7 @@ defmodule FluxTrader.MarketData.Collector do
   @ratio_interval_ms 60_000
   # The served bar's poll (2026-10-21, M3_5_INTEGRATION §4.5). `:poll_candles` walks four
   # intervals over twelve pairs serially and reschedules itself AFTER it finishes, so its
-  # period is 60 s plus the poll's own duration — measured 65–85 s on the VM — and a just-
+  # period is 60 s plus the poll's own duration — measured 62–90 s, median 82, on the VM — and a just-
   # closed 5m bar's row could stay the in-bar snapshot for that long (M3_FIDELITY §7.6:
   # 7–93 s). `serve.py` therefore trusted a bar only 120 s after its close (CANDLE_SETTLE_S).
   # This timer re-reads the policy's own interval alone, every 15 s (twelve weight-1 calls

@@ -64,7 +64,7 @@ def load_candles(
 # at the 2026-09-11 04:55 close, the 12 rows settled 7–93 s after `close_time`, and 10 of the
 # forward test's first 42 ledger rows were scored on such a snapshot (M3_FIDELITY_RESULTS §7.6
 # "Acceptance", BACKLOG row 9). 120 s = one poll period plus margin. The 60 s poll's true
-# period is 60 s plus its own duration (65–85 s measured on the VM, 2026-10-21), so 120 is the
+# period is 60 s plus its own duration (62–90 s, median 82, measured on the VM 2026-10-21), so 120 is the
 # floor WITHOUT the collector's fast poll. Since 2026-10-21 (M3_5_INTEGRATION §4.5) the
 # collector re-reads the 5m candles every 15 s (CANDLE_FAST_POLL_MS) and docker-compose sets
 # CANDLE_SETTLE_S=40 on ml_inference — ≤ ~20 s to the final row, 20 s margin. The default
