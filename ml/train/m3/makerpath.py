@@ -54,7 +54,23 @@ import pandas as pd
 
 from . import dumps, execcost, regime, backtest, sidetable
 from . import walkforward as wf
-from .archiveoi import DL, _get
+from .archiveoi import DL, _get as _get_once
+
+
+def _get(url: str, tries: int = 8) -> bytes | None:
+    """archiveoi._get retries HTTP-level failures only; a daily aggTrades zip is 10–25 MB and the
+    CDN drops a read now and then (IncompleteRead) — retry ANY exception with backoff, 404 stays None."""
+    delay = 2.0
+    for k in range(tries):
+        try:
+            return _get_once(url)
+        except Exception as e:  # noqa: BLE001 — the point is to survive the CDN's transient faults
+            if k == tries - 1:
+                raise
+            print(f"  retry {k + 1}/{tries - 1} {url.rsplit('/', 1)[-1]}: {type(e).__name__}", flush=True)
+            time.sleep(delay)
+            delay = min(delay * 2, 60.0)
+    return None
 
 # --------------------------------------------------------------------------------------
 # Constants, fixed by the registration
@@ -129,23 +145,31 @@ def stratum_b(path: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     closed = df[df["status"] == "closed"].copy()
     b = closed[closed["arm"].isin(B_ARMS)].copy()
     b["stratum"] = "B"
-    b["entry_ts"] = b["entry_ts"].astype("int64")
+    b["ledger_bar_ts"] = b["entry_ts"].astype("int64")
+    # The served row's `bar_ts` is stamped 10 minutes AFTER the open of the bar whose close it books
+    # (policy_bars.price == the candle close at bar_ts − 10 min on 99.7 % of 57,515 rows, 2026-10-21;
+    # the entry pin below holds only there). The SIGNAL bar's open is therefore bar_ts − 10 min and
+    # T, its close, bar_ts − 5 min — the registered T, read off the pin's own evidence.
+    b["entry_ts"] = b["ledger_bar_ts"] - 2 * BAR_NS
     b["exit_ts_actual"] = b["exit_ts"].astype("int64")
     b["exit_ts"] = b["entry_ts"] + HOLD_NS                 # the bar whose close is T + 240 min
+    b["inserted_at"] = pd.to_datetime(b["inserted_at"], utc=True).astype("int64")
     b["side"] = np.where(b["side"].astype(str).str.lower().isin(["long", "buy", "1", "1.0"]), 1, -1)
     b["fwd_ret"] = np.nan
     b["signed_ret"] = b["net_bps"] / BPS
     b["conf"], b["regime"] = b["confidence"], b["regime"]
     b = b.rename(columns={"entry_price": "ledger_entry_price", "exit_price": "ledger_exit_price"})
     live = closed[closed["arm"] == PILOT_ARM].copy()
-    live["entry_ts"] = live["entry_ts"].astype("int64")
+    live["ledger_bar_ts"] = live["entry_ts"].astype("int64")
+    live["entry_ts"] = live["ledger_bar_ts"] - 2 * BAR_NS
+    live["inserted_at"] = pd.to_datetime(live["inserted_at"], utc=True).astype("int64")
     live["side"] = np.where(live["side"].astype(str).str.lower().isin(["long", "buy", "1", "1.0"]), 1, -1)
     _p(f"stratum B: {path} — {len(b)} closed rows ({b['arm'].value_counts().to_dict()}), "
        f"{len(live)} pilot fills; entries {pd.Timestamp(b['entry_ts'].min()).strftime('%Y-%m-%d %H:%M')} → "
        f"{pd.Timestamp(b['entry_ts'].max()).strftime('%Y-%m-%d %H:%M')} UTC")
     cols = ["stratum", "arm", "pair", "side", "size", "entry_ts", "exit_ts", "exit_ts_actual", "fwd_ret",
-            "signed_ret", "conf", "regime", "ledger_entry_price", "ledger_exit_price", "id"]
-    return b[cols].reset_index(drop=True), live[["pair", "side", "entry_ts", "entry_price", "size", "id"]]
+            "signed_ret", "conf", "regime", "ledger_entry_price", "ledger_exit_price", "id", "ledger_bar_ts", "inserted_at"]
+    return b[cols].reset_index(drop=True), live[["pair", "side", "entry_ts", "entry_price", "size", "id", "ledger_bar_ts", "inserted_at"]]
 
 
 def candle_match(trades: pd.DataFrame, candles: pd.DataFrame, label: str) -> pd.DataFrame:
@@ -172,8 +196,8 @@ def candle_match(trades: pd.DataFrame, candles: pd.DataFrame, label: str) -> pd.
         _p(f"  pin: ledger entry_price == candle close at T on {agree.sum()}/{int(ok.sum())} ({share:.4f})")
         if ok.sum() and share < 0.99:
             raise SystemExit("candle match FAILED on B — harness defect, fix before fetching")
-        same_exit = (t["exit_ts_actual"] == t["exit_ts"] + DECISION_OFFSET_NS) | (t["exit_ts_actual"] == t["exit_ts"])
-        _p(f"  exit_ts == entry + 240 min on {int(same_exit.sum())}/{len(t)} rows (the rest closed off the timer)")
+        same_exit = (t["exit_ts_actual"] - (t["ledger_bar_ts"] + HOLD_NS)).abs() <= 2 * 60 * NS
+        _p(f"  the ledger closed within 2 min of bar_ts + 240 min on {int(same_exit.sum())}/{len(t)} rows (the rest off the timer)")
     t["entry_T"] = t["entry_ts"] + DECISION_OFFSET_NS
     t["exit_T"] = t["exit_ts"] + DECISION_OFFSET_NS
     t["tid"] = [f"{s}:{a}:{p}:{e}" for s, a, p, e in zip(t["stratum"], t["arm"], t["pair"], t["entry_ts"])]
@@ -752,35 +776,42 @@ def check_m34_ctaker() -> list[str]:
     return lines
 
 
-def check_tape_counts(tape: Tape) -> list[str]:
-    """The uncensored tape's prints per 5m bar ≥ the collector's trade_count per bar, on every
-    bar fully inside a retained window (the collector's polls are capped at 200)."""
+def check_tape_counts(tape: Tape, moments: pd.DataFrame) -> list[str]:
+    """The uncensored tape against the collector's capped polls, on the 5-minute bar [T, T + 300 s)
+    that every retained window holds whole: the archive's VOLUME per bar must be ≥ the collector's
+    `volume` summed over the polls stamped inside the bar (the polls are capped at 200 aggTrades and
+    need not tile the bar, so ≤ is the only direction a sound archive can show); the print counts
+    are printed beside in both units."""
     path = "output/book_era2/trades.parquet"
     if not os.path.exists(path):
         return ["check 3 SKIPPED: no collector tape at output/book_era2/trades.parquet"]
     col = pd.read_parquet(path)
-    col["bar"] = pd.to_datetime(col["window_start"], utc=True).to_numpy("datetime64[ns]").astype(np.int64) // BAR_NS * BAR_NS
-    n_bars, n_bad, worst = 0, 0, 0.0
+    col["ws"] = pd.to_datetime(col["window_start"], utc=True).to_numpy("datetime64[ns]").astype(np.int64)
+    n_bars, n_bad, worst, ratios = 0, 0, 0.0, []
     for pair, g in col.groupby("symbol"):
         if pair not in tape.ts:
             continue
-        ts = tape.ts[pair]
-        bars = g.groupby("bar")["trade_count"].sum()
-        # bars fully covered by the retained tape: both edges inside a kept window (approximated
-        # by prints existing within 10 s of each edge)
-        b = bars.index.to_numpy(np.int64)
-        lo_i = np.searchsorted(ts, b, "left"); hi_i = np.searchsorted(ts, b + BAR_NS, "left")
-        arch = hi_i - lo_i
-        edge_ok = (np.searchsorted(ts, b - 10 * NS, "left") < np.searchsorted(ts, b, "right")) & \
-                  (np.searchsorted(ts, b + BAR_NS, "left") < np.searchsorted(ts, b + BAR_NS + 10 * NS, "right"))
-        sel = edge_ok & (arch > 0)
+        T = np.unique(moments.loc[moments["pair"] == pair, "T"].to_numpy(np.int64))
+        ws = g["ws"].to_numpy(np.int64)
+        o = np.argsort(ws); ws, vol, cnt = ws[o], g["volume"].to_numpy(np.float64)[o], g["trade_count"].to_numpy(np.float64)[o]
+        cv, cc = np.cumsum(np.r_[0.0, vol]), np.cumsum(np.r_[0.0, cnt])
+        a, b = np.searchsorted(ws, T, "left"), np.searchsorted(ws, T + BAR_NS, "left")
+        col_vol, col_cnt = cv[b] - cv[a], cc[b] - cc[a]
+        ts, q = tape.ts[pair], tape.qty[pair]
+        cq = np.cumsum(np.r_[0.0, q])
+        a2, b2 = np.searchsorted(ts, T, "left"), np.searchsorted(ts, T + BAR_NS, "left")
+        arch_vol, arch_cnt = cq[b2] - cq[a2], (b2 - a2).astype(float)
+        sel = (b > a) & (arch_cnt > 0)
         n_bars += int(sel.sum())
-        bad = (arch[sel] < bars.to_numpy()[sel])
+        bad = arch_vol[sel] < col_vol[sel] * (1 - 1e-6)
         n_bad += int(bad.sum())
         if sel.any():
-            worst = max(worst, float((bars.to_numpy()[sel] / np.maximum(arch[sel], 1)).max()))
-    return [f"check 3 — archive prints per 5m bar ≥ collector trade_count: {n_bars - n_bad}/{n_bars} bars "
-            f"({'PASS' if n_bad == 0 else 'FAIL'}; max collector/archive ratio {worst:.3f})"]
+            worst = max(worst, float((col_vol[sel] / np.maximum(arch_vol[sel], 1e-12)).max()))
+            ratios.append(float(np.median(col_cnt[sel] / arch_cnt[sel])))
+    return [f"check 3 — archive volume per 5m bar ≥ the collector's polled volume: {n_bars - n_bad}/{n_bars} bars "
+            f"({'PASS' if n_bad == 0 else 'FAIL'}; max collector/archive volume ratio {worst:.3f}; "
+            f"the collector's trade_count per bar is {np.median(ratios):.2f}× the archive's aggTrades count at the median — "
+            f"different units if > 1 (raw fills vs aggregated prints), a cap if < 1)"]
 
 
 # --------------------------------------------------------------------------------------
@@ -826,7 +857,7 @@ def run_read() -> int:
              f"({cal['n_moments']} quoted moments{'' if not cal['fails'] else ', failing ' + str(cal['fails'])})")
     L.append("harness checks:")
     L.extend(check_m34_ctaker())
-    L.extend(check_tape_counts(tape))
+    L.extend(check_tape_counts(tape, moments))
     results = {}
     priced_primary = None
     for w_s in (W_PRIMARY,) + W_SENS:
@@ -923,6 +954,19 @@ def run_read() -> int:
                      f"the paper close sits {np.nanmean(close_vs_mid):+.2f} from the mid")
             L.append(f"  measured − modelled (on the same reference): mean {np.nanmean(d):+.2f}, |mean| {'within' if abs(np.nanmean(d)) <= 2 else 'OUTSIDE'} the ±2 bps expectation "
                      f"(legs: {pe100.loc[j['tid'], 'leg'].value_counts().to_dict()})")
+            # the ledger's paper close is the close of the bar that closed 5 min BEFORE bar_ts and the live
+            # order went out at inserted_at (≈ bar_ts + 100 s), so the line above spans ~7 minutes of drift.
+            # The execution-cost reading proper: the live fill against the archive print nearest the order.
+            exe, lag = [], []
+            for r in j.itertuples():
+                ts_p = tape.ts[r.pair]; i = np.searchsorted(ts_p, r.inserted_at, "right") - 1
+                if i >= 0:
+                    exe.append(r.side * (r.entry_price / tape.price[r.pair][i] - 1) * BPS)
+                    lag.append((r.inserted_at - r.ledger_bar_ts) / NS)
+            exe = np.asarray(exe)
+            L.append(f"  live fill vs the archive print at the order's inserted_at (the taker execution cost proper, {len(exe)} fills): "
+                     f"mean {exe.mean():+.2f}, median {np.median(exe):+.2f}, p90 {np.percentile(exe, 90):+.2f} bps; "
+                     f"the order goes out {np.median(lag):.0f} s (median) after bar_ts, i.e. ≈ {np.median(lag) / 60 + 5:.0f} min after the booked close")
     L.append("")
     L.append("what this licenses: " + ("WRITING a pilot-only served-change registration for a maker entry/exit path (nothing built or deployed on this read)."
                                        if worth else "nothing served changes; the executor stays taker; the maker line closes for the 4h policy (no re-cut by pair, side, size or window)."))

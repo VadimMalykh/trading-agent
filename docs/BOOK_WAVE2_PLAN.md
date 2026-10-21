@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-20): §K1 READ — VOID at its prerequisite, 2026-10-20, before either population was touched: the harness replays X7 exactly (670 trades, +13.46), but the archive's three-ingredient composite is NOT X7's key on the book era — Spearman 0.51 against the bar 0.80, the same ladder rung on 44.6 % of the 670 trades against 70 % (within one rung 79.0 % against 95 %). Nothing changes anywhere; X7's confirmation stays on 2027-03-10 as §R.4 registered it (result block in §K1). Earlier status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-21): §M1 BUILT and READ — WORTH BUILDING, on the quoted leg alone: S1 = maker path − taker = +3.14 bps net per trade [+1.47, +4.81] on 339 of the policy's own trades (2026-08-05 → 09-09, the ladder era), the forward ledger's policy arm +1.25 [−3.09, +5.59] the same sign; the prerequisite FAILED on every pair (a ladder sampled every ~9 s cannot meet a one-tick bar where the tick is 0.01–0.5 bps — the two sources agree at the same instant, the gap is sampling age, not a clock offset), so the tape leg's +3.07 [+2.60, +3.55] on 2,168 trades is descriptive. Fills 84–86 % (not below M3-4's range as expected); the saving sits on the EXIT (+2.5), the entry gives its fee saving back to the chase (+0.6). Licensed and not done: WRITING a pilot-only maker-path registration — Vadim's call. Beside it, a serving finding the pin surfaced: the ledger books the close of the bar that closed 5 min BEFORE its bar_ts and the order goes out ≈ 7 min after that price (M3_5 §5 row 4 said ~30 s). Result block in §M1. Earlier status (2026-10-20): §K1 READ — VOID at its prerequisite, 2026-10-20, before either population was touched: the harness replays X7 exactly (670 trades, +13.46), but the archive's three-ingredient composite is NOT X7's key on the book era — Spearman 0.51 against the bar 0.80, the same ladder rung on 44.6 % of the 670 trades against 70 % (within one rung 79.0 % against 95 %). Nothing changes anywhere; X7's confirmation stays on 2027-03-10 as §R.4 registered it (result block in §K1). Earlier status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
@@ -841,3 +841,112 @@ entry close − 1). B = 60 `policy` + 167 `explore_cov05` closed rows (entries 2
 10-21 02:25), 41 pilot fills; B's candle pin runs at `read` on the export's candles. **5,468
 moments**, 1,146 on or after 2026-08-05 (the quoted leg's export), 4,322 tape-only; **1,456
 pair-days** of archive aggTrades to stream.
+
+### RESULT, read 2026-10-21 (`logs/m1_{entries,fetch,fetch_b,calibrate,read}_20261021.log`; `output/makerpath/read.md`, `trade_arms_w60_1000.parquet`): **WORTH BUILDING — on the quoted leg alone**
+
+**Plain reading first.** On the trades the 4-hour policy actually took during the two months the
+collector's ladder exists, resting a limit at the touch for 60 seconds (and crossing if it does not
+fill) instead of crossing at once would have earned **about 3 bps more per trade, round trip**, with
+the 95 % interval **+1.5 … +4.8** — clear of zero. The forward ledger's own 60 policy trades point the
+same way (+1.3, wide). The fee saving is 6 bps a round trip at the account's tier; the maker path
+keeps half of it: the **exit** keeps most of its 3 (+2.5), the **entry** gives nearly all of its 3
+back (+0.6) because the policy enters with the move and the 15 % of entries that do not fill chase
+the price. **This licenses writing a registration for a pilot-only maker path; it does not build or
+deploy one.** Two cautions sit next to the number: the pre-registered calibration of the pre-ladder
+leg failed on its own terms (so the decision rests on 339 trades, not 2,500 — the other 2,168 agree
+descriptively), and the pilot's real fills cost 2–5 bps more than the taker model says, which
+widens rather than narrows the maker margin but says the taker arm here is optimistic.
+
+**Prerequisite: FAIL on all twelve pair-sides** (`logs/m1_calibrate_20261021.log`, 1,131 quoted
+moments ≥ the 1,000 written): within one tick on 7 % (ZEC bid) … 88 % (ADA ask) against the 80 %
+bar — above 70 % only where a tick is ≥ 1 bp (ADA 85 / 88, WLD 78 / 77, DOGE 58 / 58), under 20 %
+where it is a hundredth of a bp (BTC 35 / 36 at a $0.10 tick = 0.013 bps, ETH 15 / 15, ZEC 8 / 9,
+HYPE 14 / 18, 1000PEPE 7 / 4); the branch-1 fill verdict agreed on 83 % (ADA) … 96 % (LINK) against
+90 % (seven pairs over, five under). **Diagnostic, after the FAIL (not a re-cut — the bar stands):**
+the tape touch against the book touch read at the book row's own stamp agrees on 81 % (BTC), 78 %
+(ETH), 94 % (WLD), 92 % (DOGE), 97 % (ADA), and the agreement falls symmetrically with the tape
+shifted ±2 / ±5 / ±15 / ±30 s around that stamp (BTC 50 / 45 → 26 / 19 → 10 / 7 → 7 / 5 %) — **no
+clock offset between the collector and the archive; the gap at T is the ladder's sampling age
+(median 5 s at a ~9 s cadence) on pairs whose tick is a fraction of a basis point.** The two
+sources are one market; the bar asked a 9-second ladder to match a 10-cent tick at the moment T. As
+registered: the tape leg is descriptive, the decision is read on the quoted leg.
+
+**Harness checks.** (1) Both arms on the identical set by construction — one row per trade carries
+both fills; 2,733 priced. (2) **PASS** — this module's walk on M3-4's own book reproduces
+M3_4_RESULTS §1's `C_taker` on all eight pairs to ≤ 0.04 bps (BTC 8.017 / 8.017, …, 1000PEPE 11.302 /
+11.263, WLD 14.068 / 14.060). (3) **FAIL as written, explained, the archive stands:** archive volume
+≥ the collector's polled volume on 559 of 864 whole bars; the 305 bars where the collector shows
+more are the QUIET ones (median 428 prints in the bar against 1,176 on the passing bars; 90 % of
+them under 100 prints a poll) — the collector's "most recent 200" polls re-count the same trades
+across overlapping polls when fewer than 200 arrive (its count is 1.01× the archive's on those bars,
+0.97× on the busy ones; the excess at most 1.9×); on the busy bars, where censoring bites, the
+collector is the shorter one as M3-4 §1.2 measured. The premise "the collector can only undercount"
+was wrong; the archive is not short of anything.
+
+**Population.** A: 2,507 trades (1,549 long / 958 short; WLD 776, HYPE 322, ZEC 289, BTC 218, ETH
+203, LINK 128, ADA 117, DOGE 100, SOL 99, 1000PEPE 98, AVAX 88, XRP 69), all priced — **339 on the
+quoted leg** (both moments with a ladder ≤ 30 s old: 2026-08-05 → 09-09; WLD 151, ZEC 36, HYPE 31,
+ADA 20, BTC 20, XRP 18, ETH 13, DOGE 12, LINK 12, SOL 11, AVAX 8, 1000PEPE 7), 2,168 on the tape leg.
+B: 227 closed rows, 226 priced (223 quoted; 1 dropped — WLD's 2026-10-21 archive day not yet
+published). No ladder exhausted at $1,000.
+
+| S1 = MAKER→TAKER − TAKER, net bps per unit notional | estimate | 95 % | n | exit-day clusters |
+|---|---:|---|---:|---:|
+| **A, quoted leg, W 60 s, $1,000, equal notional — DECIDES** | **+3.14** | **[+1.47, +4.81]** | 339 | 36 |
+| B, the ledger's `policy` arm — the sign | +1.25 | [−3.09, +5.59] | 60 | 12 |
+| B, `explore_cov05` (the second line) | +0.94 | [−1.83, +3.72] | 163 | 18 |
+| A, the policy's own size ladder as weights | +3.01 | [+0.53, +5.49] | 339 | 36 |
+| A, tape leg (descriptive — the prerequisite failed) | +3.07 | [+2.60, +3.55] | 2,168 | 237 |
+| A, W 30 s | +2.48 | [+0.94, +4.01] | 339 | 36 |
+| A, W 300 s | +5.31 | [+3.70, +6.92] | 339 | 36 |
+| A, $100 (both legs; the tape leg has no walk, so the touch) | +3.07 | [+2.60, +3.54] | 2,507 | 267 |
+| A, $10,000 (quoted leg, unexhausted) | +4.79 | [+3.69, +5.89] | 334 | 36 |
+| A, filled at both ends — DIAGNOSTIC, conditions on the fill | +9.34 | [+8.92, +9.75] | 244 | 34 |
+
+**Verdict: WORTH BUILDING** — A's lower bound +1.47 > 0 (with Student t on 35 clusters in place of
+the registered z: +1.42, still clear) and B's point estimate the same sign. The recorded expectation
+("a few bps at most, interval plausibly spanning zero") held on the size and not on the interval —
+the quoted leg had more trades than the ≥ 1,000-moment floor implied.
+
+* **Per pair (A, quoted):** WLD +5.29 [+3.40, +7.18] (n 151), DOGE +7.85 [+6.93, +8.77] (12), LINK
+  +5.86 [+3.30, +8.42] (12), SOL +5.96 [+3.25, +8.67] (11), AVAX +5.17 (8), XRP +4.14 (18), ADA +3.47
+  (20), BTC +3.05 [−0.26, +6.37] (20), ZEC +2.72 [−0.28, +5.72] (36), ETH +0.59 (13), **HYPE −3.60
+  [−9.66, +2.46] (31)**, 1000PEPE −29 (7, noise). Per side: **short +4.58 [+2.94, +6.22]** (173),
+  long +1.64 [−1.16, +4.44] (166). Described, no verdict; no subset is licensed by this.
+* **Fill rates, W 60 s, $1,000:** quoted leg entry 0.841 (certain 0.776, queue-conditional 0.065),
+  exit 0.858 (0.773 / 0.086); tape leg 0.850 / 0.809 (branch 1 only); B 0.863 / 0.836. **Not below
+  M3-4's 70–92 % as the expectation said** — the policy's entries fill like the unconditional
+  grid did; the chase on the unfilled sixth is what eats the entry's saving.
+* **Where the contrast comes from** (A quoted, mean bps of the moment mid, positive = cost): entry
+  taker 5.92 vs maker path 5.30 (**saving +0.62**); exit taker 5.96 vs maker path 3.43 (**saving
+  +2.53**). Taker arm net −1.95 a trade, maker arm +1.19, the candle return +10.44 before costs.
+* **The pilot's 41 measured taker entries** (shared with the `policy` arm; descriptive, no bar):
+  against the paper close mean −0.78, median +0.37, p90 +56.6 bps — but that span holds ≈ 7 minutes
+  of drift (the finding below); against the archive print at the order's `inserted_at` (the taker
+  execution cost proper, reference uncertain by seconds): **mean +5.53, median +1.95, p90 +23.95
+  bps**, while the modelled taker at $100 on the same moments is +0.45. The mean is **outside** the
+  ±2 bps the registration wrote and said would matter more than S1; the median inside. Direction:
+  real crossing costs more than the model's walk — that widens the maker arm's margin (85 % of its
+  legs never cross; the 15 % that do pay the same real cost as the taker arm) rather than narrowing
+  it, so it does not threaten the verdict; it says the TAKER arm here is optimistic by a few bps.
+
+**Finding the candle pin surfaced (not registered, recorded here and in BACKLOG):** the ledger's
+`entry_price` equals the candle close at **`bar_ts` − 10 min** on 99.7 % of 57,515 `policy_bars` rows
+(exact at no other offset; 1.7 % at `bar_ts` itself), i.e. the served signal's price is the close
+of the bar that closed **five minutes before** the row's stamp, and the order goes out 112 s (median)
+after `bar_ts` — **≈ 7 minutes after the price it is booked at.** M3_5_INTEGRATION §5 row 4 records
+"up to ~30 seconds stale". The engine takes `price` and `timestamp` from the inference signal
+(`policy_engine.ex` ~:790); whether the inference server reports the last *finalised* candle one bar
+late, or the stamp is one bar early, is not established here. For M1, B's T was placed by the pin
+(choice (i)'s correction: the signal bar's open is `bar_ts` − 10 min; pin 226 / 227 after it, 5 / 227
+before). For the forward test it means the paper arms' entries are 7 minutes stale against the
+tradable moment — a comparability question for Vadim, not changed by this read.
+
+**What this licenses, as registered, and nothing more:** *writing* a served-change registration for
+a maker entry/exit path in the executor, **pilot arm only**, with a paired forward design of its
+own; nothing is built or deployed on this read. **Not licensed:** a subset by pair, side, size or
+window (HYPE's and the longs' intervals are described, not acted on); re-reading at another W.
+**Needed from Vadim:** whether to have the registration written (the recommendation: yes — the
+interval is clear, both arms' mechanics are M3-4's, and the executor has no limit-order path at
+all, M3_5 §3.1 — and a decision on the 7-minute finding first, since a maker path built on a stale
+decision clock inherits it).
