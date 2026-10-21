@@ -96,7 +96,7 @@ ARM_POLICY, ARM_FLAT = "policy", "flat_size"
 # informational bar under either convention, so neither reading changes; only trades that
 # straddle the boundary (open at the deploy) see a different exit bar, and `makerpath.py`
 # shifts stratum B's signal bar by two bars only before it.
-BAR_KEY_CHANGE_UTC = None   # e.g. pd.Timestamp("2026-10-21 13:00:00", tz="UTC")
+BAR_KEY_CHANGE_UTC = pd.Timestamp("2026-10-21 15:02:33", tz="UTC")   # the app recreate on the VM (M3_5 §4.5 deploy record); rows from here are bar-keyed
 
 
 # ---------------------------------------------------------------------------------------
