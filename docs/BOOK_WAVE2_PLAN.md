@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-21): §M1 BUILT and READ — WORTH BUILDING, on the quoted leg alone: S1 = maker path − taker = +3.14 bps net per trade [+1.47, +4.81] on 339 of the policy's own trades (2026-08-05 → 09-09, the ladder era), the forward ledger's policy arm +1.25 [−3.09, +5.59] the same sign; the prerequisite FAILED on every pair (a ladder sampled every ~9 s cannot meet a one-tick bar where the tick is 0.01–0.5 bps — the two sources agree at the same instant, the gap is sampling age, not a clock offset), so the tape leg's +3.07 [+2.60, +3.55] on 2,168 trades is descriptive. Fills 84–86 % (not below M3-4's range as expected); the saving sits on the EXIT (+2.5), the entry gives its fee saving back to the chase (+0.6). Licensed and not done: WRITING a pilot-only maker-path registration — Vadim's call. Beside it, a serving finding the pin surfaced: the ledger books the close of the bar that closed 5 min BEFORE its bar_ts and the order goes out ≈ 7 min after that price (M3_5 §5 row 4 said ~30 s). Result block in §M1. Earlier status (2026-10-20): §K1 READ — VOID at its prerequisite, 2026-10-20, before either population was touched: the harness replays X7 exactly (670 trades, +13.46), but the archive's three-ingredient composite is NOT X7's key on the book era — Spearman 0.51 against the bar 0.80, the same ladder rung on 44.6 % of the 670 trades against 70 % (within one rung 79.0 % against 95 %). Nothing changes anywhere; X7's confirmation stays on 2027-03-10 as §R.4 registered it (result block in §K1). Earlier status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-21, evening): the 7-minute clock INVESTIGATED (§M1 Result, last block — the server scores the last settled bar, `predict.ex` stamps wall-clock time, the engine floors it; options A/B/C for Vadim, A+B recommended) and §M2 REGISTERED on Vadim's "2 - yes" — the maker path in the executor, pilot arm only, not built, prerequisite the clock decision. Earlier status (2026-10-21): §M1 BUILT and READ — WORTH BUILDING, on the quoted leg alone: S1 = maker path − taker = +3.14 bps net per trade [+1.47, +4.81] on 339 of the policy's own trades (2026-08-05 → 09-09, the ladder era), the forward ledger's policy arm +1.25 [−3.09, +5.59] the same sign; the prerequisite FAILED on every pair (a ladder sampled every ~9 s cannot meet a one-tick bar where the tick is 0.01–0.5 bps — the two sources agree at the same instant, the gap is sampling age, not a clock offset), so the tape leg's +3.07 [+2.60, +3.55] on 2,168 trades is descriptive. Fills 84–86 % (not below M3-4's range as expected); the saving sits on the EXIT (+2.5), the entry gives its fee saving back to the chase (+0.6). Licensed and not done: WRITING a pilot-only maker-path registration — Vadim's call. Beside it, a serving finding the pin surfaced: the ledger books the close of the bar that closed 5 min BEFORE its bar_ts and the order goes out ≈ 7 min after that price (M3_5 §5 row 4 said ~30 s). Result block in §M1. Earlier status (2026-10-20): §K1 READ — VOID at its prerequisite, 2026-10-20, before either population was touched: the harness replays X7 exactly (670 trades, +13.46), but the archive's three-ingredient composite is NOT X7's key on the book era — Spearman 0.51 against the bar 0.80, the same ladder rung on 44.6 % of the 670 trades against 70 % (within one rung 79.0 % against 95 %). Nothing changes anywhere; X7's confirmation stays on 2027-03-10 as §R.4 registered it (result block in §K1). Earlier status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
@@ -950,3 +950,114 @@ window (HYPE's and the longs' intervals are described, not acted on); re-reading
 interval is clear, both arms' mechanics are M3-4's, and the executor has no limit-order path at
 all, M3_5 §3.1 — and a decision on the 7-minute finding first, since a maker path built on a stale
 decision clock inherits it).
+
+**The 7-minute clock, investigated 2026-10-21 on Vadim's "1 - investigate" (read-only; nothing changed).**
+*Mechanism, from the code:* `serve.py` builds the features from the last **settled** closed bars —
+`db.load_candles_tail` keeps candles with `close_time ≤ now − CANDLE_SETTLE_S` (120 s; the collector
+polls klines every 60 s and stores the forming bar, so a just-closed bar's row may be the in-bar
+snapshot until the next poll — M3_FIDELITY §7.6, 2026-09-11) — and returns `price` = that bar's
+close and `last_closed_bar_open_time`. `predict.ex:77` keeps the price and **discards the bar**,
+stamping `timestamp: DateTime.utc_now()`. `policy_engine.ex:787` floors that wall clock to
+`bar_ts` and records each `(pair, bar_ts)` once, at the first tick that sees it. In the first two
+minutes of a bar B the settled bar is the one that closed at B − 5 min (opened B − 10), so the row
+stamped B carries the B − 10 bar's close: **99.7 % of 57,515 rows**. The trade is placed at that
+recording tick — on the VM, bar rows are inserted 37 / 74 / **102** / 130 / 169 s after `bar_ts`
+(p5 … p95, 48,380 rows of 14 days), trades 46 … 173 s (median 111) on every arm — i.e. **≈ 7
+minutes after the close the model scored**, which is where the backtest trades. *Live check,
+09:10:57 UTC:* the server on BTC reported `last_closed_bar_open_time` 09:00 and price 83,229.4
+(the 09:00 bar's close; the 09:05 bar had closed 57 s earlier, unsettled), while the row stamped
+09:05 (inserted 09:06:34 on ETH's twin) carried the **08:55** bar's close. *What it touches:*
+arm-vs-arm contrasts on the ledger (R5) share the clock and stand; paper-vs-backtest and
+paper-vs-pilot comparability do not — the pilot's fills land 7 minutes after the booked price
+(p90 of the gap 57 bps on 41 fills). *Diagnostic, not registered:* on the dump's 2,507 cov-0.05
+trades, delaying entry and exit by 5 / 10 / 15 min changes the gross return per trade by **−0.85
+[−3.43, +1.73] / −2.49 [−6.62, +1.63] / −5.04 [−9.42, −0.65] bps** (paired, exit-day clusters)
+against +8.06 gross — at 10 min a third of the edge at the point estimate, the interval wide.
+*Options, Vadim's served-change decision:* **(A)** `predict.ex` passes `last_closed_bar_open_time`
+through, the engine keys `policy_bars` on that bar (its close as `bar_ts`) and decides when a NEW
+closed bar is scored — the trade then goes out ≈ settle + one tick ≈ 2–2.5 min after the close;
+the ledger's `bar_ts` meaning shifts by 10 min from the deploy (R5's parity must say so). **(B)**
+with (A), `CANDLE_SETTLE_S` 120 → 65–70 s (the poll is 60 s) — ≈ 1.5–2 min. **(C)** book the paper
+arms at the decision-time mark — not recommended: the paper arms mirror the backtest's rule; the
+fix is to bring the real trade to the booked price, not the booked price to the stale trade.
+**Recommended: (A)+(B), one registered change in M3_5_INTEGRATION with R5's parity test, deployed
+before M2 is built — a maker path measured on a 7-minute-late clock would be measured on the wrong
+clock.**
+
+## M2 — the maker path in the executor, pilot arm only — 🔵 REGISTERED 2026-10-21, not built
+
+**Written on Vadim's "2 - yes" (2026-10-21), after §M1's read and before any line of executor code.
+Prerequisite: the clock decision above, taken and (if A/B) deployed — the maker path must run and be
+measured on the clock it will live on.**
+
+### In plain terms
+
+Today the pilot buys and sells by crossing the spread at once (M3_5 §3.1: the executor has no
+limit-order path at all). M1 says that on this policy's own trades a resting order at the touch for
+60 seconds, crossing if unfilled, would have earned about 3 bps more per round trip. M2 builds that
+path for the **pilot arm only** and measures, on real fills, whether it does. The paper arms keep
+booking the bar price — they are the scored rule and stay comparable to the backtest.
+
+### The path, fixed now
+
+* **Entry.** At the decision tick `t_d`: a **post-only limit** (`timeInForce=GTX`) at the touch on our
+  side — a buy at the best bid, a sell at the best ask — for the pilot's size. **W = 60 s.** If the
+  order is filled, done. If unfilled or partly filled at `t_d + W`: cancel and a **market order**
+  for the remainder. **No re-pegging** while resting (M1's model rested at one price). A GTX
+  rejection (our price would cross — the market has moved through our side) is answered by a
+  market order at once and recorded as `rejected_then_crossed`.
+* **Exit.** At the timer close, the same rule mirrored (a long rests a sell at the best ask).
+  The stop / target orders the pilot carries today are unchanged.
+* **Size.** The pilot's ($100 today; whatever the pilot's scale is at the time — one size, the
+  pilot's, never a different one for the maker path).
+* **Recorded per trade (new `paper_trades` columns on the `live` arm):** `entry_order_type`
+  (`maker` / `maker_then_taker` / `rejected_then_crossed` / `taker`), `entry_rest_price`,
+  `entry_wait_s`, `entry_fill_price` (the realised VWAP), the same four for the exit; the
+  decision-time touch (`b0p`, `a0p`) from the collector's book at `t_d`.
+
+### The statistic and the rule
+
+**S2 = live maker-path net return − the TAKER counterfactual**, per trade, net bps of notional,
+fees inside (the account's tier: maker 2.0 / taker 5.0 per side), paired on identical trades,
+exit-day clusters, `walkforward.paired_notional_diff_bps`. The counterfactual is M1's taker arm
+priced at `t_d` from the archive tape and the collector's ladder — cross at the touch (walk at the
+pilot's size), fee 5 — with M1's machinery (`makerpath.price_moments_quoted`) and the live order's
+own `t_d`, so the comparison is at the same instant. **Calibration of the counterfactual, printed
+beside, no bar:** the pilot's taker fills before M2 (41 at writing, more by the build) against the
+same model — M1 measured them +1.95 (median) / +5.53 (mean) bps worse than the model; if the
+maker-path's own crossing legs show the same gap, the counterfactual understates the taker's cost
+by that much and S2 is conservative; the line is printed so the reader sees it.
+
+**Readings: at 100 and at 200 closed maker-path pilot trades** (≈ 3 and 6 weeks at the pilot's
+~4.7 a day). **EARNING** iff S2's 95 % lower bound > 0 at either reading (the first clear reading
+decides; a reading is one look). **NOT EARNING** iff ≤ 0 at both. **Power:** M1's per-trade spread
+on the quoted leg ≈ 16 bps (clustered) → se ≈ 1.6 at 100, 1.1 at 200; a +3 is ~2 se at 100 and
+clear at 200; +1.5 is not resolvable before 200. **Expectation, recorded now:** +2 … +3 bps (M1's
++3.1 less real slippage on the crossing legs), inconclusive at 100, EARNING at 200 the likelier
+outcome.
+
+**Alternative design, Vadim's pick before the build (one or the other, not both):** randomise each
+pilot entry 50 / 50 maker-path / taker, pair by exit day, S2 = the arms' difference — model-free,
+and needs ≈ 440 trades (≈ 3 months) for the same precision. Default: the paired counterfactual.
+
+### What each outcome licenses
+
+* **EARNING** → the maker path becomes the live arm's default execution at the next pilot scale
+  step, and `Trading.ExecCost` gains a measured maker branch for the backtester's cost (the
+  taker branch untouched); the paper arms keep booking the bar price.
+* **NOT EARNING** → the path is removed from the executor; the maker line closes for the 4h policy.
+* 🔴 Not licensed: changing W, re-pegging, a size other than the pilot's, scoring entries and
+  exits apart, a third reading, or applying the path to the paper arms.
+
+### Prerequisites and cost
+
+1. The clock decision above (A+B recommended), deployed and R5-parity-checked.
+2. The executor: `Trading.Executor` gains a limit path — place GTX at the touch, poll order status,
+   cancel at W, market the remainder, record the four fields per leg; the ledger columns; tests
+   on the Binance testnet through `mix flux.testnet_smoke` (REAL_MONEY_TRACK §6) before any live
+   order. Claude's build, a day or two; Vadim's deploy (the fifth-start rule: a served change is a
+   restart, said so in the forward record).
+3. M1's harness extended with a `--live` read that takes `paper_trades` rows with the new columns,
+   fetches the archive days, prices the counterfactual at `t_d`, and prints S2 with the
+   calibration line.
+No GPU. **Needed from Vadim:** the clock decision; then "build M2".
