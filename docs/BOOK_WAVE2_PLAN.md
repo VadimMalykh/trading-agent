@@ -794,3 +794,50 @@ OUT=ml/train/output/makerpath_book ONLY=book_raw BOOK_FILTER="$(cat ml/train/out
 ```
 
 **Needed from Vadim: nothing** until S1 is read. CPU only; ≈ 20 GB streamed, < 1 GB kept.
+
+### BUILT 2026-10-21 (Claude) — mechanical choices fixed before the first fill number existed
+
+Written after `entries` ran (counts only — no fill, no price, no S1) and before `fetch`, `calibrate`
+or `read`. Each with the direction of its bias, M3-4 §2.7's way. `ml/train/m3/makerpath.py`;
+tests `ml/train/tests/test_makerpath.py` (4 green: the three-branch rule and the tape-leg touch on
+a planted tape, both arms' net return against a hand computation on the tape leg and on a planted
+ladder with a walk and a queue-conditional fill, the streamed window extraction keeping exactly the
+rows in range and a midnight-crossing window naming both days).
+
+* **(a) The quoted leg is a moment with an `orderbook_levels` row ≤ 30 s before it** — the table
+  the data section names. That table begins **2026-08-05** (migration `20260805000001`), not
+  2026-07-17 as the prose above says: 07-17 → 08-05 holds only scalar snapshots (mid, spread,
+  imbalance), no touch prices or sizes. Those moments go to the tape leg. Direction: none.
+* **(b) The retained tape is [T − 120 s, T + 360 s]**, not T + 1,800 s: no registered quantity
+  reads past T + W_max + 60 s, and the tail would have quadrupled the kept rows (BTC prints ~35 a
+  second in a busy window). Direction: none — nothing registered reads it.
+* **(c) The tape leg's T + W touch** is read like the T touch (the last print of each aggressor
+  kind in [T + W − 60 s, T + W]); a moment missing either touch at T or at T + W is dropped from
+  **both** arms (M3-4 §2.7's identical-set consequence), counted. Direction: none.
+* **(d) Fees sit inside each arm's return** (taker 5.0 / maker 2.0 per side, parameters; an
+  unfilled maker leg pays taker) — the arms' fees differ, so nothing cancels in the contrast and
+  `paired_notional_diff_bps`'s no-cost design is honoured by putting the fee in `gross`.
+* **(e) The primary weighting is equal notional per trade** ($1,000 each, the fill-model size);
+  the policy's own size ladder (⅓ … 5⁄3 by regime quintile) is a reported sensitivity.
+* **(f) The tick, per pair,** is the smallest positive difference between distinct archive prices
+  on that pair's retained tape (printed in the calibration table).
+* **(g) A trade's leg is `quoted` iff both its moments are quoted**, else `tape`; each moment is
+  priced on its own leg either way. "The quoted leg alone" means the `quoted`-tagged trades.
+* **(h) Harness check 2** is read as M3_4_RESULTS §1's `C_taker` column — the round-trip taker
+  cost at that table's 4.0-bps fee on the 5-minute grid over M3-4's own exported book
+  (`output/m3_4/book_top20.parquet`) — reproduced per pair within ±1.0 bps by this module's walk.
+* **(i) Stratum B's sign check is the ledger's `policy` arm alone**; `explore_cov05` is printed as
+  the second line beside it, as the population section says. B was exported fresh on 2026-10-21
+  (`paper_trades_20261021.csv`: 60 closed `policy`, 167 `explore_cov05`, 41 `live` fills).
+* **(j) The BOOK_FILTER** is per symbol, adjacent ranges merged, minute precision (T is on the
+  5-minute grid) — 51 KB, because the export ships the query base64-encoded inside one
+  remote-shell argument (128 KB on Linux); the first form (one clause per moment, 107 KB) would not
+  have fit.
+
+**Entries (`logs/m1_entries_20261021.log`):** A = **2,507 trades** at cov 0.05 on the served dump
+(2025-12-15 14:55 → 2026-09-09 18:05; 1,549 long / 958 short; WLD 776, HYPE 322, ZEC 289, BTC 218,
+ETH 203 … XRP 69), the candle pin exact on 2,507 / 2,507 (the dump's `fwd_ret` equals exit close ÷
+entry close − 1). B = 60 `policy` + 167 `explore_cov05` closed rows (entries 2026-10-04 15:25 →
+10-21 02:25), 41 pilot fills; B's candle pin runs at `read` on the export's candles. **5,468
+moments**, 1,146 on or after 2026-08-05 (the quoted leg's export), 4,322 tape-only; **1,456
+pair-days** of archive aggTrades to stream.
