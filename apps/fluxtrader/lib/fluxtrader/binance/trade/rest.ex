@@ -54,6 +54,14 @@ defmodule FluxTrader.Binance.Trade.Rest do
     do: Client.signed_delete("/fapi/v1/allOpenOrders", symbol: symbol)
 
   @impl true
+  def cancel_order(symbol, order_id),
+    do: Client.signed_delete("/fapi/v1/order", symbol: symbol, orderId: order_id)
+
+  @impl true
+  def book_ticker(symbol),
+    do: Client.signed_get("/fapi/v1/ticker/bookTicker", [symbol: symbol], auth: :none)
+
+  @impl true
   def position_risk(symbol), do: Client.signed_get("/fapi/v2/positionRisk", symbol: symbol)
 
   @impl true

@@ -13,6 +13,10 @@ Subcommands (scripts/m3.sh -m m3 makerpath …):
              the moment windows and discarded
   calibrate  the prerequisite — the tape-implied touch against the collector's book
   read       the arms, S1, the tables, the verdict
+  live       M2 (BOOK_WAVE2_PLAN §M2): S2 on the pilot's maker-path rows — the live maker net
+             against the taker counterfactual priced at each leg's own t_d; readings at 100 and
+             200 closed trades; the calibration line from the crossing legs. Its moments have
+             their own tape cache (`fetch --live`) and ladder export (`output/makerpath_book_live`).
 
 Mechanical choices fixed HERE, before any fill number existed (each with its bias direction):
   (a) The QUOTED leg is a moment with an `orderbook_levels` row ≤ 30 s before it — the table
@@ -346,8 +350,8 @@ def cut_windows(tape: pd.DataFrame, moments_T: np.ndarray) -> pd.DataFrame:
     return tape[keep].reset_index(drop=True)
 
 
-def fetch_pair_day(sym: str, day: str, moments_T: np.ndarray) -> tuple[str, str, str, int]:
-    out = os.path.join(TAPE_DIR, sym, f"{day}.parquet")
+def fetch_pair_day(sym: str, day: str, moments_T: np.ndarray, tape_dir: str = TAPE_DIR) -> tuple[str, str, str, int]:
+    out = os.path.join(tape_dir, sym, f"{day}.parquet")
     if os.path.exists(out + ".ok"):
         return sym, day, "cached", -1
     if os.path.exists(out + ".missing"):
@@ -376,12 +380,16 @@ def fetch_pair_day(sym: str, day: str, moments_T: np.ndarray) -> tuple[str, str,
     return sym, day, "ok", len(cut)
 
 
-def run_fetch(threads: int = 4) -> int:
-    m = pd.read_parquet(os.path.join(OUT_DIR, "moments.parquet"))
-    pdays = pd.read_parquet(os.path.join(OUT_DIR, "pair_days.parquet"))
+def run_fetch(threads: int = 4, live: bool = False) -> int:
+    # The live job's moments are cut into their own cache: a cached (pair, day) file holds
+    # only the rows inside the moments it was cut for, so a second moment list on the same
+    # day cannot share it.
+    out_dir, tape_dir = (LIVE_DIR, os.path.join(LIVE_DIR, "tape_windows")) if live else (OUT_DIR, TAPE_DIR)
+    m = pd.read_parquet(os.path.join(out_dir, "moments.parquet"))
+    pdays = pd.read_parquet(os.path.join(out_dir, "pair_days.parquet"))
     by_pair = {p: g["T"].to_numpy(np.int64) for p, g in m.groupby("pair")}
-    jobs = [(p, d, by_pair[p]) for p, d in zip(pdays["pair"], pdays["day"])]
-    _p(f"fetch: {len(jobs)} pair-days, {threads} threads, windows [T−{TAPE_PRE_S}s, T+{TAPE_POST_S}s]")
+    jobs = [(p, d, by_pair[p], tape_dir) for p, d in zip(pdays["pair"], pdays["day"])]
+    _p(f"fetch{' (live)' if live else ''}: {len(jobs)} pair-days, {threads} threads, windows [T−{TAPE_PRE_S}s, T+{TAPE_POST_S}s]")
     t0, n_ok, n_cached, n_missing, kept = time.time(), 0, 0, 0, 0
     with ThreadPoolExecutor(threads) as ex:
         for i, (sym, day, st, n) in enumerate(ex.map(lambda j: fetch_pair_day(*j), jobs), 1):
@@ -397,14 +405,14 @@ def run_fetch(threads: int = 4) -> int:
                    f"rows kept this run {kept:,}, {time.time() - t0:.0f}s")
     frames = []
     for sym in sorted(pdays["pair"].unique()):
-        d = os.path.join(TAPE_DIR, sym)
+        d = os.path.join(tape_dir, sym)
         if not os.path.isdir(d):
             continue
         for f in sorted(os.listdir(d)):
             if f.endswith(".parquet") and os.path.exists(os.path.join(d, f + ".ok")):
                 frames.append(pd.read_parquet(os.path.join(d, f)))
     tape = pd.concat(frames, ignore_index=True).sort_values(["pair", "ts"], kind="mergesort").reset_index(drop=True)
-    out = os.path.join(OUT_DIR, "tape_windows.parquet")
+    out = os.path.join(out_dir, "tape_windows.parquet")
     tape.to_parquet(out, index=False)
     sz = os.path.getsize(out) / 1e6
     _p(f"tape_windows.parquet: {len(tape):,} rows, {sz:.0f} MB, per pair "
@@ -993,6 +1001,235 @@ def run_read() -> int:
 
 
 # --------------------------------------------------------------------------------------
+# live — M2's read: S2 on the pilot's maker-path rows (BOOK_WAVE2_PLAN §M2)
+# --------------------------------------------------------------------------------------
+LIVE_DIR = os.path.join(OUT_DIR, "live")
+LIVE_BOOK_DIR = "output/makerpath_book_live"
+S2_READINGS = (100, 200)                                       # registered: one look each
+MAKER_TYPES = ("maker", "maker_partial", "maker_then_taker", "rejected_then_crossed")
+CROSSED_TYPES = ("rejected_then_crossed", "taker")             # legs whose fill IS a taker fill
+
+
+def _side_col(x: pd.Series) -> np.ndarray:
+    return np.where(x.astype(str).str.lower().isin(["long", "buy", "1", "1.0"]), 1, -1)
+
+
+def live_rows(path: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame, str]:
+    """The pilot's closed rows split in two: M2's maker-path rows (both legs typed, closed on
+    the timer — a brake exit is not the path's own exit and is not scored) and the pre-M2 taker
+    rows (the calibration set). Times as epoch ns."""
+    path = path or _newest(FORWARD_DIR, "paper_trades_")
+    df = pd.read_csv(path)
+    live = df[(df["arm"] == PILOT_ARM) & (df["status"] == "closed")].copy()
+    for c in ("entry_ts", "exit_ts", "inserted_at", "exit_rest_at"):
+        if c in live:
+            live[c] = pd.to_datetime(live[c], utc=True).astype("int64")
+    live["side"] = _side_col(live["side"])
+    if "entry_order_type" not in live:
+        return live.iloc[0:0].copy(), live, path
+    m2 = live[live["entry_order_type"].isin(MAKER_TYPES) & live["exit_order_type"].isin(MAKER_TYPES)
+              & (live["exit_reason"] == "timer")].copy()
+    pre = live[live["entry_order_type"].isna()].copy()
+    return m2, pre, path
+
+
+def live_moments(m2: pd.DataFrame, pre: pd.DataFrame) -> pd.DataFrame:
+    """One row per leg at its own t_d: M2 rows' entry at `inserted_at` (the row is written
+    when the entry is placed) and exit at `exit_rest_at`; pre-M2 rows' entry at `inserted_at`
+    and exit at `exit_ts` (their market orders went out at the booking tick). `side` is the
+    resting/crossing side at that moment."""
+    parts = []
+    if len(m2):
+        parts.append(pd.DataFrame({"pair": m2["pair"], "T": m2["inserted_at"], "role": "entry", "side": m2["side"],
+                                   "tid": "m2:" + m2["id"].astype(str)}))
+        parts.append(pd.DataFrame({"pair": m2["pair"], "T": m2["exit_rest_at"], "role": "exit", "side": -m2["side"],
+                                   "tid": "m2:" + m2["id"].astype(str)}))
+    if len(pre):
+        parts.append(pd.DataFrame({"pair": pre["pair"], "T": pre["inserted_at"], "role": "entry", "side": pre["side"],
+                                   "tid": "pre:" + pre["id"].astype(str)}))
+        parts.append(pd.DataFrame({"pair": pre["pair"], "T": pre["exit_ts"], "role": "exit", "side": -pre["side"],
+                                   "tid": "pre:" + pre["id"].astype(str)}))
+    if not parts:
+        return pd.DataFrame(columns=["pair", "T", "role", "side", "tid"])
+    m = pd.concat(parts, ignore_index=True)
+    m = m[m["T"].notna()]
+    m["T"] = m["T"].astype("int64")
+    return m.sort_values(["pair", "T"], kind="mergesort").reset_index(drop=True)
+
+
+def s2_table(m2: pd.DataFrame, priced: pd.DataFrame) -> pd.DataFrame:
+    """Per M2 trade: the live maker-path net (the row's own fills and realised fees) and the
+    taker counterfactual at the same two instants (cross the touch at t_d, walked at the
+    pilot's size, fee TAKER_FEE a side). Kept iff both moments priced."""
+    e = priced[priced["role"] == "entry"].set_index("tid")
+    x = priced[priced["role"] == "exit"].set_index("tid")
+    t = m2.copy()
+    t["tid"] = "m2:" + t["id"].astype(str)
+    t = t.set_index("tid")
+    common = t.index.intersection(e.index).intersection(x.index)
+    t, e, x = t.loc[common], e.loc[common], x.loc[common]
+    side = t["side"].to_numpy(int)
+    out = pd.DataFrame(index=common)
+    out["id"], out["pair"], out["side"] = t["id"], t["pair"], side
+    out["entry_type"], out["exit_type"] = t["entry_order_type"], t["exit_order_type"]
+    out["entry_T"], out["exit_T"] = t["inserted_at"], t["exit_rest_at"]
+    out["exit_day"] = wf._utc_day(t["exit_rest_at"].to_numpy(np.int64))
+    out["kept"] = e["fresh"].to_numpy(bool) & x["fresh"].to_numpy(bool)
+    out["leg"] = np.where((e["leg"] == "quoted") & (x["leg"] == "quoted"), "quoted", "tape")
+    ef, xf = t["entry_fill_price"].to_numpy(np.float64), t["exit_fill_price"].to_numpy(np.float64)
+    efee, xfee = t["entry_fee_bps"].to_numpy(np.float64), t["exit_fee_bps"].to_numpy(np.float64)
+    out["live_ret_bps"] = side * (xf / ef - 1) * BPS - efee - xfee
+    out["ledger_net_bps"] = t["net_bps"].to_numpy(np.float64)
+    te, tx = e["taker_px"].to_numpy(), x["taker_px"].to_numpy()
+    out["taker_ret_bps"] = side * (tx / te - 1) * BPS - 2 * TAKER_FEE
+    out["s2_bps"] = out["live_ret_bps"] - out["taker_ret_bps"]
+    out["entry_wait_s"], out["exit_wait_s"] = t["entry_wait_s"], t["exit_wait_s"]
+    # where the contrast comes from: each leg's cost against the moment's mid (positive = cost)
+    out["entry_live_cost"] = side * (ef / e["mid"].to_numpy() - 1) * BPS + efee
+    out["entry_taker_cost"] = side * (te / e["mid"].to_numpy() - 1) * BPS + TAKER_FEE
+    out["exit_live_cost"] = -side * (xf / x["mid"].to_numpy() - 1) * BPS + xfee
+    out["exit_taker_cost"] = -side * (tx / x["mid"].to_numpy() - 1) * BPS + TAKER_FEE
+    return out.reset_index(drop=True)
+
+
+def s2(tr: pd.DataFrame) -> dict:
+    c = wf.paired_notional_diff_bps(ledger(tr, "live_ret_bps", "equal"), ledger(tr, "taker_ret_bps", "equal"))
+    c["n"] = int(len(tr))
+    return c
+
+
+def calibration_lines(m2: pd.DataFrame, pre: pd.DataFrame, priced: pd.DataFrame) -> list[str]:
+    """The crossing legs' measured fills against the modelled taker at the same instant: the
+    pilot's pre-M2 taker rows (both legs) and M2's `rejected_then_crossed` legs. A positive
+    gap = the model understates the taker's cost = S2 is conservative by that much."""
+    rows = []
+    for df, tag, roles in ((pre, "pre", (("entry", "entry_price", "inserted_at"), ("exit", "exit_price", "exit_ts"))),
+                           (m2, "m2", (("entry", "entry_fill_price", "inserted_at"), ("exit", "exit_fill_price", "exit_rest_at")))):
+        if not len(df):
+            continue
+        for role, pcol, tcol in roles:
+            sub = df if tag == "pre" else df[df[f"{role}_order_type"].isin(CROSSED_TYPES)]
+            if not len(sub):
+                continue
+            tids = tag + ":" + sub["id"].astype(str)
+            pr = priced[(priced["role"] == role) & priced["tid"].isin(tids)].set_index("tid")
+            j = sub.assign(tid=tids.to_numpy()).set_index("tid").join(pr[["taker_px", "mid", "fresh"]], how="inner")
+            j = j[j["fresh"].astype(bool)]
+            if not len(j):
+                continue
+            sgn = j["side"].to_numpy(int) * (1 if role == "entry" else -1)
+            measured = sgn * (j[pcol].to_numpy(np.float64) / j["mid"].to_numpy() - 1) * BPS
+            model = sgn * (j["taker_px"].to_numpy() / j["mid"].to_numpy() - 1) * BPS
+            rows.append((tag, role, len(j), measured - model))
+    L = ["calibration of the counterfactual (measured taker fill − modelled taker at the same t_d, bps of the mid; "
+         "positive = the model understates the taker's cost = S2 conservative):"]
+    if not rows:
+        L.append("  no crossing leg priced")
+        return L
+    for tag, role, n, d in rows:
+        L.append(f"  {tag} {role} legs (n={n}): mean {np.mean(d):+.2f}, median {np.median(d):+.2f}, p90 {np.percentile(d, 90):+.2f}")
+    allg = np.concatenate([d for *_, d in rows])
+    L.append(f"  all crossing legs (n={len(allg)}): mean {np.mean(allg):+.2f} — S2 is "
+             f"{'conservative' if np.mean(allg) > 0 else 'optimistic'} by about that much per crossed leg")
+    return L
+
+
+def run_live(ledger_path: str | None = None, w_s: int = W_PRIMARY) -> int:
+    os.makedirs(LIVE_DIR, exist_ok=True)
+    m2, pre, path = live_rows(ledger_path)
+    _p(f"live: {path} — {len(m2)} maker-path rows (both legs typed, timer exit), {len(pre)} pre-M2 taker rows")
+    if len(m2):
+        _p(f"  entry legs {m2['entry_order_type'].value_counts().to_dict()}, exit legs {m2['exit_order_type'].value_counts().to_dict()}, "
+           f"first {pd.Timestamp(m2['inserted_at'].min()).strftime('%Y-%m-%d %H:%M')} → last exit "
+           f"{pd.Timestamp(m2['exit_rest_at'].max()).strftime('%Y-%m-%d %H:%M')} UTC")
+    m = live_moments(m2, pre)
+    m.to_parquet(os.path.join(LIVE_DIR, "moments.parquet"), index=False)
+    m2.to_parquet(os.path.join(LIVE_DIR, "m2_rows.parquet"), index=False)
+    pre.to_parquet(os.path.join(LIVE_DIR, "pre_rows.parquet"), index=False)
+    pdays = pair_days(m) if len(m) else pd.DataFrame(columns=["pair", "day"])
+    pdays.to_parquet(os.path.join(LIVE_DIR, "pair_days.parquet"), index=False)
+    q0 = pd.Timestamp(m["T"].min()).strftime("%Y-%m-%d") if len(m) else QUOTED_FROM
+    sql = book_filter_sql(m, q0) if len(m) else "AND false"
+    with open(os.path.join(LIVE_DIR, "book_filter.sql"), "w") as f:
+        f.write(sql + "\n")
+    tape_path = os.path.join(LIVE_DIR, "tape_windows.parquet")
+    book = Book.load(LIVE_BOOK_DIR)
+    if not os.path.exists(tape_path) or book is None:
+        _p(f"moments {len(m)}, pair-days {len(pdays)} → {LIVE_DIR}/; data not in place yet "
+           f"(tape {'present' if os.path.exists(tape_path) else 'absent'}, ladder export {'present' if book else 'absent'}). Next:")
+        _p(f"  ./scripts/m3.sh -m m3 makerpath fetch --live")
+        _p(f"  FROM={q0} TO=<tomorrow> OUT=$PWD/ml/train/{LIVE_BOOK_DIR} ONLY=book_raw BOOK_FILTER=\"$(cat ml/train/{LIVE_DIR}/book_filter.sql)\" ./scripts/gcp_m3_export.sh")
+        _p(f"  then this job again")
+        return 0
+    tape = Tape.load(tape_path)
+    priced = price_all_moments(m, book, tape, w_s, PILOT_SIZE)
+    priced.to_parquet(os.path.join(LIVE_DIR, "priced.parquet"), index=False)
+    tr = s2_table(m2, priced)
+    tr.to_parquet(os.path.join(LIVE_DIR, "s2_trades.parquet"), index=False)
+    kept = tr[tr["kept"]].sort_values("exit_T", kind="mergesort").reset_index(drop=True)
+    L = ["=" * 96, f"M2 LIVE READ — S2 = the pilot's maker-path net − the taker counterfactual at the same t_d "
+         f"(W {w_s} s, ${PILOT_SIZE:.0f}, fees {MAKER_FEE}/{TAKER_FEE} inside, exit-day clusters)",
+         f"rows: {len(m2)} maker-path trades, {len(tr)} with both moments in the data, {len(kept)} priced on both legs "
+         f"(legs {kept['leg'].value_counts().to_dict() if len(kept) else {}})"]
+    # harness: the ledger's own net equals the recomputed live net (same fills, same fees)
+    if len(kept):
+        gap = np.nanmax(np.abs(kept["live_ret_bps"] - kept["ledger_net_bps"]))
+        L.append(f"harness: recomputed live net vs the row's net_bps — max |gap| {gap:.4f} bps {'PASS' if gap < 0.01 else 'FAIL'}")
+    L.append("")
+    verdict = "NO READING YET"
+    readings = {}
+    for n_read in S2_READINGS:
+        if len(kept) >= n_read:
+            c = s2(kept.iloc[:n_read])
+            readings[n_read] = c
+            L.append(f"reading at {n_read} (the first {n_read} by exit time): S2 {_ci(c)}")
+    c_all = s2(kept) if len(kept) else {"diff_bps": np.nan, "lo95_bps": np.nan, "hi95_bps": np.nan, "clusters": 0, "n": 0}
+    L.append(f"all priced trades so far: S2 {_ci(c_all)}")
+    if readings:
+        earning = [n for n, c in readings.items() if c["lo95_bps"] > 0]
+        if earning:
+            verdict = f"EARNING (lower bound > 0 at {earning[0]})"
+        elif len(readings) == len(S2_READINGS):
+            verdict = "NOT EARNING (lower bound ≤ 0 at both readings)"
+        else:
+            verdict = f"INCONCLUSIVE at {max(readings)} — the {S2_READINGS[-1]} reading decides"
+    else:
+        L.append(f"  ({len(kept)} of {S2_READINGS[0]} for the first reading)")
+    L.append(f"verdict: {verdict}")
+    L.append("")
+    if len(kept):
+        L.append("the legs:")
+        for role in ("entry", "exit"):
+            vc = kept[f"{role}_type"].value_counts()
+            w = kept.groupby(f"{role}_type")[f"{role}_wait_s"].mean()
+            L.append(f"  {role}: " + ", ".join(f"{k} {v} ({100 * v / len(kept):.0f} %, waited {w[k]:.0f} s)" for k, v in vc.items()))
+        L.append("where the contrast comes from (mean bps of the moment mid, positive = cost):")
+        for role in ("entry", "exit"):
+            lv, tk = kept[f"{role}_live_cost"].mean(), kept[f"{role}_taker_cost"].mean()
+            L.append(f"  {role}: live {lv:+.2f}  taker {tk:+.2f}  → the path {'saves' if tk - lv > 0 else 'loses'} {abs(tk - lv):.2f}")
+        by_pair = kept.groupby("pair")["s2_bps"].agg(["mean", "count"])
+        L.append("by pair (mean S2, n): " + ", ".join(f"{p} {r['mean']:+.1f} ({int(r['count'])})" for p, r in by_pair.iterrows()))
+    L.append("")
+    L.extend(calibration_lines(m2, pre, priced))
+    L.append("")
+    if verdict.startswith("EARNING"):
+        lic = "EARNING → the maker path becomes the live arm's default at the next pilot scale step; ExecCost gains a measured maker branch; the paper arms unchanged."
+    elif verdict.startswith("NOT EARNING"):
+        lic = "NOT EARNING → the path is removed from the executor; the maker line closes for the 4h policy."
+    else:
+        lic = "nothing yet — the readings are at 100 and 200 closed maker-path trades, one look each."
+    L.append("what this licenses: " + lic)
+    text = "\n".join(L)
+    print(text)
+    with open(os.path.join(LIVE_DIR, "read.md"), "w") as fh:
+        fh.write(text + "\n")
+    with open(os.path.join(LIVE_DIR, "read.json"), "w") as fh:
+        json.dump({"verdict": verdict, "readings": {str(k): v for k, v in readings.items()}, "all": c_all,
+                   "n_rows": int(len(m2)), "n_priced": int(len(kept))}, fh, indent=1, default=float)
+    return 0
+
+
+# --------------------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------------------
 
@@ -1003,8 +1240,12 @@ def add_parser(sub) -> None:
     e.add_argument("--ledger", default=None, help="paper_trades CSV (default: newest in output/forward)")
     f = s2.add_parser("fetch", help="archive aggTrades, streamed and cut to the moment windows")
     f.add_argument("--threads", type=int, default=4)
+    f.add_argument("--live", action="store_true", help="the live job's moments, into their own cache")
     s2.add_parser("calibrate", help="the prerequisite: tape-implied touch vs the collector's book")
     s2.add_parser("read", help="the arms, S1, the verdict")
+    lv = s2.add_parser("live", help="M2: S2 on the pilot's maker-path rows (BOOK_WAVE2_PLAN §M2)")
+    lv.add_argument("--ledger", default=None, help="paper_trades CSV (default: newest in output/forward)")
+    lv.add_argument("--w", type=int, default=W_PRIMARY, help="W for the counterfactual's late cross (registered 60)")
     ap.set_defaults(fn=_main)
 
 
@@ -1012,7 +1253,9 @@ def _main(args) -> int:
     if args.job == "entries":
         return run_entries(args.ledger)
     if args.job == "fetch":
-        return run_fetch(args.threads)
+        return run_fetch(args.threads, args.live)
+    if args.job == "live":
+        return run_live(args.ledger, args.w)
     if args.job == "calibrate":
         return run_calibrate()
     if args.job == "read":

@@ -402,7 +402,9 @@ was recreated back in `simulation` afterwards.
 3. Going live is BACKLOG "Right now" row 3: a trading-enabled production key, `TRADING_MODE=auto`,
    `BINANCE_TESTNET` unset, and — first — a recorded decision resting on forward evidence.
 
-**Not built, on purpose:** limit orders (M3-4 §3), hedge-mode position sides (the account is
+**Not built, on purpose:** limit orders (M3-4 §3) — *until 2026-10-21: the pilot arm's maker
+path, BOOK_WAVE2_PLAN §M2 (`LIVE_PILOT_MAKER_PATH`, `flux.testnet_smoke --maker`); the paper
+arms still cross* — hedge-mode position sides (the account is
 one-way), and any automatic switch to production. `TRADING_MODE=auto` on `fluxtrader-1`
 without `BINANCE_TESTNET=true` would trade real money on the next signal — it is a deliberate
 act, and §4 says the evidence for it does not exist yet.

@@ -1,6 +1,6 @@
 # Book wave 2 — three designs the B-wave did not try
 
-**Status (2026-10-21, 15:02 UTC): the clock fix (A+B) DEPLOYED on Vadim's "push and deploy" — boundary 2026-10-21 15:02:33 UTC in M3_5 §4.5 and `forward.BAR_KEY_CHANGE_UTC`; same-day acceptance in §4.5's deploy record (stamps present, settle 40 s and the 15 s poll live, rows 79 … 224 s after the scored close against 337 … 469 before — the registered 40–160 s missed at the top by the serial inference cycle, named, nothing licensed; the first closes and the first trades' latency still to read). M2's prerequisite 1 is met on those terms; needed from Vadim: "build M2". Earlier status (2026-10-21, night): the clock fix (A+B) BUILT on Vadim's "Ok, go A plus B" and registered as M3_5_INTEGRATION §4.5 — the row and the exit keyed on the served bar; B's premise corrected (the candle poll's period is 62–90 s, not 60: a 15 s 5m-only collector poll + a 40 s settle instead of 65–70 s); tests green; NOT DEPLOYED (Vadim's "Deploy"). M2's prerequisite 1 is then the deploy and its acceptance. Earlier status (2026-10-21, evening): the 7-minute clock INVESTIGATED (§M1 Result, last block — the server scores the last settled bar, `predict.ex` stamps wall-clock time, the engine floors it; options A/B/C for Vadim, A+B recommended) and §M2 REGISTERED on Vadim's "2 - yes" — the maker path in the executor, pilot arm only, not built, prerequisite the clock decision. Earlier status (2026-10-21): §M1 BUILT and READ — WORTH BUILDING, on the quoted leg alone: S1 = maker path − taker = +3.14 bps net per trade [+1.47, +4.81] on 339 of the policy's own trades (2026-08-05 → 09-09, the ladder era), the forward ledger's policy arm +1.25 [−3.09, +5.59] the same sign; the prerequisite FAILED on every pair (a ladder sampled every ~9 s cannot meet a one-tick bar where the tick is 0.01–0.5 bps — the two sources agree at the same instant, the gap is sampling age, not a clock offset), so the tape leg's +3.07 [+2.60, +3.55] on 2,168 trades is descriptive. Fills 84–86 % (not below M3-4's range as expected); the saving sits on the EXIT (+2.5), the entry gives its fee saving back to the chase (+0.6). Licensed and not done: WRITING a pilot-only maker-path registration — Vadim's call. Beside it, a serving finding the pin surfaced: the ledger books the close of the bar that closed 5 min BEFORE its bar_ts and the order goes out ≈ 7 min after that price (M3_5 §5 row 4 said ~30 s). Result block in §M1. Earlier status (2026-10-20): §K1 READ — VOID at its prerequisite, 2026-10-20, before either population was touched: the harness replays X7 exactly (670 trades, +13.46), but the archive's three-ingredient composite is NOT X7's key on the book era — Spearman 0.51 against the bar 0.80, the same ladder rung on 44.6 % of the 670 trades against 70 % (within one rung 79.0 % against 95 %). Nothing changes anywhere; X7's confirmation stays on 2027-03-10 as §R.4 registered it (result block in §K1). Earlier status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
+**Status (2026-10-21, evening): §M2 BUILT on Vadim's "build M2" — the maker path in the executor, pilot arm only, off until `LIVE_PILOT_MAKER_PATH=true`; the leg columns, the engine's `close_resting`, `flux.testnet_smoke --maker`, the harness's `makerpath live` read (S2 at 100 / 200); tests green (167 + 18 Elixir, 5 harness); NOT DEPLOYED — needed from Vadim: the testnet smoke with `--maker` (prerequisite 2), then "Deploy" (§M2 Built block). Earlier status (2026-10-21, 15:02 UTC): the clock fix (A+B) DEPLOYED on Vadim's "push and deploy" — boundary 2026-10-21 15:02:33 UTC in M3_5 §4.5 and `forward.BAR_KEY_CHANGE_UTC`; same-day acceptance in §4.5's deploy record (stamps present, settle 40 s and the 15 s poll live, rows 79 … 224 s after the scored close against 337 … 469 before — the registered 40–160 s missed at the top by the serial inference cycle, named, nothing licensed; the first closes and the first trades' latency still to read). M2's prerequisite 1 is met on those terms; needed from Vadim: "build M2". Earlier status (2026-10-21, night): the clock fix (A+B) BUILT on Vadim's "Ok, go A plus B" and registered as M3_5_INTEGRATION §4.5 — the row and the exit keyed on the served bar; B's premise corrected (the candle poll's period is 62–90 s, not 60: a 15 s 5m-only collector poll + a 40 s settle instead of 65–70 s); tests green; NOT DEPLOYED (Vadim's "Deploy"). M2's prerequisite 1 is then the deploy and its acceptance. Earlier status (2026-10-21, evening): the 7-minute clock INVESTIGATED (§M1 Result, last block — the server scores the last settled bar, `predict.ex` stamps wall-clock time, the engine floors it; options A/B/C for Vadim, A+B recommended) and §M2 REGISTERED on Vadim's "2 - yes" — the maker path in the executor, pilot arm only, not built, prerequisite the clock decision. Earlier status (2026-10-21): §M1 BUILT and READ — WORTH BUILDING, on the quoted leg alone: S1 = maker path − taker = +3.14 bps net per trade [+1.47, +4.81] on 339 of the policy's own trades (2026-08-05 → 09-09, the ladder era), the forward ledger's policy arm +1.25 [−3.09, +5.59] the same sign; the prerequisite FAILED on every pair (a ladder sampled every ~9 s cannot meet a one-tick bar where the tick is 0.01–0.5 bps — the two sources agree at the same instant, the gap is sampling age, not a clock offset), so the tape leg's +3.07 [+2.60, +3.55] on 2,168 trades is descriptive. Fills 84–86 % (not below M3-4's range as expected); the saving sits on the EXIT (+2.5), the entry gives its fee saving back to the chase (+0.6). Licensed and not done: WRITING a pilot-only maker-path registration — Vadim's call. Beside it, a serving finding the pin surfaced: the ledger books the close of the bar that closed 5 min BEFORE its bar_ts and the order goes out ≈ 7 min after that price (M3_5 §5 row 4 said ~30 s). Result block in §M1. Earlier status (2026-10-20): §K1 READ — VOID at its prerequisite, 2026-10-20, before either population was touched: the harness replays X7 exactly (670 trades, +13.46), but the archive's three-ingredient composite is NOT X7's key on the book era — Spearman 0.51 against the bar 0.80, the same ladder rung on 44.6 % of the 670 trades against 70 % (within one rung 79.0 % against 95 %). Nothing changes anywhere; X7's confirmation stays on 2027-03-10 as §R.4 registered it (result block in §K1). Earlier status (2026-10-19): two new registrations appended — §K1 (X7's ladder key read on archive history) and §M1 (the maker path on the policy's own entries), both before any code, on Vadim's "let's go with 1 and 2"; the archive's `bookTicker` ends 2024-03-30, which shapes both. Earlier status (2026-10-12): option 2 DEPLOYED 02:17 UTC — the collector fetches 500 levels and writes the archive-style bands and reach (±0.2 % now on 10 pairs, ±1 % on 8; BTC still out of reach). ⚠️ 2026-10-14: the weight arithmetic in §L1 left out the tape sweep (weight 20 a call, 600–1,440 a minute); the loop crossed 2,400 in the busy hours and the IP was banned twice on 2026-10-13 (holes 07:26–09:40 and 14:00–18:00 UTC in book and tape) — fixed by a rate-limit guard, BACKLOG "collector / data quality"; L1 READ (the ladder reaches ±0.2 % on 8 pairs, ±1 % on 3; the archive band is the same number with stale stretches — collector decision for Vadim in §L1); E1 READ — gate not passed, with a side-finding registered forward (§E1); D1 READ 2026-10-15 — gate not passed (best of 36 cells `dimb_5` @ 60 m, +3.48 bps raw against +5), book dynamics on the scalar snapshots closed (§D1). ⚠️ 2026-10-15: X8c's identity on the live ±0.2 % columns FAILED by the registered bar on every pair-side (medians 5–9 %; the series agree at ratio 0.997–1.003, the bar is below the band's own ten-second change, the archive stamp ~15 s behind the book) — X8c VOID before any run, decision for Vadim in NEXT_TRAINING_PLAN §2 X8c.** Written after Vadim's "go ahead with 1 and 3"
 on 2026-10-11, before any number below exists. Order: **L1** (ladder span, archive band
 identity) first, **E1** (book-timed entry) second, **D1** (book dynamics) registered after E1
 reads. Mode: build offline; the forward paper test, the exploratory arm and the micro-pilot run
@@ -984,7 +984,7 @@ fix is to bring the real trade to the booked price, not the booked price to the 
 before M2 is built — a maker path measured on a 7-minute-late clock would be measured on the wrong
 clock.**
 
-## M2 — the maker path in the executor, pilot arm only — 🔵 REGISTERED 2026-10-21, not built
+## M2 — the maker path in the executor, pilot arm only — 🔵 REGISTERED 2026-10-21; BUILT 2026-10-21 (the "Built" block at the end), NOT DEPLOYED until the testnet smoke and Vadim's "Deploy"
 
 **Written on Vadim's "2 - yes" (2026-10-21), after §M1's read and before any line of executor code.
 Prerequisite: the clock decision above, taken and (if A/B) deployed — the maker path must run and be
@@ -1061,3 +1061,102 @@ and needs ≈ 440 trades (≈ 3 months) for the same precision. Default: the pai
    fetches the archive days, prices the counterfactual at `t_d`, and prints S2 with the
    calibration line.
 No GPU. **Needed from Vadim:** the clock decision; then "build M2".
+
+### Built 2026-10-21 (Claude, on Vadim's "build M2"; the clock fix deployed 15:02 UTC the same day) — NOT DEPLOYED
+
+**What exists now, in plain terms.** The executor can enter and exit the pilot's trades the way
+the registration says: a post-only limit at the touch for 60 s, then whatever is unfilled is
+crossed. It is off until `LIVE_PILOT_MAKER_PATH=true` is in the VM's environment. The paper
+arms are untouched — they never reach this code. Every leg is recorded on the row (what was
+rested, how long, what it filled at, the realised fee, the touch it was priced from), and a new
+harness job reads S2 from those rows against the taker counterfactual at each leg's own instant.
+
+**The pieces (all tests green in Docker: 167 + 18 Elixir, 5 harness):**
+
+* `Trading.ExchangeOrders`: `place_resting/6` (the touch from the trading host's `bookTicker`,
+  `LIMIT GTX` at the bid for a buy / the ask for a sell), `settle_resting/8` (poll `GET /order`
+  every 2 s; at W cancel, read the final fill, cross the remainder with a `MARKET`; a cancel
+  that races a last-moment fill reads the order back), `cross_now/6` (GTX refused — `-5022` or
+  an `EXPIRED` answer — crossed at once), and the synchronous `maker_open/4` / `maker_close/4`
+  for the smoke test. Each leg comes back typed with its VWAP, quantity, wait and fee.
+* `Trading.Executor`: the `live` arm takes the maker path when the flag is on. The **row is
+  written when the entry is placed** (`entry_order_type: "maker_resting"`, priced at the rest)
+  so the pilot's slot is held and a restart can find the order; a task under the app's task
+  supervisor waits out the rest and reports back (`entry_settled/2`), which rewrites the row
+  from the realised leg and places the brakes on the filled quantity. The exit mirrors it:
+  `close/2` cancels the brakes, rests a reduce-only limit, marks the row `exit_order_type:
+  "maker_resting"` (which `Ledger.due_trades/1` then skips) and answers `{:resting, trade}`;
+  `exit_settled/2` books the close with the summed realised fees as the row's `cost_bps`. A
+  row whose entry the maker path placed exits on the maker path whatever the flag says at
+  that moment, so a trade is measured whole or not at all. After a restart, any leg still
+  marked resting is settled at once (cancel and cross; the wait recorded is the real one).
+* `paper_trades` columns (migration `20261021000001`): `entry_order_type`, `entry_rest_price`,
+  `entry_wait_s`, `entry_fill_price`, `entry_touch_bid`, `entry_touch_ask`, the same six for
+  the exit, plus `entry_fee_bps` / `exit_fee_bps` and `exit_rest_at` (below). The engine counts
+  `close_resting`; `/api/health` → `live_pilot.maker_path` / `maker_wait_s`.
+* `mix flux.testnet_smoke --maker [--wait-seconds N]` — the registered prerequisite 2: the same
+  open / hold / close on the testnet through `maker_open` / `maker_close`, each leg's type,
+  rest, wait, VWAP and fee printed, `TESTNET_OK` on the same criterion.
+* `m3 makerpath live [--ledger CSV]` — prerequisite 3, the `--live` read: the pilot's closed
+  maker-path rows (both legs typed, timer exit), each leg's moment at its own t_d (entry =
+  `inserted_at`, exit = `exit_rest_at`), the taker counterfactual priced with M1's machinery
+  (`price_all_moments` at the pilot's $100, cross the touch, walk the collector's ladder, fee
+  5.0) at those instants, S2 = live net − taker net paired per trade, exit-day clusters, the
+  **readings on the first 100 and the first 200 trades by exit time** (one look each, as
+  registered) and the all-so-far number beside; the calibration line from the crossing legs
+  (the pre-M2 taker rows on both legs and M2's `rejected_then_crossed` legs: measured fill −
+  modelled taker at the same instant); the leg table and the per-leg cost split. The job
+  writes its own moment list, pair-days and `BOOK_FILTER`; `makerpath fetch --live` cuts the
+  tape into its own cache (a cached pair-day holds only the rows inside the moments it was
+  cut for), and the ladder export goes to `output/makerpath_book_live`. Planted-data test:
+  S2 and the calibration equal the hand computation.
+
+**Deviations from the registration's letter, each stated (none changes the rule):**
+
+1. **A fifth leg type, `maker_partial`.** An entry part-filled at the rest whose remainder is
+   under the exchange's minimum order (`-4164` if sent) keeps the partial position; the exit
+   closes exactly that quantity. The registration's four types did not cover it. (At $100 on
+   BTC a partial is impossible — one lot is the whole order; on DOGE-sized quantities it is
+   possible and rare.)
+2. **Three columns beyond the registered eight + touch:** `entry_fee_bps` / `exit_fee_bps`
+   (the realised fee per leg, maker and taker parts weighted by quantity — S2 needs the exact
+   fee, and a VWAP alone does not carry the split) and `exit_rest_at` (the exit's t_d; the
+   entry's is `inserted_at` because the row is written at placement).
+3. **The brakes go on after the entry settles**, on the filled quantity: a position may stand
+   unbraked for up to 60 s. (A `closePosition` brake before any position exists is refused.)
+4. **A brake that fires during the hold** (the stop at 10 %) closes the row with the brake's
+   fill as before, `exit_order_type` nil; such a row is **not an S2 trade** (the exit was not
+   the path's) and the read says how many were dropped for it. A `-2022` while the exit rests
+   is read the same way (the brake's fill is looked up and booked).
+5. **On the way, a latent bug on the existing market path:** an exactly-round float quantity
+   (`1200.0`) was being sent as `1.2e3`; numbers now go to the exchange as plain decimals
+   (`ExchangeOrders.num/1`). Nothing booked so far was affected (no such quantity occurred).
+
+**Not licensed, unchanged:** W, re-pegging, a size other than the pilot's, scoring entries and
+exits apart, a third reading, the paper arms.
+
+**Before the deploy — the registered prerequisite 2, Vadim's keystroke (testnet keys):**
+
+```sh
+docker compose exec -e BINANCE_TESTNET=true -e BINANCE_API_KEY=<testnet key> -e BINANCE_API_SECRET=<testnet secret> \
+  app mix flux.testnet_smoke --maker --wait-seconds 60 --hold-seconds 30
+```
+
+`TESTNET_OK` with the two leg types printed is the pass (a quiet testnet book fills nothing at
+the rest, which is `maker_then_taker` — a valid outcome). Paste the output; Claude records it
+in REAL_MONEY_TRACK §6 and then needs the word **"Deploy"**.
+
+**The deploy (Claude runs it on "Deploy"):** on `fluxtrader-1`, add `LIVE_PILOT_MAKER_PATH=true`
+to `.env`, `git pull`, `docker compose up -d app` (the container recreates: the migration runs
+at boot, the flag is in the environment). Acceptance the same day: `/api/health` →
+`live_pilot.maker_path: true`; the next pilot entry's row carries `entry_order_type`
+`maker_resting` then its settled type within ~70 s, and the log's `[MAKER]` lines; the first
+exit's row `close_resting` on `/api/health` and then `exit_order_type` set and `cost_bps` =
+the two realised fees. The forward record (M3_5 §4.3/§4.5) gets one line: **not a new start** —
+the paper arms book exactly what they booked; the pilot's rows from the deploy are M2's, told
+apart by the columns, and R0–R5 never read that arm.
+
+**The read:** `./scripts/gcp_forward_ledger.sh` (the export), `./scripts/m3.sh -m m3 makerpath
+live`, then the data steps it prints (`fetch --live`; the ladder export with
+`output/makerpath/live/book_filter.sql`), then `live` again. First look when the export holds
+100 closed maker-path trades (≈ 3 weeks at the pilot's rate).

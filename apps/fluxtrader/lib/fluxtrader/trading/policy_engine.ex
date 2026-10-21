@@ -785,6 +785,12 @@ defmodule FluxTrader.Trading.PolicyEngine do
               RiskManager.record_closed_trade(closed)
               count_decision(acc, how)
 
+            {:resting, _trade} ->
+              # The pilot's maker path (M2): the exit is resting on the book and the
+              # executor's task books the row when it settles; `due_trades` skips the row
+              # until then.
+              count_decision(acc, :close_resting)
+
             {:error, :already_closed} ->
               # A brake filled and the user-data stream booked it between this tick's
               # due-list read and now. Nothing to do.

@@ -12,6 +12,7 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
         app mix flux.testnet_smoke
       ... app mix flux.testnet_smoke --symbol ETHUSDT --hold-seconds 30 --notional 120
       ... app mix flux.testnet_smoke --flatten      # close a position a failed run left behind
+      ... app mix flux.testnet_smoke --maker --wait-seconds 60   # M2: the maker path, entry and exit
 
   (`docker compose exec` does not forward the host's environment; each variable needs `-e`.)
 
@@ -32,6 +33,13 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
        reduceOnly`, reconcile), prints the fill and the exit reason;
     5. reads the position again and reports `TESTNET_OK` only if it is flat and no order
        is resting. Anything else exits non-zero with what was seen.
+
+  With `--maker` (M2, BOOK_WAVE2_PLAN §M2) steps 2 and 4 take the maker path instead —
+  `ExchangeOrders.maker_open/4` and `maker_close/4`: a post-only limit at the touch for
+  `--wait-seconds` (default 60), the remainder crossed — and print each leg's type, rest
+  price, wait, VWAP and fee. The exit criterion is the same `TESTNET_OK`; the leg types
+  seen are printed for the record (a quiet testnet book may fill nothing at the rest, which
+  is `maker_then_taker`, a valid outcome, not a failure).
   """
   use Mix.Task
   require Logger
@@ -48,13 +56,17 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
           hold_seconds: :integer,
           notional: :float,
           leverage: :integer,
-          flatten: :boolean
+          flatten: :boolean,
+          maker: :boolean,
+          wait_seconds: :integer
         ]
       )
 
     symbol = Keyword.get(opts, :symbol, "BTCUSDT")
     hold_s = Keyword.get(opts, :hold_seconds, 10)
     leverage = Keyword.get(opts, :leverage, 5)
+    maker? = Keyword.get(opts, :maker, false)
+    wait_s = Keyword.get(opts, :wait_seconds, 60)
 
     Mix.Task.run("app.config")
     Application.ensure_all_started(:finch)
@@ -97,9 +109,15 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
       take_profit: price * 1.04
     }
 
-    IO.puts("\nOPEN  BUY ~#{Float.round(qty, 6)} @ ~#{price} (notional ~#{Float.round(notional, 2)} USDT)")
-    {:ok, fill} = ExchangeOrders.open(client, filters, req) |> or_die("open")
+    IO.puts("\nOPEN  BUY ~#{Float.round(qty, 6)} @ ~#{price} (notional ~#{Float.round(notional, 2)} USDT)" <>
+      if(maker?, do: " — MAKER PATH, rest #{wait_s} s", else: ""))
+
+    {:ok, fill} =
+      if(maker?, do: ExchangeOrders.maker_open(client, filters, req, wait_s), else: ExchangeOrders.open(client, filters, req))
+      |> or_die("open")
+
     IO.puts("  filled qty=#{fill.executed_qty} avg=#{fill.avg_price} order=#{fill.order_id}")
+    if maker?, do: print_leg("entry", fill)
     IO.puts("  stop=#{inspect(fill.stop_order_id)} target=#{inspect(fill.target_order_id)}")
 
     if is_nil(fill.stop_order_id) or is_nil(fill.target_order_id) do
@@ -122,7 +140,11 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
       target_order_id: fill.target_order_id
     }
 
-    {:ok, exit_fill} = ExchangeOrders.close(client, close_req) |> or_die("close")
+    {:ok, exit_fill} =
+      if(maker?, do: ExchangeOrders.maker_close(client, filters, close_req, wait_s), else: ExchangeOrders.close(client, close_req))
+      |> or_die("close")
+
+    if maker?, do: print_leg("exit", exit_fill)
 
     IO.puts(
       "  filled qty=#{exit_fill.executed_qty} avg=#{exit_fill.avg_price} " <>
@@ -144,7 +166,16 @@ defmodule Mix.Tasks.Flux.TestnetSmoke do
       exit({:shutdown, 4})
     end
 
-    IO.puts("\nTESTNET_OK — open, brake, close and reconcile all succeeded on #{symbol}")
+    IO.puts("\nTESTNET_OK — open, brake, close and reconcile all succeeded on #{symbol}" <>
+      if(maker?, do: " (maker path: entry #{fill.order_type}, exit #{exit_fill.order_type})", else: ""))
+  end
+
+  defp print_leg(label, leg) do
+    IO.puts(
+      "  #{label} leg: #{leg.order_type} rest=#{inspect(leg.rest_price)} waited=#{Float.round(leg.wait_s, 1)}s " <>
+        "vwap=#{leg.fill_price} qty=#{leg.executed_qty} fee=#{leg.fee_bps}bps touch=#{leg.touch_bid}/#{leg.touch_ask} " <>
+        "limit_order=#{inspect(leg.limit_order_id)}"
+    )
   end
 
   # From premiumIndex, not positionRisk: with no open position the demo reports a mark of

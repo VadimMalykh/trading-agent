@@ -37,10 +37,28 @@ defmodule FluxTrader.Trading.ExchangeOrders do
   If neither did, the position is gone for a reason we did not cause (a liquidation, a
   manual close), and that is returned as `{:error, :position_missing}` for the caller to
   book loudly rather than guess at.
+
+  ## The maker path (M2, BOOK_WAVE2_PLAN §M2, built 2026-10-21) — the pilot arm only
+
+  The functions under "the maker path" below rest a **post-only limit** (`timeInForce=GTX`)
+  at the touch on our side — a buy at the best bid, a sell at the best ask, the touch read
+  from the trading host's `bookTicker` at the decision tick — for **W seconds** (60; the
+  caller's), then cancel whatever is unfilled and cross the remainder with a `MARKET`. No
+  re-pegging. A GTX the exchange refuses (our price would cross: the market has moved
+  through our side, `-5022` or an `EXPIRED` answer) is crossed at once and recorded
+  `rejected_then_crossed`. Each leg comes back with what was rested, how long, the realised
+  VWAP, the quantity, and its realised fee in bps (maker 2.0 / taker 5.0 per side, weighted
+  by the filled quantities) — the fields S2 reads. The pieces are separate (`place_resting/6`,
+  `settle_resting/8`, `cross_now/6`) because the executor must not block for W: it places,
+  writes the row, and settles in a task; `maker_open/4` and `maker_close/3` compose them
+  synchronously for `mix flux.testnet_smoke --maker`. M3-4's objection to resting (§3 of
+  M3_5_INTEGRATION) stands for the paper arms, which never come here; M1 measured the path
+  on this policy's own trades and found +3 bps, and M2 is the live measurement of that.
   """
   require Logger
 
   alias FluxTrader.Binance.Filters
+  alias FluxTrader.Trading.ExecCost
 
   @terminal ~w(FILLED CANCELED EXPIRED REJECTED EXPIRED_IN_MATCH)
   @poll_attempts 10
@@ -159,9 +177,359 @@ defmodule FluxTrader.Trading.ExchangeOrders do
     end)
   end
 
+  # ------------------------------------------------------------------ the maker path (M2)
+
+  @maker_poll_ms 2_000
+  @gtx_reject_code -5022
+  @rejected ~w(EXPIRED REJECTED EXPIRED_IN_MATCH)
+
+  @typedoc """
+  One settled leg of the maker path. `order_type` is `maker` (rested and filled in full),
+  `maker_partial` (part filled at the rest; the remainder was under the exchange's minimum
+  order and is left), `maker_then_taker` (unfilled or part filled at W; the remainder crossed)
+  or `rejected_then_crossed`. `fill_price` is the realised VWAP over both parts; `order_id` the
+  order that filled the larger part; `fee_bps` the leg's realised fee in bps of notional.
+  """
+  @type leg :: %{
+          order_type: String.t(),
+          rest_price: float() | nil,
+          wait_s: float(),
+          fill_price: float(),
+          executed_qty: float(),
+          fee_bps: float(),
+          order_id: integer(),
+          limit_order_id: integer() | nil,
+          touch_bid: float(),
+          touch_ask: float(),
+          status: String.t()
+        }
+
+  @doc "Size the entry and set its leverage without placing anything: `{:ok, f, qty}`."
+  def prepare_open(client, filters, req) do
+    with {:ok, f} <- symbol_filters(filters, req.symbol),
+         {:ok, qty} <- Filters.sized_qty(f, req.quantity, req.price),
+         :ok <- ensure_leverage(client, req.symbol, req.leverage) do
+      {:ok, f, qty}
+    end
+  end
+
+  @doc "The best bid and ask on the trading host, as floats."
+  def touch(client, symbol) do
+    case client.book_ticker(symbol) do
+      {:ok, %{"bidPrice" => b, "askPrice" => a} = t} ->
+        bid = to_f(b)
+        ask = to_f(a)
+
+        if bid > 0.0 and ask > 0.0,
+          do: {:ok, %{bid: bid, ask: ask, bid_qty: to_f(t["bidQty"]), ask_qty: to_f(t["askQty"])}},
+          else: {:error, {:no_touch, t}}
+
+      {:ok, other} -> {:error, {:no_touch, other}}
+      {:error, reason} -> {:error, {:book_ticker, reason}}
+    end
+  end
+
+  @doc """
+  Rest a post-only limit at the touch on our side: `{:resting, resting}` (the order is on the
+  book — settle it with `settle_resting/8`), `{:rejected, touch}` (GTX refused: cross now), or
+  `{:error, reason}` with nothing on the exchange.
+  """
+  def place_resting(client, f, symbol, side, qty, reduce_only?) do
+    with {:ok, touch} <- touch(client, symbol) do
+      rest = Filters.round_price(f, if(side == "BUY", do: touch.bid, else: touch.ask))
+
+      params =
+        [
+          symbol: symbol,
+          side: side,
+          type: "LIMIT",
+          timeInForce: "GTX",
+          quantity: num(qty),
+          price: num(rest),
+          newOrderRespType: "RESULT"
+        ] ++ if(reduce_only?, do: [reduceOnly: "true"], else: [])
+
+      case client.place_order(params) do
+        {:ok, %{"status" => st}} when st in @rejected ->
+          {:rejected, touch}
+
+        {:ok, %{"orderId" => id} = resp} ->
+          {:resting,
+           %{
+             order_id: id,
+             rest_price: rest,
+             touch: touch,
+             placed_at_ms: System.monotonic_time(:millisecond),
+             status: resp["status"]
+           }}
+
+        {:ok, other} ->
+          {:error, {:unexpected_response, other}}
+
+        {:error, {_status, %{"code" => @gtx_reject_code}}} ->
+          {:rejected, touch}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Wait for the resting order to fill, up to `wait_s` after it was placed (less whatever has
+  already elapsed), polling `GET /order`; at the deadline cancel it and cross the remainder
+  with a `MARKET` (`reduce_only?` as the leg). Returns `{:ok, leg}`; `{:error, reason}` only
+  when nothing filled and the crossing order failed too (the raw exchange error is kept so a
+  `-2022` on an exit can be read as "a brake fired first").
+  """
+  def settle_resting(client, f, symbol, side, qty, resting, wait_s, reduce_only?) do
+    deadline = resting.placed_at_ms + round(wait_s * 1_000)
+    poll_resting(client, f, symbol, side, qty, resting, deadline, reduce_only?)
+  end
+
+  defp poll_resting(client, f, symbol, side, qty, resting, deadline, reduce_only?) do
+    now = System.monotonic_time(:millisecond)
+
+    case client.get_order(symbol, resting.order_id) do
+      {:ok, %{"status" => "FILLED"} = order} ->
+        {:ok, maker_leg(resting, order, now, f)}
+
+      {:ok, %{"status" => st} = order} when st in ["CANCELED" | @rejected] ->
+        # Cancelled or expired under us (an operator, the exchange): take what filled, cross the rest.
+        finish_leg(client, f, symbol, side, qty, resting, order, now, reduce_only?)
+
+      {:ok, order} when now >= deadline ->
+        cancel_and_finish(client, f, symbol, side, qty, resting, order, reduce_only?)
+
+      {:ok, _order} ->
+        Process.sleep(min(@maker_poll_ms, max(deadline - now, 0)) |> max(10))
+        poll_resting(client, f, symbol, side, qty, resting, deadline, reduce_only?)
+
+      {:error, reason} ->
+        Logger.warning("[MAKER] #{symbol} order #{resting.order_id}: read-back failed (#{inspect(reason)})")
+
+        if now >= deadline do
+          cancel_and_finish(client, f, symbol, side, qty, resting, %{}, reduce_only?)
+        else
+          Process.sleep(@maker_poll_ms)
+          poll_resting(client, f, symbol, side, qty, resting, deadline, reduce_only?)
+        end
+    end
+  end
+
+  defp cancel_and_finish(client, f, symbol, side, qty, resting, last_seen, reduce_only?) do
+    now = System.monotonic_time(:millisecond)
+
+    final =
+      case client.cancel_order(symbol, resting.order_id) do
+        {:ok, %{"orderId" => _} = resp} ->
+          resp
+
+        # -2011 "Unknown order sent": it is no longer open — filled in the last moment, most
+        # likely. Read it back rather than assume.
+        {:error, reason} ->
+          Logger.info("[MAKER] #{symbol} cancel of #{resting.order_id} answered #{inspect(reason)} — reading the order back")
+
+          case client.get_order(symbol, resting.order_id) do
+            {:ok, order} -> order
+            _ -> last_seen
+          end
+      end
+
+    finish_leg(client, f, symbol, side, qty, resting, final, now, reduce_only?)
+  end
+
+  # The rest is over: `order` is its final state. Keep what filled at the rest price and
+  # cross the remainder, unless the remainder is too small to be an order on its own.
+  defp finish_leg(client, f, symbol, side, qty, resting, order, now, reduce_only?) do
+    filled = to_f(order["executedQty"])
+    rest_px = if filled > 0.0 and to_f(order["avgPrice"]) > 0.0, do: to_f(order["avgPrice"]), else: resting.rest_price
+    remainder = Filters.round_qty(f, max(qty - filled, 0.0))
+    wait_s = (now - resting.placed_at_ms) / 1_000
+
+    cond do
+      remainder <= 0.0 and filled > 0.0 ->
+        {:ok, maker_leg(resting, order, now, f)}
+
+      filled > 0.0 and not reduce_only? and remainder * rest_px < f.min_notional ->
+        # An entry remainder under the exchange's minimum order cannot be sent (-4164); the
+        # position is the part that filled. The exit will close exactly that quantity.
+        Logger.warning(
+          "[MAKER] #{symbol}: #{filled} filled at the rest, remainder #{remainder} is under the " <>
+            "minimum order — keeping the partial position (maker_partial)"
+        )
+
+        {:ok,
+         %{
+           order_type: "maker_partial",
+           rest_price: resting.rest_price,
+           wait_s: wait_s,
+           fill_price: rest_px,
+           executed_qty: filled,
+           fee_bps: ExecCost.maker_fee_bps_per_side(),
+           order_id: resting.order_id,
+           limit_order_id: resting.order_id,
+           touch_bid: resting.touch.bid,
+           touch_ask: resting.touch.ask,
+           status: order["status"] || "CANCELED"
+         }}
+
+      true ->
+        case market(client, symbol, side, remainder, reduce_only?) do
+          {:ok, fill} ->
+            total = filled + fill.executed_qty
+            maker_fee = ExecCost.maker_fee_bps_per_side()
+            taker_fee = ExecCost.taker_fee_bps_per_side()
+
+            {:ok,
+             %{
+               order_type: "maker_then_taker",
+               rest_price: resting.rest_price,
+               wait_s: wait_s,
+               fill_price: (filled * rest_px + fill.executed_qty * fill.avg_price) / total,
+               executed_qty: total,
+               fee_bps: (filled * maker_fee + fill.executed_qty * taker_fee) / total,
+               order_id: if(fill.executed_qty >= filled, do: fill.order_id, else: resting.order_id),
+               limit_order_id: resting.order_id,
+               touch_bid: resting.touch.bid,
+               touch_ask: resting.touch.ask,
+               status: fill.status
+             }}
+
+          {:error, reason} when filled > 0.0 ->
+            # The crossing order failed but part of the leg is on the book as a position:
+            # report that part as the leg rather than lose it.
+            Logger.error("[MAKER] #{symbol}: crossing the remainder #{remainder} FAILED (#{inspect(reason)}) — the leg is the #{filled} that filled at the rest")
+
+            {:ok,
+             %{
+               order_type: "maker_partial",
+               rest_price: resting.rest_price,
+               wait_s: wait_s,
+               fill_price: rest_px,
+               executed_qty: filled,
+               fee_bps: ExecCost.maker_fee_bps_per_side(),
+               order_id: resting.order_id,
+               limit_order_id: resting.order_id,
+               touch_bid: resting.touch.bid,
+               touch_ask: resting.touch.ask,
+               status: order["status"] || "CANCELED"
+             }}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  defp maker_leg(resting, order, now, _f) do
+    %{
+      order_type: "maker",
+      rest_price: resting.rest_price,
+      wait_s: (now - resting.placed_at_ms) / 1_000,
+      fill_price: if(to_f(order["avgPrice"]) > 0.0, do: to_f(order["avgPrice"]), else: resting.rest_price),
+      executed_qty: to_f(order["executedQty"]),
+      fee_bps: ExecCost.maker_fee_bps_per_side(),
+      order_id: resting.order_id,
+      limit_order_id: resting.order_id,
+      touch_bid: resting.touch.bid,
+      touch_ask: resting.touch.ask,
+      status: "FILLED"
+    }
+  end
+
+  @doc "GTX refused: cross at once. The leg is `rejected_then_crossed` with the touch it was refused at."
+  def cross_now(client, symbol, side, qty, touch, reduce_only?) do
+    with {:ok, fill} <- market(client, symbol, side, qty, reduce_only?) do
+      {:ok,
+       %{
+         order_type: "rejected_then_crossed",
+         rest_price: if(side == "BUY", do: touch.bid, else: touch.ask),
+         wait_s: 0.0,
+         fill_price: fill.avg_price,
+         executed_qty: fill.executed_qty,
+         fee_bps: ExecCost.taker_fee_bps_per_side(),
+         order_id: fill.order_id,
+         limit_order_id: nil,
+         touch_bid: touch.bid,
+         touch_ask: touch.ask,
+         status: fill.status
+       }}
+    end
+  end
+
+  @doc """
+  The maker path's entry, synchronously: size, lever, rest for `wait_s`, cross the remainder,
+  brake the position. `{:ok, fill}` is `open/3`'s shape plus the leg's fields; the brakes
+  are placed on the filled quantity, after the leg settles.
+  """
+  def maker_open(client, filters, req, wait_s) do
+    with {:ok, f, qty} <- prepare_open(client, filters, req),
+         {:ok, leg} <- maker_entry_leg(client, f, req.symbol, req.side, qty, wait_s) do
+      fill = fill_of_leg(leg)
+      {:ok, Map.merge(fill, place_brakes(client, f, req, fill))}
+    end
+  end
+
+  @doc "Place and settle an entry leg (no brakes) — the executor's task runs this after writing the row."
+  def maker_entry_leg(client, f, symbol, side, qty, wait_s) do
+    case place_resting(client, f, symbol, side, qty, false) do
+      {:resting, resting} -> settle_resting(client, f, symbol, side, qty, resting, wait_s, false)
+      {:rejected, touch} -> cross_now(client, symbol, side, qty, touch, false)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  The maker path's exit, synchronously: cancel the brakes, rest a reduce-only limit at the
+  touch for `wait_s`, cross the remainder. `{:ok, fill}` is `close/2`'s shape plus the leg's
+  fields; `-2022` anywhere on the way means a brake fired first (`brake_exit/2`).
+  """
+  def maker_close(client, filters, req, wait_s) do
+    cancel_brakes(client, req.symbol)
+
+    with {:ok, f} <- symbol_filters(filters, req.symbol) do
+      case maker_exit_leg(client, f, req.symbol, req.side, req.quantity, wait_s) do
+        {:ok, leg} -> {:ok, Map.put(fill_of_leg(leg), :exit_reason, "timer")}
+        {:error, {_status, %{"code" => -2022}}} -> brake_exit(client, req)
+        other -> other
+      end
+    end
+  end
+
+  @doc "Place and settle an exit leg (reduce-only); the brakes must already be cancelled."
+  def maker_exit_leg(client, f, symbol, side, qty, wait_s) do
+    case place_resting(client, f, symbol, side, qty, true) do
+      {:resting, resting} -> settle_resting(client, f, symbol, side, qty, resting, wait_s, true)
+      {:rejected, touch} -> cross_now(client, symbol, side, qty, touch, true)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "A settled leg as `open/3`'s fill map, the leg's own fields kept beside."
+  def fill_of_leg(leg) do
+    leg
+    |> Map.put(:avg_price, leg.fill_price)
+    |> Map.put(:executed_qty, leg.executed_qty)
+  end
+
+  # Binance wants plain decimals. Elixir prints an exact round float in scientific notation
+  # (`to_string(1200.0) == "1.2e3"`), which the exchange rejects — a DOGE-sized quantity would
+  # hit it eventually.
+  @doc false
+  def num(x) when is_float(x) do
+    x
+    |> :erlang.float_to_binary(decimals: 8)
+    |> String.trim_trailing("0")
+    |> String.trim_trailing(".")
+  end
+
+  def num(x) when is_integer(x), do: Integer.to_string(x)
+
   # ------------------------------------------------------------------ pieces
 
-  defp symbol_filters(filters, symbol) do
+  @doc "The symbol's filters out of `load_filters/1`'s map, or `{:error, {:no_filters_for, symbol}}`."
+  def symbol_filters(filters, symbol) do
     case Map.fetch(filters, symbol) do
       {:ok, f} -> {:ok, f}
       :error -> {:error, {:no_filters_for, symbol}}
@@ -179,7 +547,7 @@ defmodule FluxTrader.Trading.ExchangeOrders do
 
   defp market(client, symbol, side, qty, reduce_only?) do
     params =
-      [symbol: symbol, side: side, type: "MARKET", quantity: qty, newOrderRespType: "RESULT"] ++
+      [symbol: symbol, side: side, type: "MARKET", quantity: num(qty), newOrderRespType: "RESULT"] ++
         if(reduce_only?, do: [reduceOnly: "true"], else: [])
 
     with {:ok, resp} <- client.place_order(params),
@@ -232,7 +600,8 @@ defmodule FluxTrader.Trading.ExchangeOrders do
 
   defp fill_from(other), do: {:error, {:unexpected_response, other}}
 
-  defp place_brakes(client, f, req, fill) do
+  @doc "Attach the stop and target algos to a filled position: `%{stop_order_id, target_order_id}` (either nil if it failed to place)."
+  def place_brakes(client, f, req, fill) do
     closing = if req.side == "BUY", do: "SELL", else: "BUY"
 
     %{

@@ -40,6 +40,21 @@ defmodule FluxTrader.Trading.Executor do
   `/api/health`. Crashing the supervisor instead would take the collector down with it, and
   the collector must not depend on a trading credential.
 
+  ## The pilot's maker path (M2, BOOK_WAVE2_PLAN §M2, built 2026-10-21)
+
+  With `LIVE_PILOT_MAKER_PATH=true` the `live` arm — and only it — enters and exits through
+  `ExchangeOrders`' maker path: a post-only limit at the touch for 60 s, then the remainder
+  crossed. The row is written when the entry is **placed** (`entry_order_type: "maker_resting"`,
+  priced at the rest) so the pilot's slot is held and a restart can find the order; a task
+  under `FluxTrader.TaskSupervisor` waits out the rest and reports back through
+  `entry_settled/2`, which rewrites the row from the realised leg (VWAP, quantity, type, wait,
+  fee, the touch) and attaches the brakes to the filled quantity — so for at most 60 s a
+  position may stand unbraked, said so here. The exit mirrors it: `close/2` on such a row
+  cancels the brakes, rests a reduce-only limit, marks the row `exit_order_type:
+  "maker_resting"` (which `Ledger.due_trades/1` then skips) and answers `{:resting, trade}`;
+  `exit_settled/2` books the close. A refused GTX crosses at once (`rejected_then_crossed`).
+  The paper arms never come here — they are the scored rule and keep booking the bar price.
+
   ## One deviation from the scored policy, stated out loud
 
   `RiskManager` attaches a stop and a target to every approved order. The M3-2 policy has
@@ -104,13 +119,23 @@ defmodule FluxTrader.Trading.Executor do
       when is_binary(symbol) and is_integer(order_id) and is_number(avg_price),
       do: GenServer.call(__MODULE__, {:brake_filled, symbol, order_id, avg_price}, 30_000)
 
+  @doc "A maker-path entry leg settled (its task reports here): rewrite the row from the leg, or drop it if nothing filled."
+  def entry_settled(trade_id, result) when is_integer(trade_id),
+    do: GenServer.call(__MODULE__, {:entry_settled, trade_id, result}, 30_000)
+
+  @doc "A maker-path exit leg settled: book the close from the leg."
+  def exit_settled(trade_id, result) when is_integer(trade_id),
+    do: GenServer.call(__MODULE__, {:exit_settled, trade_id, result}, 30_000)
+
+  @recover_after_ms 5_000
+
   @impl true
   def init(_opts) do
     config = Application.get_env(:fluxtrader, :trading, [])
     requested = Keyword.get(config, :mode, "simulation")
     {mode, refused} = resolve_mode(requested)
 
-    Logger.info("Executor starting in #{mode} mode (crossing only; no limit orders — M3-4)")
+    Logger.info("Executor starting in #{mode} mode (the paper arms cross — M3-4; the pilot's maker path is M2)")
 
     if mode == "auto" do
       Logger.warning(
@@ -125,8 +150,12 @@ defmodule FluxTrader.Trading.Executor do
       Logger.warning(
         "[LIVE] MICRO-PILOT IS ON: arm `live` places real orders against #{Client.trade_url()}" <>
           if(Client.testnet?(), do: " (TESTNET)", else: " (PRODUCTION)") <>
-          " at $#{cfg[:notional_usd]} a trade, #{cfg[:leverage]}x, max #{cfg[:max_positions]} open"
+          " at $#{cfg[:notional_usd]} a trade, #{cfg[:leverage]}x, max #{cfg[:max_positions]} open" <>
+          if(LivePilot.maker_path?(), do: " — MAKER PATH (M2): rest at the touch #{LivePilot.maker_wait_s()} s, then cross", else: "")
       )
+
+      # A leg left resting by the last process is settled once the repo is up (M2).
+      Process.send_after(self(), :recover_resting, @recover_after_ms)
     end
 
     {:ok,
@@ -172,8 +201,17 @@ defmodule FluxTrader.Trading.Executor do
        trade_url: Client.trade_url(),
        testnet: Client.testnet?(),
        credentials_present: Client.credentials?(),
-       filters_loaded: state.filters != nil
+       filters_loaded: state.filters != nil,
+       maker_path: LivePilot.maker_path?()
      }, state}
+  end
+
+  def handle_call({:entry_settled, trade_id, result}, _from, state) do
+    {:reply, do_entry_settled(trade_id, result, state), state}
+  end
+
+  def handle_call({:exit_settled, trade_id, result}, _from, state) do
+    {:reply, do_exit_settled(trade_id, result, state), state}
   end
 
   def handle_call({:open, arm, decision, order}, _from, state) do
@@ -205,6 +243,11 @@ defmodule FluxTrader.Trading.Executor do
     {:noreply, %{state | marks: Map.put(state.marks, pair, price)}}
   end
 
+  @impl true
+  def handle_info(:recover_resting, state) do
+    {:noreply, recover_resting(state)}
+  end
+
   @doc "Remember the last seen price for a pair, so open positions can be marked."
   def mark(pair, price) when is_number(price),
     do: GenServer.cast(__MODULE__, {:mark, pair, price})
@@ -223,6 +266,9 @@ defmodule FluxTrader.Trading.Executor do
         )
 
         {{:error, :foreign_position}, state}
+
+      LivePilot.maker_path?() ->
+        maker_open(decision, order, state)
 
       true ->
         exchange_open(@live_arm, decision, order, state)
@@ -270,15 +316,7 @@ defmodule FluxTrader.Trading.Executor do
 
   defp exchange_open(arm, decision, order, state) do
     with {:ok, filters, state} <- ensure_filters(state),
-         req = %{
-           symbol: decision.pair,
-           side: side_word(decision.side),
-           quantity: order[:quantity],
-           price: decision.entry_price,
-           leverage: order[:leverage],
-           stop_loss: order[:stop_loss],
-           take_profit: order[:take_profit]
-         },
+         req = order_req(decision, order),
          {:ok, fill} <- ExchangeOrders.open(state.client, filters, req) do
       Logger.info(
         "[AUTO] OPEN #{arm} #{req.side} #{decision.pair} filled qty=#{fill.executed_qty} " <>
@@ -324,6 +362,327 @@ defmodule FluxTrader.Trading.Executor do
       {:error, reason, state} ->
         Logger.error("[AUTO] order failed for #{decision.pair}: #{inspect(reason)}")
         {{:error, reason}, state}
+    end
+  end
+
+  # ------------------------------------------------------------------ the maker path (M2)
+
+  defp order_req(decision, order) do
+    %{
+      symbol: decision.pair,
+      side: side_word(decision.side),
+      quantity: order[:quantity],
+      price: decision.entry_price,
+      leverage: order[:leverage],
+      stop_loss: order[:stop_loss],
+      take_profit: order[:take_profit]
+    }
+  end
+
+  defp maker_open(decision, order, state) do
+    req = order_req(decision, order)
+
+    with {:ok, filters, state} <- ensure_filters(state),
+         {:ok, f, qty} <- ExchangeOrders.prepare_open(state.client, filters, req) do
+      case ExchangeOrders.place_resting(state.client, f, req.symbol, req.side, qty, false) do
+        {:resting, resting} ->
+          overrides = %{
+            entry_price: resting.rest_price,
+            quantity: qty,
+            notional: resting.rest_price * qty,
+            cost_bps: ExecCost.fee_only_round_trip_bps(),
+            fill_source: "exchange",
+            entry_order_id: resting.order_id,
+            entry_order_type: "maker_resting",
+            entry_rest_price: resting.rest_price,
+            entry_touch_bid: resting.touch.bid,
+            entry_touch_ask: resting.touch.ask
+          }
+
+          case Ledger.open_trade(@live_arm, decision, overrides) do
+            {:ok, trade} ->
+              Logger.info(
+                "[MAKER] RESTING #{req.side} #{req.symbol} #{qty} @ #{fmt(resting.rest_price)} " <>
+                  "(touch #{fmt(resting.touch.bid)} / #{fmt(resting.touch.ask)}) order=#{resting.order_id} " <>
+                  "for #{LivePilot.maker_wait_s()} s — row #{trade.id}"
+              )
+
+              settle_entry_async(state.client, trade.id, f, req, qty, resting)
+              {{:ok, trade}, state}
+
+            {:error, changeset} ->
+              Logger.error(
+                "[MAKER] rested #{req.symbol} but the ledger refused the row " <>
+                  "(#{inspect(changeset.errors)}) — cancelling, unwinding whatever filled"
+              )
+
+              cancel_resting_or_unwind(state.client, f, req, qty, resting)
+              {{:error, changeset}, state}
+          end
+
+        {:rejected, touch} ->
+          case ExchangeOrders.cross_now(state.client, req.symbol, req.side, qty, touch, false) do
+            {:ok, leg} ->
+              fill = ExchangeOrders.fill_of_leg(leg)
+              brakes = ExchangeOrders.place_brakes(state.client, f, req, fill)
+
+              Logger.info(
+                "[MAKER] GTX refused on #{req.symbol} (touch #{fmt(touch.bid)} / #{fmt(touch.ask)}) — " <>
+                  "crossed: #{req.side} #{leg.executed_qty} @ #{fmt(leg.fill_price)} order=#{leg.order_id}"
+              )
+
+              overrides =
+                Map.merge(entry_leg_overrides(leg, brakes), %{
+                  cost_bps: leg.fee_bps + ExecCost.taker_fee_bps_per_side(),
+                  fill_source: "exchange"
+                })
+
+              case Ledger.open_trade(@live_arm, decision, overrides) do
+                {:ok, trade} ->
+                  {{:ok, trade}, state}
+
+                {:error, changeset} ->
+                  Logger.error("[MAKER] crossed #{req.symbol} but the ledger refused the row (#{inspect(changeset.errors)}) — CLOSING")
+                  unwind(state.client, req.symbol, side_word(-decision.side), Map.merge(fill, brakes))
+                  {{:error, changeset}, state}
+              end
+
+            {:error, reason} ->
+              Logger.error("[MAKER] crossing after a refused GTX failed for #{req.symbol}: #{inspect(reason)}")
+              {{:error, reason}, state}
+          end
+
+        {:error, reason} ->
+          Logger.error("[MAKER] resting order failed for #{req.symbol}: #{inspect(reason)}")
+          {{:error, reason}, state}
+      end
+    else
+      {:error, reason} ->
+        Logger.error("[MAKER] order failed for #{decision.pair}: #{inspect(reason)}")
+        {{:error, reason}, state}
+
+      {:error, reason, state} ->
+        Logger.error("[MAKER] order failed for #{decision.pair}: #{inspect(reason)}")
+        {{:error, reason}, state}
+    end
+  end
+
+  # The row's fields from a settled entry leg (the brakes are placed on the filled quantity).
+  defp entry_leg_overrides(leg, brakes) do
+    %{
+      entry_price: leg.fill_price,
+      entry_fill_price: leg.fill_price,
+      quantity: leg.executed_qty,
+      notional: leg.fill_price * leg.executed_qty,
+      entry_order_id: leg.order_id,
+      entry_order_type: leg.order_type,
+      entry_rest_price: leg.rest_price,
+      entry_wait_s: leg.wait_s,
+      entry_fee_bps: leg.fee_bps,
+      entry_touch_bid: leg.touch_bid,
+      entry_touch_ask: leg.touch_ask,
+      stop_order_id: brakes[:stop_order_id],
+      target_order_id: brakes[:target_order_id]
+    }
+  end
+
+  defp exit_leg_overrides(trade, leg, rest_at) do
+    %{
+      exit_reason: "timer",
+      exit_order_id: leg.order_id,
+      exit_order_type: leg.order_type,
+      exit_rest_price: leg.rest_price,
+      exit_wait_s: leg.wait_s,
+      exit_fill_price: leg.fill_price,
+      exit_fee_bps: leg.fee_bps,
+      exit_touch_bid: leg.touch_bid,
+      exit_touch_ask: leg.touch_ask,
+      exit_rest_at: rest_at,
+      cost_bps: (trade.entry_fee_bps || ExecCost.taker_fee_bps_per_side()) + leg.fee_bps
+    }
+  end
+
+  defp settle_entry_async(client, trade_id, f, req, qty, resting) do
+    wait_s = LivePilot.maker_wait_s()
+
+    Task.Supervisor.start_child(FluxTrader.TaskSupervisor, fn ->
+      result =
+        case ExchangeOrders.settle_resting(client, f, req.symbol, req.side, qty, resting, wait_s, false) do
+          {:ok, leg} ->
+            fill = ExchangeOrders.fill_of_leg(leg)
+            {:ok, leg, ExchangeOrders.place_brakes(client, f, req, fill)}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      __MODULE__.entry_settled(trade_id, result)
+    end)
+  end
+
+  defp settle_exit_async(client, trade_id, f, symbol, side, qty, resting) do
+    wait_s = LivePilot.maker_wait_s()
+
+    Task.Supervisor.start_child(FluxTrader.TaskSupervisor, fn ->
+      result = ExchangeOrders.settle_resting(client, f, symbol, side, qty, resting, wait_s, true)
+      __MODULE__.exit_settled(trade_id, result)
+    end)
+  end
+
+  defp do_entry_settled(trade_id, result, _state) do
+    case Ledger.reload(%PaperTrade{id: trade_id}) do
+      %PaperTrade{status: "open", entry_order_type: "maker_resting"} = trade ->
+        case result do
+          {:ok, leg, brakes} ->
+            overrides =
+              Map.put(entry_leg_overrides(leg, brakes), :cost_bps, leg.fee_bps + ExecCost.taker_fee_bps_per_side())
+
+            case Ledger.update_trade(trade, overrides) do
+              {:ok, updated} ->
+                Logger.info(
+                  "[MAKER] ENTRY #{updated.pair} #{leg.order_type}: #{leg.executed_qty} @ #{fmt(leg.fill_price)} " <>
+                    "(rest #{fmt(leg.rest_price)}, waited #{Float.round(leg.wait_s, 1)} s, fee #{fmt(leg.fee_bps)} bps) " <>
+                    "stop=#{inspect(brakes[:stop_order_id])} target=#{inspect(brakes[:target_order_id])} — row #{updated.id}"
+                )
+
+                {:ok, updated}
+
+              {:error, changeset} ->
+                Logger.error("[MAKER] row #{trade.id} could not take its settled entry (#{inspect(changeset.errors)}) — it stays as placed; MANUAL CHECK")
+                {:error, changeset}
+            end
+
+          {:error, reason} ->
+            # Nothing filled at the rest and the crossing order failed: there is no position,
+            # so there must be no row.
+            Logger.error("[MAKER] entry on #{trade.pair} filled nothing and could not cross (#{inspect(reason)}) — dropping row #{trade.id}")
+            Ledger.delete_trade(trade)
+            {:error, reason}
+        end
+
+      other ->
+        Logger.warning("[MAKER] entry_settled for row #{trade_id} found #{inspect(other && other.status)} / #{inspect(other && other.entry_order_type)} — ignored")
+        {:error, :not_resting}
+    end
+  end
+
+  defp do_exit_settled(trade_id, result, state) do
+    case Ledger.reload(%PaperTrade{id: trade_id}) do
+      %PaperTrade{status: "open", exit_order_type: "maker_resting"} = trade ->
+        case result do
+          {:ok, leg} ->
+            finish_close(trade, leg.fill_price, exit_leg_overrides(trade, leg, trade.exit_rest_at))
+
+          {:error, {_status, %{"code" => -2022}}} ->
+            # The position was gone before the remainder could cross: a brake fired during
+            # the rest, or it was closed by hand.
+            brake_or_missing(trade, state)
+
+          {:error, reason} ->
+            # The leg could not be settled; the position may well still be there. Free the
+            # row so the next tick tries the close again rather than leaving it stuck.
+            Logger.error("[MAKER] exit on #{trade.pair} could not settle (#{inspect(reason)}) — the row goes back to due; MANUAL CHECK if it repeats")
+            Ledger.update_trade(trade, %{exit_order_type: nil, exit_order_id: nil})
+            {:error, reason}
+        end
+
+      other ->
+        Logger.warning("[MAKER] exit_settled for row #{trade_id} found #{inspect(other && other.status)} / #{inspect(other && other.exit_order_type)} — ignored")
+        {:error, :not_resting}
+    end
+  end
+
+  defp finish_close(trade, price, overrides) do
+    case book_close("MAKER", trade, price, overrides) do
+      {:ok, closed} ->
+        RiskManager.record_closed_trade(closed)
+        {:ok, closed}
+
+      other ->
+        other
+    end
+  end
+
+  defp brake_or_missing(trade, state) do
+    req = %{symbol: trade.pair, stop_order_id: trade.stop_order_id, target_order_id: trade.target_order_id}
+
+    case ExchangeOrders.brake_exit(state.client, req) do
+      {:ok, fill} ->
+        finish_close(trade, fill.avg_price, %{exit_reason: fill.exit_reason, exit_order_id: fill.order_id, exit_order_type: nil})
+
+      {:error, :position_missing} ->
+        mark = Map.get(state.marks, trade.pair) || trade.exit_rest_price || trade.entry_price
+        Logger.error("[MAKER] #{trade.pair}: no position on the exchange and no brake filled — booking at the mark #{fmt(mark)} as position_missing")
+        finish_close(trade, mark, %{exit_reason: "position_missing", exit_order_type: nil})
+    end
+  end
+
+  # The ledger refused the row of a resting entry: cancel it; if it filled in the meantime,
+  # close that position — a position without a row is the one state never left behind.
+  defp cancel_resting_or_unwind(client, f, req, qty, resting) do
+    case ExchangeOrders.settle_resting(client, f, req.symbol, req.side, qty, %{resting | placed_at_ms: 0}, 0, false) do
+      {:ok, leg} when leg.executed_qty > 0.0 ->
+        unwind(client, req.symbol, if(req.side == "BUY", do: "SELL", else: "BUY"), %{
+          executed_qty: leg.executed_qty,
+          stop_order_id: nil,
+          target_order_id: nil
+        })
+
+      _ ->
+        :ok
+    end
+  end
+
+  # After a restart: every open live row with a leg still marked resting is settled now —
+  # the rest is treated as over (its W has almost surely elapsed; if not, a few seconds of
+  # it are forgone), so the leg is cancelled and crossed on the same path as a timed-out
+  # rest. The wait recorded is the real elapsed time.
+  defp recover_resting(state) do
+    rows = Ledger.resting_legs()
+
+    if rows == [] do
+      state
+    else
+      case ensure_filters(state) do
+        {:ok, filters, state} ->
+          Enum.each(rows, &recover_row(&1, filters, state))
+          state
+
+        {:error, reason, state} ->
+          Logger.error("[MAKER] #{length(rows)} resting leg(s) found after restart but the filters could not be loaded (#{inspect(reason)}) — retrying in #{@recover_after_ms} ms")
+          Process.send_after(self(), :recover_resting, @recover_after_ms)
+          state
+      end
+    end
+  rescue
+    e ->
+      Logger.error("[MAKER] recover_resting failed: #{Exception.message(e)}")
+      state
+  end
+
+  defp recover_row(%PaperTrade{} = t, filters, state) do
+    with {:ok, f} <- ExchangeOrders.symbol_filters(filters, t.pair) do
+      now_ms = System.monotonic_time(:millisecond)
+
+      cond do
+        t.entry_order_type == "maker_resting" ->
+          elapsed = DateTime.diff(DateTime.utc_now(), t.inserted_at, :millisecond)
+          resting = %{order_id: t.entry_order_id, rest_price: t.entry_rest_price, placed_at_ms: now_ms - elapsed,
+                      touch: %{bid: t.entry_touch_bid, ask: t.entry_touch_ask}, status: "NEW"}
+          req = %{symbol: t.pair, side: side_word(t.side), stop_loss: nil, take_profit: nil}
+          Logger.warning("[MAKER] restart: settling the resting ENTRY of row #{t.id} (#{t.pair}, placed #{div(elapsed, 1000)} s ago)")
+          settle_entry_async(state.client, t.id, f, req, t.quantity, resting)
+
+        t.exit_order_type == "maker_resting" ->
+          elapsed = DateTime.diff(DateTime.utc_now(), t.exit_rest_at || t.updated_at, :millisecond)
+          resting = %{order_id: t.exit_order_id, rest_price: t.exit_rest_price, placed_at_ms: now_ms - elapsed,
+                      touch: %{bid: t.exit_touch_bid, ask: t.exit_touch_ask}, status: "NEW"}
+          Logger.warning("[MAKER] restart: settling the resting EXIT of row #{t.id} (#{t.pair}, placed #{div(elapsed, 1000)} s ago)")
+          settle_exit_async(state.client, t.id, f, t.pair, side_word(-t.side), t.quantity, resting)
+
+        true ->
+          :ok
+      end
     end
   end
 
@@ -385,6 +744,16 @@ defmodule FluxTrader.Trading.Executor do
     # Re-read first: a brake may have filled and been booked by the user-data stream
     # between the due-list read and now, and a closed row must not be booked twice.
     case Ledger.reload(trade) do
+      %PaperTrade{status: "open", arm: @live_arm, entry_order_type: t} = trade
+      when t != nil and t != "maker_resting" ->
+        # An entry the maker path placed exits on the maker path (M2) — whatever the flag
+        # says now, so a row is measured whole or not at all. A still-resting entry is
+        # never due: its task settles it first.
+        maker_close(trade, mark_price, state)
+
+      %PaperTrade{status: "open", entry_order_type: "maker_resting"} ->
+        {:error, :entry_resting}
+
       %PaperTrade{status: "open"} = trade ->
         req = %{
           symbol: trade.pair,
@@ -429,6 +798,72 @@ defmodule FluxTrader.Trading.Executor do
   defp do_close(mode, %PaperTrade{} = trade, exit_price, _state) do
     book_close(String.upcase(mode), trade, exit_price, %{})
   end
+
+  defp maker_close(trade, mark_price, state) do
+    side = side_word(-trade.side)
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    with {:ok, filters, _state} <- ensure_filters(state),
+         {:ok, f} <- ExchangeOrders.symbol_filters(filters, trade.pair) do
+      ExchangeOrders.cancel_brakes(state.client, trade.pair)
+
+      case ExchangeOrders.place_resting(state.client, f, trade.pair, side, trade.quantity, true) do
+        {:resting, resting} ->
+          case Ledger.update_trade(trade, %{
+                 exit_order_type: "maker_resting",
+                 exit_order_id: resting.order_id,
+                 exit_rest_price: resting.rest_price,
+                 exit_touch_bid: resting.touch.bid,
+                 exit_touch_ask: resting.touch.ask,
+                 exit_rest_at: now
+               }) do
+            {:ok, updated} ->
+              Logger.info(
+                "[MAKER] EXIT RESTING #{side} #{trade.pair} #{trade.quantity} @ #{fmt(resting.rest_price)} " <>
+                  "(touch #{fmt(resting.touch.bid)} / #{fmt(resting.touch.ask)}) order=#{resting.order_id} — row #{trade.id}"
+              )
+
+              settle_exit_async(state.client, trade.id, f, trade.pair, side, trade.quantity, resting)
+              {:resting, updated}
+
+            {:error, changeset} ->
+              Logger.error("[MAKER] exit rested on #{trade.pair} but the row refused the update (#{inspect(changeset.errors)}) — settling it now")
+              result = ExchangeOrders.settle_resting(state.client, f, trade.pair, side, trade.quantity, resting, 0, true)
+
+              case result do
+                {:ok, leg} -> finish_close(trade, leg.fill_price, exit_leg_overrides(trade, leg, now))
+                {:error, {_s, %{"code" => -2022}}} -> brake_or_missing(trade, state)
+                {:error, reason} -> {:error, reason}
+              end
+          end
+
+        {:rejected, touch} ->
+          case ExchangeOrders.cross_now(state.client, trade.pair, side, trade.quantity, touch, true) do
+            {:ok, leg} ->
+              Logger.info("[MAKER] GTX refused on the exit of #{trade.pair} — crossed @ #{fmt(leg.fill_price)}")
+              finish_close(trade, leg.fill_price, exit_leg_overrides(trade, leg, now))
+
+            {:error, {_s, %{"code" => -2022}}} ->
+              brake_or_missing(trade, state)
+
+            {:error, reason} ->
+              Logger.error("[MAKER] crossing the exit of #{trade.pair} failed: #{inspect(reason)}")
+              {:error, reason}
+          end
+
+        {:error, {_s, %{"code" => -2022}}} ->
+          brake_or_missing(trade, state)
+
+        {:error, reason} ->
+          Logger.error("[MAKER] exit rest on #{trade.pair} failed: #{inspect(reason)} (mark #{fmt(mark_price)})")
+          {:error, reason}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+      {:error, reason, _state} -> {:error, reason}
+    end
+  end
+
 
   defp book_close(label, trade, exit_price, overrides) do
     case Ledger.close_trade(trade, exit_price, DateTime.utc_now(), overrides) do

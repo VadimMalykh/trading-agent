@@ -234,8 +234,35 @@ defmodule FluxTrader.Trading.Ledger do
 
   @doc "Positions whose 4h hold has expired and which are therefore due to close."
   def due_trades(now \\ DateTime.utc_now()) do
-    Repo.all(from(t in PaperTrade, where: t.status == "open" and t.exit_after_ts <= ^now))
+    # A row whose exit leg is resting on the book (the pilot's maker path, M2) is being
+    # closed already; handing it to the executor again would place a second exit.
+    Repo.all(
+      from(t in PaperTrade,
+        where:
+          t.status == "open" and t.exit_after_ts <= ^now and
+            (is_nil(t.exit_order_type) or t.exit_order_type != "maker_resting")
+      )
+    )
   end
+
+  @doc "Open rows with a leg still resting on the book — what a restarted executor must settle."
+  def resting_legs do
+    Repo.all(
+      from(t in PaperTrade,
+        where:
+          t.status == "open" and
+            (t.entry_order_type == "maker_resting" or t.exit_order_type == "maker_resting")
+      )
+    )
+  end
+
+  @doc "Update a row's fields (the maker path's leg records). Validated like every other write."
+  def update_trade(%PaperTrade{} = trade, attrs) do
+    trade |> PaperTrade.changeset(Map.new(attrs)) |> Repo.update()
+  end
+
+  @doc "Remove a row that never became a position (a maker-path entry that filled nothing and could not cross)."
+  def delete_trade(%PaperTrade{} = trade), do: Repo.delete(trade)
 
   @doc """
   Open a paper position.
@@ -302,7 +329,8 @@ defmodule FluxTrader.Trading.Ledger do
   def close_trade(%PaperTrade{} = trade, exit_price, now \\ DateTime.utc_now(), overrides \\ %{}) do
     ret = exit_price / trade.entry_price - 1.0
     gross_bps = trade.side * ret * trade.size * 1.0e4
-    cost_bps = trade.cost_bps || ExecCost.cost_bps(trade.pair)
+    # A maker-path close (M2) hands in the realised round-trip fee; it must price the net too.
+    cost_bps = Map.get(Map.new(overrides), :cost_bps) || trade.cost_bps || ExecCost.cost_bps(trade.pair)
 
     trade
     |> PaperTrade.changeset(

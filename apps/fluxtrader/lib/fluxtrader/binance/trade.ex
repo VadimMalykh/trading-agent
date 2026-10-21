@@ -47,6 +47,12 @@ defmodule FluxTrader.Binance.Trade do
   @doc "DELETE /fapi/v1/allOpenOrders — every resting order on the symbol, brakes included."
   @callback cancel_all_open_orders(symbol :: String.t()) :: result
 
+  @doc "DELETE /fapi/v1/order — cancel one resting order. The answer carries its final `executedQty` / `avgPrice`."
+  @callback cancel_order(symbol :: String.t(), order_id :: integer()) :: result
+
+  @doc "GET /fapi/v1/ticker/bookTicker — the best bid and ask on the trading host. Unsigned."
+  @callback book_ticker(symbol :: String.t()) :: result
+
   @doc "GET /fapi/v2/positionRisk — the exchange's own view of the position on a symbol."
   @callback position_risk(symbol :: String.t()) :: result
 

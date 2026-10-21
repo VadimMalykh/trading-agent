@@ -62,18 +62,41 @@ defmodule FluxTrader.Trading.PaperTrade do
     field(:stop_order_id, :integer)
     field(:target_order_id, :integer)
     field(:exit_reason, :string)
+    # M2 (BOOK_WAVE2_PLAN §M2): the pilot arm's maker path, per leg. Nil wherever the path did
+    # not place the leg. `*_order_type` is one of `@order_types`; `maker_resting` only while
+    # the leg rests (never on a closed row).
+    field(:entry_order_type, :string)
+    field(:entry_rest_price, :float)
+    field(:entry_wait_s, :float)
+    field(:entry_fill_price, :float)
+    field(:entry_fee_bps, :float)
+    field(:entry_touch_bid, :float)
+    field(:entry_touch_ask, :float)
+    field(:exit_order_type, :string)
+    field(:exit_rest_price, :float)
+    field(:exit_wait_s, :float)
+    field(:exit_fill_price, :float)
+    field(:exit_fee_bps, :float)
+    field(:exit_touch_bid, :float)
+    field(:exit_touch_ask, :float)
+    field(:exit_rest_at, :utc_datetime)
 
     timestamps()
   end
 
   @fields ~w(arm pair side size entry_ts exit_after_ts exit_ts entry_price exit_price quantity notional
              gross_bps cost_bps net_bps status confidence threshold regime checkpoint ladder_p80
-             fill_source entry_order_id exit_order_id stop_order_id target_order_id exit_reason)a
+             fill_source entry_order_id exit_order_id stop_order_id target_order_id exit_reason
+             entry_order_type entry_rest_price entry_wait_s entry_fill_price entry_fee_bps
+             entry_touch_bid entry_touch_ask exit_order_type exit_rest_price exit_wait_s
+             exit_fill_price exit_fee_bps exit_touch_bid exit_touch_ask exit_rest_at)a
+  @order_types ~w(maker maker_partial maker_then_taker rejected_then_crossed taker maker_resting)
   @required ~w(arm pair side size entry_ts exit_after_ts entry_price status)a
 
   def arms, do: @arms
   def side_arms, do: @side_arms
   def all_arms, do: @arms ++ @side_arms
+  def order_types, do: @order_types
 
   def changeset(trade, attrs) do
     trade
@@ -83,6 +106,8 @@ defmodule FluxTrader.Trading.PaperTrade do
     |> validate_inclusion(:side, [-1, 1])
     |> validate_inclusion(:status, ~w(open closed))
     |> validate_inclusion(:fill_source, ~w(paper exchange))
+    |> validate_inclusion(:entry_order_type, @order_types)
+    |> validate_inclusion(:exit_order_type, @order_types)
     |> unique_constraint([:arm, :pair], name: :paper_trades_one_open_per_pair)
   end
 end

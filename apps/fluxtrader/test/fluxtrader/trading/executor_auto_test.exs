@@ -140,7 +140,7 @@ defmodule FluxTrader.Trading.ExecutorAutoTest do
     assert [{:cancel_all_algo_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_algo_orders)
     [_, {:place_order, [close_order]}] = Fake.calls(:place_order)
     assert close_order[:reduceOnly] == "true" and close_order[:side] == "SELL"
-    assert close_order[:quantity] == 0.005
+    assert close_order[:quantity] == "0.005"
   end
 
   test "a brake fill reported by the user stream closes the row and cancels the sibling" do

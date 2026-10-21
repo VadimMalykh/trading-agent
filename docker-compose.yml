@@ -39,6 +39,7 @@ services:
       LIVE_PILOT_DAILY_LOSS_USD: ${LIVE_PILOT_DAILY_LOSS_USD:-10}
       LIVE_PILOT_MAX_TOTAL_LOSS_USD: ${LIVE_PILOT_MAX_TOTAL_LOSS_USD:-100}
       LIVE_PILOT_STOP_PCT: ${LIVE_PILOT_STOP_PCT:-}   # unset → RiskManager's 2 %; the VM runs 0.10 (REAL_MONEY_TRACK §7)
+      LIVE_PILOT_MAKER_PATH: ${LIVE_PILOT_MAKER_PATH:-false}   # M2: the pilot rests at the touch 60 s, then crosses (BOOK_WAVE2_PLAN §M2)
       ML_INFERENCE_URL: http://ml_inference:8001
       # Serve/product gate. Eval (run 20260723) showed gate<=0.50 trades ~100% of
       # bars at ~coin-flip; edge only appears at gate>=0.55. 0.58 harvests it.

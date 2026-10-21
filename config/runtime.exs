@@ -123,7 +123,9 @@ if config_env() != :test do
     max_total_loss_usd: pilot_float.("LIVE_PILOT_MAX_TOTAL_LOSS_USD", 100.0),
     # The pilot's own stop as a fraction (0.10 = 10 %); unset → RiskManager's STOP_LOSS_PCT.
     # Widened 2026-10-19 after the 2 % stop ate the pilot's edge (REAL_MONEY_TRACK §7).
-    stop_pct: pilot_float.("LIVE_PILOT_STOP_PCT", nil)
+    stop_pct: pilot_float.("LIVE_PILOT_STOP_PCT", nil),
+    # M2 (BOOK_WAVE2_PLAN §M2): the pilot's orders rest at the touch for 60 s, then cross.
+    maker_path: System.get_env("LIVE_PILOT_MAKER_PATH", "false") in ~w(true 1 yes)
 
   # No policy entries for the first minutes of an app start — see `PolicyEngine` init.
   config :fluxtrader, :policy_boot_grace_s, pilot_int.("POLICY_BOOT_GRACE_S", 300)

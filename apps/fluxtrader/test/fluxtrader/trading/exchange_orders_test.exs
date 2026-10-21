@@ -45,7 +45,7 @@ defmodule FluxTrader.Trading.ExchangeOrdersTest do
     assert [{:set_leverage, ["BTCUSDT", 5]}] = Fake.calls(:set_leverage)
 
     [{:place_order, [market]}] = Fake.calls(:place_order)
-    assert market[:type] == "MARKET" and market[:quantity] == 0.008
+    assert market[:type] == "MARKET" and market[:quantity] == "0.008"
     assert market[:newOrderRespType] == "RESULT"
     refute Keyword.has_key?(market, :reduceOnly)
 
@@ -190,5 +190,172 @@ defmodule FluxTrader.Trading.ExchangeOrdersTest do
 
     close = %{symbol: "BTCUSDT", side: "SELL", quantity: 0.008, stop_order_id: 2, target_order_id: 3}
     assert {:error, :position_missing} = ExchangeOrders.close(Fake, close)
+  end
+
+  # ------------------------------------------------------------------ the maker path (M2)
+
+  defp limit_resting(id), do: {:ok, %{"orderId" => id, "status" => "NEW", "avgPrice" => "0", "executedQty" => "0"}}
+
+  test "maker entry: rests a GTX at the bid, fills at the rest, pays the maker fee, brakes the filled quantity" do
+    {:ok, _} =
+      Fake.start(
+        responses: %{
+          place_order: [limit_resting(11)],
+          get_order: [{:ok, %{"orderId" => 11, "status" => "FILLED", "avgPrice" => "99990.0", "executedQty" => "0.008"}}]
+        }
+      )
+
+    assert {:ok, fill} = ExchangeOrders.maker_open(Fake, filters(), req(), 60)
+    assert fill.order_type == "maker"
+    assert fill.rest_price == 99_990.0 and fill.avg_price == 99_990.0 and fill.fill_price == 99_990.0
+    assert fill.executed_qty == 0.008
+    assert fill.fee_bps == 2.0
+    assert fill.touch_bid == 99_990.0 and fill.touch_ask == 100_010.0
+    assert fill.wait_s >= 0.0 and fill.wait_s < 5.0
+    assert is_integer(fill.stop_order_id) and is_integer(fill.target_order_id)
+
+    [{:place_order, [limit]}] = Fake.calls(:place_order)
+    assert limit[:type] == "LIMIT" and limit[:timeInForce] == "GTX"
+    assert limit[:side] == "BUY" and limit[:price] == "99990" and limit[:quantity] == "0.008"
+    refute Keyword.has_key?(limit, :reduceOnly)
+    assert Fake.calls(:cancel_order) == []
+  end
+
+  test "maker entry: unfilled at W is cancelled and crossed; the leg is maker_then_taker at the taker fee" do
+    {:ok, _} = Fake.start(responses: %{place_order: [limit_resting(12)]})
+
+    assert {:ok, fill} = ExchangeOrders.maker_open(Fake, filters(), req(), 0)
+    assert fill.order_type == "maker_then_taker"
+    assert fill.rest_price == 99_990.0
+    assert fill.fill_price == Fake.fill_price() and fill.executed_qty == 0.008
+    assert fill.fee_bps == 5.0
+    assert fill.limit_order_id == 12 and fill.order_id != 12
+
+    assert [{:cancel_order, ["BTCUSDT", 12]}] = Fake.calls(:cancel_order)
+    [{:place_order, [limit]}, {:place_order, [market]}] = Fake.calls(:place_order)
+    assert limit[:type] == "LIMIT" and market[:type] == "MARKET" and market[:quantity] == "0.008"
+  end
+
+  test "maker entry: a part fill at the rest and the remainder crossed give a VWAP and a weighted fee" do
+    {:ok, _} =
+      Fake.start(
+        responses: %{
+          place_order: [limit_resting(13)],
+          cancel_order: [{:ok, %{"orderId" => 13, "status" => "CANCELED", "avgPrice" => "99990.0", "executedQty" => "0.006"}}]
+        }
+      )
+
+    assert {:ok, fill} = ExchangeOrders.maker_open(Fake, filters(), req(), 0)
+    assert fill.order_type == "maker_then_taker"
+    assert fill.executed_qty == 0.008
+    assert_in_delta fill.fill_price, (0.006 * 99_990.0 + 0.002 * Fake.fill_price()) / 0.008, 1.0e-6
+    assert_in_delta fill.fee_bps, (0.006 * 2.0 + 0.002 * 5.0) / 0.008, 1.0e-9
+    # the limit filled the larger part, so it is the leg's order id
+    assert fill.order_id == 13
+    [_, {:place_order, [market]}] = Fake.calls(:place_order)
+    assert market[:quantity] == "0.002"
+  end
+
+  test "maker entry: a GTX the exchange refuses (-5022) is crossed at once as rejected_then_crossed" do
+    {:ok, _} =
+      Fake.start(
+        responses: %{
+          place_order: [{:error, {400, %{"code" => -5022, "msg" => "Due to the order could not be executed as maker, the Post Only order will be rejected."}}}]
+        }
+      )
+
+    assert {:ok, fill} = ExchangeOrders.maker_open(Fake, filters(), req(), 60)
+    assert fill.order_type == "rejected_then_crossed"
+    assert fill.fill_price == Fake.fill_price() and fill.fee_bps == 5.0 and fill.wait_s == 0.0
+    assert fill.rest_price == 99_990.0 and fill.limit_order_id == nil
+    [_, {:place_order, [market]}] = Fake.calls(:place_order)
+    assert market[:type] == "MARKET"
+    assert Fake.calls(:cancel_order) == []
+  end
+
+  test "maker entry: an EXPIRED answer to the GTX is the same refusal" do
+    {:ok, _} =
+      Fake.start(responses: %{place_order: [{:ok, %{"orderId" => 14, "status" => "EXPIRED", "avgPrice" => "0", "executedQty" => "0"}}]})
+
+    assert {:ok, %{order_type: "rejected_then_crossed"}} = ExchangeOrders.maker_open(Fake, filters(), req(), 60)
+  end
+
+  test "maker entry: a part fill whose remainder is under the minimum order keeps the partial position" do
+    # 0.008 BTC rested; 0.007 filled; the 0.001 left is ~$100 — under the fake's $100 floor at $99,990.
+    {:ok, _} =
+      Fake.start(
+        responses: %{
+          place_order: [limit_resting(15)],
+          cancel_order: [{:ok, %{"orderId" => 15, "status" => "CANCELED", "avgPrice" => "99990.0", "executedQty" => "0.007"}}]
+        }
+      )
+
+    assert {:ok, fill} = ExchangeOrders.maker_open(Fake, filters(), req(), 0)
+    assert fill.order_type == "maker_partial"
+    assert fill.executed_qty == 0.007 and fill.fill_price == 99_990.0 and fill.fee_bps == 2.0
+    assert length(Fake.calls(:place_order)) == 1
+  end
+
+  test "maker entry: the cancel racing a last-moment fill reads the order back and keeps the maker fill" do
+    {:ok, _} =
+      Fake.start(
+        responses: %{
+          place_order: [limit_resting(16)],
+          cancel_order: [{:error, {400, %{"code" => -2011, "msg" => "Unknown order sent."}}}],
+          get_order: [
+            {:ok, %{"orderId" => 16, "status" => "NEW", "avgPrice" => "0", "executedQty" => "0"}},
+            {:ok, %{"orderId" => 16, "status" => "FILLED", "avgPrice" => "99990.0", "executedQty" => "0.008"}}
+          ]
+        }
+      )
+
+    assert {:ok, fill} = ExchangeOrders.maker_open(Fake, filters(), req(), 0)
+    assert fill.order_type == "maker" and fill.fee_bps == 2.0
+    assert length(Fake.calls(:place_order)) == 1
+  end
+
+  test "maker exit: cancels the brakes, rests a reduce-only GTX at the ask, books the timer exit when it fills" do
+    {:ok, _} =
+      Fake.start(
+        responses: %{
+          place_order: [limit_resting(21)],
+          get_order: [{:ok, %{"orderId" => 21, "status" => "FILLED", "avgPrice" => "100010.0", "executedQty" => "0.008"}}]
+        }
+      )
+
+    close = %{symbol: "BTCUSDT", side: "SELL", quantity: 0.008, stop_order_id: 2, target_order_id: 3}
+    assert {:ok, fill} = ExchangeOrders.maker_close(Fake, filters(), close, 60)
+    assert fill.exit_reason == "timer" and fill.order_type == "maker"
+    assert fill.avg_price == 100_010.0 and fill.fee_bps == 2.0
+
+    assert [{:cancel_all_open_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_open_orders)
+    assert [{:cancel_all_algo_orders, ["BTCUSDT"]}] = Fake.calls(:cancel_all_algo_orders)
+    [{:place_order, [limit]}] = Fake.calls(:place_order)
+    assert limit[:timeInForce] == "GTX" and limit[:reduceOnly] == "true" and limit[:price] == "100010"
+  end
+
+  test "maker exit: -2022 on the rest means a brake fired first — the exit comes from the brake" do
+    {:ok, _} =
+      Fake.start(
+        responses: %{
+          place_order: [{:error, {400, %{"code" => -2022, "msg" => "ReduceOnly Order is rejected."}}}],
+          get_algo_order: [
+            {:ok, %{"algoId" => 2, "algoStatus" => "FINISHED", "actualOrderId" => 78}}
+          ],
+          get_order: [{:ok, %{"orderId" => 78, "status" => "FILLED", "avgPrice" => "98000.0", "executedQty" => "0.008"}}]
+        }
+      )
+
+    close = %{symbol: "BTCUSDT", side: "SELL", quantity: 0.008, stop_order_id: 2, target_order_id: 3}
+    assert {:ok, fill} = ExchangeOrders.maker_close(Fake, filters(), close, 60)
+    assert fill.exit_reason == "stop" and fill.avg_price == 98_000.0
+  end
+
+  test "numbers go to the exchange as plain decimals, never in scientific notation" do
+    assert ExchangeOrders.num(1200.0) == "1200"
+    assert ExchangeOrders.num(0.0047125) == "0.0047125"
+    assert ExchangeOrders.num(0.008) == "0.008"
+    assert ExchangeOrders.num(84_550.1) == "84550.1"
+    assert ExchangeOrders.num(3) == "3"
   end
 end

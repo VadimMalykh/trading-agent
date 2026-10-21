@@ -5,7 +5,9 @@ defmodule FluxTrader.Binance.Trade.Fake do
   `start/1` takes `responses: %{callback => [response | fun]}`; each call to a callback
   pops the next entry (a function is applied to the call's arguments). When the queue for a
   callback is empty the default below answers, which is a healthy exchange: every MARKET
-  order fills at `@fill_price`, every brake is accepted as NEW, every position is flat.
+  order fills at `@fill_price`, every LIMIT order rests as NEW and stays unfilled (so the
+  maker path's default outcome is cancel-and-cross), the touch is 99,990 / 100,010, every
+  brake is accepted as NEW, every position is flat.
   """
   @behaviour FluxTrader.Binance.Trade
 
@@ -20,7 +22,18 @@ defmodule FluxTrader.Binance.Trade.Fake do
     end
   end
 
-  def stop, do: if(Process.whereis(__MODULE__), do: Agent.stop(__MODULE__))
+  # The agent is linked to the test process and may already be gone when on_exit runs.
+  def stop do
+    if pid = Process.whereis(__MODULE__) do
+      try do
+        Agent.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
+    end
+
+    :ok
+  end
 
   @doc "Every call so far, oldest first, as `{callback, args}`."
   def calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.calls))
@@ -54,6 +67,12 @@ defmodule FluxTrader.Binance.Trade.Fake do
 
   @impl true
   def cancel_all_open_orders(symbol), do: answer(:cancel_all_open_orders, [symbol])
+
+  @impl true
+  def cancel_order(symbol, order_id), do: answer(:cancel_order, [symbol, order_id])
+
+  @impl true
+  def book_ticker(symbol), do: answer(:book_ticker, [symbol])
 
   @impl true
   def position_risk(symbol), do: answer(:position_risk, [symbol])
@@ -148,6 +167,15 @@ defmodule FluxTrader.Binance.Trade.Fake do
     do: {:ok, %{"orderId" => order_id, "symbol" => symbol, "status" => "NEW", "avgPrice" => "0", "executedQty" => "0"}}
 
   defp default(:cancel_all_open_orders, _, _), do: {:ok, %{"code" => 200, "msg" => "ok"}}
+
+  # A resting order cancelled unfilled; the answer carries the final fill fields like GET /order.
+  defp default(:cancel_order, [symbol, order_id], _),
+    do: {:ok, %{"orderId" => order_id, "symbol" => symbol, "status" => "CANCELED", "avgPrice" => "0", "executedQty" => "0"}}
+
+  # The touch: a 20-dollar spread around the fake's fill price, so a rest at the bid is visibly
+  # cheaper than the fill a market order gets.
+  defp default(:book_ticker, [symbol], _),
+    do: {:ok, %{"symbol" => symbol, "bidPrice" => "99990.0", "bidQty" => "5.0", "askPrice" => "100010.0", "askQty" => "3.0"}}
   defp default(:position_risk, [symbol], _), do: {:ok, [%{"symbol" => symbol, "positionAmt" => "0", "markPrice" => "100000.0"}]}
   defp default(:mark_price, [symbol], _), do: {:ok, %{"symbol" => symbol, "markPrice" => "100000.0"}}
   defp default(:commission_rate, [symbol], _), do: {:ok, %{"symbol" => symbol, "makerCommissionRate" => "0.000200", "takerCommissionRate" => "0.000500"}}

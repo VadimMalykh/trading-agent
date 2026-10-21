@@ -52,7 +52,12 @@ defmodule FluxTrader.Trading.LivePilot do
     daily_loss_usd: 10.0,
     max_total_loss_usd: 100.0,
     # nil → RiskManager's STOP_LOSS_PCT (2 %); the VM sets LIVE_PILOT_STOP_PCT=0.10.
-    stop_pct: nil
+    stop_pct: nil,
+    # M2 (BOOK_WAVE2_PLAN §M2): rest at the touch for `maker_wait_s`, then cross. The
+    # pilot's arm only; the paper arms never see it. W is registered at 60 s and has no
+    # environment knob — only a test may set it.
+    maker_path: false,
+    maker_wait_s: 60
   ]
 
   def arm, do: @arm
@@ -63,6 +68,12 @@ defmodule FluxTrader.Trading.LivePilot do
 
   @doc "Requested, credentialed, and not doubling an `auto` executor."
   def enabled?, do: refusal() == nil
+
+  @doc "Whether the pilot's orders take the maker path (M2). Off by default."
+  def maker_path?, do: config()[:maker_path] == true
+
+  @doc "The maker path's W, seconds a leg rests before the remainder is crossed."
+  def maker_wait_s, do: config()[:maker_wait_s] * 1.0
 
   @doc "Why the pilot is off, or nil when it is on."
   def refusal do
@@ -122,6 +133,8 @@ defmodule FluxTrader.Trading.LivePilot do
       take_profit_pct: stop_loss_pct() * take_profit_ratio(),
       daily_loss_usd: cfg[:daily_loss_usd],
       max_total_loss_usd: cfg[:max_total_loss_usd],
+      maker_path: maker_path?(),
+      maker_wait_s: maker_wait_s(),
       open: MapSet.size(Ledger.open_pairs(@arm)),
       realised_usd_today: Ledger.realised_usd(@arm, start_of_day(now)),
       realised_usd_total: Ledger.realised_usd(@arm)
