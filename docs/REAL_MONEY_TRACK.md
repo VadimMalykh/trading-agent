@@ -438,10 +438,13 @@ cancelled (`limit_order` ≠ the fill's order) and the remainder crossed at the 
 `maker_then_taker` branch, the fee 5.0; the brakes went on after the settle; the exit rested
 at the ask and filled as a maker in 2.2 s, fee 2.0; flat before and after, no order left.
 Both branches of the path, the brake and the reconcile exercised on the exchange's own
-answers. *A first run the same minute went down the taker path because the task compiled on
+answers. **The demo keys now live on `fluxtrader-1` in `~/trading_agent/.env.testnet`**
+(owner-only, git-ignored, read by nothing automatically — the app's `.env` holds the
+production key under different names); `./scripts/testnet_smoke.sh [args]` runs the smoke
+with them, compiling first. *A first run the same minute went down the taker path because the task compiled on
 the way in and ran the already-loaded old beam (AGENTS.md's "compile first" rule) — the
-taker round trip it made is the §6.1 path and is not this record.* The demo keys are not
-stored anywhere in the repo or on the VM.
+taker round trip it made is the §6.1 path and is not this record.* The demo keys are not in the
+repo; they are on the VM as said above.
 
 ## §7 — The micro-pilot: real orders at ~$100 a trade, paper test untouched (built 2026-09-21)
 

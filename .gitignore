@@ -12,6 +12,7 @@ apps/fluxtrader_web/priv/static/assets/
 
 # Environment
 .env
+.env.testnet
 scripts/gcp_env
 
 # Docker volumes
