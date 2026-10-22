@@ -161,12 +161,12 @@ def day_lags(k: int) -> int:
 
 
 # ---- #7 move vs cost ----------------------------------------------------------------------------
-def move_vs_cost(D: dict, ct: pd.DataFrame, cm: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def move_vs_cost(D: dict, ct: pd.DataFrame, cm: pd.DataFrame, horizons: dict[str, int] = HORIZONS) -> tuple[pd.DataFrame, pd.DataFrame]:
     s = D["scored"]
     t, m_ = ct[s].to_numpy(), cm[s].to_numpy()
     rows, per_pair = [], {}
     for bet, src in (("directional", D["fwd"]), ("relative", D["res"])):
-        for h in HORIZONS:
+        for h in horizons:
             a = src[h][s].abs().to_numpy()
             ok = ~np.isnan(a) & ~np.isnan(t) & ~np.isnan(m_)
             mv, tk, mk = a[ok], t[ok], m_[ok]
@@ -468,7 +468,8 @@ def features(P: dict, D: dict, symbols: list[str]) -> tuple[dict[str, pd.DataFra
     return F, unsigned, notes
 
 
-def ic_screen(D: dict, F: dict[str, pd.DataFrame], unsigned: set[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+def ic_screen(D: dict, F: dict[str, pd.DataFrame], unsigned: set[str], horizons: dict[str, int] = HORIZONS) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """`horizons`: the (name → bars) read; HORIZONS unless a registration appends holds to D (R67: 3d / 7d beside P2's four)."""
     s, idx = D["scored"], D["lr"].index
     sidx = idx[s]
     day1 = (sidx.floor("D") - sidx[0].floor("D")).days.to_numpy()
@@ -480,7 +481,7 @@ def ic_screen(D: dict, F: dict[str, pd.DataFrame], unsigned: set[str]) -> tuple[
     for name, f in F.items():
         fs = f[s]
         fv, fa = _pair_rank(fs).to_numpy().ravel(), _pair_rank(fs if name in unsigned else fs.abs()).to_numpy().ravel()
-        for h, k in HORIZONS.items():
+        for h, k in horizons.items():
             zs, zr = D["z"][h][s], D["zres"][h][s]
             series = {"directional": _ic_pooled(fv, zs.clip(-Z_CLIP, Z_CLIP).to_numpy().ravel(), dayc),
                       "vol": _ic_pooled(fa, _pair_rank(zs.abs()).to_numpy().ravel(), dayc)}
@@ -520,7 +521,7 @@ def power(D: dict) -> pd.DataFrame:
 
 
 # ---- #4 noise floor -------------------------------------------------------------------------------
-def _shuffle_days(idx: pd.DatetimeIndex, group: np.ndarray, rng: np.random.Generator, bar: pd.Timedelta = BAR) -> np.ndarray:
+def _shuffle_days(idx: pd.DatetimeIndex, group: np.ndarray, rng: np.random.Generator, bar: pd.Timedelta = BAR, gap: int = NULL_GAP) -> np.ndarray:
     """Row indexer for a label null: the label at row i is taken from row src[i]. Whole days trade
     places, time of day kept, only with days of the same `group` (scored / not scored), and whole rows
     move — the market factor every pair shares at one instant, and a label's overlap with its
@@ -530,7 +531,7 @@ def _shuffle_days(idx: pd.DatetimeIndex, group: np.ndarray, rng: np.random.Gener
     inside the trailing-return features' lookback, and the feature would then contain the label.
     (That is why the plan's first idea, shuffling rows WITHIN a day, is not used: a label moved to a
     later bar of its own day always overlaps the features — a 4-draw trial on 2026-09-20 read an IC
-    of +0.09 … +0.18 for the ridge from that leak alone.) `bar`: the spacing of `idx` (R20 reads an hourly grid)."""
+    of +0.09 … +0.18 for the ridge from that leak alone.) `bar`: the spacing of `idx` (R20 reads an hourly grid); `gap`: NULL_GAP unless a longer label (R67's 7d) needs more."""
     day = (idx.floor("D") - idx[0].floor("D")).days.to_numpy()
     per_day = int(pd.Timedelta("1D") / bar)
     slot = ((idx - idx.floor("D")) // bar).to_numpy()
@@ -542,30 +543,30 @@ def _shuffle_days(idx: pd.DatetimeIndex, group: np.ndarray, rng: np.random.Gener
     for members in (n_in == per_day, (n_in == 0) & (n_rows == per_day)):           # partial days stay where they are
         ids = np.flatnonzero(members)
         src_day[ids] = rng.permutation(ids)
-        while len(bad := ids[(ids - src_day[ids] > 0) & (ids - src_day[ids] <= NULL_GAP)]):
+        while len(bad := ids[(ids - src_day[ids] > 0) & (ids - src_day[ids] <= gap)]):
             for d in bad:
                 o = rng.choice(ids)
                 src_day[d], src_day[o] = src_day[o], src_day[d]
     return row_of[src_day[day], slot]
 
 
-def _null_feature(name: str, fs: pd.DataFrame, Zs: dict, Zr: dict, draws: int, seed: int) -> pd.DataFrame:
+def _null_feature(name: str, fs: pd.DataFrame, Zs: dict, Zr: dict, draws: int, seed: int, k_of: dict[str, int] = HORIZONS, gap: int = NULL_GAP) -> pd.DataFrame:
     """One feature of #3's screen — the same statistics — on the real labels (draw 0) and on `draws`
     shuffles. Shuffle number `draw` is the same for every feature, so the best of the screen can be
-    taken per draw."""
+    taken per draw. `k_of`: bars per horizon (HORIZONS unless R67's holds are among `Zs`); `gap`: `_shuffle_days`'."""
     sidx = fs.index
     day1 = (sidx.floor("D") - sidx[0].floor("D")).days.to_numpy()
     dayc = np.repeat(day1, fs.shape[1])
     fv = _pair_rank(fs).to_numpy().ravel()
     rows = []
     for draw in range(draws + 1):
-        src = _shuffle_days(sidx, np.ones(len(sidx)), np.random.default_rng([seed, draw])) if draw else np.arange(len(sidx))
+        src = _shuffle_days(sidx, np.ones(len(sidx)), np.random.default_rng([seed, draw]), gap=gap) if draw else np.arange(len(sidx))
         for h in Zs:
             series = {"directional": _ic_pooled(fv, Zs[h][src].ravel(), dayc)}
             if not name.startswith("relret_"):
                 series["relative"] = _ic_xs(fs, pd.DataFrame(Zr[h][src], index=sidx, columns=fs.columns), day1)
             for bet, ic in series.items():
-                mean, se, _ = hac(ic, day_lags(HORIZONS[h]))
+                mean, se, _ = hac(ic, day_lags(k_of[h]))
                 rows.append({"bet": bet, "horizon": h, "feature": name, "draw": draw, "ic": mean, "t": mean / se if se else np.nan})
     return pd.DataFrame(rows)
 

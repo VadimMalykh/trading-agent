@@ -72,11 +72,11 @@ def shifts(n_days: int, draws: int, seed: int, shift_min: int = SHIFT_MIN) -> np
 
 
 def shift_feature(name: str, f: pd.DataFrame, D: dict, s: np.ndarray, draws: int, seed: int, shift_min: int = SHIFT_MIN,
-                  horizons: tuple[str, ...] = HZ) -> pd.DataFrame:
+                  horizons: tuple[str, ...] = HZ, k_of: dict[str, int] = HORIZONS) -> pd.DataFrame:
     """One feature under the shift null — `_null_feature`'s statistics (directional pooled, relative) on the scored bars, the
     labels rolled by whole days over the panel trimmed to a whole number of days: the leading partial day is dropped (the panel
     starts where the collector's first bar is, inside F0's warm-up, never scored — asserted), so that a roll by k × 288 rows keeps
-    every row's time of day, the wrapped rows included. The feature stays in place."""
+    every row's time of day, the wrapped rows included. The feature stays in place. `k_of`: bars per horizon (HORIZONS unless R67's holds are read)."""
     idx = f.index
     n0 = len(idx) % PER_DAY
     assert not s[:n0].any(), "a scored bar inside the panel's leading partial day"
@@ -96,7 +96,7 @@ def shift_feature(name: str, f: pd.DataFrame, D: dict, s: np.ndarray, draws: int
             series = {"directional": _ic_pooled(fv, zf.ravel(), dayc),
                       "relative": _ic_xs(fs, pd.DataFrame(zr, index=sidx, columns=fs.columns), day1)}
             for bet, ic in series.items():
-                mean, se, _ = hac(ic, day_lags(HORIZONS[h]))
+                mean, se, _ = hac(ic, day_lags(k_of[h]))
                 rows.append({"bet": bet, "horizon": h, "feature": name, "draw": draw, "shift_days": int(nd), "ic": mean, "t": mean / se if se else np.nan})
     return pd.DataFrame(rows)
 
@@ -168,8 +168,8 @@ def verdict(ic: float, se: float, p_family: float, same_sign_folds: bool, bar: f
     return "NOT DETECTABLE"
 
 
-def fold_ics(daily: pd.DataFrame, fold_names=folds.EXPLORATION) -> pd.DataFrame:
-    """The HAC mean of the daily IC series inside each fold, per (bet, horizon, feature)."""
+def fold_ics(daily: pd.DataFrame, fold_names=folds.EXPLORATION, k_of: dict[str, int] = HORIZONS) -> pd.DataFrame:
+    """The HAC mean of the daily IC series inside each fold, per (bet, horizon, feature). `k_of`: bars per horizon (R67 adds holds)."""
     rows = []
     for (bet, h, name), g in daily.groupby(["bet", "horizon", "feature"], sort=False):
         d = pd.DatetimeIndex(g["day"])
@@ -177,7 +177,7 @@ def fold_ics(daily: pd.DataFrame, fold_names=folds.EXPLORATION) -> pd.DataFrame:
         for f in fold_names:
             a, b = folds.bounds(f)
             m = np.asarray((d >= a) & (d < b))
-            r[f"ic_{f}"] = hac(g["ic"].to_numpy()[m], day_lags(HORIZONS[h]))[0] if m.any() else np.nan
+            r[f"ic_{f}"] = hac(g["ic"].to_numpy()[m], day_lags(k_of[h]))[0] if m.any() else np.nan
         vals = [r[f"ic_{f}"] for f in fold_names]
         r["folds_same_sign"] = bool(all(np.isfinite(v) for v in vals) and len({np.sign(v) for v in vals}) == 1)
         rows.append(r)
