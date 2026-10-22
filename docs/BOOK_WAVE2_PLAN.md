@@ -1176,5 +1176,5 @@ paper arms book exactly what they booked. The same-day acceptance (the first pil
 `maker_resting` → settled type, the `[MAKER]` lines, the first exit's `close_resting` →
 `exit_order_type` set, `cost_bps` = the two realised fees) is recorded below as it comes.
 
-**Acceptance (filled in as the rows arrive):** _pending the first pilot entry after 16:13 UTC._
+**Acceptance (filled in as the rows arrive):** by 2026-10-22 01:30 UTC the policy arm had opened nothing since the deploy (four `explore_cov05` opens, no cov-0.02 entry in 9 h — the pilot mirrors the policy arm only), so no maker leg has run yet; `/api/health` steady (`maker_path: true`, pilot open 0, no `[MAKER]` error lines). _Pending the first pilot entry._
 
