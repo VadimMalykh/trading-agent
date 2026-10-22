@@ -286,9 +286,16 @@ def run_r68(taker_bps: float, maker_bps: float, fee_source: str, draws: int = ce
     Zs = {h: D["z"][h][s].clip(-Z_CLIP, Z_CLIP).to_numpy() for h in HZ}
     Zr = {h: D["zres"][h][s].to_numpy() for h in HZ}
     print(f"nulls on {TB24} and {SR24}: {draws} day shuffles and {draws} whole-day shifts each…", flush=True)
-    jobs_ = [delayed(_null_feature)(k, F[k][s], Zs, Zr, draws, seed, gap=gap) for k in REGISTERED] + \
-            [delayed(shift_feature)(k, F[k], D, s, draws, seed, shift_min) for k in REGISTERED]
-    res = Parallel(n_jobs=min(jobs, 4) if jobs > 1 else 1)(jobs_)
+    # memory: the first run (2026-10-22 14:14 UTC) was killed by the kernel at 15.9 GB — four loky workers each took a copy of the panel.
+    # The raw inputs, the hourly grids, the used hours and the described frames are dropped first; the workers are THREADS sharing memory.
+    desc = describe_names(fr)
+    Freg = {k: F[k] for k in REGISTERED}
+    del fr, F
+    import gc
+    gc.collect()
+    jobs_ = [delayed(_null_feature)(k, Freg[k][s], Zs, Zr, draws, seed, gap=gap) for k in REGISTERED] + \
+            [delayed(shift_feature)(k, Freg[k], D, s, draws, seed, shift_min) for k in REGISTERED]
+    res = Parallel(n_jobs=min(jobs, 4) if jobs > 1 else 1, prefer="threads")(jobs_)
     null_shuffle, null_shift = pd.concat(res[:2], ignore_index=True), pd.concat(res[2:], ignore_index=True)
 
     print("the bars…", flush=True)
@@ -322,7 +329,6 @@ def run_r68(taker_bps: float, maker_bps: float, fee_source: str, draws: int = ce
              TB24L: "described (the trailing-day taker-buy share, the level)", SR24L: "described (the trailing-day spot/perp log ratio, the level)"}
     for f_, w in words.items():
         rows.loc[rows["feature"] == f_, "verdict"] = w
-    desc = describe_names(fr)
     bi = {k: cx.block_ics(daily, m, feature=k) for k in REGISTERED}
 
     rows.to_parquet(out_dir / "screen.parquet", index=False)

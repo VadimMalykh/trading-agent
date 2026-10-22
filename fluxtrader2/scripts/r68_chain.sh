@@ -20,6 +20,6 @@ echo "$(date -u +%H:%M:%S) R62's saved screen: $(md5sum output/ceiling_coinbase_
 echo "$(date -u +%H:%M:%S) R60's saved bars: $(md5sum output/ceiling_coinbase/move_vs_cost.parquet)"
 echo "$(date -u +%H:%M:%S) sources: $(md5sum data/spot_1h.parquet data/coinbase_1h_members.parquet | cut -c1-32 | tr '\n' ' ')"
 echo "$(date -u +%H:%M:%S) code: $(md5sum ft2/spot_ext.py ft2/spot.py ft2/cb_ext.py | cut -c1-32 | tr '\n' ' ')"
-FT2_JOBS=4 step r68_run python -m ft2 ceiling --target pairs --family spot --universe members --draws 200
+FT2_JOBS=2 step r68_run python -m ft2 ceiling --target pairs --family spot --universe members --draws 200
 echo "$(date -u +%H:%M:%S) after: $(md5sum ft2/spot_members_r68.csv output/ceiling_coinbase_members/screen.parquet output/ceiling_coinbase/move_vs_cost.parquet data/spot_1h.parquet | cut -c1-32 | tr '\n' ' ')"
 echo "$(date -u +%H:%M:%S) R68_CHAIN_DONE"
