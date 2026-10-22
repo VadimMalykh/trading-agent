@@ -48,9 +48,19 @@ while read -r name groups seed extra; do
   [[ -z "$name" || "$name" == \#* ]] && continue
   echo ""; echo "==> launching $name (FEATURE_GROUPS=$groups --seed $seed ${extra:-})"
   prev="$(field "$(marker)" run)"
+  # the previous VM deletes itself after DONE; a launch that finds it STOPPING tries to start
+  # it and fails (seen 2026-10-22). Wait until it is gone.
+  for i in $(seq 1 60); do
+    st_vm="$(gcloud compute instances describe "${GCP_GBT_INSTANCE:-fluxtrader-gbt}" \
+      --project="$GCP_PROJECT" --zone="$GCP_ZONE" --format='get(status)' 2>/dev/null || true)"
+    [[ -z "$st_vm" ]] && break
+    echo "    previous VM still $st_vm — waiting" >&2; sleep 10
+  done
   # stdin from /dev/null: the launcher's ssh calls would otherwise swallow the rest of the
   # queue (found 2026-10-22 — the first chain stopped after two of six runs, exit 0).
-  env ${extra:-} FEATURE_GROUPS="$groups" ./scripts/gcp_gbt.sh --seed "$seed" > "logs/${name}.launch.log" 2>&1 < /dev/null
+  if ! env ${extra:-} FEATURE_GROUPS="$groups" ./scripts/gcp_gbt.sh --seed "$seed" > "logs/${name}.launch.log" 2>&1 < /dev/null; then
+    echo "ERROR: launcher failed for $name — see logs/${name}.launch.log"; exit 1
+  fi
   # the new marker appears once the remote job starts (a minute or two after launch)
   for i in $(seq 1 60); do
     run="$(field "$(marker)" run)"
