@@ -26,6 +26,18 @@ validity   FIRST, before any score is joined to a label: (1) `frames` on the Coi
            1e-9; (4) the construction — on every non-fall scored bar the score's Spearman with `cbprem_dev` is 1, on every fall bar the
            score has a value exactly where both inputs have one; (5) membership and block coverage as R62's; (6) the lists' md5. FAIL on
            any → validity.json says so, exit 2, no row of `score` written (VOID).
+
+R66 (PLAN §8, decision BE1): the score confirmed ONCE on F3+F4's members — the feature above EXACTLY (`bx_frames`, `score_frames`),
+on R62's frame built for F3+F4 (`frame_folds`: `cb_ext.frames` with the scored mask replaced by the embargoed masks of the folds —
+`ceiling.derive` hardcodes F1+F2), the kept names FROZEN in ft2/cb_members_r66.csv (the audit's rows restricted to the F3+F4 members,
+sd ≤ 48, every row R62's row for the name), masked to membership by ft2/screen_members_f34.csv; the family `score` × 4h / 1d relative,
+both nulls, the sign POSITIVE, R65's gate against BAR_TWELVE (CLEARS = CONFIRMED). Validity in order: (1) the lists; (2) R65's saved
+F1+F2 screen rows reproduced through `frame_folds` with F1+F2 (`reproduction_rows`); (3) R50's reference rows (`reproduce_r50`); (4) THE
+GUARD — the rows (R66, F3) and (R66, F4) appended to output/backtest/confirmation_reads.csv (`guard`, R63's function with the strategy
+and the params as arguments), refused if present; only then the F3+F4 panel; (5) known-at on both inputs, (6) the construction, (7)
+membership and coverage. `score3` is not computed (the Korean F3+F4 series stay unread).
+
+    ft2 ceiling --target pairs --family score --universe members_f34 --draws 200   → output/ceiling_score_members_f34.md, output/ceiling_score_members_f34/
 """
 from __future__ import annotations
 
@@ -40,8 +52,8 @@ import pandas as pd
 from . import ceiling, coinbase as cb, folds
 from .book_ext import SHIFT_MIN, fold_ics, shift_feature, taker_bar
 from .cb_ext import (BAR_TOL, BAR_TWELVE, BET, BLOCK_MIN_NAMES, DEV, DRAWS, FAMILY_HZ, HZ, KR_PARQUET, MEMBERS_OUT_DIR, MEMBERS_SLICES, MEMBERS_START,
-                     N_CHECK, OUT_DIR as R60_DIR, PRIMARY, R62_CSV, R62_SIGN, R64_CSV, TOL, block_coverage, block_ics, family_p, frames, known_at, r62_list,
-                     r64_list, reproduction_r62, screen_frames_r62, single_p, verdict_r62)
+                     N_CHECK, OUT_DIR as R60_DIR, PRIMARY, R62_CSV, R62_SD_CUT, R62_SIGN, R64_CSV, TIGHT_SD, TOL, _list, block_coverage, block_ics, family_p,
+                     frames, known_at, r62_list, r64_list, reproduction_r62, screen_frames_r62, single_p, verdict_r62)
 from .ceiling import HORIZONS, MDE_K, MIN_PAIRS, Z_CLIP, _null_feature
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -428,5 +440,306 @@ def _void_r65(validity: dict, out_md: Path, out_dir: Path, taker_bps, maker_bps,
     validity["status"] = "FAIL"
     (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
     out_md.write_text("".join(_head_r65(validity, taker_bps, maker_bps, fee_source) + ["\n**The read is VOID: no row of the score was computed on the members.**\n"]))
+    print(f"validity FAIL — the read is void; wrote {out_md}", flush=True)
+    raise SystemExit(2)
+
+
+# ---- R66: the score confirmed once on F3+F4's members ---------------------------------------------------------------------------------------
+R66_CSV = Path(__file__).with_name("cb_members_r66.csv")          # frozen with the registration: symbol, sd_adj_bps, r66
+MEMBERS_F34_CSV = Path(__file__).with_name("screen_members_f34.csv")
+R66_FOLDS = ("F3", "F4")
+R66_START = pd.Timestamp("2024-08-01", tz="UTC")                   # a month before F3: the 1w lookback, the trailing month, the 720-hour beta
+R66_OUT_MD = Path("output/ceiling_score_members_f34.md")
+R66_OUT_DIR = Path("output/ceiling_score_members_f34")
+R65_FEATS = (SCORE, DEV, BXF, SCF, SCO)                            # R65's rows the new path must reproduce (validity (2))
+STRATEGY_R66 = "score_f34"
+VERDICT_R66 = {"CLEARS": "CONFIRMED", "CLOSED": "NOT CONFIRMED — CLOSED", "NOT DETECTABLE": "NOT CONFIRMED — NOT DETECTABLE",
+               "CLEARS WITH THE OPPOSITE SIGN": "NOT CONFIRMED — THE OPPOSITE SIGN"}
+
+
+def r66_list(path: Path | str = R66_CSV, cut: float = R62_SD_CUT, tight: float = TIGHT_SD) -> dict:
+    """R66's frozen list in R62's form (kept, tight, thin, md5, the self-consistency check `r66` = sd ≤ cut on every row)."""
+    return _list(path, cut, tight, "sd_adj_bps", "r66")
+
+
+def rows_equal_r62(L66: dict, L62: dict) -> dict:
+    """Validity (1): every row of R66's list equals R62's row for the same name — the sd (NaN = NaN) and the flag."""
+    sd62, k62, k66 = L62["sd"], set(L62["kept"]), set(L66["kept"])
+    off = [s for s, v in L66["sd"].items()
+           if s not in sd62 or not ((pd.isna(v) and pd.isna(sd62[s])) or v == sd62[s]) or ((s in k66) != (s in k62))]
+    return {"status": "PASS" if not off and len(L66["sd"]) else "FAIL", "rows": len(L66["sd"]), "n_off": len(off), "rows_off_r62": off[:20]}
+
+
+def frame_folds(L: dict, fold_names, start: pd.Timestamp, end: pd.Timestamp, members_csv: Path | str | None, path: Path | str = cb.MEMBERS_PARQUET,
+                slices: tuple[str, ...] = MEMBERS_SLICES, mult: dict[str, float] | None = None) -> dict:
+    """R62's `frames` on the Coinbase source with the SCORED mask replaced by the embargoed masks of `fold_names` (`ceiling.derive`
+    hardcodes F1+F2 — on an F3+F4 panel it scores nothing). With F1+F2 the mask is derive's own, so R65's frame comes back exactly."""
+    fr = frames(L, "coinbase", path, slices, mult, members_csv, start, end)
+    t = pd.Series(fr["idx"], index=fr["idx"])
+    s = np.zeros(len(t), dtype=bool)
+    for f in fold_names:
+        s |= folds.mask(t, f).to_numpy()
+    fr["D"]["scored"] = s
+    fr["s"] = s
+    fr["folds"] = list(folds.order(fold_names))
+    return fr
+
+
+def reproduction_rows(sc: pd.DataFrame, saved: Path, feats=R65_FEATS, tol: float = TOL) -> tuple[dict, pd.DataFrame]:
+    """A screen against a saved one on `feats` — every row (ic, t, every bet × horizon) to `tol`; R65's rows through the new path."""
+    if not (saved / "screen.parquet").exists():
+        return {"status": "MISSING", "note": f"{saved}/screen.parquet not found"}, pd.DataFrame()
+    key = ["bet", "horizon", "feature"]
+    old = pd.read_parquet(saved / "screen.parquet")
+    old = old[old["feature"].isin(feats)].set_index(key)
+    new = sc[sc["feature"].isin(feats)].set_index(key)
+    j = new[["ic", "t"]].join(old[["ic", "t"]], rsuffix="_saved", how="inner").dropna()
+    diff = {c: float((j[c] - j[f"{c}_saved"]).abs().max()) if len(j) else np.nan for c in ("ic", "t")}
+    n_old = int(len(old.dropna(subset=["ic", "t"])))
+    ok = len(j) == n_old > 0 and all(np.isfinite(v) and v <= tol for v in diff.values())
+    return {"status": "PASS" if ok else "FAIL", "rows_compared": int(len(j)), "rows_saved": n_old, "max_abs_diff": diff}, j.reset_index()
+
+
+def guard(reads: Path, plan: Path, fold_names, registration: str, strategy: str, params: dict) -> str:
+    """R63's guard (`scripts/r63_fall.py::guard`) with the strategy and the params as arguments: the registration block exists, the
+    folds have not been read for it; the rows are appended NOW, before any F3+F4 bar is loaded."""
+    import re
+    import time
+    if not plan.exists() or not re.search(rf"^### {registration} ", plan.read_text(), flags=re.M):
+        raise SystemExit(f"no '### {registration} ' block in {plan}: write the registration before the read")
+    if reads.exists():
+        r = pd.read_csv(reads)
+        again = sorted(set(r.loc[r["registration"] == registration, "fold"].astype(str)) & set(fold_names))
+        if again:
+            print(f"{registration} has already read {again} ({reads}): a fold is read once per question — refused", flush=True)
+            raise SystemExit(2)
+    stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+    reads.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"read_at": stamp, "registration": registration, "fold": list(fold_names), "strategy": strategy, "params": json.dumps(params)}
+                 ).to_csv(reads, mode="a", header=not reads.exists(), index=False)
+    return stamp
+
+
+def folds_check(s: np.ndarray, idx: pd.DatetimeIndex, fold_names) -> dict:
+    """Validity (7): every scored bar inside the embargoed folds, the days counted (whole = 288 scored bars)."""
+    t = pd.Series(idx, index=idx)
+    inside = np.zeros(len(t), dtype=bool)
+    for f in fold_names:
+        inside |= folds.mask(t, f).to_numpy()
+    sidx = idx[s]
+    per_day = pd.Series(1, index=sidx).groupby(sidx.floor("D")).sum() if s.any() else pd.Series(dtype=int)
+    return {"status": "PASS" if s.any() and not (s & ~inside).any() else "FAIL", "scored_bars": int(s.sum()), "bars_outside_folds": int((s & ~inside).sum()),
+            "days": int(len(per_day)), "whole_days": int((per_day == 288).sum()), "first": str(sidx[0]) if s.any() else None, "last": str(sidx[-1]) if s.any() else None}
+
+
+def run_r66(taker_bps: float, maker_bps: float, fee_source: str, draws: int = DRAWS, seed: int = 0, shift_min: int = SHIFT_MIN, jobs: int = 1,
+            cb_path: Path | str = cb.MEMBERS_PARQUET, csv: Path | str = R66_CSV, members_csv: Path | str = MEMBERS_F34_CSV, r62_csv: Path | str = R62_CSV,
+            r62_members_csv: Path | str | None = None, r65: Path = R65_OUT_DIR, slices: tuple[str, ...] = MEMBERS_SLICES, btc_slices: tuple[str, ...] = ("candles_5m",),
+            mult: dict[str, float] | None = None, n_check: int = N_CHECK, start: pd.Timestamp = R66_START, end: pd.Timestamp | None = None,
+            f12_start: pd.Timestamp = MEMBERS_START, f12_end: pd.Timestamp | None = None, fold_names=R66_FOLDS, block_min_names: int = BLOCK_MIN_NAMES,
+            r60: Path = R60_DIR, ref_csv: Path | str = REF_CSV, f12_frame: dict | None = None, f12_run: str | None = None, reads: Path | None = None,
+            plan: Path | None = None, out_md: Path = R66_OUT_MD, out_dir: Path = R66_OUT_DIR) -> str:
+    """R66. In order: (1) the lists, (2) R65's saved F1+F2 rows through `frame_folds`, (3) R50's reference rows, (4) THE GUARD, then the
+    F3+F4 frame — (5) known-at on both inputs, (6) the construction, (7) membership, coverage and the folds — then the screen, the nulls
+    on the score, the described rows. FAIL on (1) … (3) → exit 2 before the guard; on (5) … (7) → exit 2, no IC computed."""
+    from joblib import Parallel, delayed
+    from . import backtest as bt
+    from .universe import MEMBERS_CSV
+    out_dir.mkdir(parents=True, exist_ok=True)
+    end = end or folds.bounds(folds.order(fold_names)[-1])[1]
+    f12_end = f12_end or ceiling.END
+    reads, plan = reads or bt.READS, plan or bt.PLAN
+    fold_names = tuple(folds.order(fold_names))
+    L, L62 = r66_list(csv), r62_list(r62_csv)
+    kept = L["kept"]
+    mpath, m12path = members_csv, r62_members_csv or MEMBERS_CSV
+    validity = {"registration": "R66", "folds": list(fold_names), "window": [str(start), str(end)], "draws": draws, "seed": seed, "shift_min": shift_min,
+                "source": str(cb_path),
+                "universe_file": {"path": str(csv), "md5": L["md5"], "n_kept": L["n_kept"], "n_rows": L["n_rows"], "consistent": L["consistent"],
+                                  "status": "PASS" if L["consistent"] and L["n_kept"] > 0 else "FAIL"},
+                "members_file": {"path": str(mpath), "md5": _md5(mpath)},
+                "r62_list": {"path": str(r62_csv), "md5": L62["md5"], "n_kept": L62["n_kept"], "consistent": L62["consistent"]},
+                "r62_members_file": {"path": str(m12path), "md5": _md5(m12path)},
+                "gate": {"bar_twelve": BAR_TWELVE, "sign": R62_SIGN, "family": [(SCORE, h) for h in FAMILY_HZ]}}
+    # validity (1): the lists
+    validity["rows_equal_r62"] = rows_equal_r62(L, L62)
+    saved_mv = pd.read_parquet(r60 / "move_vs_cost.parquet") if (r60 / "move_vs_cost.parquet").exists() else None
+    if saved_mv is not None:
+        sm = saved_mv[(saved_mv["bet"] == BET) & (saved_mv["horizon"] == PRIMARY)]
+        validity["gate"]["bar_r60_saved"] = float(sm["ic_needed_maker"].iloc[0]) if len(sm) else np.nan
+        validity["gate"]["bar_status"] = "PASS" if len(sm) and abs(float(sm["ic_needed_maker"].iloc[0]) - BAR_TWELVE) <= BAR_TOL else "FAIL"
+    else:
+        validity["gate"]["bar_status"] = "MISSING"
+    if validity["universe_file"]["status"] != "PASS" or not L62["consistent"] or validity["rows_equal_r62"]["status"] != "PASS" or validity["gate"]["bar_status"] != "PASS":
+        return _void_r66(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+
+    # validity (2): R65's saved F1+F2 rows through the new path — the same frame, the mask set by the new code, no nulls
+    print(f"validity (2): R65's frame through frame_folds({'+'.join(folds.EXPLORATION)}) — the five features against {r65}/screen.parquet…", flush=True)
+    fr12 = frame_folds(L62, folds.EXPLORATION, f12_start, f12_end, m12path, cb_path, slices, mult)
+    bx12 = bx_frames(fr12["D"], fr12["idx"], fr12["cols"], btc_close(fr12["idx"], btc_slices))
+    SF12 = score_frames(fr12["F"][DEV], bx12["bx5"], bx12["fall"])
+    sc12, _ = ceiling.ic_screen(fr12["D"], {SCORE: SF12[SCORE], DEV: fr12["F"][DEV], BXF: SF12[BXF], SCF: SF12[SCF], SCO: SF12[SCO]}, set())
+    validity["reproduction_r65"], got65 = reproduction_rows(sc12, r65)
+    got65.to_csv(out_dir / "validity_r65.csv", index=False)
+    del fr12, bx12, SF12, sc12
+    if validity["reproduction_r65"]["status"] != "PASS":
+        return _void_r66(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+
+    # validity (3): the bx code is R50's — R63's mask path on R50's stage-1 frame against the reference rows
+    print(f"validity (3): R50's reference rows through R63's mask path ({ref_csv})…", flush=True)
+    validity["r50_reproduction"], got = reproduce_r50(ref_csv, f12_frame, f12_run, None)
+    got.to_csv(out_dir / "validity_r50.csv", index=False)
+    if validity["r50_reproduction"]["status"] != "PASS":
+        return _void_r66(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+
+    # validity (4): THE GUARD — the rows appended now, before any F3+F4 bar is loaded; refused if present
+    params = {"feature": SCORE, "inputs": [DEV, "bx_1h"], "mask": "b_1h < 0", "sign": int(R62_SIGN), "horizons": list(FAMILY_HZ), "universe": "members_f34",
+              "list_md5": L["md5"], "members_md5": validity["members_file"]["md5"]}
+    try:
+        validity["guard"] = {"status": "PASS", "appended_at": guard(reads, plan, fold_names, "R66", STRATEGY_R66, params), "ledger": str(reads), "folds": list(fold_names)}
+    except SystemExit as e:
+        validity["guard"] = {"status": "FAIL", "note": f"refused: {e.code}", "ledger": str(reads), "folds": list(fold_names)}
+        return _void_r66(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+    print(f"guard: (R66, {', '.join(fold_names)}) appended to {reads} at {validity['guard']['appended_at']}; the F3+F4 panel is loaded now", flush=True)
+
+    # the F3+F4 frame; bx on it; the score
+    fr = frame_folds(L, fold_names, start, end, mpath, cb_path, slices, mult)
+    D, idx, cols, s, F, M, m = fr["D"], fr["idx"], fr["cols"], fr["s"], fr["F"], fr["M"], fr["m"]
+    validity["folds_check"] = folds_check(s, idx, fold_names)
+    if validity["folds_check"]["status"] != "PASS":
+        return _void_r66(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+    sidx = idx[s]
+    validity |= {"scored_bars": int(s.sum()), "days": validity["folds_check"]["days"], "names_in_panel": len(cols), "first": str(sidx[0]), "last": str(sidx[-1]),
+                 "kept_in_panel": int(sum(c in cols for c in kept))}
+    print("bx_1h on the hourly grid, carried into the 5m bars; the score…", flush=True)
+    btc5 = btc_close(idx, btc_slices)
+    bxf = bx_frames(D, idx, cols, btc5)
+    bx5, fall = bxf["bx5"], bxf["fall"]
+    cb_dev = F[DEV]
+    SF = score_frames(cb_dev, bx5, fall)
+    score = SF[SCORE]
+
+    # validity (5) known-at on both inputs, (6) the construction, (7) membership and coverage — before any IC
+    print("validity (5) … (7)…", flush=True)
+    validity["known_at"] = known_at(fr["F_kept"], fr["U"], fr["G"], s, kept, n_check, seed)
+    validity["hour_check"] = hour_check(bxf["hour_used"], idx, s, score)
+    validity["recompute"] = recompute_fall_cells(D, cols, btc5, cb_dev, bx5, score, fall, s, n_check, seed)
+    validity["construction"] = construction(score, cb_dev, bx5, fall, s)
+    validity["membership"] = {"status": "PASS" if bool((score.notna() & ~M).to_numpy().sum() == 0) else "FAIL",
+                              "values_off_membership": int((score.notna() & ~M).to_numpy().sum()), "values_on": int(score[s].notna().to_numpy().sum())}
+    validity["coverage"], B = block_coverage(score, s, m, kept, block_min_names)
+    checks = ("universe_file", "rows_equal_r62", "reproduction_r65", "r50_reproduction", "guard", "folds_check", "known_at", "hour_check", "recompute",
+              "construction", "membership", "coverage")
+    validity["status"] = "PASS" if all(validity[k]["status"] == "PASS" for k in checks) else "FAIL"
+    if validity["status"] != "PASS":
+        return _void_r66(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+    del fr["F_all"], fr["F_kept"], fr["F_desc"]
+
+    # ρ and the described rows
+    rho_v, rho_daily = rho(cb_dev, bx5, fall, s)
+    validity["rho"] = rho_v
+    feats = {SCORE: score, DEV: cb_dev, BXF: SF[BXF], SCF: SF[SCF], SCO: SF[SCO]}
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    B.to_parquet(out_dir / "blocks.parquet", index=False)
+    head = _head_r66(validity, taker_bps, maker_bps, fee_source)
+
+    # the screen; the nulls on the score
+    print("screen: the score; each input alone, the halves apart…", flush=True)
+    sc, daily = ceiling.ic_screen(D, feats, set())
+    Zs = {h: D["z"][h][s].clip(-Z_CLIP, Z_CLIP).to_numpy() for h in HZ}
+    Zr = {h: D["zres"][h][s].to_numpy() for h in HZ}
+    print(f"nulls on {SCORE}: {draws} day shuffles and {draws} whole-day shifts…", flush=True)
+    null_shuffle, null_shift = Parallel(n_jobs=min(jobs, 2) if jobs > 1 else 1)(
+        [delayed(_null_feature)(SCORE, score[s], Zs, Zr, draws, seed), delayed(shift_feature)(SCORE, score, D, s, draws, seed, shift_min)])
+
+    print("the bars…", flush=True)
+    ct, _ = ceiling.bar_cost(idx, cols, taker_bps, maker_bps, end)
+    bars_taker = {h: taker_bar(D, ct, h) for h in HORIZONS}
+    cost_cover = float(ct[s].notna().to_numpy().mean())
+
+    fa, fb = fold_names
+    rows = sc.merge(fold_ics(daily, fold_names), on=["bet", "horizon", "feature"], how="left")
+    rows["ic_se"] = rows["ic_mde"] / MDE_K
+    rows["bar_maker_twelve"] = np.where(rows["horizon"] == PRIMARY, BAR_TWELVE, np.nan)
+    rows["bar_taker_members"] = rows["horizon"].map(bars_taker)
+    for c in ("p_single_shuffle", "p_single_shift", "p_fw_shuffle", "p_fw_shift"):
+        rows[c] = np.nan
+    for i, r in rows.iterrows():
+        if r["feature"] == SCORE and r["bet"] in ("directional", "relative") and r["horizon"] in HZ:
+            rows.loc[i, "p_single_shuffle"] = single_p(null_shuffle, r["bet"], SCORE, r["horizon"], r["t"])
+            rows.loc[i, "p_single_shift"] = single_p(null_shift, r["bet"], SCORE, r["horizon"], r["t"])
+    cells = [(SCORE, h) for h in FAMILY_HZ]
+    fam_rows = rows[(rows["bet"] == BET) & (rows["feature"] == SCORE) & rows["horizon"].isin(FAMILY_HZ)]
+    t_real = {(r["feature"], r["horizon"]): r["t"] for _, r in fam_rows.iterrows()}
+    pf1, b1 = family_p(null_shuffle, cells, t_real)
+    pf2, b2 = family_p(null_shift, cells, t_real)
+    for i, r in fam_rows.iterrows():
+        rows.loc[i, ["p_fw_shuffle", "p_fw_shift"]] = [pf1[r["feature"], r["horizon"]], pf2[r["feature"], r["horizon"]]]
+    rows["p_family"] = rows[["p_fw_shuffle", "p_fw_shift"]].max(axis=1)
+    rows["verdict"] = ""
+    for i, r in rows.loc[fam_rows.index].iterrows():
+        v = VERDICT_R66[verdict_r62(r["ic"], r["ic_se"], r["p_family"], bool(r["folds_same_sign"]))]
+        rows.loc[i, "verdict"] = v if r["horizon"] == PRIMARY else v + " (reported, not gated)"
+    cons = validity["construction"]
+    words = {DEV: "described (R62's input alone on the score's cells — its first read on F3+F4's members)",
+             BXF: f"described (−bx_1h alone on the fall bars only, {cons['bars_fall']:,} of {cons['bars_scored']:,} scored bars; R63's cells on the 5m frame, the sign made positive)",
+             SCF: "described (the score on the fall bars only)", SCO: "described (the score on the other bars only — cbprem_dev's rank there)"}
+    for f_, w in words.items():
+        rows.loc[rows["feature"] == f_, "verdict"] = w
+    bi = block_ics(daily, m, feature=SCORE)
+
+    rows.to_parquet(out_dir / "screen.parquet", index=False)
+    daily.to_parquet(out_dir / "ic_daily.parquet", index=False)
+    null_shuffle.to_parquet(out_dir / "null_shuffle.parquet", index=False)
+    null_shift.to_parquet(out_dir / "null_shift.parquet", index=False)
+    pd.DataFrame({"horizon": list(bars_taker), "ic_needed_taker_members": list(bars_taker.values()), "bar_maker_twelve": BAR_TWELVE, "cost_cover": cost_cover}).to_parquet(out_dir / "move_vs_cost.parquet", index=False)
+    rho_daily.to_parquet(out_dir / "rho.parquet", index=False)
+    names = pd.DataFrame({"symbol": cols, "cells_score": score[s].notna().sum().to_numpy(), "cells_fall": SF[SCF][s].notna().sum().to_numpy(),
+                          "score_mean": score[s].mean().to_numpy(), "bx_fall_mean": SF[BXF][s].mean().to_numpy()})
+    names[names["cells_score"] > 0].to_parquet(out_dir / "names.parquet", index=False)
+    B.merge(bi, on="block", how="left").to_parquet(out_dir / "blocks.parquet", index=False)
+
+    show = lambda df, digits=4: df.round(digits).to_markdown(index=False)                    # noqa: E731
+    cols_show = ["bet", "horizon", "feature", "ic", "t", "ic_se", "ic_mde", "days", "months_same_sign", f"ic_{fa}", f"ic_{fb}", "folds_same_sign",
+                 "p_single_shuffle", "p_single_shift", "p_fw_shuffle", "p_fw_shift", "p_family", "bar_maker_twelve", "bar_taker_members", "verdict"]
+    g = rows[(rows["feature"] == SCORE) & (rows["bet"] == BET) & (rows["horizon"] == PRIMARY)].iloc[0]
+    md = head + [f"\n## Verdict by R66's gate (R65's) — `{SCORE}`, {BET}, {PRIMARY}, on the kept F3+F4 members: **{g['verdict']}**\n",
+                 f"\nIC {g['ic']:+.4f} (t {g['t']:+.2f}, se {g['ic_se']:.4f}, MDE {g['ic_mde']:.4f}); p_family {g['p_family']:.3f} (day shuffles {g['p_fw_shuffle']:.3f}, whole-day "
+                 f"shifts {g['p_fw_shift']:.3f}; single {g['p_single_shuffle']:.3f} / {g['p_single_shift']:.3f}); {fa} {g[f'ic_{fa}']:+.4f}, {fb} {g[f'ic_{fb}']:+.4f} "
+                 f"({'same sign' if g['folds_same_sign'] else 'signs differ or a fold missing'}); months the same sign {g['months_same_sign']:.2f}; the gate's bar {BAR_TWELVE} "
+                 f"(the twelve's maker bar at {PRIMARY}, a number); the members' own taker bar {bars_taker[PRIMARY]:.4f} (the cost proxy covers {cost_cover:.0%} of the scored "
+                 f"cells); the registered sign {'positive' if R62_SIGN > 0 else 'negative'}. ρ (the inputs' per-bar rank correlation on the fall bars) {rho_v['rho_mean']:+.3f} "
+                 f"(median {rho_v['rho_median']:+.3f}, sd {rho_v['rho_sd']:.3f}, {rho_v['bars']:,} bars); the fall half {cons['fall_share']:.1%} of the scored bars.\n"]
+    fam = (rows["feature"] == SCORE) & rows["horizon"].isin(HZ) & rows["bet"].isin(["directional", "relative"])
+    inputs = rows["feature"].isin([DEV, BXF, SCF, SCO]) & rows["bet"].isin(["directional", "relative"]) & rows["horizon"].isin(HZ)
+    md += ["\n## The family (relative, 4h / 1d) with the directional bet and 1h beside — the registered feature\n",
+           "`p_fw_*` = the share of a null's draws whose largest |t| over the TWO family cells is at or above the real |t|; `p_single_*` = the cell alone; `p_family` = the larger "
+           f"of the two nulls' family-wise p. `ic_{fa}`, `ic_{fb}` = the HAC mean of the daily IC inside each fold. `bar_maker_twelve` = the gate's number; `bar_taker_members` = "
+           "the members' taker bar from their cost proxy at the horizon.\n", show(rows[fam][cols_show]), "\n",
+           "\n## Each input alone on the score's cells, and the score on each half (described, no nulls)\n", show(rows[inputs][cols_show[:12] + ["bar_taker_members", "verdict"]]), "\n",
+           "\n## The construction and ρ\n", "```\n", json.dumps({"construction": cons, "rho": rho_v}, indent=1, default=str), "\n```\n",
+           "\n## Described beside: 15m and the vol bet of every row\n", show(rows[~fam & ~inputs][cols_show[:12] + ["bar_taker_members", "verdict"]]), "\n",
+           "\n## The nulls' family bars (largest |t| over the two cells, per draw)\n", "```\n", json.dumps({"shuffle": b1, "shift": b2}, indent=1), "\n```\n",
+           f"\n## By block — the kept members present and the relative {PRIMARY} IC of the score inside the block (described)\n",
+           show(B.merge(bi, on="block", how="left").assign(block=lambda d: d["block"].dt.date)), "\n"]
+    out_md.write_text("".join(md))
+    print(f"{SCORE} {BET} {PRIMARY} on F3+F4's members: {g['verdict']}; wrote {out_md} and {out_dir}/", flush=True)
+    return "".join(md)
+
+
+def _head_r66(validity: dict, taker_bps, maker_bps, fee_source) -> list[str]:
+    return [f"# R66 — the two-rank score confirmed once on F3+F4's members: `cbprem_dev` and −`bx_1h` after a BTC fall (`ft2 ceiling --target pairs --family score --universe members_f34`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC\n",
+            f"\n**Folds read:** {'+'.join(validity['folds'])} (embargoed) on the members' cells — R62's frame built for them, the window {validity['window'][0]} → "
+            f"{validity['window'][1]}. The universe `{validity['universe_file']['path']}` (md5 {validity['universe_file']['md5']}, {validity['universe_file']['n_kept']} kept); "
+            f"the members `{validity['members_file']['path']}` (md5 {validity['members_file']['md5']}); for the reproduction R62's list (md5 {validity['r62_list']['md5']}) and "
+            f"members (md5 {validity['r62_members_file']['md5']}). Fees (input): taker {taker_bps} bps, maker {maker_bps} bps — {fee_source}.\n",
+            f"\n## Validity — read first: **{validity.get('status', 'FAIL')}**\n", "```\n", json.dumps(validity, indent=1, default=str), "\n```\n"]
+
+
+def _void_r66(validity: dict, out_md: Path, out_dir: Path, taker_bps, maker_bps, fee_source):
+    validity["status"] = "FAIL"
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    out_md.write_text("".join(_head_r66(validity, taker_bps, maker_bps, fee_source) + ["\n**The read is VOID: no row of the score was computed on F3+F4's members.**\n"]))
     print(f"validity FAIL — the read is void; wrote {out_md}", flush=True)
     raise SystemExit(2)
