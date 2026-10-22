@@ -48,7 +48,9 @@ while read -r name groups seed extra; do
   [[ -z "$name" || "$name" == \#* ]] && continue
   echo ""; echo "==> launching $name (FEATURE_GROUPS=$groups --seed $seed ${extra:-})"
   prev="$(field "$(marker)" run)"
-  env ${extra:-} FEATURE_GROUPS="$groups" ./scripts/gcp_gbt.sh --seed "$seed" > "logs/${name}.launch.log" 2>&1
+  # stdin from /dev/null: the launcher's ssh calls would otherwise swallow the rest of the
+  # queue (found 2026-10-22 — the first chain stopped after two of six runs, exit 0).
+  env ${extra:-} FEATURE_GROUPS="$groups" ./scripts/gcp_gbt.sh --seed "$seed" > "logs/${name}.launch.log" 2>&1 < /dev/null
   # the new marker appears once the remote job starts (a minute or two after launch)
   for i in $(seq 1 60); do
     run="$(field "$(marker)" run)"
