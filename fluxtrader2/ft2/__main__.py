@@ -277,6 +277,12 @@ def cmd_ceiling(args):
             raise SystemExit("--family krw reads P2's cells, F1+F2, with --universe members only (R64)")
         cb_ext.run_r64(args.taker_bps, args.maker_bps, args.fee_source, args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")), mult=coinbase_mult())
         return print(f"wrote {cb_ext.R64_OUT_MD} and {cb_ext.R64_OUT_DIR}/")
+    if args.target == "pairs" and args.family == "score":        # R65: two under-bar facts as one rank score on the members — R62's frame
+        from . import score_ext
+        if args.folds or args.universe != "members":
+            raise SystemExit("--family score reads P2's cells, F1+F2, with --universe members only (R65)")
+        score_ext.run_r65(args.taker_bps, args.maker_bps, args.fee_source, args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")), mult=coinbase_mult())
+        return print(f"wrote {score_ext.R65_OUT_MD} and {score_ext.R65_OUT_DIR}/")
     if args.target == "pairs" and args.family == "depth":        # R33: the ±1 % imbalance demeaned by its trailing month, P2's frame
         from . import book_ext
         if args.folds:
@@ -384,12 +390,12 @@ def main(argv=None):
     g.add_argument("--target", choices=["pairs", "basket"], default="pairs",
                    help="basket: P5's audit of the market factor, per year → output/market.md (see ft2/market.py)")
     g.add_argument("--folds", nargs="*", help="--target basket only: exploration folds to read (default FP F0 F1 F2)")
-    g.add_argument("--family", choices=["index", "etf", "depth", "coinbase", "krw"], default=None,
+    g.add_argument("--family", choices=["index", "etf", "depth", "coinbase", "krw", "score"], default=None,
                    help="--target basket (R30): `index` — the Nasdaq 100's moves, the basket's lag behind it, open/closed and its volatility → output/market_index.md; "
                         "`etf` — the spot-ETF flows, F2 only → output/market_etf.md (see ft2/market_ext.py). --target pairs (R33): `depth` — the ±1 % book "
                         "imbalance demeaned by its trailing month, P2's cells → output/ceiling_depth.md (see ft2/book_ext.py); (R60): `coinbase` — the Coinbase spot "
                         "premium per name, its deviation from its trailing month and its 24-h change, P2's cells → output/ceiling_coinbase.md (see ft2/cb_ext.py)")
-    g.add_argument("--universe", choices=["new", "both", "members"], default=None, help="--family depth (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md; `both` — the twelve and the 32 pooled, a described row → output/ceiling_depth_both.md. --family coinbase (R62): `members` — the screener's F1+F2 members kept by ft2/cb_members_r62.csv → output/ceiling_coinbase_members.md; --family krw (R64): `members` — the same on Bithumb's BTC-relative premium, kept by ft2/krw_members_r64.csv → output/ceiling_krw_members.md")
+    g.add_argument("--universe", choices=["new", "both", "members"], default=None, help="--family depth (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md; `both` — the twelve and the 32 pooled, a described row → output/ceiling_depth_both.md. --family coinbase (R62): `members` — the screener's F1+F2 members kept by ft2/cb_members_r62.csv → output/ceiling_coinbase_members.md; --family krw (R64): `members` — the same on Bithumb's BTC-relative premium, kept by ft2/krw_members_r64.csv → output/ceiling_krw_members.md; --family score (R65): `members` — cbprem_dev and −bx_1h after a BTC fall as one rank score on R62's frame → output/ceiling_score_members.md (see ft2/score_ext.py)")
     b = sub.add_parser("backtest", help="P3: a strategy through the harness → output/backtest/<name>/ (see ft2/backtest.py)")
     b.add_argument("strategy", help="a name in backtest.STRATEGIES / rules.STRATEGIES, e.g. coin")
     b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")
