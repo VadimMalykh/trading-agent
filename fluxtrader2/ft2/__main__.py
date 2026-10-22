@@ -276,6 +276,12 @@ def cmd_ceiling(args):
             return print(f"wrote {cb_ext.MEMBERS_OUT_MD} and {cb_ext.MEMBERS_OUT_DIR}/")
         cb_ext.run(args.taker_bps, args.maker_bps, args.fee_source, args.symbols or PAIRS, args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")))
         return print(f"wrote {cb_ext.OUT_MD} and {cb_ext.OUT_DIR}/")
+    if args.target == "pairs" and args.family == "spot":         # R68: Binance's own spot flow per member at 1d — R62's screen on the trailing-day taker-buy share and spot/perp ratio
+        from . import spot_ext
+        if args.folds or args.universe != "members":
+            raise SystemExit("--family spot reads P2's cells, F1+F2, with --universe members only (R68)")
+        spot_ext.run_r68(args.taker_bps, args.maker_bps, args.fee_source, args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")), mult=coinbase_mult())
+        return print(f"wrote {spot_ext.OUT_MD} and {spot_ext.OUT_DIR}/")
     if args.target == "pairs" and args.family == "krw":          # R64: the Korean premium at breadth — R62's screen on Bithumb's BTC-relative premium
         from . import cb_ext
         if args.folds or args.universe != "members":
@@ -404,12 +410,12 @@ def main(argv=None):
     g.add_argument("--target", choices=["pairs", "basket"], default="pairs",
                    help="basket: P5's audit of the market factor, per year → output/market.md (see ft2/market.py)")
     g.add_argument("--folds", nargs="*", help="--target basket only: exploration folds to read (default FP F0 F1 F2)")
-    g.add_argument("--family", choices=["index", "etf", "depth", "coinbase", "krw", "score", "hold"], default=None,
+    g.add_argument("--family", choices=["index", "etf", "depth", "coinbase", "krw", "score", "hold", "spot"], default=None,
                    help="--target basket (R30): `index` — the Nasdaq 100's moves, the basket's lag behind it, open/closed and its volatility → output/market_index.md; "
                         "`etf` — the spot-ETF flows, F2 only → output/market_etf.md (see ft2/market_ext.py). --target pairs (R33): `depth` — the ±1 % book "
                         "imbalance demeaned by its trailing month, P2's cells → output/ceiling_depth.md (see ft2/book_ext.py); (R60): `coinbase` — the Coinbase spot "
                         "premium per name, its deviation from its trailing month and its 24-h change, P2's cells → output/ceiling_coinbase.md (see ft2/cb_ext.py)")
-    g.add_argument("--universe", choices=["new", "both", "members", "members_f34"], default=None, help="--family depth (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md; `both` — the twelve and the 32 pooled, a described row → output/ceiling_depth_both.md. --family coinbase (R62): `members` — the screener's F1+F2 members kept by ft2/cb_members_r62.csv → output/ceiling_coinbase_members.md; --family krw (R64): `members` — the same on Bithumb's BTC-relative premium, kept by ft2/krw_members_r64.csv → output/ceiling_krw_members.md; --family score (R65): `members` — cbprem_dev and −bx_1h after a BTC fall as one rank score on R62's frame → output/ceiling_score_members.md; `members_f34` — R66: the score confirmed once on F3+F4's members (the guard row) → output/ceiling_score_members_f34.md (see ft2/score_ext.py); --family hold (R67): `members` — cbprem_dev at a 3- and 7-day hold on the members, R62's frame → output/ceiling_hold_members.md (see ft2/hold_ext.py)")
+    g.add_argument("--universe", choices=["new", "both", "members", "members_f34"], default=None, help="--family depth (R34): `new` — the 32 of R10's forty outside the twelve (ft2.universe.NEW) → output/ceiling_depth_new.md; `both` — the twelve and the 32 pooled, a described row → output/ceiling_depth_both.md. --family coinbase (R62): `members` — the screener's F1+F2 members kept by ft2/cb_members_r62.csv → output/ceiling_coinbase_members.md; --family krw (R64): `members` — the same on Bithumb's BTC-relative premium, kept by ft2/krw_members_r64.csv → output/ceiling_krw_members.md; --family score (R65): `members` — cbprem_dev and −bx_1h after a BTC fall as one rank score on R62's frame → output/ceiling_score_members.md; `members_f34` — R66: the score confirmed once on F3+F4's members (the guard row) → output/ceiling_score_members_f34.md (see ft2/score_ext.py); --family hold (R67): `members` — cbprem_dev at a 3- and 7-day hold on the members, R62's frame → output/ceiling_hold_members.md (see ft2/hold_ext.py); --family spot (R68): `members` — Binance's own spot flow per member at 1d (the trailing-day taker-buy share and spot/perp ratio against their month), R62's frame, kept by ft2/spot_members_r68.csv → output/ceiling_spot_members.md (see ft2/spot_ext.py)")
     b = sub.add_parser("backtest", help="P3: a strategy through the harness → output/backtest/<name>/ (see ft2/backtest.py)")
     b.add_argument("strategy", help="a name in backtest.STRATEGIES / rules.STRATEGIES, e.g. coin")
     b.add_argument("--param", nargs="*", type=_param, metavar="K=V", help="the strategy's constructor arguments")
