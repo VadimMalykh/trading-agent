@@ -1151,6 +1151,13 @@ def cmd_bookentry(args) -> int:
                             exploration_recorded=args.exploration_recorded, config=args.config)
 
 
+def cmd_longhead(args) -> int:
+    """WALKFORWARD_PROTOCOL §9.9 — X18: the 1440-minute head as its own policy arm."""
+    from . import longhead
+    return longhead.report(WINNER_SPEC, stage=args.stage,
+                           exploration_recorded=args.exploration_recorded)
+
+
 def cmd_bookladder(args) -> int:
     """BOOK_ERA_PLAN §R.4 — X7: a book observable as the size-ladder key."""
     from . import bookladder
@@ -1777,6 +1784,16 @@ def main() -> int:
                     help="required by --stage confirm: the exploration table and arm are in §E1")
     be.add_argument("--config", default=None, help="--stage confirm only: the arm from §E1")
     be.set_defaults(fn=cmd_bookentry)
+
+    lh = sub.add_parser("longhead", help="WALKFORWARD_PROTOCOL §9.9 (X18): the 1440m head as its "
+                        "own policy arm (cov 0.02, hold 1440, the incumbent's ladder) against the "
+                        "served rule on net P&L per calendar day; explore on the X8″ dumps, confirm "
+                        "once on the X8-recipe folds F2 + F3")
+    lh.add_argument("--stage", choices=["explore", "confirm"], required=True)
+    lh.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: the exploration table, MDE forecast and "
+                         "PASSED verdict are written in §9.9")
+    lh.set_defaults(fn=cmd_longhead)
 
     fid = sub.add_parser("fidelity", help="does the SERVED implementation (trailing-window "
                          "cut and ladder) score like the fixed-window policy M3-2 chose?")

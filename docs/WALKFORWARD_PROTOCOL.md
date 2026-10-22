@@ -1757,7 +1757,33 @@ M3_ERA=walkforward ./scripts/m3.sh -m m3 pathexits --stage confirm --exploration
 
 ---
 
-### 9.9 X18 — the 1440-minute head as its own policy arm, on the served family's dumps: the registration — 🔵 WRITTEN 2026-10-22, before any code or number
+### 9.9 X18 — the 1440-minute head as its own policy arm, on the served family's dumps: the registration — 🟢 CLOSED 2026-10-22, GATE NOT PASSED (the 24-hour arm earns more per trade, trades a third as often, and loses per day on two seeds of three)
+
+**RESULT, read 2026-10-22 (`logs/x18_explore_20261022.log`; `m3 validate` passed first; the harness `ml/train/m3/longhead.py`, tests `tests/test_longhead.py`, 5 green).** Harness checks: (1) the incumbent on the cleaned dumps reproduces the incumbent on the raw dumps exactly (1,099 / 637 / 818 trades, Σsize and Σsigned_ret to 1e-9 — the training logs' cov-0.02 counts 1,101 / 637 / 820 less the bars the regime column drops); (2) no NaN forward return at any horizon in any seed, nothing dropped; (3) bars at or above every cut equal coverage × bars (18,624 at 0.02; 46,559–46,560 at 0.05); (4) every arm on all twelve pairs in every seed. `L02`'s trade counts 371 / 236 / 335 are the training logs' 1440-head cov-0.02 counts (372 / 236 / 336) less the same regime bars — the harness and the trainer's own serial simulation agree.
+
+| arm | D = arm − INC, bps/day | 95 % (days) | NW-1 lower | s1 / s2 / s3 | median seed |
+|---|---:|---|---:|---|---:|
+| **`L02`** (primary) | **−28.9** | [−243.2, +185.5] | −167.6 | −50.4 / +23.8 / −60.0 | −50.4 |
+| `L05` | +19.4 | [−241.8, +280.6] | −110.2 | −77.8 / +118.5 / +17.5 | +17.5 |
+| `H24` | −27.8 | [−273.2, +217.5] | −152.1 | −62.9 / +7.0 / −27.4 | −27.4 |
+
+**Verdict under §9.9 as written: GATE NOT PASSED** — `L02`'s pooled D is negative and so is the median seed. X18 closes here; the 1440 head stays unserved; nothing served changes.
+
+| arm | trades (3 seeds) | per day per seed | net/day pooled | per-notional net | per-notional vs INC (exit-day clusters) | dir_acc | up / down | book / pre-book | slot occupancy |
+|---|---:|---:|---:|---:|---|---:|---|---|---:|
+| `INC` | 2,554 | 3.15 | +57.2 | +13.6 | — | 0.570 | 0.571 (2,518) / 0.528 (36) | 0.649 (205) / 0.563 (2,349) | 4.4 % |
+| `L02` | 942 | 1.16 | +28.3 | +18.9 | +5.3 [−79.8, +90.5] | 0.529 | 0.535 (835) / 0.477 (107) | 0.598 (87) / 0.522 (855) | 9.7 % |
+| `L05` | 2,214 | 2.73 | +76.6 | +24.6 | +11.0 [−35.6, +57.6] | 0.532 | 0.545 (1,630) / 0.496 (584) | 0.561 (301) / 0.527 (1,913) | 22.8 % |
+| `H24` | 1,343 | 1.66 | +29.4 | +14.0 | +0.5 [−68.0, +68.9] | 0.531 | 0.532 (1,316) / 0.462 (27) | 0.636 (141) / 0.518 (1,202) | 13.8 % |
+
+**What the numbers say, in plain words.** The 24-hour head's trades are worth more each (+18.9 net per notional against the incumbent's +13.6, the per-notional contrast +5.3 inside ±85) but it fires a third as often, so per calendar day it earns half of what the incumbent earns, and on two seeds of three the daily difference is negative. Its directional accuracy at the cut is 0.529 against the incumbent's 0.570. The per-day design has no power at this length: the forecast confirmation MDE on F2 + F3 (358 days) is **186 bps/day**, three times the incumbent's whole daily earnings — a per-day comparison of two policies with different trade sets cannot resolve anything smaller on a year of bars, which is itself the reading: the long head would have to be dramatically better to show, and it is not. The expectation (inside the interval of zero, per-trade higher, per-day lower) was met; the one-moded side split was expected short-heavy and is **long-heavy** on both heads — the incumbent itself took 2,518 longs against 36 shorts at cov 0.02 on this window, `L02` 835 against 107. Funding bound (descriptive): mean |rate| 0.63 bps per settlement (ETH 0.43 … 1000PEPE 1.33), so ≤ 0.63 bps a trade on a 4-hour hold and ≤ 1.9 on a 24-hour one — small against every line above.
+
+**Recorded beside, not a lead.** `L05` (the 24-hour head at cov 0.05) earns more per day pooled than the incumbent (+76.6 against +57.2, D +19.4 on two seeds of three) with five times the slot occupancy; it is the reported arm, its interval spans ±260, and 🔴 it is not re-cut into a primary. Two deviations from the registration's letter, both stated: check 1's reference is the incumbent scored on the raw dumps by the same backtester (the ledger every wave-2 study read) rather than `m3 policy --winner`, which reads the eight-pair baseline era and is not the X8″ incumbent; the funding bound counts distinct (symbol, rate) values as settlements, an approximation on a descriptive line.
+
+**What closes.** The 1440 head as a policy arm on the served window and, through the gate, its confirmation on F2 + F3 (not loaded). 🔴 No other coverage, side, regime filter or hold may be tried on these dumps; a 24-hour paper arm is not licensed.
+
+*The registration as written on 2026-10-22 follows, unchanged, as the record of what was fixed before the log was read.*
+
 
 **Written 2026-10-22 on Vadim's "go with 1 and 2" (item 2). CPU only, `ml_analysis`; nothing served changes on any outcome.**
 
