@@ -2062,6 +2062,45 @@ FEATURE_GROUPS=legacy,prem SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # then S
 
 **Needed from Vadim: nothing for X14. No GPU launch is pending.**
 
+#### X17 — a gradient-boosted tree on the full training window, with the archive's external columns: the registration. 🔵 WRITTEN 2026-10-22 on Vadim's "go with 1 and 2" (item 1), before any launcher change and before any number. CPU only; Claude launches.
+
+**Plain language first.** Five feature groups have been added to the LSTM since X8 and all five failed the same way: the network leaves its training plateau early and memorises the new column (X14's plateaus 21 / 16 / 7 against the control's 21–26; X8c″ 15–18; X1 and X2 under 8). The LSTM has stopped being a fair instrument for the question "do these external series carry information?" — what it answers is "can a sequence model be handed this column without memorising it", a different question. A gradient-boosted tree has no sequence to memorise: it reads a fixed table of window summaries, over-fits in a different and better-understood way, and reports which columns it used. The project already has the model (`gbt_baseline.py`, B3/B3b's) and the columns (X8's open interest and flow ratios, X14's premium — fetched, identity-checked, in the loaders). X17 runs that model on the whole four-year window twice: on X8″'s nineteen columns, and with the two external groups added.
+
+**Two questions, two contrasts.** **Q1:** does the tree class, on the LSTM's own columns, reach the LSTM's level? GBT-legacy against X8″-6. **Q2:** do the external columns add anything when the model cannot memorise them? GBT-ext against GBT-legacy, paired by seed. Q2 is the one X14 and X8b could not answer; Q1 calibrates it.
+
+**Recipe — `gbt_baseline.py` unchanged in model and metrics.** LightGBM binary up/down on the moved train bars, p(up) mapped to the 3-class logits; per-sample features = the six window summaries (last / mean / std / min / max / delta) of each column over **`SEQ_LEN=384`** bars (the LSTM's 32-hour window, so both classes see the same history); `num_leaves 63, n_estimators 400, learning_rate 0.05`, bagging 0.8 / feature_fraction 0.8 / l2 1.0 — the file's defaults (B3's smaller tree was sized for 55 days; this window is ~1,200). Data: the pinned snapshot by the `DUMP_MAX_AGE_MIN=100000` convention (the bucket's `latest.sql.gz`, the dump X14 trained on; crc32c recorded), `CANDLE_INTERVAL=5m`, **twelve pairs**, `HORIZONS=60,240,1440 PRIMARY=240`, `VAL_FRACTION=0.2` global time split — the `Split` line must equal X0's (`train=3724724 val=931182 | val [2025-12-14 09:35 → 2026-09-09 20:05 UTC]`); no `--tail-days`, no `--max-train-rows`, no embargo (X0 has none). `ARCHIVE_OI=…metrics_um_5m_83c85bd7.parquet ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1` in both arms (X8″'s convention; the flow ratios come from the same parquet, account shift 5).
+- Arm **`legacy`**: `FEATURE_GROUPS=legacy` → 19 columns → 114 features.
+- Arm **`ext`**: `FEATURE_GROUPS=legacy,flow,prem` → 26 columns (+ `ls_global, ls_top, taker_ratio, has_flow`, `prem_bps, prem_d1h, has_prem`) → 156 features; `ARCHIVE_PREM=…premium_5m_83931c45.parquet`. The depth groups are not in (±0.2 % VOID for lack of history, ±1 % WORSE).
+- **Seeds 1, 2, 3 per arm** (`--seed`; bagging and feature_fraction make the fit seed-dependent): six CPU runs, strictly serial on the throwaway GBT VM, `GCP_TRAIN_MACHINE=e2-highmem-8` (the 2–4 GB note in the launcher is for 55 days of eight pairs). Logs `logs/X17_legacy_s{1,2,3}.log`, `logs/X17_ext_s{1,2,3}.log`. **No other knob.**
+
+**Statistic.** Per run, the **cov-0.05 Wilson lower bound of directional accuracy on the 240m head** over the val window (the LSTM's per-epoch quantity; the GBT prints it in its fixed-coverage table). A tree has no epochs — its one fit is one unselected number — so the comparable LSTM figure is the control's **plateau mean, 0.5323** (every plateau epoch, no selection), not a selected-epoch LB. Family mean of three per arm; SE taken as the LSTM's 0.0023 and the seed spread printed beside it.
+- **Q1 gate** (GBT-legacy − X8″₆): ≥ +0.008 and every seed above the control's mean → **MOVED**; in (−0.008, +0.008), or ≥ +0.008 with a seed below → **FLAT**; ≤ −0.008 → **WORSE**.
+- **Q2 gate** (GBT-ext − GBT-legacy, the same seed in both arms): ≥ +0.008 and positive on all three seed pairs → **EXTERNAL-INFORMATIVE**; in (−0.008, +0.008), or ≥ +0.008 with a pair negative → **FLAT**; ≤ −0.008 → **WORSE**.
+- **Secondary, no verdict:** cov-0.02 gross bps/trade on the 240m head per arm, pooled over seeds, against the control's +17.5 (a selected-epoch figure — selection-inflated, said so); the four walk-forward window LBs; the side split at cov 0.05; the gain-share importance of the seven external columns' summaries in the ext arm (which of OI, flow, premium the tree used); the LB at cov 0.02 and 0.10.
+
+**Acceptance lines in every log** (a run missing any is void, re-run on the same seed): the launcher's `resolved knobs` line with `CANDLE_INTERVAL=5m PRIMARY_HORIZON=240 SEQ_LEN=384 VAL_FRACTION=0.2` and the forwarded `FEATURE_GROUPS` / `ARCHIVE_*` / `OI_JOIN_AT_CLOSE` keys; `Feature groups: legacy -> 19 columns (…)` or `legacy,flow,prem -> 26 columns (…)` (the line `train_m2.py` prints, added to the GBT script — a print, not a model change); the `Split` line equal to X0's; twelve `Archive OI: … sha8=83c85bd7, shift_min=5` lines; `OI join: OI_JOIN_AT_CLOSE=1`; in the ext arm twelve `Archive flow: … sha8=83c85bd7, account_shift_min=5` and twelve `Archive premium: … sha8=83931c45` lines; no external column in any CONSTANT list; the seed in the `gbt_baseline.py` args echo; the importance table present; the JSON report in `gs://…/gbt/<run>.json`.
+
+**What each outcome licenses.** **Q1 MOVED** → a fold-certification registration for the tree recipe (W1–W5 on the four folds, the fold protocol being the only promotion path); nothing served — serving a tree needs its own path in `serve.py`, registered then. **Q1 FLAT / WORSE with Q2 EXTERNAL-INFORMATIVE** → the external columns carry information the LSTM cannot use; licenses *writing* a registration for a two-model design — a tree on the external columns feeding the policy as a regime or size key (X7's shape) — not a feature group in the LSTM. **Q2 FLAT or WORSE** → the external-information route is closed for the archive series in hand (open interest, flow, premium) on both model classes; §5 row. 🔴 **Not licensed:** hyperparameter sweeps, other window summaries, a 15m variant, another horizon as primary, a subset of pairs, the depth groups, a re-run — each a new registration.
+
+**Expectation, recorded now.** Q1: GBT-legacy **under** the LSTM by 0.005–0.015 (WORSE or low FLAT) — the sequence model's small edge is in the path, which six summaries flatten. Q2: **FLAT** (within ±0.005); if anything moves it is open interest, the one series that ever moved the LSTM, and the importance table will rank OI's summaries above the premium's. Secondary: cov-0.02 gross under +17.5 in both arms.
+
+**Build, before the first launch (none shaped by a number).** `scripts/gcp_gbt.sh`: forward `FEATURE_GROUPS`, `ARCHIVE_OI`, `ARCHIVE_OI_SHIFT_MIN`, `OI_JOIN_AT_CLOSE`, `ARCHIVE_PREM` into the container, with `gcp_train.sh`'s gs:// staging block copied for the parquets; print them in `resolved knobs`. `gbt_baseline.py`: print the `Feature groups:` and `Split` lines in `train_m2.py`'s format (prints only). Dump pin: the restored `latest.sql.gz`'s crc32c against the X14 runs', in the first log's acceptance. Tests: the existing feature tests untouched; a shell dry-run of the launcher's resolved env.
+
+**Commands** (after the build is pushed; serial; Claude launches — a CPU VM, not a GPU run):
+```sh
+export CANDLE_INTERVAL=5m DUMP_MAX_AGE_MIN=100000 GCP_TRAIN_MACHINE=e2-highmem-8
+export GBT_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export GBT_HORIZONS=60,240,1440 GBT_PRIMARY=240 GBT_SEQ_LEN=384 GBT_VAL_FRACTION=0.2
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1
+unset ARCHIVE_DEPTH ARCHIVE_PREM SPLIT_EMBARGO
+FEATURE_GROUPS=legacy ./scripts/gcp_gbt.sh --seed 1                      # then --seed 2, --seed 3, each after DONE
+export ARCHIVE_PREM=gs://fluxtrader-train-artifacts/archive/premium_5m_83931c45.parquet
+FEATURE_GROUPS=legacy,flow,prem ./scripts/gcp_gbt.sh --seed 1            # then 2, 3
+./scripts/gcp_gbt.sh --log > logs/X17_<arm>_s<n>.log                     # after each DONE
+```
+
+**Needed from Vadim: nothing.** The read happens after the sixth log, with this block's gates, nothing re-cut.
+
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 
 `logs/b3b_gbt_5m_20260911.log`, `logs/b3b_gbt_15m_20260911.log`; reading in

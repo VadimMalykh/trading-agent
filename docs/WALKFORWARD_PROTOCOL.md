@@ -1757,6 +1757,46 @@ M3_ERA=walkforward ./scripts/m3.sh -m m3 pathexits --stage confirm --exploration
 
 ---
 
+### 9.9 X18 — the 1440-minute head as its own policy arm, on the served family's dumps: the registration — 🔵 WRITTEN 2026-10-22, before any code or number
+
+**Written 2026-10-22 on Vadim's "go with 1 and 2" (item 2). CPU only, `ml_analysis`; nothing served changes on any outcome.**
+
+**In plain language.** The served model emits three forecasts at every bar: one hour, four hours, twenty-four hours. The policy has only ever traded the four-hour one. M3-2's "hold 1440" configurations gated on the four-hour forecast and merely held the trade for a day (`cli.py` fixes `signal_horizon=240` in the grid), so **the 24-hour head has never been used as a signal**. Its training-log secondaries on the X8″ seeds (NEXT_TRAINING_PLAN §2 X8″, the eval tails) show a larger gross return per trade than the four-hour head's on two seeds of three, on a third of the trades, with the widest seed spread of any head — the pattern of a number nobody has looked at properly. X18 scores it in the backtester as a policy arm of its own: gate on the 24-hour head's confidence at a coverage cut, hold 24 hours, the incumbent's size ladder and one-position-per-pair rule, taker 14 bps, and compares what it earns **per calendar day** with what the incumbent earns on the same days.
+
+**Why per day, not per trade.** A 24-hour hold occupies the pair's slot six times longer; per-trade return flatters it, and per-notional-per-trade is the wrong unit when holds differ. Under the live engine's rule (one open position per pair, in both arms) the honest comparison is net P&L over the same calendar at the same size unit: who made more money, and is the difference clear of zero across days. Per-notional bps per trade is reported beside as the per-trade quality.
+
+**Population.** *Exploration:* the three X8″ dumps (`bookentry.RUNS`: s1 `20261001T155917Z`, s2 `20261002T053534Z`, s3 `20261003T191545Z`, the served seed), twelve pairs, val 2025-12-14 09:35 → 2026-09-09 20:05, the 240 and 1440 rows. 🔴 Contamination stated: this window has been read by every M3 and wave-2 study; an exploration here can **close** the question and cannot **establish** it. *Confirmation:* the X8-recipe fold dumps, era `walkforward_x8`, **F2 + F3** (six seed-folds, val 2024-10-17 → 2025-10-08 — disjoint from the served window; read by §10.8 for W1–W5 only, never for a 1440 question), loaded only after a recorded PASS, read once. F0 and F1 overlap the served window and are not used.
+
+**Arms — the list is the registration.** All serial per (seed, pair), `max_concurrent` none, both sides, `size_by_regime` on `btc_absret_1d` (⅓ … 5⁄3), cost `metrics.TAKER_COST_BPS` = 14 per trade.
+
+| arm | signal head | cut | hold | note |
+|---|---|---|---|---|
+| `INC` | 240m | cov 0.02 | 240 | `WINNER_SPEC`, the served rule |
+| **`L02`** (primary) | **1440m** | cov 0.02 — its own cut, derived per seed over the window by the harness's tie-inclusive rule | 1440 | the served convention at the served coverage |
+| `L05` | 1440m | cov 0.05 | 1440 | reported |
+| `H24` | 240m | cov 0.02 | 1440 | M3-2's shape, continuity; reported |
+
+**The statistic.** Per seed and arm, the trade ledger (entry ts, side, size, the arm's hold-horizon `fwd_ret`, net = signed_ret·size − 14·size, in bps of the size unit). Per UTC **entry** day d (entry day, so a 24-hour trade and a four-hour trade decided the same day sit in one cluster), N_arm(d) = Σ net over trades entered on d, summed over the three seeds and divided by three (the family's mean daily P&L). **D(d) = N_L02(d) − N_INC(d)**; the point estimate is the mean of D over **every calendar day G in the window** (zero where neither arm traded); the interval ±1.96 · sd(D)/√G. Days are the clusters, as everywhere in §9; the known weakness — a 24-hour trade's return correlates with the next day's — is stated, and a Newey–West (lag 1) SE is printed beside, information only. Printed beside, never deciding: per-seed D; `notional_ratio_bps` per arm and `paired_notional_diff_bps` (§9.6's per-notional statistic, exit-day clusters); trades per day, pair-slot occupancy, long/short counts; dir_acc and its side split at the cut; the book-era / pre-book split; per-pair counts; and a **funding bound** — a 1440 hold crosses three settlements against one, so mean |funding| per pair over the window × settlements crossed is printed as a bound on what `fwd_ret` leaves out (the dump carries no funding).
+
+**Harness checks before any contrast is read (falsifiable):** (1) `INC` reproduces the incumbent's ledger from `m3 policy --winner` on the same dumps exactly (count, Σsize, Σsigned_ret·size to 1e-9) per seed; (2) 1440 rows with NaN `fwd_ret` are counted per seed and dropped before the cut, the count printed (expected: the window's last day); (3) per arm and seed, the bars at or above the cut equal cov × bars within the tie rule, and the share of signals blocked by an open position is printed; (4) every arm's trades fall on ≥ 9 pairs per seed — a single-pair artefact voids that arm's read. `m3 validate` passes first.
+
+**Exploration gate and rule, mechanical (§9.6's shape).** **PASSED iff D's pooled point estimate > 0 and D > 0 on the median seed.** The forecast confirmation MDE = SE × √(G_explore / G_confirm) × 1.96 is printed. **CONFIRMED iff on F2 + F3 the pooled D's 95 % lower bound > 0 and the median seed-fold is positive**; NOT CONFIRMED reads as "not detectable" unless the interval excludes the exploration's point estimate (a detected absence). The primary is `L02`; `L05` and `H24` are reported and never promoted.
+
+**What each outcome licenses.** NOT PASSED → X18 closes; the 1440 head stays unserved; 🔴 no re-cut (another coverage as primary, one side, a regime filter, a 720-minute hold the dump cannot book). PASSED, NOT CONFIRMED → closed. **CONFIRMED → licenses *writing* a registration for a fourth paper arm in the engine (`long1440`: paper only, its own cut derived on s3's 1440 head at coverage 0.02, hold 1440, the size ladder), read at its own 100 closes against the policy arm's daily P&L** — nothing served changes on this read; nothing with money; the served hold and head do not change.
+
+**Expectation, recorded now.** D inside its interval of zero. `L02`'s per-trade quality above `INC`'s on two seeds and below on one (the training logs' pattern); its per-day P&L lower because it trades a third as often; `H24` below `INC` (M3-2's reading on the earlier family); the 1440 head's side split one-moded (short-heavy) on at least one seed. If `L02` is clear of zero above `INC` it will be seed-driven, and the per-seed line will say so.
+
+**Code, planned (none written).** `ml/train/m3/longhead.py`: `run(stage)` building the arms with `backtest.run(PolicySpec(...))` on `bookentry.load_dumps()` (explore) or the `walkforward_x8` F2/F3 runs (confirm); the ledgers; the daily statistic (`daily_pnl_diff`, plain and NW-1 SE); the §9.6 per-notional lines via `walkforward`; the tables; a parser in `cli.py` (`longhead --stage explore|confirm [--exploration-recorded]`). Tests `tests/test_longhead.py`: a synthetic dump where the daily P&L difference is known by hand; empty days as zeros; the NaN-row drop; the incumbent reproduction.
+
+**Commands**
+```sh
+./scripts/m3.sh -m m3 validate
+./scripts/m3.sh -m m3 longhead --stage explore 2>&1 | tee logs/x18_explore_$(date +%Y%m%d).log
+./scripts/m3.sh -m m3 longhead --stage confirm --exploration-recorded 2>&1 | tee logs/x18_confirm_$(date +%Y%m%d).log   # only after PASSED is recorded here
+```
+
+**Needed from Vadim: nothing** until the read.
+
 ## §10 — REGISTRATION: the X8 recipe on the folds (era `walkforward_x8`) — WRITTEN 2026-09-24, BEFORE ANY RUN
 
 **Funded by Vadim 2026-09-24** ("1. Yes") after X8's one-split read came back MOVED
