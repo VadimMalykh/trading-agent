@@ -64,10 +64,13 @@ which pairs / how much history exists by querying the local DB.
   there, reports rows/first/last/staleness per table+symbol). This is the ONLY correct way.
 - **Ad-hoc VM query:**
   ```sh
-  gcloud compute ssh --zone me-central1-b fluxtrader-1 --project fluxtrader -- \
+  gcloud compute ssh --zone me-central1-b fluxtrader-1 --project fluxtrader --account vadim.malykh@gmail.com -- \
     'cd ~/trading_agent && docker compose exec -T postgres psql -U fluxtrader -d fluxtrader -c "SELECT …"'
   ```
 - Training / eval / backfill all run against the VM's DB, not local.
+- **gcloud account:** the laptop's default gcloud account is no longer the one that owns the VMs (since 2026-10-23).
+  Every script here pins `vadim.malykh@gmail.com` through `CLOUDSDK_CORE_ACCOUNT` (override: `GCP_ACCOUNT=…`); an ad-hoc
+  `gcloud` call needs `--account vadim.malykh@gmail.com`, or it fails with `Required 'compute.instances.get' permission`.
 - Lesson (2026-08-16): checking the local DB showed only partial history and led to a
   wrong "these pairs are short/ragged" conclusion. The pairs were fully backfilled on the
   VM. Don't repeat it — always check the VM.

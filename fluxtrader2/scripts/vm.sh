@@ -32,6 +32,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/google-cloud-sdk/bin:$PATH"
 PROJECT="${GCP_PROJECT:-fluxtrader}"
 ZONE="${GCP_ZONE:-me-central1-b}"
+# gcloud account: the laptop's default account changed 2026-10-23; the project's VMs are owned by this one. Override with GCP_ACCOUNT.
+export CLOUDSDK_CORE_ACCOUNT="${GCP_ACCOUNT:-vadim.malykh@gmail.com}"
 VM="${FT2_VM:-fluxtrader2-work}"
 SERVE_VM="${FT2_SERVE_VM:-fluxtrader2-serve}"
 MACHINE="${FT2_MACHINE:-e2-standard-4}"     # 4 vCPU / 16 GB is enough for P0–P5; resize later if a job is CPU-bound for hours

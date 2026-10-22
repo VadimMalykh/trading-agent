@@ -32,6 +32,8 @@ set -euo pipefail
 
 GCP_PROJECT="${GCP_PROJECT:-fluxtrader}"
 GCP_ZONE="${GCP_ZONE:-me-central1-b}"
+# gcloud account: the laptop's default account changed 2026-10-23; the project's VMs are owned by this one. Override with GCP_ACCOUNT.
+export CLOUDSDK_CORE_ACCOUNT="${GCP_ACCOUNT:-vadim.malykh@gmail.com}"
 GCP_ALWAYS_ON="${GCP_ALWAYS_ON:-fluxtrader-1}"
 REMOTE_REPO_NAME="${REMOTE_REPO_NAME:-trading_agent}"
 

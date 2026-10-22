@@ -14,6 +14,8 @@
 # interval (book/trades 5s, funding/OI/candles 60s). Liquidations are expected
 # EMPTY (WS blocked from datacenter egress — documented, not a bug).
 
+# gcloud account: the laptop's default account changed 2026-10-23; the project's VMs are owned by this one. Override with GCP_ACCOUNT.
+export CLOUDSDK_CORE_ACCOUNT="${GCP_ACCOUNT:-vadim.malykh@gmail.com}"
 gcloud compute ssh --zone "me-central1-b" "fluxtrader-1" --project "fluxtrader" -- bash -s <<'EOF'
 cd ~/trading_agent && docker compose exec -T postgres psql -U fluxtrader -d fluxtrader <<'SQL'
 CREATE OR REPLACE FUNCTION pg_temp.human_span(ts_a timestamp, ts_b timestamp)

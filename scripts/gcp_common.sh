@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/google-cloud-sdk/bin:$HOME/Downloads/google-cloud-sdk/bin:$PATH"
+# gcloud account: the laptop's default account changed 2026-10-23; the project's VMs are owned by this one. Override with GCP_ACCOUNT.
+export CLOUDSDK_CORE_ACCOUNT="${GCP_ACCOUNT:-vadim.malykh@gmail.com}"
 
 # Sourcing scripts/gcp_env must NOT clobber an inline override the user passed on
 # the launcher (e.g.  TRAIN_PRIMARY=60 ./scripts/gcp_train.sh …). gcp_env now uses
