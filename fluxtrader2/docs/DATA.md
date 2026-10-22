@@ -425,6 +425,47 @@ either venue); a registration names its venue and its sd cut in advance — at R
 decision BC → R64 (§8), read 2026-10-21: the Bithumb deviation CLOSED at 1d on the members (+0.002) and a fact of the hours (+0.007 at 1h,
 +0.006 at 4h, both folds); Upbit's +0.015 at 4h; the Coinbase deviation on the same cells +0.014 at 1d. Parked in §7.
 
+### spot_1h (Binance spot, hourly, the twelve's and the screener's members' `<BASE>USDT` markets; decision BH1, §9 #3) — `data/spot_1h.parquet`: `(spot_symbol, symbol, ts, ts_known, open, high, low, close, volume, quote_volume, count, taker_buy_volume, taker_buy_quote_volume)`
+
+`ft2 spot symbols|fetch --listed-only|ingest|audit` (`scripts/bh1_chain.sh`; raw month files under `data/raw/external/binance_spot/klines/<SYMBOL>/`,
+the listing beside them). The source: the public archive's `data/spot/monthly/klines/<SYMBOL>/1h/` — one zip a month, no header, the twelve
+kline columns, closed bars only, CHECKSUM verified; **the stamps are milliseconds through 2024 and MICROSECONDS from 2025-01** (read by
+magnitude). The universe: `<BASE>USDT` for every base of the twelve and the 310 member bases (the 1000× / 1M× prefix stripped, as
+`coinbase.base`), the contract's own symbol where the spot market lists it as such (1000SATSUSDT, 1MBABYDOGEUSDT — quoted per 1,000 / 1 M
+tokens on both markets, so no multiple applies), 2023-04 → F5's end; a bar starting at H is read at `ts_known` = H + 1 h and nothing
+earlier. **Fetched 2026-10-22 on the work VM, 12:38 → 12:59 UTC** (272 symbols × ≤ 42 months, 0 errors; 2,746 months missing = the
+listings after 2023-04), ingested 6,279,915 rows (2023-04-01 → 2026-09-30), audited 13:00 → 13:03 (rerun 13:10 → 13:13 with the
+trailing-day forms added and the two prefixed names' stamp check corrected; the hourly rows identical to 0.0). **Measured
+(`output/spot_audit.md` / `.json`, `spot_ratios.parquet` — the four ratios, their deviations and `cbprem_dev` per (ts_known, symbol)):**
+- **Listing and history.** 272 of the 322 perpetuals have a spot pair in the archive — every one with hourly bars; the 50 without are
+  futures-only listings (FARTCOIN, POPCAT, MOODENG, SPX, AI16Z, GOAT, …). Of the 188 F1+F2 members 183 have one; of R62's 121 kept names
+  113 (the 8 without: ATH, FARTCOIN, MON, MOODENG, POPCAT, USELESS, VVV, ZETA). The first bar on or before F1's start for 157 names, in
+  2023 for 178, 2024 for 45, 2025 for 48; 46 names end before 2026-09-30 (spot delistings — AGIX, MATIC, FTM, OCEAN, MKR, WAVES, …).
+  Completeness over 2023-05-01 → 2026-09-15 median 85 % (the late listings; 44 % of the names ≥ 99 %), interior holes essentially none
+  (the median name 0 gaps over 1 h, the maximum 1; the largest 198 h), zero-volume hours ≤ 0.05 %.
+- **The members' cover per block** (a member counts with ≥ 90 % of the block's hours): **54 … 60 of 60 on F1+F2's 18 blocks** (59–60 through
+  2023-10, 54–58 from 2023-11), 44 … 55 on F3+F4's 17 (2025-12 the low) — against Coinbase's 31 … 46 and 26 … 46 the widest per-name
+  source in hand; 244 of the 260 members with bars cover ≥ 90 % of their own member hours, 9 between 50 and 90 %, 7 under 50 %.
+- **The stamp check** (the spot close over the perpetual's 5m close ending at the same stamp): the basis median +4.2 bps across names (p10
+  0.0, p90 +8.3; the twelve +2.9 … +5.2 — the spot a few bps over the perpetual), |basis| median 7.3 bps, the share past 50 bps median
+  0.15 % — the stamps agree. Two bad series by the same check: STRAX (|basis| median 343 bps, half the hours past 50 — the 2024 token
+  migration, a different asset on the two markets) and 0G (33 bps, 30 % past 50; 2,414 hours, thin).
+- **The taker-buy share** (the hour's taker-buy quote volume over its quote volume) **is WHITE hour to hour:** the level 0.488 on every name
+  (the names' means 0.480 … 0.496, no name outside 0.4 … 0.6; by hour of day 0.484 … 0.492 — flat; the cross-name mean per hour has sd
+  0.030 and an autocorrelation at 24 h of 0.01), the within-name sd 0.10 … 0.13, the autocorrelation at 1 h median 0.07 (no name above
+  0.3) and at 24 h 0.02; its deviation from the trailing month (cb_ext's DEV form) is the series itself (dev_sd 1.02, acf 24 h 0.01). The
+  TRAILING-DAY share (Σ taker-buy quote over Σ quote of the last 24 bars): sd 0.032 within a name, autocorrelation at 24 h 0.15 (XRP
+  0.40), the deviation's 0.10. **Correlation with `cbprem_dev` on R62's kept names: +0.01 hourly, +0.005 daily (no name |corr| ≥ 0.2) — not
+  the Coinbase deviation again, by a mile**; cross-name mean correlation of the deviations 0.07 / 0.06 — a name-specific quantity.
+- **The spot/perp ratio** (the log of the spot quote volume over the perpetual's in the same hour): spot turnover is ≈ 21 % of the
+  perpetual's on the median name (the spot share of spot + perp 17.5 %; BTC 12 %, XRP 25 %; no name has spot above perp), within-name sd
+  0.46 log hourly / 0.34 daily, PERSISTENT (autocorrelation at 24 h 0.53 hourly / 0.85 daily; the deviation's 0.25 / 0.56), an hour-of-day
+  shape of ≈ 0.1 log (the spot share highest 07 … 12 UTC, lowest 00 … 05); **correlation with `cbprem_dev` −0.055 hourly / −0.08 daily
+  (p10 −0.10 / −0.15; the extreme BNB +0.33) — not the Coinbase deviation again**; cross-name 0.10 / 0.15 (a common component in the daily
+  form — the market's spot share moves together; a within-hour rank removes it). The two ratios' deviations are near-orthogonal (0.02 / 0.06).
+- **Rule for any feature:** `ts_known` = the bar's start + 1 h; a trailing-day form reads 24 closed bars (≥ 20 present); STRAX and 0G are
+  the two different-asset / thin series by the stamp check; a registration names its forms and signs in advance (decision BI).
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one

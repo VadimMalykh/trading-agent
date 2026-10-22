@@ -49,6 +49,8 @@ PREMIUM = Path("output/coinbase_members_premium.parquet")       # AX1's audit: p
 KEPT = Path(__file__).with_name("cb_members_r62.csv")            # R62's kept names (r62 True)
 BASIS_BIG = 50.0             # bps: the share of hours whose |spot − perp| exceeds this (a stamp off by an hour would put most hours here)
 MIN_CORR_HOURS = 100
+DAY = 24                     # the trailing-day forms: Σ over the last 24 hourly bars, ≥ MIN_DAY present
+MIN_DAY = 20
 CORR_SAME = 0.5              # BG3: a ratio is "cbprem_dev again" when |corr| ≥ this
 TWELVE = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOGEUSDT", "1000PEPEUSDT", "WLDUSDT", "ZECUSDT", "HYPEUSDT"]
 KLINE_COLS = data.KLINE_COLS
@@ -189,7 +191,11 @@ def _acf(x: pd.Series, lag: int) -> float:
 
 def grids(d: pd.DataFrame, a0: pd.Timestamp, end: pd.Timestamp, slices: tuple[str, ...] = SLICES, mult: dict[str, float] | None = None) -> dict[str, pd.DataFrame]:
     """On the hourly grid (ts_known × perp symbol), inside (a0, end]: the taker-buy share `tb`, the log spot/perp quote-volume ratio `sr`,
-    the spot close over the perpetual's 5m close ending at the stamp minus one in bps `basis`, their deviations `tb_dev` / `sr_dev`."""
+    their trailing-day forms `tb24` (Σ taker-buy quote over Σ quote of the last 24 bars) and `sr24` (the log of the two 24-bar sums), the
+    spot close over the perpetual's 5m close ending at the stamp minus one in bps `basis` (the contract's multiple applied only where the
+    spot symbol is the base's — a spot market quoted per 1,000 tokens under the contract's own symbol carries it already), and the four
+    deviations `*_dev`."""
+    sp_of = d.drop_duplicates("symbol").set_index("symbol")["spot_symbol"].to_dict()
     d = d[(d["ts_known"] > a0) & (d["ts_known"] <= end)]
     grid = pd.date_range(a0.ceil("h") + HOUR, end.floor("h"), freq="h")
     W = lambda col: d.pivot_table(index="ts_known", columns="symbol", values=col, aggfunc="last").reindex(grid)
@@ -199,9 +205,12 @@ def grids(d: pd.DataFrame, a0: pd.Timestamp, end: pd.Timestamp, slices: tuple[st
     pv = cb.binance_dvol_hour(syms, grid, slices).reindex(columns=syms)
     sr = np.log((qv / pv.where(pv > 0)).where(lambda x: x > 0))
     bn = cb.binance_close_at(syms, grid, slices).reindex(columns=syms)
-    mult = mult or {s: cb.mult_of(s) for s in syms}
+    mult = mult or {s: (1.0 if sp_of.get(s) == s else cb.mult_of(s)) for s in syms}
     basis = (close / (bn / pd.Series(mult).reindex(syms)) - 1.0) * 1e4
-    return {"tb": tb, "sr": sr, "basis": basis, "tb_dev": dev(tb), "sr_dev": dev(sr), "qv": qv, "pv": pv}
+    qv24, tbq24, pv24 = (x.rolling(DAY, min_periods=MIN_DAY).sum() for x in (qv, tbq, pv))
+    tb24 = tbq24 / qv24.where(qv24 > 0)
+    sr24 = np.log((qv24 / pv24.where(pv24 > 0)).where(lambda x: x > 0))
+    return {"tb": tb, "sr": sr, "tb24": tb24, "sr24": sr24, "basis": basis, "tb_dev": dev(tb), "sr_dev": dev(sr), "tb24_dev": dev(tb24), "sr24_dev": dev(sr24), "qv": qv, "pv": pv}
 
 
 def cb_dev(path: Path = PREMIUM, grid: pd.DatetimeIndex | None = None) -> pd.DataFrame:
@@ -222,12 +231,17 @@ def kept_names(path: Path = KEPT) -> set[str]:
     return set(k.loc[k["r62"].astype(bool), "symbol"].astype(str))
 
 
+RATIOS = {"taker_buy_share": "tb", "spot_over_perp_log": "sr", "taker_buy_share_24h": "tb24", "spot_over_perp_log_24h": "sr24"}
+OTHER = {"tb": "sr", "sr": "tb", "tb24": "sr24", "sr24": "tb24"}          # the other deviation each is correlated with
+
+
 def stats(G: dict[str, pd.DataFrame], CB: pd.DataFrame, kept: set[str]) -> pd.DataFrame:
     """Per name and ratio: the level's hours / mean / median / sd / p10 / p90 / acf at 1 h and 24 h; the deviation's sd and acf; the
     deviation's correlation with cbprem_dev on the hours both exist (≥ MIN_CORR_HOURS), and the two deviations' correlation."""
     rows = []
-    for tag, lvl, dv in (("taker_buy_share", G["tb"], G["tb_dev"]), ("spot_over_perp_log", G["sr"], G["sr_dev"])):
-        other = G["sr_dev"] if tag == "taker_buy_share" else G["tb_dev"]
+    for tag, k in RATIOS.items():
+        lvl, dv = G[k], G[k + "_dev"]
+        other = G[OTHER[k] + "_dev"]
         for sym in lvl.columns:
             x, z = lvl[sym], dv[sym]
             if not x.notna().any():
@@ -296,7 +310,7 @@ def audit(today: pd.Timestamp | None = None, path: Path = PARQUET, out: Path = O
     kept = kept_names(kept_csv)
     st = stats(G, CB, kept)
     bc = basis_check(G["basis"])
-    off = {k: _off_diag(G[k]) for k in ("tb_dev", "sr_dev")}
+    off = {k: _off_diag(G[k]) for k in ("tb_dev", "sr_dev", "tb24_dev", "sr24_dev")}
     hod = {k: G[k].groupby(G[k].index.hour).mean().mean(axis=1) for k in ("tb", "sr")}
     # the pooled shares: the taker-buy share's hour mean across names, the spot volume's share of spot + perp per name (median)
     pooled_tb = G["tb"].mean(axis=1)
@@ -318,6 +332,7 @@ def audit(today: pd.Timestamp | None = None, path: Path = PARQUET, out: Path = O
          "\nWords: a spot bar starting at H is read at `ts_known` = H + 1 h and nothing earlier. The *taker-buy share* is the bar's taker-buy quote volume over its "
          "quote volume (the share of the hour's spot turnover that was aggressive buying; 0.5 is balance). The *spot/perp ratio* is the log of the spot quote "
          "volume over the perpetual's quote volume of the same hour (Σ volume × close over the twelve 5m bars ending in the hour; the contract multiple cancels). "
+         f"The *_24h* forms are the same ratios over the trailing {DAY} bars' sums (≥ {MIN_DAY} present). "
          "Each *deviation* is cb_ext's DEV form — the ratio minus its trailing 30-day mean, over the trailing 30-day sd, ≥ 360 bars present. `cbprem_dev` is "
          f"the same form on AX1's adjusted Coinbase premium (`{premium}`); the kept names are R62's (`{kept_csv.name}`). Nothing is priced here; no fold is read.\n",
          "\n## Symbols, extent, completeness, cover (hours)\n", cov.round(4).to_markdown(index=False), "\n",
@@ -331,7 +346,7 @@ def audit(today: pd.Timestamp | None = None, path: Path = PARQUET, out: Path = O
          "\n## Summary on R62's kept names\n", "```\n" + json.dumps(summary, indent=1) + "\n```\n",
          f"\n- BG3's two questions: does the ratio VARY within a name (`dev_sd`, the deviation's persistence `dev_acf_24h`), and is it `cbprem_dev` again (|corr| ≥ {CORR_SAME:g} on the kept names)?\n",
          "\n## Across names\n"]
-    for k, tag in (("tb_dev", "taker-buy share deviation"), ("sr_dev", "spot/perp ratio deviation")):
+    for k, tag in (("tb_dev", "taker-buy share deviation"), ("sr_dev", "spot/perp ratio deviation"), ("tb24_dev", "24-h taker-buy share deviation"), ("sr24_dev", "24-h spot/perp ratio deviation")):
         o = off[k]
         L.append(f"- {tag}: mean off-diagonal correlation {o.mean():.3f} (min {o.min():.3f}, max {o.max():.3f}) on the hours both names have\n" if len(o) else f"- {tag}: fewer than two names\n")
     for k, tag in (("tb", "taker-buy share"), ("sr", "spot/perp log ratio")):
@@ -353,7 +368,7 @@ def audit(today: pd.Timestamp | None = None, path: Path = PARQUET, out: Path = O
                                                            "pooled_tb": {"median": float(pooled_tb.median()), "sd": float(pooled_tb.std())},
                                                            "spot_share_median": float(spot_share.median()) if len(spot_share.dropna()) else None,
                                                            "window": [str(a0), str(end)]}, indent=1, default=str))
-    long = pd.concat([G[k].stack(future_stack=True).rename(k) for k in ("tb", "sr", "basis", "tb_dev", "sr_dev")] + [CB.reindex(columns=G["tb"].columns).stack(future_stack=True).rename("cb_dev")], axis=1)
+    long = pd.concat([G[k].stack(future_stack=True).rename(k) for k in ("tb", "sr", "tb24", "sr24", "basis", "tb_dev", "sr_dev", "tb24_dev", "sr24_dev")] + [CB.reindex(columns=G["tb"].columns).stack(future_stack=True).rename("cb_dev")], axis=1)
     long = long.dropna(how="all").reset_index().rename(columns={"level_0": "ts_known", "level_1": "symbol"})
     long.to_parquet(out.parent / "spot_ratios.parquet", index=False)
     return txt

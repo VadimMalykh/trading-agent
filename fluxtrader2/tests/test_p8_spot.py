@@ -66,14 +66,16 @@ def _plant(tmp_path, monkeypatch, hours=24 * 92, hole=(100, 110)):
     rng = np.random.default_rng(3)
     z = {s: np.sin(np.arange(hours) / 5.0) + rng.normal(0, 0.3, hours) for s in ("BTCUSDT", "1000PEPEUSDT", "WLDUSDT")}
     tb = {s: np.clip(0.5 + 0.1 * z[s], 0.05, 0.95) for s in z}                   # the planted taker-buy share
-    ratio = {"BTCUSDT": 0.5, "1000PEPEUSDT": 0.2, "WLDUSDT": 2.0}                 # the planted spot / perp quote-volume ratio
+    ratio = {"BTCUSDT": 0.5, "1000PEPEUSDT": 0.2, "WLDUSDT": 2.0, "1000SATSUSDT": 0.3}   # the planted spot / perp quote-volume ratio
+    z["1000SATSUSDT"] = rng.normal(0, 1, hours)
+    tb["1000SATSUSDT"] = np.clip(0.5 + 0.1 * z["1000SATSUSDT"], 0.05, 0.95)
     bn_px = {"BTCUSDT": 30000 * np.exp(np.cumsum(rng.normal(0, 1e-3, hours))), "1000PEPEUSDT": 1.5 * np.exp(np.cumsum(rng.normal(0, 2e-3, hours))),
-             "WLDUSDT": 2.0 * np.exp(np.cumsum(rng.normal(0, 2e-3, hours)))}
-    basis = {"BTCUSDT": 3.0, "1000PEPEUSDT": -8.0, "WLDUSDT": 20.0}                # bps, the spot close over the perpetual's
-    units = {"BTCUSDT": "ms", "1000PEPEUSDT": "us", "WLDUSDT": "ms"}
+             "WLDUSDT": 2.0 * np.exp(np.cumsum(rng.normal(0, 2e-3, hours))), "1000SATSUSDT": 0.3 * np.exp(np.cumsum(rng.normal(0, 2e-3, hours)))}
+    basis = {"BTCUSDT": 3.0, "1000PEPEUSDT": -8.0, "WLDUSDT": 20.0, "1000SATSUSDT": 10.0}   # bps, the spot close over the perpetual's
+    units = {"BTCUSDT": "ms", "1000PEPEUSDT": "us", "WLDUSDT": "ms", "1000SATSUSDT": "us"}
     perp_qv_hour = {s: 12 * 10.0 * bn_px[s] for s in bn_px}                        # 12 bars × 10 contracts × close (the perp's 5m bars below)
-    for sym, sp in (("BTCUSDT", "BTCUSDT"), ("1000PEPEUSDT", "PEPEUSDT"), ("WLDUSDT", "WLDUSDT")):
-        px = bn_px[sym] / cb.mult_of(sym) * (1 + basis[sym] / 1e4)
+    for sym, sp in (("BTCUSDT", "BTCUSDT"), ("1000PEPEUSDT", "PEPEUSDT"), ("WLDUSDT", "WLDUSDT"), ("1000SATSUSDT", "1000SATSUSDT")):
+        px = bn_px[sym] / (cb.mult_of(sym) if sp != sym else 1.0) * (1 + basis[sym] / 1e4)      # the spot per 1,000 under the contract's own symbol
         qv = ratio[sym] * perp_qv_hour[sym]
         keep = np.ones(hours, bool)
         if sym == "WLDUSDT":
@@ -88,7 +90,8 @@ def _plant(tmp_path, monkeypatch, hours=24 * 92, hole=(100, 110)):
     (spot.RAW).mkdir(parents=True, exist_ok=True)
     (spot.RAW / "symbols_20260101.json").write_text(json.dumps({"archive_symbols": 4, "rows": [
         {"symbol": "BTCUSDT", "spot_symbol": "BTCUSDT", "listed": True, "mult": 1.0}, {"symbol": "1000PEPEUSDT", "spot_symbol": "PEPEUSDT", "listed": True, "mult": 1000.0},
-        {"symbol": "WLDUSDT", "spot_symbol": "WLDUSDT", "listed": True, "mult": 1.0}, {"symbol": "NOPEUSDT", "spot_symbol": None, "listed": False, "mult": 1.0}]}))
+        {"symbol": "WLDUSDT", "spot_symbol": "WLDUSDT", "listed": True, "mult": 1.0}, {"symbol": "NOPEUSDT", "spot_symbol": None, "listed": False, "mult": 1.0},
+        {"symbol": "1000SATSUSDT", "spot_symbol": "1000SATSUSDT", "listed": True, "mult": 1000.0}]}))
     t5 = pd.date_range(T0, periods=hours * 12, freq="5min")
     c5 = []
     for sym, px in bn_px.items():
@@ -107,9 +110,9 @@ def test_ingest_reads_both_stamp_units_and_the_audit_reads_the_planted_ratios(tm
     ts, tb, ratio, basis, hole = _plant(tmp_path, monkeypatch)
     hours = len(ts)
     r = spot.ingest(listed_only=True)
-    assert r["symbols_asked"] == 3 and r["symbols_with_bars"] == 3
+    assert r["symbols_asked"] == 4 and r["symbols_with_bars"] == 4
     d = spot.load(spot.PARQUET)
-    assert len(d) == 3 * hours - (hole[1] - hole[0])                                   # the duplicates dropped, the hole absent
+    assert len(d) == 4 * hours - (hole[1] - hole[0])                                   # the duplicates dropped, the hole absent
     for sym in ("BTCUSDT", "1000PEPEUSDT"):
         g = d[d["symbol"] == sym].sort_values("ts")
         assert g["ts"].iloc[0] == ts[0] and g["ts"].iloc[-1] == ts[-1] and (g["ts_known"] - g["ts"] == spot.HOUR).all()   # ms and µs alike
@@ -127,11 +130,15 @@ def test_ingest_reads_both_stamp_units_and_the_audit_reads_the_planted_ratios(tm
     assert len(f12) == 3 and (f12["members"] == 3).all() and (f12["with_bars"] == 2).all() and (f12["cover_ge_0.9"] == 2).all()
     assert bl[bl["folds"] == "F3+F4"]["with_bars"].sum() == 0
     st = pd.DataFrame(J["stats"]).set_index(["symbol", "ratio"])
-    for sym in ("BTCUSDT", "1000PEPEUSDT", "WLDUSDT"):
+    for sym in ("BTCUSDT", "1000PEPEUSDT", "WLDUSDT", "1000SATSUSDT"):
         a = st.loc[(sym, "taker_buy_share")]
         assert abs(a["mean"] - np.nanmean(tb[sym])) < 2e-3 and 0.05 < a["sd"] < 0.15
         b = st.loc[(sym, "spot_over_perp_log")]
         assert abs(b["median"] - np.log(ratio[sym])) < 1e-6 and b["sd"] < 1e-6                 # the planted ratio, flat: the multiple cancels
+        b24 = st.loc[(sym, "spot_over_perp_log_24h")]
+        assert abs(b24["median"] - np.log(ratio[sym])) < 1e-6 and b24["hours"] < b["hours"]   # the day's sums: the same flat ratio, 23 fewer hours
+        a24 = st.loc[(sym, "taker_buy_share_24h")]
+        assert abs(a24["mean"] - np.nanmean(tb[sym])) < 3e-3 and a24["sd"] < a["sd"] / 2      # the day's share: the same level, the hour's noise averaged
     assert st.loc[("BTCUSDT", "taker_buy_share"), "corr_dev_cbdev"] > 0.6 and st.loc[("WLDUSDT", "taker_buy_share"), "corr_dev_cbdev"] < -0.6
     assert st.loc[("1000PEPEUSDT", "taker_buy_share"), "kept_r62"] and not st.loc[("WLDUSDT", "taker_buy_share"), "kept_r62"]
     bc = pd.DataFrame(J["basis"]).set_index("symbol")
@@ -139,6 +146,7 @@ def test_ingest_reads_both_stamp_units_and_the_audit_reads_the_planted_ratios(tm
         assert abs(bc.loc[sym, "basis_median_bps"] - basis[sym]) < 0.5 and bc.loc[sym, "share_abs_gt_50"] == 0.0
     S = J["summary"]["taker_buy_share"]
     assert S["names"] == 1 and S["corr_median"] > 0.6 and S["share_abs_corr_ge_0.5"] == 1.0
+    assert set(J["summary"]) == {"taker_buy_share", "spot_over_perp_log", "taker_buy_share_24h", "spot_over_perp_log_24h"}
     assert "## DATA.md row" in txt and "| **spot_1h**" in txt and "2023-05-03 2 of 3" in txt
     R = pd.read_parquet(spot.OUT.parent / "spot_ratios.parquet")
-    assert set(R.columns) >= {"ts_known", "symbol", "tb", "sr", "basis", "tb_dev", "sr_dev", "cb_dev"} and R["symbol"].nunique() == 3
+    assert set(R.columns) >= {"ts_known", "symbol", "tb", "sr", "tb24", "sr24", "basis", "tb_dev", "sr_dev", "tb24_dev", "sr24_dev", "cb_dev"} and R["symbol"].nunique() == 4
