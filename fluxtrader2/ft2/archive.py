@@ -133,18 +133,21 @@ def fetch_daily(kind: str, symbol: str, start: date, end: date, sub: str = "") -
     return counts
 
 
-def fetch_monthly(kind: str, symbol: str, sub: str = "", months: list[str] | None = None) -> dict:
+def fetch_monthly(kind: str, symbol: str, sub: str = "", months: list[str] | None = None, market: str = "futures/um", root: Path | None = None) -> dict:
     """Monthly files of `kind` (fundingRate, klines/<interval> via `sub`); `months` = ['2022-04', …] or all.
     A monthly kline file lands next to the daily ones under ROOT/klines/<symbol>/ (same name pattern,
-    `<symbol>-<interval>-YYYY-MM.zip`; ingest_klines reads both and drops duplicate bars)."""
-    prefix = f"data/futures/um/monthly/{kind}/{symbol}/{sub + '/' if sub else ''}"
+    `<symbol>-<interval>-YYYY-MM.zip`; ingest_klines reads both and drops duplicate bars). `market` is the archive's
+    market path (`futures/um` the perpetuals; `spot` the spot market, decision BH1) and `root` where the files land
+    (ROOT when None — the spot files go to their own root so that no perpetual reader ever picks one up)."""
+    root = ROOT if root is None else root
+    prefix = f"data/{market}/monthly/{kind}/{symbol}/{sub + '/' if sub else ''}"
     counts = {"ok": 0, "skip": 0, "bad": 0, "err": 0, "missing": 0}
     keys = [k for k in list_keys(prefix) if k.endswith(".zip") and f"{symbol}-{sub or kind}-" in k]
     if months is not None:
         want = {f"{symbol}-{sub or kind}-{m}.zip" for m in months}
         keys = [k for k in keys if k.rsplit("/", 1)[1] in want]
         counts["missing"] = len(want) - len(keys)
-    jobs = [(k, ROOT / kind / symbol / k.rsplit("/", 1)[1]) for k in keys]
+    jobs = [(k, root / kind / symbol / k.rsplit("/", 1)[1]) for k in keys]
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
         for status in ex.map(lambda j: _fetch(*j), jobs):
             counts[status] += 1
