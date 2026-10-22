@@ -26,6 +26,7 @@
 #   GBT_PAIRS=BTCUSDT,ETHUSDT ./scripts/gcp_gbt.sh
 #   GBT_PRIMARY=60 ./scripts/gcp_gbt.sh           # must be in GBT_HORIZONS
 #   KEEP_VM=1 ./scripts/gcp_gbt.sh                # debug: don't auto delete/stop VM
+#   FEATURE_GROUPS=legacy ARCHIVE_OI=gs://… ./scripts/gcp_gbt.sh   # X17: the LSTM's columns + archive keys
 #
 #   watch status:   ./scripts/gcp_gbt.sh --status  (GBT VM liveness + marker)
 #   results:        ./scripts/gcp_gbt.sh --fetch [run_id]   (summary + JSON)
@@ -134,6 +135,17 @@ fi
 # config.py env and it was NOT forwarded (BOOK_ERA_PLAN §R.3, 2026-09-11 — needed so the
 # B3-15m re-test can hold the train window fixed and let val grow with the calendar).
 : "${GBT_VAL_FRACTION:=${VAL_FRACTION:-0.2}}"
+# X17 (NEXT_TRAINING_PLAN §2 X17): the feature-group and archive keys, forwarded the way
+# gcp_train.sh forwards them, so a GBT can run on the LSTM's own columns and on the archive
+# parquets (open interest + flow, premium, depth). Only keys SET on the launcher env are
+# forwarded; an unset key keeps config.py's default — and that default for FEATURE_GROUPS is
+# `legacy,multiscale,market`, so an X17 run must set it explicitly.
+FLUX_GBT_ENV_KEYS="${FLUX_GBT_ENV_KEYS:-FEATURE_GROUPS ARCHIVE_OI ARCHIVE_OI_SHIFT_MIN OI_JOIN_AT_CLOSE ARCHIVE_DEPTH ARCHIVE_PREM}"
+FLUX_GBT_ENV_EXPORTS=""
+for _k in $FLUX_GBT_ENV_KEYS; do
+  _v="${!_k:-}"
+  if [[ -n "$_v" ]]; then FLUX_GBT_ENV_EXPORTS+="export ${_k}='${_v}'"$'\n'; fi
+done
 
 # Flags accumulate as a plain string (not an array) — bash 3.2 on macOS trips over
 # empty-array expansion under `set -u`, and these flags never contain whitespace.
@@ -260,6 +272,8 @@ export GBT_CANDLE_INTERVAL='$GBT_CANDLE_INTERVAL'
 export GBT_VAL_FRACTION='$GBT_VAL_FRACTION'
 export KEEP_VM='$KEEP_VM'
 export MODEL_VOLUME_NAME='$MODEL_VOLUME_NAME'
+export FLUX_GBT_ENV_KEYS='$FLUX_GBT_ENV_KEYS'
+$FLUX_GBT_ENV_EXPORTS
 PRELUDE
 cat >> \$HOME/run_flux_gbt.sh << 'ENDSCRIPT'
 set -Eeuo pipefail
@@ -343,6 +357,21 @@ if ! [[ \"\$CANDLES\" =~ ^[0-9]+\$ ]] || [[ \"\$CANDLES\" -lt 1000 ]]; then echo
 # compose declares model_weights as external -> must exist before 'run'.
 docker volume create \"\${MODEL_VOLUME_NAME:-trading_agent_model_weights}\" >/dev/null 2>&1 || true
 
+# X17: the archive parquets, staged exactly as gcp_train.sh stages them (X8 / X8c / X14) —
+# a gs:// path on the launcher becomes a file under ml/train/output/archive (bind-mounted at
+# /workspace/train) and the env var is re-pointed at the container path.
+for _ak in ARCHIVE_OI ARCHIVE_DEPTH ARCHIVE_PREM; do
+  _av=\"\${!_ak:-}\"
+  if [[ -n \"\$_av\" ]]; then
+    if [[ \"\$_av\" == gs://* ]]; then
+      mkdir -p \$HOME/\$REMOTE_REPO_NAME/ml/train/output/archive
+      gcloud storage cp \"\$_av\" \$HOME/\$REMOTE_REPO_NAME/ml/train/output/archive/
+      export \$_ak=\"/workspace/train/output/archive/\$(basename \"\$_av\")\"
+    fi
+    echo \"=== \$_ak -> \${!_ak} ===\"
+  fi
+done
+
 echo \"=== build ml_trainer image ===\"
 # lightgbm is in requirements.txt, so a clean build is all that's needed — EXCEPT
 # that the pre-existing 'torch==2.5.1+cpu' pin no longer resolves on the PyTorch
@@ -362,14 +391,24 @@ if ! docker compose --profile ml build ml_trainer; then
   echo \"    torch pin used: \$(grep -E '^torch' ml/train/requirements.txt)\"
 fi
 
-echo \"=== resolved knobs: HORIZONS_MINUTES=\$GBT_HORIZONS PRIMARY_HORIZON=\$GBT_PRIMARY SEQ_LEN=\$GBT_SEQ_LEN CANDLE_INTERVAL=\$GBT_CANDLE_INTERVAL VAL_FRACTION=\$GBT_VAL_FRACTION ===\"
+# X17: forward every set feature/archive key into the container and echo it, so a dropped
+# key is visible in the remote log (the R3 lesson, again).
+_GBT_ENV_OPTS=\"\"
+for _k in \$FLUX_GBT_ENV_KEYS; do
+  _v=\"\${!_k:-}\"
+  if [[ -n \"\$_v\" ]]; then _GBT_ENV_OPTS=\"\$_GBT_ENV_OPTS -e \$_k=\$_v\"; fi
+done
+echo \"=== resolved knobs: HORIZONS_MINUTES=\$GBT_HORIZONS PRIMARY_HORIZON=\$GBT_PRIMARY SEQ_LEN=\$GBT_SEQ_LEN CANDLE_INTERVAL=\$GBT_CANDLE_INTERVAL VAL_FRACTION=\$GBT_VAL_FRACTION env:\$_GBT_ENV_OPTS ===\"
+for _k in \$FLUX_GBT_ENV_KEYS; do
+  _v=\"\${!_k:-}\"; if [[ -n \"\$_v\" ]]; then echo \"    knob \$_k=\$_v\"; fi
+done
 echo \"=== gbt_baseline.py \$GBT_ARGS ===\"
 REPORT=/workspace/train/output/gbt_\$RUN_ID.json
 docker compose --profile ml run --rm \
   -e HORIZONS_MINUTES=\$GBT_HORIZONS -e PRIMARY_HORIZON=\$GBT_PRIMARY -e SEQ_LEN=\$GBT_SEQ_LEN \
   -e CANDLE_INTERVAL=\$GBT_CANDLE_INTERVAL \
   -e VAL_FRACTION=\$GBT_VAL_FRACTION \
-  -e FLUX_GIT_SHA=\$GIT_SHA \
+  -e FLUX_GIT_SHA=\$GIT_SHA \$_GBT_ENV_OPTS \
   ml_trainer python gbt_baseline.py \$GBT_ARGS --out \$REPORT
 
 echo \"=== upload report (OUTPUT_DIR is bind-mounted) ===\"

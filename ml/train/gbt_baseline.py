@@ -67,6 +67,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import (
     CANDLE_INTERVAL,
     HORIZONS_MINUTES,
+    OI_JOIN_AT_CLOSE,
     MAKER_ROUND_TRIP_COST,
     OUTPUT_DIR,
     PAIRS,
@@ -85,7 +86,7 @@ from data.dataset import (
     time_split_indices,
 )
 from data.db import load_whitelist_pairs
-from data.features import FEATURE_COLS
+from data.features import ACTIVE_FEATURE_GROUPS, FEATURE_COLS, FEATURE_DIM_EFFECTIVE
 
 import torch  # only for the shared gate/sim tensors (CPU)
 
@@ -392,6 +393,21 @@ def main():
 
     _mem("bundle built")
     tr_idx, va_idx = time_split_indices(bundle.times, VAL_FRACTION)
+    # X17 acceptance lines (NEXT_TRAINING_PLAN §2 X17): the same three lines train_m2.py
+    # prints, in the same format, so a GBT log can be checked against an LSTM log's `Split`
+    # line by eye. Prints only — nothing about the model changes.
+    print(
+        f"Feature groups: {','.join(ACTIVE_FEATURE_GROUPS)} "
+        f"-> {FEATURE_DIM_EFFECTIVE} columns ({', '.join(FEATURE_COLS)})"
+    )
+    print(f"OI join: OI_JOIN_AT_CLOSE={'1' if OI_JOIN_AT_CLOSE else '0'}")
+    t_tr, t_va = bundle.times[tr_idx], bundle.times[va_idx]
+    print(
+        f"Split global_time | val_frac={VAL_FRACTION} val_offset=0.0 train_frac=0.0 | "
+        f"train={tr_idx.shape[0]} val={va_idx.shape[0]} | "
+        f"train [{_ns_to_iso(int(t_tr.min()))} → {_ns_to_iso(int(t_tr.max()))}] | "
+        f"val [{_ns_to_iso(int(t_va.min()))} → {_ns_to_iso(int(t_va.max()))}]"
+    )
     # Fit norm on the train split only (no leakage), same as eval_m2 / train_m2.
     norm = fit_norm_from_bundle(bundle, tr_idx)
     apply_norm_to_bundle(bundle, norm)
