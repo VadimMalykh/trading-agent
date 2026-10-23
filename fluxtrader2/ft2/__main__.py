@@ -108,6 +108,11 @@ def cmd_spot(args):
     spot.main(args.action, args.start, args.end, args.symbols, args.listed_only)
 
 
+def cmd_hl(args):
+    from . import hl
+    hl.main(args.action, args.start, args.end, args.symbols)
+
+
 def cmd_magvol(args):
     from . import magvol
     print(magvol.run(args.holds, args.names, args.name))
@@ -509,6 +514,11 @@ def main(argv=None):
     spp.add_argument("--end", default=None, help="fetch: the last month (default F5's end)")
     spp.add_argument("--symbols", nargs="*", default=None, help="a subset (perpetual or spot symbols; default every base of the twelve and the members)")
     spp.add_argument("--listed-only", action="store_true", help="fetch: only the spot symbols the saved listing holds (run `symbols` first)")
+    hlp = sub.add_parser("hl", help="P8 (decision BJ2): Hyperliquid's hourly funding and mark premium per name as a source — the venue's info API for the twelve's and the screener's members' coins, Binance's 1h premium index beside them → data/raw/external/hyperliquid/, data/hl_funding_1h.parquet, data/premium_1h.parquet, output/hl_audit.md (see ft2/hl.py)")
+    hlp.add_argument("action", choices=["symbols", "fetch", "bnprem", "ingest", "audit"])
+    hlp.add_argument("--start", default="2023-04-01", help="fetch / bnprem: the first stamp / month asked for")
+    hlp.add_argument("--end", default=None, help="fetch / bnprem: the last stamp / month (default F5's end)")
+    hlp.add_argument("--symbols", nargs="*", default=None, help="a subset (perpetual symbols or the venue's coins; default every coin of the twelve and the members)")
     mvp = sub.add_parser("magvol", help="P8 (R54): magnitude against implied — the candle-built realised-vol forecast against DVOL in forecasting BTC's and ETH's realised volatility at 1 and 7 days → output/magvol/<name>/magvol.md (see ft2/magvol.py)")
     mvp.add_argument("--holds", nargs="*", type=int, default=[1, 7], help="horizons in days (default 1 7)")
     mvp.add_argument("--names", nargs="*", default=None, help="the family's names (default BTCUSDT ETHUSDT)")
@@ -556,7 +566,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "spot": cmd_spot, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "spot": cmd_spot, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
