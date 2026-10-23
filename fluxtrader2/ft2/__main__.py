@@ -287,6 +287,12 @@ def cmd_ceiling(args):
             raise SystemExit("--family spot reads P2's cells, F1+F2, with --universe members only (R68)")
         spot_ext.run_r68(args.taker_bps, args.maker_bps, args.fee_source, args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")), mult=coinbase_mult())
         return print(f"wrote {spot_ext.OUT_MD} and {spot_ext.OUT_DIR}/")
+    if args.target == "pairs" and args.family == "hl":           # R69: the cross-venue lean at 1d — R62's screen on Hyperliquid's trailing-day premium minus Binance's, against its month
+        from . import hl_ext
+        if args.folds or args.universe != "members":
+            raise SystemExit("--family hl reads P2's cells, F1+F2 from 2023-08-01, with --universe members only (R69)")
+        hl_ext.run_r69(args.taker_bps, args.maker_bps, args.fee_source, args.draws, jobs=int(os.environ.get("FT2_JOBS", "1")), mult=coinbase_mult())
+        return print(f"wrote {hl_ext.OUT_MD} and {hl_ext.OUT_DIR}/")
     if args.target == "pairs" and args.family == "krw":          # R64: the Korean premium at breadth — R62's screen on Bithumb's BTC-relative premium
         from . import cb_ext
         if args.folds or args.universe != "members":
@@ -415,7 +421,7 @@ def main(argv=None):
     g.add_argument("--target", choices=["pairs", "basket"], default="pairs",
                    help="basket: P5's audit of the market factor, per year → output/market.md (see ft2/market.py)")
     g.add_argument("--folds", nargs="*", help="--target basket only: exploration folds to read (default FP F0 F1 F2)")
-    g.add_argument("--family", choices=["index", "etf", "depth", "coinbase", "krw", "score", "hold", "spot"], default=None,
+    g.add_argument("--family", choices=["index", "etf", "depth", "coinbase", "krw", "score", "hold", "spot", "hl"], default=None,
                    help="--target basket (R30): `index` — the Nasdaq 100's moves, the basket's lag behind it, open/closed and its volatility → output/market_index.md; "
                         "`etf` — the spot-ETF flows, F2 only → output/market_etf.md (see ft2/market_ext.py). --target pairs (R33): `depth` — the ±1 % book "
                         "imbalance demeaned by its trailing month, P2's cells → output/ceiling_depth.md (see ft2/book_ext.py); (R60): `coinbase` — the Coinbase spot "
