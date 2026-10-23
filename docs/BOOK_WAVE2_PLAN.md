@@ -1178,3 +1178,26 @@ paper arms book exactly what they booked. The same-day acceptance (the first pil
 
 **Acceptance (filled in as the rows arrive):** by 2026-10-22 01:30 UTC the policy arm had opened nothing since the deploy (four `explore_cov05` opens, no cov-0.02 entry in 9 h — the pilot mirrors the policy arm only), so no maker leg has run yet; `/api/health` steady (`maker_path: true`, pilot open 0, no `[MAKER]` error lines). _Pending the first pilot entry._
 
+**Acceptance DONE, read 2026-10-23 05:17 UTC on the first two pilot trades (both closed by the
+timer; `paper_trades` ids 505 and 511, the `[MAKER]` lines in the app log):**
+
+| row | pair / side | entry leg | exit leg | gross / cost / net bps |
+|---|---|---|---|---|
+| 505 | WLD short, bar 2026-10-22 09:35 | **`maker`** — rested SELL 182 @ 0.5482 (= touch ask; touch 0.5481 / 0.5482), filled after **4.8 s**, fee 2.0 | **`rejected_then_crossed`** — GTX BUY @ 0.5430 (= touch bid) refused, crossed at once, VWAP 0.5430753 (1.4 bps above the rest price), fee 5.0 | +93.5 / 7.0 / +86.5 |
+| 511 | ZEC long, bar 2026-10-22 16:45 | **`rejected_then_crossed`** — GTX BUY @ 1205.34 (= touch bid; touch 1205.34 / 1205.35) refused, crossed at once @ 1204.65 (5.7 bps *below* the rest price), fee 5.0 | **`rejected_then_crossed`** — GTX SELL @ 1212.86 (= touch ask) refused, crossed @ 1212.94 (0.7 bps above the rest price), fee 5.0 | +68.8 / 10.0 / +58.8 |
+
+Every acceptance item the Deployed block named is met: the entry row was written at placement
+as `maker_resting` and settled to its final type (505's entry log line *RESTING … for 60.0 s*
+then *ENTRY … maker … waited 4.8 s*); the exit rests at the exit bar's close and settles
+(`exit_rest_at` 13:42:32 → `exit_ts` 13:42:34; 20:52:31 → 20:52:34); `exit_order_type` set on
+both; `cost_bps` = the two realised leg fees (7 = 2 + 5; 10 = 5 + 5); the stop / target algo
+orders placed after the fill on both; `/api/health` `maker_path: true`, `open: 0`,
+`refusal: null`, `realised_usd_total` −4.99 over the pilot's 43 closed trades. **One
+observation, not a finding:** three of the four legs were GTX-refused — the touch read at
+placement had already moved through our side by the time the exchange saw the order, so the
+leg crossed at taker fee with no rest. Each refused fill landed within 1.4 bps of the touch
+it was refused at (one leg better by 5.7). A refusal rate near 3 in 4 would leave M1's +3.1 bps
+mostly uncollected; that is exactly what the registered S2 look at 100 closed maker-path trades
+measures (`m3 makerpath live`), so nothing is read from two rows and nothing changes.
+`rejected_then_crossed` is one of the six leg types in the schema and in the built block above.
+
