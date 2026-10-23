@@ -134,4 +134,4 @@ tail -n 30 \$HOME/backfill.log 2>/dev/null || echo '(starting...)'
 echo ""
 echo "OK — backfill started on $GCP_ALWAYS_ON (run=$RUN_ID)."
 echo "Watch:   ./scripts/gcp_backfill_status.sh"
-echo "Live:    gcloud compute ssh $GCP_ALWAYS_ON --zone=$GCP_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxbackfill"
+echo "Live:    gcloud compute ssh $GCP_ALWAYS_ON --zone=$GCP_ZONE --project=$GCP_PROJECT --account=$CLOUDSDK_CORE_ACCOUNT -- tmux attach -t fluxbackfill"

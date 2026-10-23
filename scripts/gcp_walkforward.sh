@@ -57,7 +57,7 @@ if [[ "${1:-}" == "--status" ]]; then
   if [[ -n "$VM_STATE" ]]; then
     echo "wf VM $GCP_WF_INSTANCE: $VM_STATE (zone=$GCP_ZONE)"
     [[ "$VM_STATE" == "RUNNING" ]] && \
-      echo "live: gcloud compute ssh $GCP_WF_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxwf"
+      echo "live: gcloud compute ssh $GCP_WF_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT --account=$CLOUDSDK_CORE_ACCOUNT -- tmux attach -t fluxwf"
   else
     echo "wf VM $GCP_WF_INSTANCE: gone (self-deleted or never created)"
   fi
@@ -451,5 +451,5 @@ echo "checkpoint, so SERVING IS UNAFFECTED. Self-deletes on success, stops on fa
 echo "Runs 2 arms x $(echo $OFFSETS | wc -w | tr -d ' ') folds = short CPU runs each."
 echo "Mac may sleep now."
 echo "  status:  ./scripts/gcp_walkforward.sh --status"
-echo "  live:    gcloud compute ssh $GCP_WF_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxwf"
+echo "  live:    gcloud compute ssh $GCP_WF_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT --account=$CLOUDSDK_CORE_ACCOUNT -- tmux attach -t fluxwf"
 echo "  results: ./scripts/gcp_walkforward.sh --fetch $RUN_ID"

@@ -76,7 +76,7 @@ if [[ "${1:-}" == "--status" ]]; then
   if [[ -n "$VM_STATE" ]]; then
     echo "GBT VM $GCP_GBT_INSTANCE: $VM_STATE (zone=$GCP_ZONE)"
     if [[ "$VM_STATE" == "RUNNING" ]]; then
-      echo "live view:  gcloud compute ssh $GCP_GBT_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxgbt"
+      echo "live view:  gcloud compute ssh $GCP_GBT_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT --account=$CLOUDSDK_CORE_ACCOUNT -- tmux attach -t fluxgbt"
     elif [[ "$VM_STATE" == "TERMINATED" ]]; then
       echo "VM is STOPPED (a FAILED run kept for debug). Inspect:"
       echo "  gcloud compute instances start $GCP_GBT_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT"
@@ -453,5 +453,5 @@ echo "Diagnostic only: it never writes a checkpoint, so SERVING IS UNAFFECTED."
 echo "The VM will DELETE itself on success, STOP itself on failure (KEEP_VM=$KEEP_VM)."
 echo "Mac may sleep now."
 echo "  status:  ./scripts/gcp_gbt.sh --status"
-echo "  live:    gcloud compute ssh $GCP_GBT_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxgbt"
+echo "  live:    gcloud compute ssh $GCP_GBT_INSTANCE --zone=$GCP_ZONE --project=$GCP_PROJECT --account=$CLOUDSDK_CORE_ACCOUNT -- tmux attach -t fluxgbt"
 echo "  results: ./scripts/gcp_gbt.sh --fetch $RUN_ID     (summary + JSON)"

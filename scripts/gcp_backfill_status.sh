@@ -28,7 +28,7 @@ RUNNING="$(gssh "$GCP_ALWAYS_ON" \
 
 if [[ "$RUNNING" == "yes" ]]; then
   echo "tmux 'fluxbackfill': RUNNING"
-  echo "live view:  gcloud compute ssh $GCP_ALWAYS_ON --zone=$GCP_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxbackfill"
+  echo "live view:  gcloud compute ssh $GCP_ALWAYS_ON --zone=$GCP_ZONE --project=$GCP_PROJECT --account=$CLOUDSDK_CORE_ACCOUNT -- tmux attach -t fluxbackfill"
   echo "            (detach without stopping: Ctrl-b then d)"
 else
   echo "tmux 'fluxbackfill': not running (finished, failed, or never started)"

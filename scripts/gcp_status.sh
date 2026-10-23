@@ -88,7 +88,7 @@ if [[ "$VM_STATE" == "RUNNING" ]]; then
   case "$JOB" in
     JOB_UP)
       EFFECTIVE="RUNNING"
-      echo "live view:  gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxtrain"
+      echo "live view:  gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT --account=$CLOUDSDK_CORE_ACCOUNT -- tmux attach -t fluxtrain"
       echo "            (detach without stopping: Ctrl-b then d)"
       if [[ "$STATE" == "DONE" || "$STATE" == "FAILED" ]]; then
         echo ""
@@ -110,7 +110,7 @@ if [[ "$VM_STATE" == "RUNNING" ]]; then
       echo "      a job is running is UNKNOWN. Check by hand before launching:"
       echo "        gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux ls"
       echo "      If a job IS running, attach with:"
-      echo "        gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT -- tmux attach -t fluxtrain"
+      echo "        gcloud compute ssh $GCP_TRAIN_INSTANCE --zone=$TRAIN_ZONE --project=$GCP_PROJECT --account=$CLOUDSDK_CORE_ACCOUNT -- tmux attach -t fluxtrain"
       EFFECTIVE="UNKNOWN_VM_UP"
       ;;
   esac
