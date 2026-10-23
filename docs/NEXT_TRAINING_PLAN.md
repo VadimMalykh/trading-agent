@@ -2155,6 +2155,23 @@ FEATURE_GROUPS=legacy,clock SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # then 
 
 **Needed from Vadim:** nothing until Claude reports the code and tests in; then the three serial launches.
 
+**Prerequisite 1 DONE 2026-10-23 (Claude), nothing shaped by a result — code and tests in, committed after the registration's `a96eced`.** `features.CLOCK_COLS` / group `clock` (`_GROUP_ORDER` after `prem`, `ALL_FEATURE_COLS[45:50]`, the canonical list now 50), `features.clock_features(grid, bar_min)` — a pure function of the grid, every column at the close (open + the bar), minute resolution, tz-aware or naive-as-UTC grids alike — wired in `build_feature_frame` on request like `prem`; `features.py`'s group comment names this registration. No `db.py`, launcher or collector change. **Tests `tests/test_clock_features.py`, 5 green in `ml_trainer`:** the layout `[45:50]` and `legacy,clock` → 24 with every earlier slot fixed; the values at the close (23:55 → 00:00 phase 0 on both clocks; 03:55 → 04:00 `fund_cos` −1, `tod_cos` 0.5; 07:55 → 08:00 a settlement; 11:55 → 12:00 `tod_cos` −1); the weekend flag at the close (Friday 23:55 → 1, Sunday 23:55 → 0, Saturday noon → 1); naive and aware grids equal, a 15m bar's close at open + 15; a 500-bar tail equal to the full grid on the shared bars to 0, every value finite in [−1, 1], every column varying, the 8-hour and 24-hour periods exact (96 / 288 bars). `test_prem_features`, `test_depth_features`, `test_flow_features` unchanged and green. **Smoke through `build_feature_frame` itself** (synthetic 5m candles, every other loader empty, `FEATURE_GROUPS=legacy,clock`): 24 columns + close, the full frame and a 200-bar tail frame equal on the clock columns, `is_weekend` flipping at the Friday 23:55 open (whose close is Saturday 00:00). The serve path is not touched — nothing to touch: serving builds the same frame from the checkpoint's recorded `feature_cols`.
+
+**Launch block (Vadim), after `git push origin main` — the launcher clones origin, local main is ahead:**
+```sh
+git push origin main
+export CANDLE_INTERVAL=5m PAIR_EMBED_DIM=8 EARLY_STOP_PATIENCE=20
+export TRAIN_HORIZONS=60,240,1440 TRAIN_PRIMARY=240
+export TRAIN_PAIRS=BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,WLDUSDT,HYPEUSDT,ZECUSDT,1000PEPEUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,XRPUSDT
+export DUMP_MAX_AGE_MIN=100000
+export ARCHIVE_OI=gs://fluxtrader-train-artifacts/archive/metrics_um_5m_83c85bd7.parquet
+export ARCHIVE_OI_SHIFT_MIN=5 OI_JOIN_AT_CLOSE=1
+unset VAL_OFFSET VAL_FRACTION TRAIN_FRACTION ALLOW_RECIPE_DRIFT SPLIT_EMBARGO ALIGN_AGE_FIX ARCHIVE_DEPTH ARCHIVE_PREM
+FEATURE_GROUPS=legacy,clock SEED=1 ./scripts/gcp_train.sh --gpu 60 384   # then SEED=2, SEED=3 after each DONE
+./scripts/gcp_logs.sh <run_id> > logs/X19_s1.log                         # X19_s2, X19_s3 — never --save
+```
+After each DONE Claude fetches the log, checks every acceptance line (prerequisite 2), and reads the family after the third. **Needed from Vadim: `git push origin main`, then the three serial launches.**
+
 ### 🟢 B3b — CLOSED 2026-09-11. Both runs done; the book-era wave closed on their verdict
 
 `logs/b3b_gbt_5m_20260911.log`, `logs/b3b_gbt_15m_20260911.log`; reading in

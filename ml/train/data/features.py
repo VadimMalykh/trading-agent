@@ -169,6 +169,23 @@ PREM_COLS = [
 ]
 PREM_MAX_AGE_MIN = 10.0
 
+# X19 (NEXT_TRAINING_PLAN §2 X19, registered 2026-10-23 before this code): the clock as a
+# feature group. Nothing in the nineteen columns says what time it is; funding settles at
+# 00/08/16 UTC (HYPE every four hours — its extra settlements fall at phase π of `fund_*`, so
+# one column identifies them on every pair without a per-pair schedule), and weekends trade
+# differently. Five deterministic, bounded columns evaluated at the bar's CLOSE (open + the
+# bar, the decision time — `prem_bps` / OI_JOIN_AT_CLOSE's convention), computed from the grid
+# alone, so training and serving get them from one function by construction: no archive, no
+# loader, no mask (the value always exists), constant on no pair.
+CLOCK_COLS = [
+    "tod_sin",     # sin(2π · minute-of-day / 1440) at the close
+    "tod_cos",     # cos(...)
+    "fund_sin",    # sin(2π · minutes since the last 8-hour settlement / 480)
+    "fund_cos",    # cos(...)
+    "is_weekend",  # 1 when the close falls on Saturday or Sunday UTC
+]
+CLOCK_FUNDING_PERIOD_MIN = 480
+
 _FEATURE_GROUPS = {
     "legacy": LEGACY_FEATURE_COLS,
     "multiscale": OWN_PAIR_MULTISCALE_COLS,
@@ -177,8 +194,9 @@ _FEATURE_GROUPS = {
     "depth": DEPTH_COLS,
     "depth1": DEPTH1_COLS,
     "prem": PREM_COLS,
+    "clock": CLOCK_COLS,
 }
-_GROUP_ORDER = ["legacy", "multiscale", "market", "flow", "depth", "depth1", "prem"]
+_GROUP_ORDER = ["legacy", "multiscale", "market", "flow", "depth", "depth1", "prem", "clock"]
 
 
 def resolve_feature_groups(spec: str):
@@ -215,7 +233,7 @@ def resolve_feature_groups(spec: str):
 # a 30-column checkpoint would be rebuilt from a 25-column list.
 ALL_FEATURE_COLS = (
     LEGACY_FEATURE_COLS + OWN_PAIR_MULTISCALE_COLS + MARKET_CONTEXT_COLS + FLOW_COLS + DEPTH_COLS
-    + DEPTH1_COLS + PREM_COLS
+    + DEPTH1_COLS + PREM_COLS + CLOCK_COLS
 )
 
 ACTIVE_FEATURE_GROUPS, FEATURE_COLS = resolve_feature_groups(FEATURE_GROUPS)
@@ -416,6 +434,30 @@ def prem_features(prem: pd.DataFrame, grid: pd.Index, max_age_min: float, bars_1
     out["prem_bps"] = np.where(ok, val, 0.0)
     out["prem_d1h"] = np.where(ok & np.isfinite(d1h), d1h, 0.0)
     out["has_prem"] = ok.astype(np.float32)
+    return out
+
+
+def clock_features(grid: pd.Index, bar_min: int) -> pd.DataFrame:
+    """X19: the five `clock` columns on the candle grid, a pure function of the grid.
+
+    `grid` is the bars' OPEN times (tz-aware UTC or naive-as-UTC); every column is evaluated
+    at the bar's close (open + `bar_min`). Minute resolution: a bar's close is on a whole
+    minute at every supported interval, and the decision runs after it, so nothing finer is
+    information the model could have.
+    """
+    idx = pd.DatetimeIndex(grid)
+    close = idx + pd.Timedelta(minutes=int(bar_min))
+    if close.tz is not None:
+        close = close.tz_convert("UTC")
+    minute_of_day = (close.hour * 60 + close.minute).to_numpy(np.float64)
+    tod = 2.0 * np.pi * minute_of_day / 1440.0
+    fund = 2.0 * np.pi * np.mod(minute_of_day, CLOCK_FUNDING_PERIOD_MIN) / CLOCK_FUNDING_PERIOD_MIN
+    out = pd.DataFrame(index=grid)
+    out["tod_sin"] = np.sin(tod)
+    out["tod_cos"] = np.cos(tod)
+    out["fund_sin"] = np.sin(fund)
+    out["fund_cos"] = np.cos(fund)
+    out["is_weekend"] = (close.dayofweek.to_numpy() >= 5).astype(np.float64)
     return out
 
 
@@ -626,6 +668,12 @@ def build_feature_frame(
                            BAR_MINUTES_BY_INTERVAL[candle_interval])
         for c in PREM_COLS:
             feat[c] = pf[c].to_numpy()
+    # X19: the clock group, only on request; a pure function of the grid, identical in
+    # training and serving by construction.
+    if any(c in CLOCK_COLS for c in cols):
+        ck = clock_features(feat.index, BAR_MINUTES_BY_INTERVAL[candle_interval])
+        for c in CLOCK_COLS:
+            feat[c] = ck[c].to_numpy()
     missing = [c for c in cols if c not in feat.columns]
     if missing:
         raise ValueError(f"build_feature_frame: unknown feature columns {missing}")
