@@ -466,6 +466,72 @@ trailing-day forms added and the two prefixed names' stamp check corrected; the 
 - **Rule for any feature:** `ts_known` = the bar's start + 1 h; a trailing-day form reads 24 closed bars (≥ 20 present); STRAX and 0G are
   the two different-asset / thin series by the stamp check; a registration names its forms and signs in advance (decision BI).
 
+### hl_funding_1h, premium_1h (Hyperliquid's hourly funding and mark premium per name, the twelve's and the screener's members' coins; Binance's own 1h premium index beside; decision BJ2, §9 #12) — `data/hl_funding_1h.parquet`: `(coin, symbol, ts, ts_known, stamp, lag_s, rate, premium, frozen)`; `data/premium_1h.parquet`: `(symbol, ts, ts_known, open, high, low, close)`
+
+`ft2 hl symbols|fetch|bnprem|ingest|audit` (`scripts/bj2_chain.sh`; raw `data/raw/external/hyperliquid/funding/<COIN>.json` one file a coin,
+resumable, `.done` when complete; the listing `symbols_<date>.json` beside; Binance's month files under `data/raw/external/binance/premiumIndexKlines/<sym>/`
+as `<sym>-1h-YYYY-MM.zip`, next to R20's 5m ones). The source: the venue's public info API (`POST api.hyperliquid.xyz/info`, keyless; `meta` the
+listing, `fundingHistory` 500 rows a call at weight 20 of 1,200 a minute — 60 calls a minute, ≈ 0.9 s of latency each). **One row a funding
+SETTLEMENT: every 8 hours from the venue's start 2023-05-12 to 2023-06-25, HOURLY since**; `premium` the venue's mark over its oracle (the hour's
+sample average, a fraction; × 1e4 = bps), `rate` the funding paid at that settlement (the premium plus the interest term, clamped; per hour since
+2023-06-25, per 8 hours before). `ts` = the settlement HOUR (the stamp floored), `ts_known` = `ts`: the row describes the hour ending at `ts` and
+appears `lag_s` after it — **0.05 s median, 0.42 s at p99, 0.67 s at most on ordinary rows; on five dates every name's row came late at once
+(2023-05-23 24 min, 2023-09-27 111 s, 2023-12-17 251 s, 2025-07-19 888 s, 2025-07-27 111 s)** — a feature reading at the hour misses those 469
+rows of 3.4 M. The coin per perpetual: the base (`coinbase.base`), else `k<BASE>` (kPEPE, kSHIB, kBONK, kFLOKI, kLUNC, kNEIRO, kDOGS — the venue's
+thousand-token contracts), else the alias JELLY (JELLYJELLY); **181 of the 322 symbols have a coin, all twelve among them; 32 are delisted there**.
+The venue's PRICES are not in this source (its candle endpoint serves recent bars only; the S3 archive is not fetched) — nothing here is priced.
+**Fetched 2026-10-23 on the work VM 07:14 → 09:11 UTC** (7,479 pages, 3.7 M rows, 0 errors; the first launch at a 1.1 s pause stopped after
+three coins and relaunched at 0.15 s — the resumable steps picked up), Binance's 1h premium 09:11 → 09:22 (5,660 month files, 1,942 missing = the
+listings after 2023-04; 4,080,440 bars 2023-04-01 → 2026-09-30), ingested 09:22 (3,737,038 rows 2023-05-12 → 2026-09-15), audited 09:22 → 09:24;
+**the frozen-row mask added and the ingest + audit rerun 09:33 → 09:35** (the first audit, without it, counted the frozen rows as coverage;
+overwritten). **Measured (`output/hl_audit.md` / `.json`, `hl_quantities.parquet` — the seven quantities, their deviations, Binance's premium
+deviation, `cbprem_dev` and R68's two per (ts_known, symbol)):**
+- **FROZEN rows — the trap of this source.** A coin delisted on the venue keeps emitting a settlement row every hour with a premium of EXACTLY 0
+  for as long as the API is asked: STRAX 805 days of zeros after its last live row (2024-07-01), RNDR 785, MATIC 735, LOOM 641, BLZ 631, FTM 610,
+  JELLY 537 (after 2025-03-26), eleven names frozen since 2025-04-11, …; 32 delisted names and 7 live ones with runs of zeros (HMSTR 30 % of its
+  rows) — 317,826 rows of 3,737,038 (8.5 %) in 39 names. `frozen` = inside a run of ≥ 24 consecutive settlements at a premium of exactly 0
+  (`hl.frozen_mask`); `hl.load` drops them by default and the audit reads them as absent (`last` is the last live row). A live name's zero share
+  is 0.15 % (median).
+- **Listing and history.** The first row on 2023-05-12 for 16 names, in 2023 for 81, 2024 for 55, 2025 for 41, 2026 for 4; 27 names have rows in
+  the 8-hour weeks (up to 81 rows each); 32 names' live rows end before 2026-09 (the delistings: 5 in 2024, 17 in 2025, 10 in 2026). Completeness
+  over 2023-05-01 → 2026-09-15 median 77 % (the late listings and the 8-hour weeks; no name 99 %: the venue starts 11 days into F1 and settles
+  8-hourly for its first six weeks). Interior holes after the hourly regime began: the median name 1 gap over an hour, the largest 2 h on the
+  majors; a few young names with holes up to 614 h.
+- **The members' cover per block** (a member counts with ≥ 90 % of the block's hours): **0 of 60 on F1's first two blocks (2023-05-03, 06-02 —
+  the 8-hour regime), then 18, 22, 26, 31, 36, 44, 45, 46, 48, 48, 47, 44, 48, 47, 50, 52 of 60 on F1+F2's remaining sixteen; 46 … 57 of 60 on
+  F3+F4's seventeen** — between Coinbase's 31 … 46 and the spot's 54 … 60 on F1+F2, the spot's equal on F3+F4; 135 of the 169 members with rows
+  cover ≥ 90 % of their own member hours, 20 between 50 and 90 %, 14 under 50 %.
+- **The stamp check** (the venue's hour premium against Binance's 1h premium bar's open-high-low-close mean, by lag): **the best lag is 0 on 159
+  of 181 names**, the lag-0 correlation median 0.69 (p25 0.61, p75 0.83; the profile by lag 0.56, 0.61, 0.65, **0.69**, 0.67, 0.63, 0.59 at −3 … +3);
+  the 21 names whose best lag is ±1 or +2 have a flat profile (the lag-0 correlation within a few hundredths of the best — an hour average against a
+  bar, not a shifted stamp; LINK 0.65, AVAX 0.64, LTC 0.68 among them). The stamps agree. The level: the venue's premium 0.6 bps ABOVE Binance's
+  (median across names; p25 0.0, p75 1.6).
+- **The funding check** (Binance's settled rate at each of its funding times against the venue's settlements summed over the same period, ≈ 3,000
+  settlements a name): **correlation median 0.74 (p10 0.54, p90 0.93) on 179 names — the same quantity on two crowds at the 8-hour scale**; the
+  venue pays more: 7.1 % a year against Binance's 3.7 (medians); HYPE the exception (0.04 — the venue's own token, its funding there pinned near the
+  interest term, sd 0.7 bps a settlement), XPL / PUMP / PAXG young or thin (0.16 … 0.23).
+- **The quantities on R62's 85 kept names** (bps; the level's median across names, the within-name sd, the autocorrelation at 1 h / 24 h, the
+  deviation's sd and 24-h autocorrelation): `hl_prem` −1.1 (p10 −3.7, p90 +1.5; Binance's `bn_prem` −2.7), sd 6.8, 0.92 / 0.59, dev 1.16 / 0.49;
+  `hl_fund` +0.08 an hour (≈ 7 % a year), sd 0.59, 0.85 / 0.40; `hl_prem24` (the trailing-day mean) sd 5.7, — / 0.83, dev 1.24 / 0.69; `hl_fund24`
+  (the day's funding paid) +1.9 a day, sd 10.2, — / 0.71, dev 1.29 / 0.54; **`gap24` = `hl_prem24` − `bn_prem24`, the cross-venue lean: +1.6
+  (p10 +0.4, p90 +3.3; the twelve +0.8 … +4.0 — the venue above Binance on every name), sd 3.4, — / 0.67, dev 1.16 / 0.56.** Twenty names have a mean
+  premium past 5 bps (0G −22.5, AXS −15.8, OM / AVNT / MOVE ≈ −11, with sd 20 … 55 — thin or dying markets). Flat by hour of day (−1.8 … −1.5;
+  Binance's −3.3 … −2.5).
+- **Is it Binance's own premium again (R20 / R21's quantity, closed at 1d)?** At the HOUR half-shared: `hl_prem_dev` against `bn_prem_dev` median
+  0.40 (p10 0.29, p90 0.52; 15 % of names ≥ 0.5). **At the DAY largely the same quantity: `hl_prem24_dev` against `bn_prem24_dev` median 0.65
+  (p10 0.51, p90 0.76; 92 % of names ≥ 0.5), `hl_fund24_dev` 0.57 (76 %)** — by the audit's own rule (|corr| ≥ 0.5) the trailing-day forms ARE
+  Binance's premium on another crowd. **The gap is a quantity of its own: `gap24_dev` against `bn_prem24_dev` −0.07, `cbprem_dev` −0.02, `tb24_dev`
+  +0.04, `sr24_dev` +0.07 — orthogonal to every quantity read on the members**, cross-name mean correlation 0.15 (the premiums' 0.25 … 0.31: the
+  market's lean, which the gap mostly removes). Against the Coinbase deviation every perpetual premium is NEGATIVE (`hl_prem_dev` −0.28, Binance's
+  own −0.41: a spot-over-perpetual premium falls when the perpetual's premium rises — arithmetic, not information); against R68's two, nothing
+  (`tb24_dev` +0.04) and little (`sr24_dev` +0.18).
+- **Pooled:** the venue's premium's cross-name mean per hour −2.2 bps (p10 −6.4, p90 +6.3, sd 5.3, autocorrelation at 24 h 0.87), Binance's −3.3
+  (sd 4.5, 0.75); the two means' correlation 0.85 — the crowd's market-wide lean is the same crowd's.
+- **Rule for any feature:** read a row at its settlement hour (`ts_known` = `ts`) and tolerate the five late dates; a trailing-day form reads 24
+  settlements (≥ 20 present); frozen rows are absent; the 8-hour weeks (2023-05-12 → 06-25) carry no hourly form; a registration names the form,
+  the sign and the universe in advance (decision BK). `premium_1h` is Binance's own premium index per hour (the archive's bar; a bar starting at H
+  read at H + 1 h) for every symbol of the listing, 2023-04 → 2026-09 — R20's 5m file (to 2024-08) is untouched.
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one

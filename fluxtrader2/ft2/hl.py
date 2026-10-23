@@ -12,9 +12,11 @@ symbols    a coin per perpetual: the base (`coinbase.base`, the 1000× / 1M× pr
            `meta` call, saved once (`symbols_<YYYYMMDD>.json`).
 raw        data/raw/external/hyperliquid/funding/<COIN>.json (every row fetched, resumable from the last stamp; `.done` when complete),
            data/raw/external/hyperliquid/symbols_<YYYYMMDD>.json.
-parquet    data/hl_funding_1h.parquet: (coin, symbol, ts, ts_known, stamp, lag_s, rate, premium) — `ts` the settlement HOUR (the stamp
-           floored), `ts_known` = ts: the row describes the hour ending at ts and appears a lag after it (`lag_s`; read the row at ts
-           plus a minute to be safe). The premium and the rate are fractions (× 1e4 = bps).
+parquet    data/hl_funding_1h.parquet: (coin, symbol, ts, ts_known, stamp, lag_s, rate, premium, frozen) — `ts` the settlement HOUR (the
+           stamp floored), `ts_known` = ts: the row describes the hour ending at ts and appears a lag after it (`lag_s`; read the row at
+           ts plus a minute to be safe). The premium and the rate are fractions (× 1e4 = bps). `frozen`: the row sits in a run of ≥
+           FROZEN_RUN settlements whose premium is exactly 0 — a delisted coin keeps emitting such rows for years (32 of our 181 coins;
+           up to 805 days of zeros) — and every reader treats it as ABSENT.
 bnprem     Binance's own premium index per name at the same hourly grid for the stamp check and the "same quantity?" question: the
            archive's `premiumIndexKlines/<sym>/1h/` month files (the perpetual's price over the spot index, minus one; R20 fetched the
            5m ones to 2024-08) → data/premium_1h.parquet: (symbol, ts, ts_known, open, high, low, close) — a bar starting at H is read
@@ -56,7 +58,7 @@ BN_KIND = "premiumIndexKlines"
 BN_INTERVAL = "1h"
 OUT = Path("output/hl_audit.md")
 PAGE = 500                   # the API's page
-PAUSE = 1.1                  # s between calls: the info limit is 1,200 weight a minute at weight 20 a call
+PAUSE = 0.15                 # s between calls on top of ≈ 0.9 s of latency: the info limit is 1,200 weight a minute at weight 20 a call (60 a minute); a 429 sleeps 10 s
 RETRIES = 6
 HOUR = pd.Timedelta("1h")
 START = "2023-04-01"         # a month before F1 (the venue starts 2023-05-12)
@@ -71,7 +73,9 @@ SPOT_RATIOS = Path("output/spot_ratios.parquet")            # BH1's audit: tb24_
 KEPT = Path(__file__).with_name("cb_members_r62.csv")        # R62's kept names (r62 True)
 ALIASES = {"JELLYJELLYUSDT": "JELLY"}                        # the venue's name where neither the base nor k<BASE> is it
 TWELVE = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOGEUSDT", "1000PEPEUSDT", "WLDUSDT", "ZECUSDT", "HYPEUSDT"]
-COLS = ["coin", "symbol", "ts", "ts_known", "stamp", "lag_s", "rate", "premium"]
+FROZEN_RUN = 24              # a run of this many consecutive settlements with a premium of exactly 0 is a frozen market (a delisted coin keeps
+                             # emitting zero rows for years), not data: the rows are kept in the parquet, flagged `frozen`, and read as absent
+COLS = ["coin", "symbol", "ts", "ts_known", "stamp", "lag_s", "rate", "premium", "frozen"]
 BN_COLS = ["symbol", "ts", "ts_known", "open", "high", "low", "close"]
 QUANTITIES = {"hl_prem": "the venue's hour premium", "hl_fund": "the venue's hourly funding", "hl_prem24": "the trailing-day mean premium",
               "hl_fund24": "the trailing-day funding", "bn_prem": "Binance's hour premium", "bn_prem24": "Binance's trailing-day mean premium",
@@ -223,7 +227,17 @@ def read_coin(coin: str, sym: str, raw: Path | None = None) -> pd.DataFrame:
     ts = stamp.floor("h")
     out = pd.DataFrame({"coin": coin, "symbol": sym, "ts": ts, "ts_known": ts, "stamp": stamp, "lag_s": (stamp - ts).total_seconds(),
                         "rate": [float(r["fundingRate"]) for r in rows], "premium": [float(r["premium"]) for r in rows]})
-    return out[COLS].sort_values("stamp").drop_duplicates("ts", keep="last").reset_index(drop=True)
+    out = out.sort_values("stamp").drop_duplicates("ts", keep="last").reset_index(drop=True)
+    out["frozen"] = frozen_mask(out["premium"])
+    return out[COLS]
+
+
+def frozen_mask(premium: pd.Series) -> pd.Series:
+    """True inside every run of ≥ FROZEN_RUN consecutive rows whose premium is exactly 0 (the rows in settlement order)."""
+    z = premium.to_numpy() == 0.0
+    run_id = np.cumsum(~z)                                   # constant inside a run of zeros
+    n = pd.Series(z).groupby(run_id).transform("sum").to_numpy()
+    return pd.Series(z & (n >= FROZEN_RUN), index=premium.index)
 
 
 def ingest(only: list[str] | None = None, path: Path = PARQUET) -> dict:
@@ -235,15 +249,19 @@ def ingest(only: list[str] | None = None, path: Path = PARQUET) -> dict:
     df = df.sort_values(["symbol", "ts"], kind="mergesort").reset_index(drop=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path, index=False)
-    return {"coins_asked": len(mp), "coins_with_rows": int(df["coin"].nunique()), "rows": len(df),
+    return {"coins_asked": len(mp), "coins_with_rows": int(df["coin"].nunique()), "rows": len(df), "frozen_rows": int(df["frozen"].sum()),
+            "coins_with_frozen": int(df.loc[df["frozen"], "coin"].nunique()),
             "first": str(df["ts"].min()) if len(df) else None, "last": str(df["ts"].max()) if len(df) else None, "file": str(path)}
 
 
-def load(path: Path | str = PARQUET) -> pd.DataFrame:
+def load(path: Path | str = PARQUET, live_only: bool = True) -> pd.DataFrame:
+    """The settlement rows; the frozen ones dropped unless `live_only` is False."""
     d = pd.read_parquet(path)
     for c in ("coin", "symbol"):
         d[c] = d[c].astype(str)
-    return d
+    if "frozen" not in d:
+        d["frozen"] = False
+    return d[~d["frozen"]].reset_index(drop=True) if live_only else d
 
 
 # ---- Binance's premium index, hourly ------------------------------------------------------------------------------------------------
@@ -448,7 +466,9 @@ def _regime(ts: pd.DatetimeIndex) -> tuple[str | None, int]:
 def audit(today: pd.Timestamp | None = None, path: Path = PARQUET, bn_path: Path = BN_PARQUET, out: Path = OUT, premium: Path = PREMIUM,
           spot_ratios: Path = SPOT_RATIOS, kept_csv: Path = KEPT, symbols_df: pd.DataFrame | None = None) -> str:
     today = today or pd.Timestamp.now("UTC")
-    d = load(path)
+    full = load(path, live_only=False)
+    frozen = full[full["frozen"]].groupby("symbol").agg(frozen_rows=("ts", "size"), frozen_from=("ts", "min"))
+    d = full[~full["frozen"]].reset_index(drop=True)
     bn = pd.read_parquet(bn_path) if Path(bn_path).exists() else pd.DataFrame(columns=BN_COLS)
     bn["symbol"] = bn["symbol"].astype(str)
     a0 = pd.Timestamp(AUDIT_START, tz="UTC")
@@ -461,7 +481,9 @@ def audit(today: pd.Timestamp | None = None, path: Path = PARQUET, bn_path: Path
         sym = r0["symbol"]
         g = d[d["symbol"] == sym]
         r = {"symbol": sym, "coin": r0["coin"], "listed": bool(r0["listed"]), "delisted": bool(r0.get("delisted", False)),
-             "first": str(g["ts"].min()) if len(g) else None, "last": str(g["ts"].max()) if len(g) else None, "rows": int(len(g))}
+             "first": str(g["ts"].min()) if len(g) else None, "last": str(g["ts"].max()) if len(g) else None, "rows": int(len(g)),
+             "frozen_rows": int(frozen.loc[sym, "frozen_rows"]) if sym in frozen.index else 0,
+             "frozen_from": str(frozen.loc[sym, "frozen_from"]) if sym in frozen.index else None}
         if len(g):
             have = pd.DatetimeIndex(g["ts"])
             r["hourly_from"], r["rows_8h"] = _regime(have)
@@ -519,7 +541,9 @@ def audit(today: pd.Timestamp | None = None, path: Path = PARQUET, bn_path: Path
          f"30-day sd, ≥ 360 rows present. `cb_dev` is the same form on AX1's adjusted Coinbase premium (`{premium}`), `tb24_dev` / `sr24_dev` R68's two from BH1's "
          f"audit (`{spot_ratios}`); the kept names are R62's (`{kept_csv.name}`). Nothing is priced here; no fold is read.\n",
          "\n## Symbols, extent, the hourly regime, completeness, cover (rows)\n", cov.round(4).to_markdown(index=False), "\n",
-         f"\n- {len(listed)} of {len(sf)} perpetuals have a coin on the venue ({int(listed['delisted'].sum()) if len(listed) else 0} delisted there), {len(with_rows)} with rows in the window.\n",
+         f"\n- {len(listed)} of {len(sf)} perpetuals have a coin on the venue ({int(listed['delisted'].sum()) if len(listed) else 0} delisted there), {len(with_rows)} with live rows in the window; "
+         f"{int((cov['frozen_rows'] > 0).sum())} names carry FROZEN rows (a run of ≥ {FROZEN_RUN} settlements at a premium of exactly 0 — a delisted market still emitting; "
+         f"{int(cov['frozen_rows'].sum()):,} rows in all), read as absent everywhere here; `last` is the last live row.\n",
          "\n## The stamp check — the venue's hour premium against Binance's premium bar by lag (a positive lag: Binance's bar that many hours EARLIER)\n",
          sc.round(3).to_markdown(index=False) if len(sc) else "(no overlap)", "\n",
          (f"\n- Rule: when the stamps agree the best lag is 0 on nearly every name. Here: best lag 0 on {int((sc['best_lag'] == 0).sum())} of {len(sc)} names; the lag-0 correlation "

@@ -42,7 +42,7 @@ def _zip(path, rows):
     path.with_suffix(".zip.ok").touch()
 
 
-def _plant(tmp_path, monkeypatch, hours=24 * 92, hole=(100, 110), eight_h_rows=10):
+def _plant(tmp_path, monkeypatch, hours=24 * 92, hole=(100, 110), eight_h_rows=10, frozen_tail=200):
     """Three coins — BTC (8-hourly for the first `eight_h_rows` settlements, then hourly), kPEPE for the 1000× contract, WLD with a hole — and
     NOPE unlisted; member files holding WLD, 1000PEPE and NOPE in three F1 blocks; Binance's 1h premium bars equal to the venue's hour
     premium on BTC and PEPE and an hour LATE on WLD; Binance's 8-hour funding equal to the venue's eight settlements summed on BTC and
@@ -88,7 +88,8 @@ def _plant(tmp_path, monkeypatch, hours=24 * 92, hole=(100, 110), eight_h_rows=1
             else:
                 lag_ms = 100
             if keep[i]:
-                rr.append({"coin": coin, "fundingRate": f"{rate[sym][i]:.10f}", "premium": f"{prem[sym][i]:.10f}", "time": int(t.timestamp() * 1000) + lag_ms})
+                pz = 0.0 if (sym == "WLDUSDT" and i >= hours - frozen_tail) else prem[sym][i]      # WLD delisted: a frozen tail of exact zeros
+                rr.append({"coin": coin, "fundingRate": f"{rate[sym][i]:.10f}", "premium": f"{pz:.10f}", "time": int(t.timestamp() * 1000) + lag_ms})
         rr.append(dict(rr[-1]))                                                         # a duplicate row
         history[coin] = rr
     calls = {"n": 0}
@@ -145,10 +146,14 @@ def test_fetch_ingest_and_audit_on_the_planted_venue(tmp_path, monkeypatch):
     r3 = hl.fetch(end="2023-08-15")
     assert r3["skipped"] == 2 and r3["rows"] == len(rows_) - 300 and json.load(open(p))["rows"] == rows_
     ri = hl.ingest()
-    assert ri["coins_asked"] == 3 and ri["coins_with_rows"] == 3
-    d = hl.load(hl.PARQUET)
+    assert ri["coins_asked"] == 3 and ri["coins_with_rows"] == 3 and ri["frozen_rows"] == 200 and ri["coins_with_frozen"] == 1
+    full = hl.load(hl.PARQUET, live_only=False)
     n_btc = hours - 8 * 10 + 10
-    assert len(d) == n_btc + hours + hours - (hole[1] - hole[0])                            # the duplicates dropped, the hole absent
+    assert len(full) == n_btc + hours + hours - (hole[1] - hole[0])                         # the duplicates dropped, the hole absent
+    assert full["frozen"].sum() == 200 and (full.loc[full["frozen"], "symbol"] == "WLDUSDT").all() and full.loc[full["frozen"], "ts"].min() == ts[-200]
+    d = hl.load(hl.PARQUET)
+    assert len(d) == len(full) - 200 and not d["frozen"].any()
+    assert hl.frozen_mask(pd.Series([0.0] * 23 + [1.0] + [0.0] * 24)).tolist() == [False] * 24 + [True] * 24      # a run short of the bar is kept
     g = d[d["symbol"] == "BTCUSDT"].sort_values("ts")
     assert (g["ts_known"] == g["ts"]).all() and g["ts"].dt.tz is not None and g["ts"].iloc[-1] == ts[-1]
     assert abs(g["lag_s"].iloc[0] - 60.0) < 1e-9 and abs(g["lag_s"].iloc[-1] - 0.1) < 1e-9 and (g["ts"].dt.minute == 0).all()
@@ -165,11 +170,13 @@ def test_fetch_ingest_and_audit_on_the_planted_venue(tmp_path, monkeypatch):
     assert cov.loc["WLDUSDT", "gaps_over_1h"] == 1 and abs(cov.loc["WLDUSDT", "largest_gap_h"] - (hole[1] - hole[0] + 1)) < 1e-9
     assert cov.loc["1000PEPEUSDT", "gaps_over_1h"] == 0 and cov.loc["1000PEPEUSDT", "rows_8h"] == 0
     assert cov.loc["NOPEUSDT", "rows"] == 0 and not cov.loc["NOPEUSDT", "listed"] and cov.loc["WLDUSDT", "delisted"]
+    assert cov.loc["WLDUSDT", "frozen_rows"] == 200 and pd.Timestamp(cov.loc["WLDUSDT", "last"]) == ts[-201] and cov.loc["BTCUSDT", "frozen_rows"] == 0
+    assert "carry FROZEN rows" in txt
     assert cov.loc["WLDUSDT", "cover_member"] > 0.9 and cov.loc["1000PEPEUSDT", "cover_member"] > 0.99
     assert abs(cov.loc["BTCUSDT", "lag_s_max"] - 60.0) < 1e-9 and abs(cov.loc["WLDUSDT", "lag_s_p50"] - 0.1) < 1e-9
     bl = pd.DataFrame(J["blocks"])
     f12 = bl[bl["folds"] == "F1+F2"]
-    assert len(f12) == 3 and (f12["members"] == 3).all() and (f12["with_bars"] == 2).all() and (f12["cover_ge_0.9"] == 2).all()
+    assert len(f12) == 3 and (f12["members"] == 3).all() and (f12["with_bars"] == 2).all() and f12["cover_ge_0.9"].tolist() == [2, 2, 1]   # WLD's frozen tail drops it from the third block
     st = pd.DataFrame(J["stats"]).set_index(["symbol", "quantity"])
     for sym in coins:
         a = st.loc[(sym, "hl_prem")]
