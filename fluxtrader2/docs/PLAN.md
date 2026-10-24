@@ -1569,6 +1569,39 @@ Ranked:
 Recommended: BM1 step (i) now — the event audit on the work VM, the lists frozen, nothing registered until it is in — then R70
 registered on the audit's counts by the next decision; BM2 beside it only if Vadim wants a second line. Needed from Vadim: the word
 ("BM1" opens the event audit; "BM1 + BM2" adds the participant-mix screen; "BM4" records the mode).
+**DECIDED 2026-10-24, Vadim's "BM1": the event audit OPENED the same day, written here before any code and before any bar is joined to a label.**
+*The probes first (the work VM, one page each — the rule of BJ2's fetch):* Bithumb's notices API (`api.bithumb.com/v1/notices`, a redirect to
+`feed-api.bithumb.com`) answers with its latest FIVE notices whatever the parameters (count, page, offset, category) — a live feed, not a history:
+it cannot date past listings. Upbit's board (`api-manager.upbit.com/api/v1/announcements`, `upbit.com/service_center/notice`) sits behind
+Cloudflare and refuses a script (403); it is not probed further. The Wayback Machine holds Upbit's announcement pages
+(`api-manager.upbit.com/api/v1/announcements/<id>`, snapshots 2025-04 → 2026-10 in the CDX) and went offline during the probe
+("Temporarily Offline"). So the announcement-to-open lag is NOT measured by the audit; the KNOWN-AT anchor of the whole line is the venue's
+FIRST HOURLY BAR (its start, known at start + 1 h — DATA.md `krw_1h_*`'s rule), which needs no board; the pump before it is R70's own
+validity row (the run-up against the peers over t0 − 24 h → t0, read inside the registration, not here). A trap found in the same probe: Bithumb's
+first fetched bars at 01:00 and 03:00 UTC on 2023-04-01 (BNT, OGN) are a thin market's late first trade in the fetch's first hours, not
+listings — the event rule carries a margin of 7 days after the fetch start. The 5m archive slice on the VM holds 598 names to 2025-12-31
+(412 reaching it; 185 ending before 2025 — F1+F2's members fetched to 2024-08), the collector's 5m the twelve to 2026-09-14.
+*The audit, `ft2 krlist events|bars|audit` (`ft2/krlist.py`), nothing priced, no fold read:* **events** — from the two KRW parquets (the
+columns market, symbol, ts, volume_krw only; no price column is loaded), per market its first bar t0; a candidate listing is a market whose
+t0 ≥ 2023-04-08 (START + 7 d); the perpetual's first bar from `candles_5m_archive` where the name is held, else the first day of the month
+AFTER `um_first_month.csv`'s first month (an upper bound of the start, so the age is a lower bound); ELIGIBLE = the perpetual ≥ 30 days old
+at t0 AND t0 inside F1 … F4 (F5's five events are listed and not frozen — F5 has no member blocks, and it is the last fold); flags per
+event: `first_korean` (the other venue has no bar before t0, in or before the window), the other venue's own t0, `member_at_t0` (a member of
+the block that holds t0), the fold, the base and the contract multiple; `output/krlist/events.csv` (every candidate with its `why`),
+`output/krlist/krlistings_f12.csv` / `_f34.csv` the eligible ones, FROZEN as `ft2/krlistings_f12.csv` / `_f34.csv` and committed before
+any bar of an event is read for anything. The counts of decision BM (l) are re-derived from the parquets and must agree with the pulled
+audits' (42 / 37 ± the margin's effect). **bars** — per frozen event the 5m bars of its name over t0 − 2 d → t0 + 8 d counted in
+`candles_5m_archive` (counts, not prices); the (name, month) files missing fetched from the archive's monthly klines and the slice
+re-ingested whole with every name it held plus the event names (R28's route), guarded by a fingerprint per name (rows, first, last, the sums
+of close and volume on the old extent) saved before and checked after — a name that changes is a void. **audit** — the counts by fold ×
+venue × `first_korean`, the member share, the perpetual's age quantiles, the first bar's hour of day (KST), the arriving crowd's size: the
+venue's KRW volume over the first 24 bars in USDT (through KRW-USDT where it exists, else the venue's BTC ratio) against Binance's quote
+volume on the perpetual over the same hours, and the same over days 2 … 7 (AX2's form — volumes, not prices); `output/krlist/audit.md` /
+`.json`; a DATA.md section `krw_listings` and a §9 line. Tests on planted parquets (`tests/test_p8_krlist.py`): the before-window market
+and the thin market's late first bar excluded, the young perpetual excluded, the F5 event listed and not frozen, the two venues' order read
+into `first_korean`, the member flag, the bar count and the fingerprint's void. The chain `scripts/bm1_chain.sh` on the work VM (md5 of the
+member lists and the KRW parquets before and after; the poweroff trap). What follows: the frozen lists committed, then decision BN — R70's
+registration on the audit's counts (BM1 (ii)'s text), Vadim's word.**
 
 
 **Decision BI (2026-10-22) — the spot-flow audit is in: register R62's screen on Binance's spot flow per member, and in which form?
