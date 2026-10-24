@@ -425,6 +425,48 @@ either venue); a registration names its venue and its sd cut in advance — at R
 decision BC → R64 (§8), read 2026-10-21: the Bithumb deviation CLOSED at 1d on the members (+0.002) and a fact of the hours (+0.007 at 1h,
 +0.006 at 4h, both folds); Upbit's +0.015 at 4h; the Coinbase deviation on the same cells +0.014 at 1d. Parked in §7.
 
+### krw_listings (the Korean LISTING of an existing Binance perpetual as a per-name EVENT — Upbit's and Bithumb's first hourly KRW bar; decision BM1 (i), §9 #13) — `ft2/krlistings_f12.csv`, `ft2/krlistings_f34.csv` (FROZEN 2026-10-24, commit 9f5c4b7, before any bar of an event's name was read for anything): `(venue, market, symbol, base, mult, t0, ts_known, fold, perp_first, perp_first_source, perp_age_days, first_korean, other_venue_t0, member_at_t0)`
+
+`ft2 krlist events|bars [--fetch]|audit` (`ft2/krlist.py`; `scripts/bm1_chain.sh`; `tests/test_p8_krlist.py`). No new source: the events are
+READ OFF `krw_1h_upbit` / `krw_1h_bithumb` (the columns market, symbol, ts, volume_krw — no price column is loaded), one candidate per market =
+its first hourly bar t0. **The event rule:** t0 ≥ 2023-04-08 (the fetch's start + a 7-day MARGIN — Bithumb's first bars at 01:00 and 03:00 UTC
+on 2023-04-01 (BNT, OGN) and INJ's on 04-04 are a thin market's late first trade, not listings; a first bar AT the fetch start is a listing
+before the window); the perpetual's first bar from `candles_5m_archive` where the slice holds the name (every eligible event — 121 of 121
+`archive 5m`), else the first day of the month after `um_first_month.csv`'s first month (an upper bound, so the age is a lower bound);
+ELIGIBLE = the perpetual ≥ 30 days old at t0 (younger = a launch, R28's population, 74 candidates: SUI, WLD, PEPE a day old on Bithumb;
+RENDER, S renamed contracts) AND t0 inside F1 … F4 (F5's 20 listed in `output/krlist/events.csv` and not frozen; 6 outside: F0's OP and
+EGLD, four after F5). Flags: `first_korean` (the other venue has no bar before t0), `other_venue_t0`, `member_at_t0` (a member of the block
+holding t0), `fold`, `base`, `mult` (a 1000× contract's base). **Known-at: t0 is the bar's START and the bar is final at `ts_known` = t0 + 1 h
+(`krw_1h_*`'s rule); the decision bar of any registration closes at t0 + 60 min.** No announcement board was read: Bithumb's notices API
+(`api.bithumb.com/v1/notices` → `feed-api.bithumb.com`) serves its latest FIVE whatever the parameters, Upbit's (`api-manager.upbit.com`)
+sits behind Cloudflare and refuses a script, the Wayback Machine holds Upbit's announcement pages and was offline — the announcement-to-open
+lag is NOT measured; the pump before t0 is a registration's own validity row (the run-up against the peers over t0 − 24 h → t0).
+**Counted 2026-10-24 (`output/krlist/audit.md` / `.json`, `events.csv`, `bars.csv`, `crowd_size.csv`):** 224 candidate first bars, **121
+ELIGIBLE — F1 25 (Bithumb 20 / Upbit 5), F2 27 (19 / 8), F3 31 (15 / 16), F4 38 (18 / 20): F1+F2 52, F3+F4 69.** A name's FIRST Korean
+listing (`first_korean`): F1 22, F2 19, F3 17, F4 17 — 41 on F1+F2 (Bithumb 36 / Upbit 5), 34 on F3+F4 (24 / 10); the second venue's
+listing 11 / 35 (Upbit listed the members' names late: its F3+F4 events are mostly second listings). 91 names, 30 on both venues; members of
+the block at t0 55 of 121 (27 on F1+F2, 28 on F3+F4). The perpetual's age at t0 p10 / p50 / p90 51 / 228 / 910 days (medians by fold 274 /
+168 / 313 / 147; the youngest 34). **Of the twelve: PEPE (Upbit 2024-11-14, F3) and WLD (Upbit 2025-09-09, F4), both second listings — their
+Bithumb listings were launches (the perpetual a day old); none on F1+F2.** **The hour:** 68 of 121 first bars start 16 … 18 KST (07 … 09 UTC;
+the full spread 10 … 22 KST plus two at 00) — a Korean afternoon opening; the decision bar closes 08 … 10 UTC. **Bars:** the window
+t0 − 2 d → t0 + 8 d (2,880 5m bars) complete (≥ 95 %) for 111 of 121 before the fetch, 121 of 121 after — 12 (name, month) files fetched for
+9 names (1000PEPE, ALT, API3, COMP, CYBER, IOTA, LISTA, WLD, YGG; 2024-11 → 2025-10), the slice re-ingested whole (83,275,262 rows, 598
+names, 2019-12-31 → 2025-12-31) under the per-name fingerprint (rows, first, last, the sums of close and volume on each name's OLD extent;
+rtol 1e-12): **598 of 598 names unchanged, pass** (`fingerprint_check.json`). The last F4 event 2025-12-16, its window inside the slice.
+**The arriving crowd (volumes, not prices; AX2's form):** the venue's KRW volume over the first 24 bars from t0 in USDT (through KRW-USDT
+where the venue lists it — Bithumb from 2023-12-07, Upbit from 2024-06-07 — else KRW-BTC over BTCUSDT's hourly close; the FX and the
+market-wide premium together, a scale not a premium) against Binance's quote volume on the perpetual over the same hours: **Upbit's first
+day median 0.335 of Binance's (p10 / p90 0.18 / 0.72; the ordinary day 0.095 — × 3.5), days 2 … 7 0.146 (× 1.5); Bithumb 0.087 (0.017 /
+0.31; the ordinary 0.013 — × 6.7), days 2 … 7 0.025 (× 2)**; the median venue first-day volume 40 M USDT (Upbit 265 M, Bithumb 13 M)
+against Binance's 311 M; two Bithumb listings out-traded Binance on the day (PENDLE 2.39, NEO 1.75); STRAX's perpetual had no Binance
+volume (the 2024 swap) — 120 of 121 rows. The crowd is real on both venues and several times larger on Upbit, whose F1+F2 events are
+few (13, 5 of them first listings). **A trap found on the way:** `candles_5m_archive` holds BTCUSDT only to 2022-08-19 (the members'
+slice); the twelve's bars are the collector's `candles_5m` — the hourly Binance read (`krlist._hourly_binance`) takes both slices, the
+archive's row where both hold one (the first run's crowd row was empty before the venues' KRW-USDT; rerun 06:11 UTC).
+**Rule for any registration: the cell is an event of a FROZEN list (the first Korean listing per name the gate's cell — 41 on F1+F2; the
+second venue's listing a described row); t0 and `ts_known` as frozen; nothing about an event's price was read here — the run-up, the
+give-back and the venue split are the registration's. What follows: decision BN (PLAN P8) — R70's registration on these counts.**
+
 ### spot_1h (Binance spot, hourly, the twelve's and the screener's members' `<BASE>USDT` markets; decision BH1, §9 #3) — `data/spot_1h.parquet`: `(spot_symbol, symbol, ts, ts_known, open, high, low, close, volume, quote_volume, count, taker_buy_volume, taker_buy_quote_volume)`
 
 `ft2 spot symbols|fetch --listed-only|ingest|audit` (`scripts/bh1_chain.sh`; raw month files under `data/raw/external/binance_spot/klines/<SYMBOL>/`,

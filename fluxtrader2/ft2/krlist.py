@@ -277,11 +277,23 @@ def bars(fetch: bool = False) -> dict:
 
 # ---- the audit (volumes, not prices) -----------------------------------------------------------------------------------------
 def _hourly_binance(symbols: list[str], cols: tuple[str, ...]) -> pd.DataFrame:
-    """The archive slice's 5m bars of `symbols` as hourly rows keyed by the hour's END (ts_known): quote_volume summed, close the last."""
-    if not (data.PROC / f"{SLICE}.parquet").exists():
+    """The 5m bars of `symbols` from the archive slice AND the collector's `candles_5m` (the twelve's — the archive slice holds BTCUSDT only
+    to 2022-08, found 2026-10-24 when the KRW-BTC fallback came back empty), as hourly rows keyed by the hour's END (ts_known): quote_volume
+    summed, close the last. The same (symbol, open_time) in both: the archive's row."""
+    parts = []
+    for slice_ in (SLICE, "candles_5m"):
+        if (data.PROC / f"{slice_}.parquet").exists() or (data.PROC / slice_).is_dir():
+            try:
+                x = data.load(slice_, columns=["symbol", "open_time", *cols], symbols=symbols)
+            except Exception:
+                continue
+            x["symbol"] = x["symbol"].astype(str)
+            parts.append(x)
+    if not parts:
         return pd.DataFrame(columns=["symbol", "ts_known", *cols])
-    d = data.load(SLICE, columns=["symbol", "open_time", *cols], symbols=symbols)
+    d = pd.concat(parts, ignore_index=True)
     d["open_time"] = _utc(d["open_time"])
+    d = d.drop_duplicates(["symbol", "open_time"], keep="first")
     d["ts_known"] = d["open_time"].dt.floor("h") + HOUR
     agg = {c: ("sum" if c == "quote_volume" else "last") for c in cols}
     return d.sort_values("open_time").groupby(["symbol", "ts_known"], observed=True).agg(agg).reset_index()
