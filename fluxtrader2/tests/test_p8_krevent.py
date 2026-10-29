@@ -301,3 +301,23 @@ def test_the_recheck_reproduces_r70s_pricing_through_the_confirmations_path(tmp_
     assert r["status"] == "PASS" and r["own_vs_r70_priced_max_abs"] <= 1e-9 and r["gross_funding_vs_minus_a_1d_max_abs"] <= 1e-9 and r["a_1d_rows_matched"] == 8
     monkeypatch.setattr(krevent, "R70_SOLD_X1_NET", round(float(P["net_bps"].mean()), 1) + 1.0)
     assert krevent.recheck()["status"] == "FAIL"
+
+
+def test_a_re_execution_needs_the_plans_tag_and_a_first_read_and_is_logged_beside_it(tmp_path, monkeypatch):
+    M, t0s = _market()
+    C = _costs(M)
+    _plant34(tmp_path, monkeypatch, M, t0s, C)
+    with pytest.raises(SystemExit):                                                                                       # no first read yet: nothing to re-execute
+        krevent.confirm("R71", "x", reexecute="costs")
+    krevent.confirm("R71", "c")
+    with pytest.raises(SystemExit):                                                                                       # the plan does not name the tag
+        krevent.confirm("R71", "x", reexecute="costs")
+    bt.PLAN.write_text(bt.PLAN.read_text() + "re-execution `costs`: the cost rows\n")
+    for tag in ("x",):
+        (tmp_path / "output" / "listing" / f"{tag}_fingerprint_before.csv").write_text("symbol,rows\n")
+    text = krevent.confirm("R71", "x", reexecute="costs")
+    assert "Verdict: CONFIRMED" in text
+    r = pd.read_csv(bt.READS)
+    assert r["registration"].tolist() == ["R71", "R71", "R71/costs", "R71/costs"] and json.loads((tmp_path / "output" / "listing" / "x" / "meta.json").read_text())["registration"] == "R71/costs"
+    with pytest.raises(SystemExit):                                                                                       # once per tag
+        krevent.confirm("R71", "y", reexecute="costs")

@@ -472,6 +472,17 @@ def recheck(taker_bps: float = TAKER_BPS) -> dict:
     return out
 
 
+def guard_rows(reads: Path, fold_names, registration: str, strategy: str, params: dict) -> str:
+    """R63 / R66's guard rows (`score_ext.guard`'s form) appended NOW — after `backtest._guard` has checked the block, the once-per-question
+    rule and, for a re-execution, the plan's tag; the registration here may carry the tag (R<n>/<tag>)."""
+    import time
+    stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+    reads.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"read_at": stamp, "registration": registration, "fold": list(fold_names), "strategy": strategy, "params": json.dumps(params)}
+                 ).to_csv(reads, mode="a", header=not reads.exists(), index=False)
+    return stamp
+
+
 def _group_rows(T: pd.DataFrame, key: str, labels, col: str = "H") -> pd.DataFrame:
     out = []
     vals = T[key]
@@ -482,8 +493,7 @@ def _group_rows(T: pd.DataFrame, key: str, labels, col: str = "H") -> pd.DataFra
     return pd.DataFrame(out)
 
 
-def confirm(registration: str | None, name: str = "r71", taker_bps: float = TAKER_BPS) -> str:
-    from . import score_ext                                        # imported here: its guard is R63 / R66's, the rows appended before the market
+def confirm(registration: str | None, name: str = "r71", taker_bps: float = TAKER_BPS, reexecute: str | None = None) -> str:
     out = OUT / name
     out.mkdir(parents=True, exist_ok=True)
     fp_before, _ = fp_paths(name)
@@ -497,10 +507,11 @@ def confirm(registration: str | None, name: str = "r71", taker_bps: float = TAKE
            "2_cells": int(len(cl)), "2_twins_dropped": twins[["venue", "market", "symbol", "t0"]].astype(str).to_dict("records"), "2_described_not_cells": desc[["venue", "market", "symbol", "t0"]].astype(str).to_dict("records"),
            "3_r70_recheck": r70chk}
     params = {"hold": HOLD, "stop": None, "wait": WAIT, "entry_mult": ENTRY_MULT, "heavy": list(HEAVY), "list": LIST34.name, "list_md5": list_md5, "cells": int(len(cl))}
-    conf = bt._guard(CONF_FOLDS, registration)                     # registered, and once (refuses before anything is loaded)
-    stamp = score_ext.guard(bt.READS, bt.PLAN, CONF_FOLDS, registration, STRATEGY, params)      # the rows (R71, F3) / (R71, F4) NOW, before the market
-    pre["7_guard"] = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf)}
-    print(f"guard: ({registration}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the F3+F4 market is loaded now", flush=True)
+    conf = bt._guard(CONF_FOLDS, registration, reexecute)          # registered, and once (refuses before anything is loaded); a re-execution only under a tag the plan names (§3)
+    tagged = bt.read_tag(registration, reexecute)
+    stamp = guard_rows(bt.READS, conf, tagged, STRATEGY, params)   # the rows (R71[/tag], F3) / (…, F4) NOW, before the market (score_ext.guard's form; the checks are _guard's)
+    pre["7_guard"] = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf), "logged_as": tagged}
+    print(f"guard: ({tagged}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the F3+F4 market is loaded now", flush=True)
 
     a0, end = listing.window(CONF_FOLDS)
     mem = universe.members(universe.F34_MEMBERS_CSV)
@@ -562,7 +573,7 @@ def confirm(registration: str | None, name: str = "r71", taker_bps: float = TAKE
         import traceback
         md += ["\n## Described — FAILED (the read above stands; describe from trades.csv)\n", "\n```\n" + "".join(traceback.format_exception(exc)) + "\n```\n"]
     T.to_csv(out / "trades.csv", index=False)                      # with the described columns (run-up, y rows) when the description ran
-    (out / "meta.json").write_text(json.dumps({"registration": registration, "decision": "BO1", "unit": bt.UNIT, "charged": bt.CHARGED, "hold": HOLD, "stop": None, "wait": WAIT, "entry_mult": ENTRY_MULT,
+    (out / "meta.json").write_text(json.dumps({"registration": tagged, "decision": "BO1", "unit": bt.UNIT, "charged": bt.CHARGED, "hold": HOLD, "stop": None, "wait": WAIT, "entry_mult": ENTRY_MULT,
                                                 "heavy": HEAVY, "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": SEED_CONFIRM, "rows": int(len(L)), "cells": int(len(cl)), "eligible": int(len(E)),
                                                 "taker_bps": taker_bps, "list_md5": list_md5, "verdict": N["verdict"]}, indent=1))
     text = "\n".join(md)
@@ -627,7 +638,7 @@ def _describe_r71(M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, desc, twins,
     return md
 
 
-def main(action: str, name: str | None = None, registration: str | None = None) -> None:
+def main(action: str, name: str | None = None, registration: str | None = None, reexecute: str | None = None) -> None:
     if action == "fingerprint":
         print(fingerprint(name))
     elif action == "run":
@@ -645,7 +656,7 @@ def main(action: str, name: str | None = None, registration: str | None = None) 
         if r["status"] != "PASS":
             sys.exit(2)
     elif action == "confirm":
-        text = confirm(registration, name or "r71")
+        text = confirm(registration, name or "r71", reexecute=reexecute)
         print(text)
         if "**VOID" in text:
             sys.exit(2)

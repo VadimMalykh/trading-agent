@@ -11534,7 +11534,26 @@ Expectation:   validity PASS; 64 cells, 60 … 64 eligible (the calendar cuts no
                −50 and +250, its two se's within a quarter of each other; F3 and F4 of the same sign more likely than not;
                Upbit's cells above Bithumb's; the second listings above the first. Verdict: CONFIRMED one in two, NOT CONFIRMED
                one in two, CLOSED one in twenty.
-Result:        —
+Result:        **First run 2026-10-29 (the chain on the work VM 18:55 → 18:59 UTC; the guard rows (R71, F3) / (R71, F4) appended 18:59 before the
+               market was loaded): VOID on validity (5) before any number — H exists for 56 of the 64 cells (87.5 % against the ≥ 90 % written):
+               the 8 unpriced cells are ALT (twice), API3, COMP, CYBER, IOTA, LISTA and YGG — exactly the seven names that are members of F1+F2's
+               blocks only. Their rows in `cost_daily_wide.parquet` end at 2024-08-31: `costwide` last ran on 2026-10-05 (R29), when the slice
+               held these names to F2's end; BM1 fetched their F3+F4 event months on 2026-10-24 and the proxy was not re-run. Everything else
+               PASSED: the fingerprint saved, the list's md5 and 69 rows, every t0 re-derived, 64 cells (3 twins, 2 described), the recheck
+               (R70's 52 events: own = `_priced`'s net to 0.0, gross + funding = −a_1d to 6e-14, the mean own +201.94 against the report's
+               +201.9), 64 of 64 eligible, every bar, b from ≥ 58 members, the fill's arithmetic 0.0 and −`horizon.labels` 0.0, t = ts_known,
+               no exit past the end, no stop. Nothing of an F3+F4 trade was written: `validity.json` and `cells_all.csv` only.**
+               **The re-execution `costs` (§3; written 2026-10-29 before the second run): a defect in the MEASUREMENT's input, not in the data
+               or the rule — the cost proxy is missing for 8 cells whose bars are in hand.** The cure touches costs only: on the work VM
+               `cp data/cost_daily_wide.parquet data/cost_daily_wide_before_r71.parquet`, `ft2 costwide --universe all --start 2021-12-01` on
+               the slice as it stands (the pooled regression is fitted on the twelve's tape days, unchanged; R28 and R29 took this route),
+               `scripts/r24_check_costwide.py r71` — every row of the file as it was is in the new one, unchanged, every F3+F4 member priced
+               on the folds' days (its PASS a validity item of the second run), then the chain again (`scripts/r71_costs_chain.sh`:
+               fingerprint → recheck → `confirm --registration R71 --reexecute costs` → check) logged as R71/costs beside the first read,
+               which stays in the ledger as the VOID it was. The rule, the cells, the gate, the described rows: as registered, nothing
+               changed. If a cell still has no cost row after the re-run it is counted and named; validity (5) stands at ≥ 90 %. Once per tag.
+Result (R71/costs): —
+
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …
