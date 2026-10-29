@@ -161,7 +161,7 @@ def cmd_listing(args):
 
 def cmd_krevent(args):
     from . import krevent
-    krevent.main(args.action, args.name)
+    krevent.main(args.action, args.name, args.registration)
 
 
 def cmd_universe(args):
@@ -576,9 +576,10 @@ def main(argv=None):
     ls.add_argument("--folds", nargs="*", default=None, help="select: F1 F2 (default) or F3 F4 → output/listing/launches_f12.csv / launches_f34.csv")
     ls.add_argument("--name", default=None, help="run / confirm: the output directory under output/listing/ (default r28 / r29)")
     ls.add_argument("--registration", default=None, help="confirm: R29 — a guarded read of F3+F4, made once and logged")
-    ke = sub.add_parser("krevent", help="P8, R70 (decision BN2): the Korean listing of an existing perpetual sold from the close of its first KRW hour, held 1 / 3 / 7 days against the block's members — `fingerprint` saves the archive slice's per-name fingerprint before the run, `run` reads the frozen ft2/krlistings_f12.csv → output/listing/r70/, `check` compares the fingerprint after (see ft2/krevent.py)")
-    ke.add_argument("action", choices=["fingerprint", "run", "check"])
-    ke.add_argument("--name", default=None, help="run: the output directory under output/listing/ (default r70)")
+    ke = sub.add_parser("krevent", help="P8, R70 (decision BN2) and R71 (BO1): the Korean listing of an existing perpetual sold from the close of its first KRW hour — `fingerprint` saves the archive slice's per-name fingerprint before a run, `run` reads R70 on the frozen ft2/krlistings_f12.csv → output/listing/r70/, `check` compares the fingerprint after; `recheck` reproduces R70's pricing through the confirmation's path, `confirm --registration R71` the confirmation on the frozen ft2/krlistings_f34.csv, 1 day, once → output/listing/r71/ (see ft2/krevent.py)")
+    ke.add_argument("action", choices=["fingerprint", "run", "check", "recheck", "confirm"])
+    ke.add_argument("--name", default=None, help="run / confirm: the output directory under output/listing/ (default r70 / r71); fingerprint / check: the tag of the fingerprint files (r71 for the confirmation)")
+    ke.add_argument("--registration", default=None, help="confirm: R71 — a guarded read of F3+F4, made once and logged before the market is loaded; `recheck` reproduces R70's pricing through the confirmation's path first (validity (3))")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")

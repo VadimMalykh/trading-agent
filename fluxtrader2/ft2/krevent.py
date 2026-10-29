@@ -18,6 +18,14 @@ run-up     y over t0 − 24 h → t0 (no latency), the validity-of-mechanism row
 validity   (1) the archive slice's fingerprint before (`fingerprint`) and after (`check`) the run; (2) the list's md5 and its t0 re-derived
            from the KRW parquets; (3) ≥ 90 % and ≥ 45 eligible, ≥ 90 % with their own cost row; (4) bars and labels ≥ 95 %; (5) members
            ≥ 40; (6) the label identity with `horizon.labels` and the harness; (7) t = ts_known for every eligible event.
+
+R71 — `ft2 krevent confirm --registration R71` (PLAN §8 R71; decision BO1): the confirmation read of R70's candidate on the frozen F3+F4 list,
+once. ONE rule: sold at the same entry, held 288 bars, NO stop; priced by `listing.sold_trades` (R29's path unchanged: the entry day's legs
+at twice the name's proxy row, the heavy reading ×4 / ×2 beside), hedged with the F3+F4 block's members (`listing.hedge`); H = own + hedge,
+M its mean, u on the larger of the bootstrap's and the week-clustered se (`listing.noise`, seed 71). The cells: the 69 frozen rows less the
+three same-name same-hour twins (one position each; the Bithumb row kept) and less the twelve's two events (described, not cells) → 64.
+The guard rows (R71, F3) / (R71, F4) are appended to the ledger BEFORE the market is loaded (`score_ext.guard`). `recheck`: the same path
+on the F1+F2 list at the plain proxy reproduces R70's harness pricing (validity (3)) — no F3+F4 bar.
 """
 from __future__ import annotations
 
@@ -55,6 +63,22 @@ HL_AUDIT = Path("output/hl_audit.json")
 FP_BEFORE = OUT / f"{NAME}_fingerprint_before.csv"
 FP_CHECK = OUT / f"{NAME}_fingerprint_check.json"
 SPLITS = {"first_korean": ("first listing", "second venue"), "venue": None, "member_at_t0": ("member at t0", "not a member")}
+
+# R71, the confirmation read
+LIST34 = krlist.LISTS["f34"]
+LIST34_MD5 = "6222d4361b78b91ac59b2c199d2e1da0"    # as registered (PLAN §8 R71)
+LIST34_ROWS = 69
+CONF_FOLDS = ("F3", "F4")
+HOLD = 288                                         # R70's candidate: 1 day
+ENTRY_MULT = 2.0                                   # the entry day's legs: this × the name's proxy row (R29's rule)
+HEAVY = (4.0, 2.0)                                 # the heavy reading: the entry day × 4, every other proxy cost × 2
+SEED_CONFIRM = 71
+MIN_CONFIRM, MIN_CONFIRM_SHARE, MIN_H_SHARE = 58, 0.90, 0.90
+DESCRIBED = tuple(krw.TWELVE)                      # the twelve are untouched by every gate: their events are described rows, not cells
+STRATEGY = "krlisting_sold_1d"
+R70_DIR = OUT / NAME
+R70_CHECK = OUT / "r71_r70_check.json"
+R70_SOLD_X1_NET = 201.9                            # R70's report: the sold position's net through the harness at the proxy (51 priced), printed to 0.1
 
 
 def _days(h: int) -> str:
@@ -168,26 +192,35 @@ def family_verdict(fam: pd.DataFrame) -> tuple[str, str | None]:
 
 
 # ---- the fingerprint (validity (1)) -------------------------------------------------------------------------------------------------
-def fingerprint() -> str:
+def fp_paths(name: str | None) -> tuple[Path, Path]:
+    """The fingerprint files of a run: R70's registered names for the default, `<name>_fingerprint_*` for another registration (R71)."""
+    if not name or name == NAME:
+        return FP_BEFORE, FP_CHECK
+    return OUT / f"{name}_fingerprint_before.csv", OUT / f"{name}_fingerprint_check.json"
+
+
+def fingerprint(name: str | None = None) -> str:
     OUT.mkdir(parents=True, exist_ok=True)
+    before, _ = fp_paths(name)
     fp = krlist.fingerprint()
-    fp.to_csv(FP_BEFORE, index=False)
-    return f"{len(fp)} names of {krlist.SLICE} fingerprinted → {FP_BEFORE}"
+    fp.to_csv(before, index=False)
+    return f"{len(fp)} names of {krlist.SLICE} fingerprinted → {before}"
 
 
-def check() -> dict:
-    if not FP_BEFORE.exists():
-        raise SystemExit(f"krevent check: no fingerprint before at {FP_BEFORE} — run `ft2 krevent fingerprint` before the run")
-    before = pd.read_csv(FP_BEFORE)
+def check(name: str | None = None) -> dict:
+    fp_before, fp_check = fp_paths(name)
+    if not fp_before.exists():
+        raise SystemExit(f"krevent check: no fingerprint before at {fp_before} — run `ft2 krevent fingerprint` before the run")
+    before = pd.read_csv(fp_before)
     r = krlist.fingerprint_check(before, after_fn=krlist.fingerprint)
     r["status"] = "PASS" if r["pass"] else "FAIL"
-    FP_CHECK.write_text(json.dumps(r, indent=1, default=str))
-    v = OUT / NAME / "validity.json"
+    fp_check.write_text(json.dumps(r, indent=1, default=str))
+    v = OUT / (name or NAME) / "validity.json"
     if v.exists():                                                   # the run's validity record carries the after-check once it exists
         V = json.loads(v.read_text())
         V["1_fingerprint_after"] = r["status"]
         v.write_text(json.dumps(V, indent=1))
-    print(f"fingerprint after the run: {r['status']} — {r['names_before']} names before, {r['names_after']} after, {len(r['changed'])} changed → {FP_CHECK}")
+    print(f"fingerprint after the run: {r['status']} — {r['names_before']} names before, {r['names_after']} after, {len(r['changed'])} changed → {fp_check}")
     return r
 
 
@@ -371,15 +404,248 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
     return text
 
 
-def main(action: str, name: str | None = None) -> None:
+
+# ====================================================================================================================================
+# R71 — the confirmation read (PLAN §8 R71): R29's path on the frozen F3+F4 list, 1 day, no stop, once
+# ====================================================================================================================================
+def cells(L: pd.DataFrame, described: tuple[str, ...] = DESCRIBED) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(the cells, the twins dropped, the described rows): a same-name same-hour pair is ONE position — the first row by venue order
+    (bithumb, upbit) kept, the other listed as its twin; a name of the twelve is a described row, never a cell."""
+    order = {"bithumb": 0, "upbit": 1}
+    L = L.assign(_o=L["venue"].map(order).fillna(9)).sort_values(["t0", "_o", "market"]).drop(columns="_o").reset_index(drop=True)
+    desc = L[L["symbol"].isin(described)]
+    rest = L[~L["symbol"].isin(described)]
+    dup = rest.duplicated(["symbol", "t0"], keep="first")
+    return rest[~dup].reset_index(drop=True), rest[dup].reset_index(drop=True), desc.reset_index(drop=True)
+
+
+def _frame(E: pd.DataFrame) -> pd.DataFrame:
+    return E.rename(columns={"symbol": "contract"})
+
+
+def _arith(M: bt.Market, C: bt.Costs, T: pd.DataFrame, own: np.ndarray, taker_bps: float) -> dict:
+    """Validity (6): the harness's fill is the module's own arithmetic (R29's check); gross + funding of the sold position is −`horizon.labels`."""
+    close = M.close.to_numpy()
+    e, x = T["e"].to_numpy(), T["x"].to_numpy()
+    pe, px_ = close[e, own], close[x, own]
+    r = px_ / pe
+    mine = {"gross": -(r - 1.0) * 1e4, "funding": (C.fundval[x, own] - C.fundval[e, own]) / pe, "fee": taker_bps + taker_bps * r,
+            "spread_impact": T["leg_entry"].to_numpy() + T["leg_exit"].to_numpy() * r}
+    mine["own"] = mine["gross"] - mine["fee"] - mine["spread_impact"] + mine["funding"]
+    d = {k: float(np.nanmax(np.abs(v - T[k].to_numpy()))) if np.isfinite(T[k].to_numpy()).any() else 0.0 for k, v in mine.items()}
+    full = horizon.labels(M, C, HOLD, bt.LATENCY)[1].to_numpy()[(e - bt.LATENCY), own]
+    d["sold_gross_funding_vs_minus_horizon_labels"] = float(np.nanmax(np.abs((T["gross"] + T["funding"]).to_numpy() + full)))
+    d["hold_is_288"] = bool(((x - e) == HOLD).all())
+    return d
+
+
+def recheck(taker_bps: float = TAKER_BPS) -> dict:
+    """Validity (3) of R71: the confirmation's path on R70's F1+F2 events at the plain proxy (entry day ×1) gives R70's harness pricing — per
+    event the own net = `listing._priced`'s sold ×1 net (R70's call) to 1e-9 and gross + funding = −a_1d of R70's events.csv to 1e-9; the
+    mean own over the priced events = R70's report's +201.9 to the report's 0.1. No F3+F4 bar is loaded (the market ends at F2's end)."""
+    a0, end = listing.window(FOLDS)
+    L = load_events(LIST)
+    mem = universe.members()
+    syms = list(dict.fromkeys([*L["symbol"], *universe.screen_symbols(), BTC]))
+    M = bt.market(syms, end, a0 - pd.Timedelta(days=1))
+    C = bt.load_costs(M.index, M.columns, end, close=M.close)
+    E_all = entries(M, L, end, mem["block"].min())
+    E = E_all[E_all["eligible"]].reset_index(drop=True)
+    mask = listing.member_mask(mem, M.columns, pd.DatetimeIndex(E["t"]))
+    T = listing.sold_trades(M, C, _frame(E), mask, taker_bps, entry_mult=1.0, other_mult=1.0, hold=HOLD, level=np.inf)
+    P = listing._priced(M, C, _frame(E), HOLD, -1, taker_bps)
+    r70 = pd.read_csv(R70_DIR / "events.csv")[["venue", "market", "a_1d"]] if (R70_DIR / "events.csv").exists() else None
+    out = {"eligible": int(len(E)), "priced": int(T["own"].notna().sum())}
+    if r70 is None:
+        out.update({"status": "FAIL", "why": f"no {R70_DIR / 'events.csv'} — R70's read is the reference"})
+    else:
+        j = E[["venue", "market"]].merge(r70, on=["venue", "market"], how="left")
+        own_vs_priced = float(np.nanmax(np.abs(T["own"].to_numpy() - P["net_bps"].to_numpy())))
+        gf_vs_a = float(np.nanmax(np.abs((T["gross"] + T["funding"]).to_numpy() + j["a_1d"].to_numpy())))
+        mean_own = float(T["own"].mean())
+        out.update({"own_vs_r70_priced_max_abs": own_vs_priced, "gross_funding_vs_minus_a_1d_max_abs": gf_vs_a, "mean_own_x1": mean_own,
+                    "r70_report_sold_x1_net": R70_SOLD_X1_NET, "mean_own_diff": abs(mean_own - R70_SOLD_X1_NET), "same_cells": bool((np.isfinite(T["own"].to_numpy()) == np.isfinite(P["net_bps"].to_numpy())).all()),
+                    "a_1d_rows_matched": int(j["a_1d"].notna().sum()), "exits_before_end": bool((pd.DatetimeIndex(T["exit_t"]) < end).all())})
+        out["status"] = "PASS" if (own_vs_priced <= 1e-9 and gf_vs_a <= 1e-9 and out["mean_own_diff"] <= 0.05 and out["same_cells"] and out["a_1d_rows_matched"] == len(E) and out["exits_before_end"]) else "FAIL"
+    OUT.mkdir(parents=True, exist_ok=True)
+    R70_CHECK.write_text(json.dumps(out, indent=1, default=str))
+    return out
+
+
+def _group_rows(T: pd.DataFrame, key: str, labels, col: str = "H") -> pd.DataFrame:
+    out = []
+    vals = T[key]
+    for v in (sorted(vals.unique(), key=str) if labels is None else (True, False)):
+        g = T.loc[vals == v, col].dropna()
+        out.append({"split": key, "group": str(v) if labels is None else labels[0 if v else 1], "n": int(len(g)), "M": float(g.mean()) if len(g) else np.nan,
+                    "median": float(g.median()) if len(g) else np.nan, "share_above_0": float((g > 0).mean()) if len(g) else np.nan, "se_plain": float(g.std(ddof=1) / np.sqrt(len(g))) if len(g) > 1 else np.nan})
+    return pd.DataFrame(out)
+
+
+def confirm(registration: str | None, name: str = "r71", taker_bps: float = TAKER_BPS) -> str:
+    from . import score_ext                                        # imported here: its guard is R63 / R66's, the rows appended before the market
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    fp_before, _ = fp_paths(name)
+    L = load_events(LIST34)
+    list_md5 = md5(LIST34)
+    cl, twins, desc = cells(L, DESCRIBED)
+    red = rederived(L)                                             # validity (2): the KRW parquets' first bars — no price of a name
+    r70chk = json.loads(R70_CHECK.read_text()).get("status") if R70_CHECK.exists() else "MISSING"
+    pre = {"1_fingerprint_before": "saved" if fp_before.exists() else "MISSING", "1_fingerprint_after": f"pending → `ft2 krevent check --name {name}` after the run",
+           "2_list_md5": list_md5, "2_list_md5_as_registered": list_md5 == LIST34_MD5, "2_list_rows": int(len(L)), "2_rederived": red,
+           "2_cells": int(len(cl)), "2_twins_dropped": twins[["venue", "market", "symbol", "t0"]].astype(str).to_dict("records"), "2_described_not_cells": desc[["venue", "market", "symbol", "t0"]].astype(str).to_dict("records"),
+           "3_r70_recheck": r70chk}
+    params = {"hold": HOLD, "stop": None, "wait": WAIT, "entry_mult": ENTRY_MULT, "heavy": list(HEAVY), "list": LIST34.name, "list_md5": list_md5, "cells": int(len(cl))}
+    conf = bt._guard(CONF_FOLDS, registration)                     # registered, and once (refuses before anything is loaded)
+    stamp = score_ext.guard(bt.READS, bt.PLAN, CONF_FOLDS, registration, STRATEGY, params)      # the rows (R71, F3) / (R71, F4) NOW, before the market
+    pre["7_guard"] = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf)}
+    print(f"guard: ({registration}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the F3+F4 market is loaded now", flush=True)
+
+    a0, end = listing.window(CONF_FOLDS)
+    mem = universe.members(universe.F34_MEMBERS_CSV)
+    syms = list(dict.fromkeys([*cl["symbol"], *desc["symbol"], *universe.screen_symbols(universe.F34_MEMBERS_CSV), BTC]))
+    M = bt.market(syms, end, a0 - pd.Timedelta(days=1))
+    C = bt.load_costs(M.index, M.columns, end, close=M.close)
+    close, idx = M.close.to_numpy(), M.index
+    fv = C.fundval
+    E_all = entries(M, cl, end, mem["block"].min(), longest=HOLD)
+    E = E_all[E_all["eligible"]].reset_index(drop=True)
+    own = M.columns.get_indexer(E["symbol"])
+    rows, t = E["row"].to_numpy(), pd.DatetimeIndex(E["t"])
+    mask = listing.member_mask(mem, M.columns, t)
+    T = listing.sold_trades(M, C, _frame(E), mask, taker_bps, entry_mult=ENTRY_MULT, other_mult=1.0, hold=HOLD, level=np.inf)
+    TH = listing.sold_trades(M, C, _frame(E), mask, taker_bps, entry_mult=HEAVY[0], other_mult=HEAVY[1], hold=HOLD, level=np.inf)
+    for k in ("venue", "market", "first_korean", "member_at_t0", "ts_known"):
+        T[k], TH[k] = E[k].to_numpy(), E[k].to_numpy()
+
+    # validity, read first
+    span = [float(np.isfinite(close[r:r + bt.LATENCY + HOLD + 1, c]).mean()) for r, c in zip(rows, own)]
+    d6 = _arith(M, C, T, own, taker_bps)
+    unpriced = T.loc[T["H"].isna(), "contract"].tolist()
+    V = dict(pre)
+    V.update({"4_cells": int(len(cl)), "4_eligible": int(len(E)), "4_eligible_share": float(len(E) / len(cl)) if len(cl) else 0.0,
+              "5_cells_under_95pct_bars": int(sum(v < MIN_BARS for v in span)), "5_H_share": float(T["H"].notna().mean()) if len(T) else 0.0, "5_unpriced": unpriced,
+              "5_min_members": int(T["n_b"].min()) if len(T) else 0, "6_identity_max_abs_diff": d6,
+              "7_t_equals_ts_known": bool((t == pd.DatetimeIndex(E["ts_known"])).all()) if len(E) else False, "7_exits_at_or_after_end": int((pd.DatetimeIndex(T["exit_t"]) >= end).sum()) if len(T) else 0,
+              "7_no_stop": bool(not T["stopped"].any()) if len(T) else True})
+    V["status"] = "PASS" if (V["1_fingerprint_before"] == "saved" and V["2_list_md5_as_registered"] and len(L) == LIST34_ROWS and red.get("status") == "PASS" and r70chk == "PASS"
+                             and V["4_eligible_share"] >= MIN_CONFIRM_SHARE and len(E) >= MIN_CONFIRM and V["5_cells_under_95pct_bars"] == 0 and V["5_H_share"] >= MIN_H_SHARE
+                             and V["5_min_members"] >= MIN_MEMBERS and max(v for v in d6.values() if not isinstance(v, bool)) <= 1e-9 and d6["hold_is_288"]
+                             and V["7_t_equals_ts_known"] and V["7_exits_at_or_after_end"] == 0 and V["7_no_stop"]) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(V, indent=1, default=str))
+    E_all.to_csv(out / "cells_all.csv", index=False)
+    md = [f"# R71 — the confirmation read of the Korean listing, sold from its first KRW hour, 1 day (`ft2 krevent confirm`)\n",
+          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · unit {bt.UNIT}, charged on {bt.CHARGED} · market {idx[0]:%Y-%m-%d} → {idx[-1]:%Y-%m-%d %H:%M}, {len(M.columns)} names · the list `{LIST34.name}` md5 {list_md5} · {len(L)} rows, {len(cl)} cells ({len(twins)} twins, {len(desc)} described)\n",
+          f"\n## Validity: {V['status']} (the fingerprint after the run is `ft2 krevent check --name {name}`'s)\n", "\n```\n" + json.dumps(V, indent=1, default=str) + "\n```\n",
+          "\nCells by what became of them:\n", E_all["why"].replace("", "eligible").value_counts().rename("cells").to_frame().to_markdown(), "\n"]
+    if V["status"] != "PASS":
+        md += ["\n**VOID — the number is not computed. The guard rows stand in the ledger: the folds are read for this question.**\n"]
+        (out / "confirm.md").write_text("\n".join(md))
+        return "\n".join(md)
+
+    # the number
+    ok = T["H"].notna().to_numpy()
+    N = listing.noise(T["H"].to_numpy()[ok], t[ok], seed=SEED_CONFIRM)
+    m_heavy = float(TH["H"].mean())
+    N.update({"M_heavy": m_heavy, "MDE": 2.8 * N["se"], "verdict": listing.verdict_confirm(N["M"], N["se"], m_heavy)})
+    (out / "confirm.json").write_text(json.dumps(N, indent=1))
+    T.to_csv(out / "trades.csv", index=False)
+    TH.to_csv(out / "trades_heavy.csv", index=False)
+    md += [f"\n## The number — H = own + hedge, bps of the position; {N['n']} trades in {N['weeks']} weeks; the gate's se the larger of the bootstrap's and the week-clustered\n",
+           pd.DataFrame([{k: N[k] for k in ("n", "M", "se", "u", "MDE", "M_heavy", "se_bootstrap", "se_week", "se_plain", "verdict")}]).round(3).to_markdown(index=False), "\n",
+           f"\n**Verdict: {N['verdict']}.**\n"]
+    (out / "confirm.md").write_text("\n".join(md))                # the read is on disk before anything is described
+    try:
+        md += _describe_r71(M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, desc, twins, end)
+    except Exception as exc:  # noqa: BLE001 — a description that fails must not take the logged read with it
+        import traceback
+        md += ["\n## Described — FAILED (the read above stands; describe from trades.csv)\n", "\n```\n" + "".join(traceback.format_exception(exc)) + "\n```\n"]
+    T.to_csv(out / "trades.csv", index=False)                      # with the described columns (run-up, y rows) when the description ran
+    (out / "meta.json").write_text(json.dumps({"registration": registration, "decision": "BO1", "unit": bt.UNIT, "charged": bt.CHARGED, "hold": HOLD, "stop": None, "wait": WAIT, "entry_mult": ENTRY_MULT,
+                                                "heavy": HEAVY, "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": SEED_CONFIRM, "rows": int(len(L)), "cells": int(len(cl)), "eligible": int(len(E)),
+                                                "taker_bps": taker_bps, "list_md5": list_md5, "verdict": N["verdict"]}, indent=1))
+    text = "\n".join(md)
+    (out / "confirm.md").write_text(text)
+    return text
+
+
+def _describe_r71(M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, desc, twins, end) -> list[str]:
+    """R71's described tables — decide nothing."""
+    close, idx, fv = M.close.to_numpy(), M.index, C.fundval
+    rows = E["row"].to_numpy()
+    parts = ["gross", "funding", "fee", "spread_impact", "own", "hedge_gain", "hedge_cost", "hedge", "H"]
+    by = pd.concat([T[parts].mean().rename("all"), *[T.loc[T["fold"] == f, parts].mean().rename(f) for f in CONF_FOLDS], TH[parts].mean().rename("heavy")], axis=1).T
+    by.insert(0, "n", [len(T), *[int((T["fold"] == f).sum()) for f in CONF_FOLDS], len(TH)])
+    No = listing.noise(T["own"].to_numpy()[ok], t[ok], seed=SEED_CONFIRM)
+    q = T.assign(q=t.tz_localize(None).to_period("Q").astype(str)).groupby("q")["H"].agg(["size", "mean", "median"])
+    H = T["H"].dropna()
+    tail = {"largest_loss_H": float(H.min()), "trades_losing_over_half_the_size": int((T["own"] < -5000).sum()), "M_losses_capped_at_size": float(np.maximum(T["H"].to_numpy(), -1e4)[ok].mean()),
+            "share_above_0": float((H > 0).mean()), "median_H": float(H.median()), **{f"q{int(x * 100):02d}": float(H.quantile(x)) for x in (0.05, 0.25, 0.75, 0.95)}, "best_H": float(H.max())}
+    splits = pd.concat([_group_rows(T, k, lab) for k, lab in SPLITS.items()], ignore_index=True)
+    # the run-up row (R70's frame, no cost) and H on its halves; R70's own number on these cells; the 3- and 7-day y rows unpriced
+    ru_a, ru_b, _ = listing.excess(listing.label_at(close, fv, rows - WAIT - RUNUP - bt.LATENCY, RUNUP), own, mask)
+    ru = ru_a - ru_b
+    T["runup_y"] = ru
+    hi, lo = ok & (ru >= 500), ok & ~(ru >= 500)
+    ys = {}
+    for h in (HOLD, 864, 2016):
+        a_, b_, _ = listing.excess(listing.label_at(close, fv, rows, h), own, mask)
+        ys[h] = a_ - b_
+    T["y_1d"], T["y_3d"], T["y_7d"] = ys[HOLD], ys[864], ys[2016]
+    runup = {"n": int(np.isfinite(ru).sum()), "median": float(np.nanmedian(ru)), "mean": float(np.nanmean(ru)), "share_ge_500": float(np.nanmean(ru >= 500)), "share_below_0": float(np.nanmean(ru < 0)),
+             "H_runup_ge_500": {"n": int(hi.sum()), "M": float(T.loc[hi, "H"].mean()) if hi.any() else np.nan, "se_plain": float(T.loc[hi, "H"].std(ddof=1) / np.sqrt(hi.sum())) if hi.sum() > 1 else np.nan},
+             "H_runup_under_500": {"n": int(lo.sum()), "M": float(T.loc[lo, "H"].mean()) if lo.any() else np.nan, "se_plain": float(T.loc[lo, "H"].std(ddof=1) / np.sqrt(lo.sum())) if lo.sum() > 1 else np.nan},
+             "by_venue_median": {v: float(np.nanmedian(ru[(E["venue"] == v).to_numpy()])) for v in sorted(E["venue"].unique())}}
+    yrows = pd.DataFrame([{"hold": _days(h), "n": int(np.isfinite(ys[h]).sum()), "M_y": float(np.nanmean(ys[h])), "median_y": float(np.nanmedian(ys[h])), "share_below_0": float(np.nanmean(ys[h] < 0)),
+                           "se_plain": float(np.nanstd(ys[h], ddof=1) / np.sqrt(np.isfinite(ys[h]).sum()))} for h in (HOLD, 864, 2016)])
+    # the twelve's events: described, never cells
+    D_all = entries(M, desc, end, mem["block"].min(), longest=HOLD) if len(desc) else desc
+    D = D_all[D_all["eligible"]].reset_index(drop=True) if len(desc) else desc
+    if len(D):
+        TD = listing.sold_trades(M, C, _frame(D), listing.member_mask(mem, M.columns, pd.DatetimeIndex(D["t"])), taker_bps, entry_mult=ENTRY_MULT, other_mult=1.0, hold=HOLD, level=np.inf)
+        od = M.columns.get_indexer(D["symbol"])
+        a_, b_, _ = listing.excess(listing.label_at(close, fv, D["row"].to_numpy(), HOLD), od, listing.member_mask(mem, M.columns, pd.DatetimeIndex(D["t"])))
+        TD["y_1d"] = a_ - b_
+        twelve = TD[["contract", "t", "gross", "funding", "own", "hedge", "H", "y_1d"]].round(1).to_markdown(index=False)
+    else:
+        twelve = "none eligible"
+    late = E[rows + LATE + bt.LATENCY + HOLD < len(idx)].reset_index(drop=True)
+    TL = listing.sold_trades(M, C, _frame(late), listing.member_mask(mem, M.columns, pd.DatetimeIndex(late["t"]) + LATE * BAR), taker_bps, entry_mult=ENTRY_MULT, other_mult=1.0, hold=HOLD, level=np.inf, shift=LATE)
+    md = ["\n## Described — decides nothing\n", "\nM's parts (means; `heavy` = the entry day at four times the proxy, every other proxy cost doubled):\n", by.round(1).to_markdown(), "\n",
+          f"\n- the sold position alone (own): mean {No['M']:.1f}, se {No['se']:.1f} (bootstrap {No['se_bootstrap']:.1f}, week {No['se_week']:.1f}, plain {No['se_plain']:.1f}), u {No['u']:.2f}\n",
+          "- the sold side's tail and H's distribution:\n", "\n```\n" + json.dumps(tail, indent=1) + "\n```\n",
+          "\nThe splits (the venues; the first and the second listings; members at t0):\n", splits.round(1).to_markdown(index=False), "\n",
+          "\nThe run-up (y over t0 − 24 h → t0 against the members, no cost — R70's frame) and H on its halves (a description, never a gate):\n", "\n```\n" + json.dumps(runup, indent=1, default=str) + "\n```\n",
+          "\nR70's own number on these cells (y = a − b, no cost; R70 on F1+F2: 1d −241.5, 3d −202.8, 7d −146.3) and the 3- and 7-day rows unpriced:\n", yrows.round(1).to_markdown(index=False), "\n",
+          "\nBy calendar quarter of the entry (trades, mean H, median H):\n", q.round(1).to_markdown(), "\n",
+          "\nThe twelve's events (described, never cells; their H by the same rule):\n", twelve, "\n",
+          "\nThe twins dropped (one position per same-name same-hour pair):\n", (twins[["venue", "market", "symbol", "t0"]].to_markdown(index=False) if len(twins) else "none"), "\n",
+          f"\n- the entry a day later, the same costs (reference): mean H {TL['H'].mean():.1f}, median {TL['H'].median():.1f} ({len(TL)} trades)\n",
+          "\nThe hour of t (UTC):\n", t.hour.value_counts().sort_index().rename("trades").to_frame().to_markdown(), "\n",
+          "\nThe five best and the five worst trades:\n", pd.concat([T.nlargest(5, "H"), T.nsmallest(5, "H")])[["contract", "venue", "entry_t", "first_korean", "runup_y", "gross", "funding", "own", "hedge", "H"]].round(0).to_markdown(index=False), "\n"]
+    return md
+
+
+def main(action: str, name: str | None = None, registration: str | None = None) -> None:
     if action == "fingerprint":
-        print(fingerprint())
+        print(fingerprint(name))
     elif action == "run":
         text = run(name or NAME)
         print(text)
         if "**VOID" in text:
             sys.exit(2)
     elif action == "check":
-        r = check()
+        r = check(name)
         if not r["pass"]:
+            sys.exit(2)
+    elif action == "recheck":
+        r = recheck()
+        print(json.dumps(r, indent=1, default=str))
+        if r["status"] != "PASS":
+            sys.exit(2)
+    elif action == "confirm":
+        text = confirm(registration, name or "r71")
+        print(text)
+        if "**VOID" in text:
             sys.exit(2)

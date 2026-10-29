@@ -186,3 +186,118 @@ def test_the_fingerprint_check_writes_its_verdict_and_fails_on_a_changed_name(tm
     assert r["status"] == "FAIL" and r["changed"][0]["symbol"] == "B"
     with pytest.raises(SystemExit):
         krevent.main("check")
+
+
+# ---- R71: the confirmation read — R29's path on the frozen F3+F4 list, 1 day, no stop, once --------------------------------------------
+def _events34(t0s, path, described=("EV2USDT",)):
+    """Eight rows plus a twin of EV1 (Upbit the same hour) → 9 rows; EV2 stands for one of the twelve (described, never a cell)."""
+    L = _events(t0s, path)
+    twin = L.iloc[[0]].assign(venue="upbit", market="KRW-EV1b", first_korean=False)
+    L = pd.concat([L, twin], ignore_index=True)
+    L["fold"] = ["F3"] * 4 + ["F4"] * 4 + ["F3"]
+    L.to_csv(path, index=False)
+    return L
+
+
+def test_a_twin_is_one_position_and_a_name_of_the_twelve_is_not_a_cell(tmp_path):
+    M, t0s = _market(weeks=2)
+    L = _events34(t0s, tmp_path / "f34.csv")
+    cl, twins, desc = krevent.cells(L, described=("EV2USDT",))
+    assert len(cl) == 7 and len(twins) == 1 and len(desc) == 1
+    assert twins.iloc[0]["venue"] == "upbit" and twins.iloc[0]["symbol"] == "EV1USDT" and cl[cl["symbol"] == "EV1USDT"]["venue"].tolist() == ["bithumb"]      # the Bithumb row kept
+    assert desc.iloc[0]["symbol"] == "EV2USDT" and "EV2USDT" not in set(cl["symbol"])
+
+
+def _plant34(tmp_path, monkeypatch, M, t0s, C, r70_status="PASS"):
+    monkeypatch.chdir(tmp_path)
+    lst = tmp_path / "krlistings_f34.csv"
+    L = _events34(t0s, lst)
+    (tmp_path / "output" / "listing").mkdir(parents=True)
+    monkeypatch.setattr(krevent, "OUT", tmp_path / "output" / "listing")
+    monkeypatch.setattr(krevent, "LIST34", lst)
+    monkeypatch.setattr(krevent, "LIST34_MD5", hashlib.md5(lst.read_bytes()).hexdigest())
+    monkeypatch.setattr(krevent, "LIST34_ROWS", len(L))
+    monkeypatch.setattr(krevent, "DESCRIBED", ("EV2USDT",))
+    monkeypatch.setattr(krevent, "R70_CHECK", tmp_path / "output" / "listing" / "r71_r70_check.json")
+    krevent.R70_CHECK.write_text(json.dumps({"status": r70_status}))
+    for tag in ("c", "d", "e"):
+        (tmp_path / "output" / "listing" / f"{tag}_fingerprint_before.csv").write_text("symbol,rows\n")     # the fingerprint files carry the run's name
+    monkeypatch.setattr(krevent, "MIN_CONFIRM", 5)
+    monkeypatch.setattr(krevent, "MIN_MEMBERS", 3)
+    monkeypatch.setattr(krevent, "DRAWS", 2000)
+    monkeypatch.setattr(listing, "window", lambda folds: (M.index[0], M.index[-1] + BAR))
+    mem = pd.DataFrame({"block": [M.index[0].floor("D")] * len(MEM), "symbol": MEM})
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: mem)
+    monkeypatch.setattr(universe, "screen_symbols", lambda path=None: MEM)
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): M)
+    monkeypatch.setattr(bt, "load_costs", lambda index, cols, end, cost_mult=1.0, close=None: C)
+    monkeypatch.setattr(krlist, "events", lambda write=True: L.assign(why="eligible"))
+    plan = tmp_path / "PLAN.md"
+    plan.write_text("### R71 — the confirmation (registered)\n")
+    monkeypatch.setattr(bt, "PLAN", plan)
+    monkeypatch.setattr(bt, "READS", tmp_path / "output" / "backtest" / "confirmation_reads.csv")
+    return L
+
+
+def test_a_planted_give_back_confirms_with_the_hedge_paid_the_entry_day_doubled_and_the_guard_before_the_market(tmp_path, monkeypatch):
+    M, t0s = _market()
+    C = _costs(M)
+    L = _plant34(tmp_path, monkeypatch, M, t0s, C)
+    loaded = []
+    real_market = bt.market
+    def market(syms, end, start=None, needs=()):
+        loaded.append(pd.read_csv(bt.READS)["registration"].tolist())              # the ledger holds the guard rows when the market is asked for
+        return real_market(syms, end, start, needs)
+    monkeypatch.setattr(bt, "market", market)
+    text = krevent.confirm("R71", "c")
+    out = tmp_path / "output" / "listing" / "c"
+    assert loaded == [["R71", "R71"]] and pd.read_csv(bt.READS)["fold"].tolist() == ["F3", "F4"]
+    V = json.loads((out / "validity.json").read_text())
+    assert V["status"] == "PASS" and V["2_cells"] == 7 and len(V["2_twins_dropped"]) == 1 and len(V["2_described_not_cells"]) == 1 and V["4_eligible"] == 7 and V["5_H_share"] == 1.0
+    assert max(v for v in V["6_identity_max_abs_diff"].values() if not isinstance(v, bool)) <= 1e-9 and V["7_no_stop"] and V["7_t_equals_ts_known"]
+    N = json.loads((out / "confirm.json").read_text())
+    assert N["verdict"] == "CONFIRMED" and N["M"] > 150 and N["se"] == max(N["se_bootstrap"], N["se_week"]) and N["M_heavy"] > 0 and N["M_heavy"] < N["M"]
+    T = pd.read_csv(out / "trades.csv")
+    assert len(T) == 7 and (~T["stopped"]).all() and ((T["x"] - T["e"]) == 288).all()
+    assert np.allclose(T["leg_entry"], 2 * 6.5) and np.allclose(T["leg_exit"], 6.5)                                     # the entry day's legs doubled, the exit at the proxy
+    assert (T["hedge_cost"] > 0).all() and np.allclose(T["H"], T["own"] + T["hedge"])
+    assert "runup_y" in T and (T["runup_y"] > 300).mean() > 0.8 and "y_1d" in T                                           # the described columns
+    assert "Verdict: CONFIRMED" in text and "EV2USDT" in text and "KRW-EV1b" in text
+    with pytest.raises(SystemExit):                                                                                       # a second read of the folds is refused by the ledger
+        krevent.confirm("R71", "c2")
+    assert not (tmp_path / "output" / "listing" / "c2" / "confirm.json").exists()
+
+
+def test_a_cell_without_a_cost_row_is_counted_not_priced_and_a_missing_recheck_voids(tmp_path, monkeypatch):
+    M, t0s = _market()
+    days = pd.date_range(M.index[0].floor("D"), M.index[-1].floor("D"), freq="D", tz="UTC")
+    legs = np.full((len(days), M.close.shape[1]), 6.5)
+    legs[:, 2] = np.nan                                                                                                   # EV3 has no cost row at all
+    C = _costs(M, days, legs)
+    _plant34(tmp_path, monkeypatch, M, t0s, C)
+    monkeypatch.setattr(krevent, "MIN_H_SHARE", 0.5)
+    krevent.confirm("R71", "d")
+    V = json.loads((tmp_path / "output" / "listing" / "d" / "validity.json").read_text())
+    assert V["status"] == "PASS" and V["5_unpriced"] == ["EV3USDT"] and abs(V["5_H_share"] - 6 / 7) < 1e-9
+    T = pd.read_csv(tmp_path / "output" / "listing" / "d" / "trades.csv")
+    assert T.loc[T["contract"] == "EV3USDT", "H"].isna().all() and json.loads((tmp_path / "output" / "listing" / "d" / "confirm.json").read_text())["n"] == 6
+    # a recheck that did not pass voids the read, after the guard
+    monkeypatch.setattr(bt, "READS", tmp_path / "output" / "backtest" / "reads2.csv")
+    krevent.R70_CHECK.write_text(json.dumps({"status": "FAIL"}))
+    text = krevent.confirm("R71", "e")
+    assert "**VOID" in text and json.loads((tmp_path / "output" / "listing" / "e" / "validity.json").read_text())["3_r70_recheck"] == "FAIL"
+
+
+def test_the_recheck_reproduces_r70s_pricing_through_the_confirmations_path(tmp_path, monkeypatch):
+    M, t0s = _market()
+    C = _costs(M)
+    L, today = _plant(tmp_path, monkeypatch, M, t0s, C)
+    monkeypatch.setattr(krevent, "R70_DIR", tmp_path / "output" / "listing" / "r70")
+    monkeypatch.setattr(krevent, "R70_CHECK", tmp_path / "output" / "listing" / "r71_r70_check.json")
+    krevent.run("r70")                                                                                                   # R70's own events.csv is the reference
+    P = listing._priced(M, C, pd.read_csv(tmp_path / "output" / "listing" / "r70" / "events.csv").rename(columns={"symbol": "contract"}).assign(t=lambda d: pd.to_datetime(d["t"], utc=True)), 288, -1, 5.0)
+    monkeypatch.setattr(krevent, "R70_SOLD_X1_NET", round(float(P["net_bps"].mean()), 1))
+    r = krevent.recheck()
+    assert r["status"] == "PASS" and r["own_vs_r70_priced_max_abs"] <= 1e-9 and r["gross_funding_vs_minus_a_1d_max_abs"] <= 1e-9 and r["a_1d_rows_matched"] == 8
+    monkeypatch.setattr(krevent, "R70_SOLD_X1_NET", round(float(P["net_bps"].mean()), 1) + 1.0)
+    assert krevent.recheck()["status"] == "FAIL"
