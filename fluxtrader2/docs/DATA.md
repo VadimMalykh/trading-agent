@@ -574,6 +574,54 @@ deviation, `cbprem_dev` and R68's two per (ts_known, symbol)):**
   the sign and the universe in advance (decision BK). `premium_1h` is Binance's own premium index per hour (the archive's bar; a bar starting at H
   read at H + 1 h) for every symbol of the listing, 2023-04 → 2026-09 — R20's 5m file (to 2024-08) is untouched.
 
+### wiki_views (Wikipedia's daily pageviews of the token's article — attention per name from OUTSIDE every exchange; decision BP1, §9 #14) — `data/wiki_views.parquet`: `(base, symbol, article, day, views, present, ts_known)`; the article list FROZEN by hand `ft2/wiki_articles.csv` `(base, symbols, article, source, note)`
+
+`ft2 wiki names|articles|probe|fetch|ingest|audit` (`ft2/wiki.py`; `scripts/bp1_chain.sh`; `tests/test_p8_wiki.py`). **Source:** the Wikimedia REST
+API, per-article daily pageviews (`metrics/pageviews/per-article/en.wikipedia/all-access/user/<title>/daily/<from>/<to>`; free, keyless, a
+User-Agent required; daily from 2015-07; one request per title for the whole range). **The universe:** the 322 bases of the twelve and of the
+310 member bases (`coinbase.base`). **The names** (output/wiki_names.csv, 711 for 322 bases): the Korean venues' `english_name` from the saved
+market lists (217) and CoinGecko's keyless `/coins/list` ranked by `/coins/markets` (494). **The articles:** every name and its "(cryptocurrency)"
+/ "(blockchain)" suffix resolved on en.wikipedia with redirects and the intro's first sentences (the Wikipedia action API at ≈ 1 request a
+second: 44 min on the work VM), plus the search API's top hits — 2,800 candidates, 946 exist (output/wiki_candidates.csv); the proposed pick
+(output/wiki_pick.csv) was CHECKED BY HAND 2026-10-29 and frozen: **66 of 322 bases have an article — 34 the token's or protocol's own, 20 the
+chain's, 4 the developer company's (Aptos Labs, Immutable, StarkWare, Numerai), 8 a meme coin's NAMESAKE (`source = proxy`: Bored Ape for APE,
+Pepe the Frog for PEPE, Moo Deng, Peanut (squirrel), Chill Guy, Popcat, Comedian (artwork) for BAN, Vine (service)) — attention to the thing,
+not the coin, counted apart; 63 distinct articles (Terra (blockchain) serves LUNC / LUNA2 / USTC, Polygon (blockchain) MATIC / POL); 256 none.**
+Checked directly against the API 2026-10-29: Arbitrum, MakerDAO, Cosmos (blockchain), DFINITY / Internet Computer, Curve Finance, Synthetix,
+Kyber Network, Ethereum Name Service, Fetch.ai, SingularityNET, Bittensor, THORChain, Starknet, ZKsync, LayerZero, Lido DAO, dYdX, SushiSwap,
+Notcoin, Hyperliquid, Ondo Finance have NO article on en.wikipedia; Dogwifhat, Floki Inu, Fartcoin, Baby Doge Coin and Memecoin redirect to the
+generic "Meme coin" (rejected); "Optimism (blockchain)" redirects to Ethereum; "Binance Coin" to the exchange (BNB takes the chain's article).
+The 130 picks the search API proposed were almost all generic ("Cryptocurrency", "Tether", "Cryptocurrency and crime") and were rejected.
+
+**Traps found on the way (both fixed before any number was read):** (i) **pageviews are counted under the TITLE OF THE DAY** — a renamed
+article's history sits under its old names, which stay as redirects: the first fetch (the articles alone) showed 45 … 65 % empty days and a
+median of 0 views on DOT, HBAR, LINK, NEO, TON, TRX, XRP, WLD, ARKM. The fetch now takes every title that redirects to the article
+(`prop=redirects`; redirects.json; 343 titles beside the 63) and the ingest SUMS the article with its redirects per day (`present` = any title
+had the day; redirect_share.json). The share of views that came in under a redirect: median 0.018, but above one half on 11 articles (TON 0.91,
+NEO 0.84, Chill Guy 0.80, Hedera 0.79, Polkadot 0.75, Chainlink 0.75, Arkham 0.73, Tron 0.72, NEAR 0.61, World 0.61, XRP Ledger 0.58). (ii)
+**the REST API is cached** (Varnish): the same URL answers for hours with the first response and its `Date` — the probe's asked start carries
+the current hour; `Age` recorded. (iii) 8 fetch threads tripped the API's 429 on 14 of 406 titles (retried at 3; `THREADS = 3`). (iv) The API
+OMITS days without data: zeros are filled from the later of 2021-12-01 and the article's creation (the first revision, which follows a move).
+
+**Extent (2026-10-29, the work VM 20:55 → 21:38 UTC):** 93,994 rows, 66 symbols / 63 articles, 2021-12-01 → 2026-10-28, `ts_known` = day +
+48 h. **Known-at, measured:** two probes on Bitcoin — at 19:45 and 20:55 UTC on 10-29 the API held 10-28 (19.8 h and 20.9 h after that day's
+end) and NOT 10-29; the day's count arrives somewhere between the day's end and +19.8 h — the hour unmeasured (a probe in the UTC morning is
+owed); 48 h stands as the conservative stamp until then. **Coverage:** the twelve 11 of 12 (10 strict — HYPE none, PEPE the frog a proxy);
+F1+F2's 188 members 39 (38 strict); F3+F4's 216 members 45 (38 strict); per block of 60 members: F1+F2 18 … 25 with an article (median 21;
+strict 20; created AND with a day of views by the block's start — median 16, min 13), F3+F4 19 … 26 (median 24; strict 21; live 21, min 14).
+20 of the 66 articles were created during or after F1 (AAVE 2023-06, GRT 2023-08, INJ 2023-09, PENGU 2024-02, IMX / ARKM 2024-04, CAKE
+2024-08, MOODENG 2024-09, WLFI / CHILLGUY 2024-10, PNUT / PUMP / APT 2024-11, TRUMP 2025-01, 1INCH 2025-07, BNB / NEAR 2025-10, HMSTR 2025-12,
+PYTH / SUI 2026-06). **Level:** the median article has 122 views a day (Bitcoin 5,466; 12 articles under 20 — noise at that size); days present
+median 1.00; the thin ones 1INCH 0.27 (a 2025 stub, median 0 views), AAVE 0.43 (created 2023-06-11, no redirects, 59 % of days empty — deleted
+and recreated, or a stub), PYTH 0.88 and SUI 0.68 (2026 stubs). **The DEV form** (log(1 + views) against its trailing 30 days in sd units, ≥ 15
+days): within-name sd 1.09, acf1 0.51, acf7 0.27, |dev| ≥ 2 on 6.4 % of days; across names the deviation's mean correlation 0.17, the first
+eigenvalue's share 0.21 — one modest common attention factor (a relative form removes it).
+
+**Rule for any registration: the feature is `wiki_dev` (or another form) of a day's views read at `ts_known` = day + 48 h and no earlier; the
+cells the members with a STRICT article (own / chain / company) — a proxy is a described row; the twelve's articles are described, never a
+cell (BB's clause: nothing on the twelve before R17); the audit's counts (≈ 20 strict names a block on F1+F2, 16 live at the block's start)
+are the registration's; nothing here was joined to a price.** Decision BQ (PLAN P8) carries the registration.
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
