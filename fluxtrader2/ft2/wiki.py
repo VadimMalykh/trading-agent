@@ -66,7 +66,7 @@ CG_PAUSE = 2.5
 START = "2021-12-01"         # F0's first month; daily data exists from 2015-07
 KNOWN_AT_H = 48              # ts_known = the day's start + 48 h until the probes measure the hour the day's count appears (probe: D present at D+1 19:38 UTC)
 MONTH_D = 30
-THREADS = 8                  # the REST API allows 100 req/s; the titles with their redirects are ≈ 1,000 requests
+THREADS = 3                  # 8 threads tripped the REST API's 429 on 14 of 406 titles (2026-10-29); 3 do not
 MIN_MONTH_D = 15
 TWELVE = krw.TWELVE
 CRYPTO = re.compile(r"cryptocurrenc|blockchain|\btoken\b|crypto|decentrali[sz]ed|\bDeFi\b|smart contract|stablecoin|\bcoin\b|proof[- ]of|layer[- ]?[12]\b|\bNFT\b|meme", re.I)
