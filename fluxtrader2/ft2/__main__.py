@@ -159,6 +159,11 @@ def cmd_listing(args):
     listing.main(args.action, args.folds, args.name, args.registration)
 
 
+def cmd_krevent(args):
+    from . import krevent
+    krevent.main(args.action, args.name)
+
+
 def cmd_universe(args):
     from . import universe
     if args.screen:
@@ -571,6 +576,9 @@ def main(argv=None):
     ls.add_argument("--folds", nargs="*", default=None, help="select: F1 F2 (default) or F3 F4 → output/listing/launches_f12.csv / launches_f34.csv")
     ls.add_argument("--name", default=None, help="run / confirm: the output directory under output/listing/ (default r28 / r29)")
     ls.add_argument("--registration", default=None, help="confirm: R29 — a guarded read of F3+F4, made once and logged")
+    ke = sub.add_parser("krevent", help="P8, R70 (decision BN2): the Korean listing of an existing perpetual sold from the close of its first KRW hour, held 1 / 3 / 7 days against the block's members — `fingerprint` saves the archive slice's per-name fingerprint before the run, `run` reads the frozen ft2/krlistings_f12.csv → output/listing/r70/, `check` compares the fingerprint after (see ft2/krevent.py)")
+    ke.add_argument("action", choices=["fingerprint", "run", "check"])
+    ke.add_argument("--name", default=None, help="run: the output directory under output/listing/ (default r70)")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
@@ -580,7 +588,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "spot": cmd_spot, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "spot": cmd_spot, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
