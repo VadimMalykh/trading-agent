@@ -186,7 +186,7 @@ FLUX_TRAIN_ENV_KEYS="${FLUX_TRAIN_ENV_KEYS:-\
 SEL_NET_WEIGHT SEL_COST_BPS SEL_NET_SCALE SEL_COVERAGE \
 NUM_LAYERS HIDDEN_SIZE DROPOUT LR WEIGHT_DECAY BATCH_SIZE \
 EARLY_STOP_PATIENCE SEED \
-VAL_FRACTION VAL_OFFSET TRAIN_FRACTION SPLIT_EMBARGO ALIGN_AGE_FIX \
+VAL_FRACTION VAL_OFFSET TRAIN_FRACTION SPLIT_EMBARGO ALIGN_AGE_FIX COL_DROPOUT_P \
 PAIR_EMBED_DIM \
 NUM_WORKERS PREFETCH_FACTOR \
 CLS_WEIGHT_MODE CLS_WEIGHT_CLIP CLS_LABEL_SMOOTHING DIR_LOSS_WEIGHT \
@@ -271,6 +271,8 @@ if [[ -z "$EVAL_ONLY_CKPT" ]]; then
   _recipe_cmp ARCHIVE_OI          ""                                    "${ARCHIVE_OI:-}"
   _recipe_cmp ARCHIVE_OI_SHIFT_MIN "0"                                  "${ARCHIVE_OI_SHIFT_MIN:-0}"
   _recipe_cmp ALIGN_AGE_FIX       "0"                                   "${ALIGN_AGE_FIX:-0}"
+  _recipe_cmp SPLIT_EMBARGO       "0"                                   "${SPLIT_EMBARGO:-0}"
+  _recipe_cmp COL_DROPOUT_P       "0"                                   "${COL_DROPOUT_P:-0}"
   _recipe_cmp OI_JOIN_AT_CLOSE    "0"                                   "${OI_JOIN_AT_CLOSE:-0}"
   _recipe_cmp ARCHIVE_DEPTH       ""                                    "${ARCHIVE_DEPTH:-}"
   _recipe_cmp ARCHIVE_PREM        ""                                    "${ARCHIVE_PREM:-}"

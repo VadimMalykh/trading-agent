@@ -39,6 +39,7 @@ from config import (
     CLS_LABEL_SMOOTHING,
     CLS_WEIGHT_CLIP,
     CLS_WEIGHT_MODE,
+    COL_DROPOUT_P,
     DIR_LOSS_WEIGHT,
     DIR_MAG_WEIGHT,
     DIR_MAG_WEIGHT_CLIP,
@@ -101,7 +102,7 @@ from gate import (
     fixed_coverage_net_return,
     gate_metrics,
 )
-from models.multi_horizon import SharedEncoderMultiHead
+from models.multi_horizon import SharedEncoderMultiHead, column_dropout
 
 
 def parse_args():
@@ -610,6 +611,14 @@ def main():
           f"pandas {_pd.__version__})")
     from config import OI_JOIN_AT_CLOSE
     meta["oi_join_at_close"] = bool(OI_JOIN_AT_CLOSE)
+    # X21: input-column dropout, training loop only (config.py; models.column_dropout).
+    if not (0.0 <= COL_DROPOUT_P < 1.0):
+        raise SystemExit(f"COL_DROPOUT_P must be in [0, 1), got {COL_DROPOUT_P}")
+    meta["col_dropout_p"] = float(COL_DROPOUT_P)
+    if COL_DROPOUT_P > 0:
+        print(f"Col dropout: COL_DROPOUT_P={COL_DROPOUT_P:g} (per-sample, whole-column, no rescale)")
+    else:
+        print("Col dropout: COL_DROPOUT_P=0 (off)")
     print(f"OI join: OI_JOIN_AT_CLOSE={'1' if OI_JOIN_AT_CLOSE else '0'} "
           f"({'open interest as of the bar close' if OI_JOIN_AT_CLOSE else 'open interest as of the bar open — legacy'})")
     t_tr = bundle.times[tr_idx]
@@ -790,6 +799,8 @@ def main():
             xb = xb.to(device)
             yb = {k: v.to(device) for k, v in yb.items()}
             pair_idx = yb.get("__pair_idx")
+            if COL_DROPOUT_P > 0:
+                xb = column_dropout(xb, COL_DROPOUT_P)  # X21: training loop only
             opt.zero_grad()
             logits, dir_logits, quant = model.forward_all(xb, pair_idx)
             loss = multi_loss(logits, yb, crits, horizon_keys)

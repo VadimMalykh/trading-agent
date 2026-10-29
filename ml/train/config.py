@@ -246,6 +246,15 @@ TRAIN_FRACTION = float(os.environ.get("TRAIN_FRACTION", "0.0"))
 # built from val-period prices. 1 drops those train samples; val is untouched. 0 keeps
 # every published checkpoint's recipe (the leak is bounded at ~0.4% of val bars).
 SPLIT_EMBARGO = int(os.environ.get("SPLIT_EMBARGO", "0"))
+# X21 (NEXT_TRAINING_PLAN §2 X21): input-column dropout in the TRAINING LOOP ONLY. With
+# probability p, independently per sample and per feature column, the whole [T] slice of
+# that column is zeroed (zero = the normalised mean); kept columns are NOT rescaled; every
+# column is droppable, masks included. Aimed at the added-column memorisation shape
+# (plateaus 4–18 epochs on every group since X8; X19 showed it on deterministic columns):
+# no single column can be the key the encoder indexes the training set by. Eval and serve
+# never see a mask; the model class is unchanged. 0 = today's loop exactly. Recorded in the
+# checkpoint meta as `col_dropout_p`; printed as the `Col dropout:` line.
+COL_DROPOUT_P = float(os.environ.get("COL_DROPOUT_P", "0"))
 # Patience raised: directional coverage kept climbing when the old run stopped.
 EARLY_STOP_PATIENCE = int(os.environ.get("EARLY_STOP_PATIENCE", "10"))
 # Gate used when ranking checkpoints (matches serve default)

@@ -9,6 +9,26 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def column_dropout(x: torch.Tensor, p: float, generator: torch.Generator | None = None) -> torch.Tensor:
+    """X21 (NEXT_TRAINING_PLAN §2 X21): per-sample, whole-column input dropout.
+
+    x is [B, T, F]. Each (sample, column) pair is dropped with probability p: its entire
+    [T] slice becomes zero (the normalised mean). Kept columns are returned unchanged —
+    no inverted-dropout rescaling, so a present column has the same scale in training as
+    at serving. p <= 0 returns x itself. Pure: no state on the model; the caller decides
+    when (training loop only). `generator` pins the mask for tests.
+    """
+    if p <= 0.0:
+        return x
+    if p >= 1.0:
+        raise ValueError(f"column_dropout: p must be in [0, 1), got {p}")
+    if x.dim() != 3:
+        raise ValueError(f"column_dropout: expected [B, T, F], got shape {tuple(x.shape)}")
+    b, _, f = x.shape
+    keep = torch.rand((b, 1, f), device=x.device, generator=generator) >= p
+    return x * keep.to(x.dtype)
+
+
 class SharedEncoderMultiHead(nn.Module):
     """
     Shared LSTM encoder with, per horizon:
