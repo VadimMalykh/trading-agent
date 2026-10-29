@@ -465,7 +465,7 @@ slice); the twelve's bars are the collector's `candles_5m` — the hourly Binanc
 archive's row where both hold one (the first run's crowd row was empty before the venues' KRW-USDT; rerun 06:11 UTC).
 **Rule for any registration: the cell is an event of a FROZEN list (the first Korean listing per name the gate's cell — 41 on F1+F2; the
 second venue's listing a described row); t0 and `ts_known` as frozen; nothing about an event's price was read here — the run-up, the
-give-back and the venue split are the registration's. What follows: decision BN (PLAN P8) — R70's registration on these counts.**
+give-back and the venue split are the registration's. Decision BN DECIDED 2026-10-29 ("BN2"): R70 REGISTERED (PLAN §8) — every F1+F2 event the gate's cell, the 41 / 11 split described.**
 
 ### spot_1h (Binance spot, hourly, the twelve's and the screener's members' `<BASE>USDT` markets; decision BH1, §9 #3) — `data/spot_1h.parquet`: `(spot_symbol, symbol, ts, ts_known, open, high, low, close, volume, quote_volume, count, taker_buy_volume, taker_buy_quote_volume)`
 
