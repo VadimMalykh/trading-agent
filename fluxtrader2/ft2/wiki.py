@@ -399,6 +399,7 @@ def audit(today: pd.Timestamp | None = None, path: Path | None = None, out: Path
     created = json.loads(cj.read_text()) if cj.exists() else {}
     cover = B.merge(A[["base", "article"] + [c for c in ("source", "note") if c in A.columns]], on="base", how="left").fillna({"article": ""})
     cover["has_article"] = cover["article"].astype(bool)
+    cover["strict"] = cover["has_article"] & (cover["source"] != "proxy") if "source" in cover.columns else cover["has_article"]   # a meme's namesake is attention to the thing, not the coin
     # per base: the extent and the level
     rows = []
     one = d.drop_duplicates(["base", "day"])
@@ -419,18 +420,21 @@ def audit(today: pd.Timestamp | None = None, path: Path | None = None, out: Path
     sets = {}
     for nm, mask in (("twelve", cover["twelve"]), ("F1+F2 members", cover["F1+F2"]), ("F3+F4 members", cover["F3+F4"]), ("all bases", cover["base"].notna())):
         sub = cover[mask]
-        sets[nm] = {"bases": int(len(sub)), "with_article": int(sub["has_article"].sum()), "share": float(sub["has_article"].mean()) if len(sub) else None}
+        sets[nm] = {"bases": int(len(sub)), "with_article": int(sub["has_article"].sum()), "share": float(sub["has_article"].mean()) if len(sub) else None,
+                    "strict": int(sub["strict"].sum()), "share_strict": float(sub["strict"].mean()) if len(sub) else None}
     # the members with an article per block (R62's breadth)
     m = cb.member_symbols()
     m["base"] = m["symbol"].map(cb.base)
     art_of = dict(zip(cover["base"], cover["article"]))
+    strict_of = dict(zip(cover["base"], cover["strict"]))
     first_day = {b: pd.Timestamp(v, tz="UTC") for b, v in zip(per["base"], per["first_day"]) if v}
     blk = []
     for (blk_start, fs), g in m.groupby(["block", "folds"], sort=True):
         n = len(g)
         with_art = sum(bool(art_of.get(b)) for b in g["base"])
         live = sum(bool(art_of.get(b)) and b in first_day and first_day[b] <= blk_start for b in g["base"])
-        blk.append({"block": str(blk_start.date()), "folds": fs, "members": n, "with_article": with_art, "article_live_at_block_start": live})
+        blk.append({"block": str(blk_start.date()), "folds": fs, "members": n, "with_article": with_art, "strict": int(sum(bool(strict_of.get(b)) for b in g["base"])),
+                    "article_live_at_block_start": live})
     blocks = pd.DataFrame(blk)
     # the DEV form, within name and across names
     stats = {}

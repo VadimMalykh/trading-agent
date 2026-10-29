@@ -113,9 +113,9 @@ def test_fetch_ingest_and_audit_on_planted_views(tmp_path, monkeypatch):
                                                                          "symbol": ["ARBUSDT", "ZZZUSDT", "ARBUSDT"], "folds": ["F1+F2"] * 3}))
     out = wiki.audit(today=pd.Timestamp("2026-10-29", tz="UTC"))
     j = json.loads((wiki.OUT.with_suffix(".json")).read_text())
-    assert j["sets"]["F1+F2 members"] == {"bases": 2, "with_article": 1, "share": 0.5} and j["sets"]["twelve"]["with_article"] == 1
+    assert j["sets"]["F1+F2 members"] == {"bases": 2, "with_article": 1, "share": 0.5, "strict": 1, "share_strict": 0.5} and j["sets"]["twelve"]["with_article"] == 1
     b = {x["block"]: x for x in j["blocks"]}
-    assert b["2023-05-03"]["with_article"] == 1 and b["2023-05-03"]["article_live_at_block_start"] == 0        # created 05-10, after the block's start
+    assert b["2023-05-03"]["with_article"] == 1 and b["2023-05-03"]["strict"] == 1 and b["2023-05-03"]["article_live_at_block_start"] == 0   # created 05-10, after the block's start
     assert b["2023-06-02"]["article_live_at_block_start"] == 1
     assert j["probes"][0]["last_day_present"] == "2026-10-28"
     per = {x["base"]: x for x in j["per_base"]}
