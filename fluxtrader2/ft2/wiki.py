@@ -10,12 +10,20 @@ articles   every candidate title per base resolved on en.wikipedia (redirects fo
            `ft2/wiki_articles.csv` (base, article, source, note) — the audit's and the fetch's list; nothing is fetched before it exists.
 probe      the known-at: Bitcoin's last days from the pageviews API against the response's `Date` header — which UTC day is the last one
            present at this hour → data/raw/external/wikipedia/probe_<stamp>.json. Measured, not assumed (two probes at different hours).
+           The REST API is cached (Varnish: the same URL answers with the first response's `Date` for hours), so the asked start carries the
+           current hour to make the URL new; `Age` is recorded beside `Date`.
 fetch      per frozen article the DAILY per-article pageviews (the Wikimedia REST API, `all-access` / `user`, keyless, a User-Agent required)
-           from START to today in one request each → data/raw/external/wikipedia/pageviews/<article>.json; the article's creation stamp
-           (the first revision) → created.json. Resumable (a file whose last day covers the asked end is kept).
-parquet    data/wiki_views.parquet: (base, symbol, article, day, views, present, ts_known) — `day` the UTC day's start, `present` whether the
-           API returned the day (it omits days without data: zeros are filled from the later of START and the article's creation),
-           `ts_known` = day + KNOWN_AT_H hours — the only stamp a feature may read the day at (48 h until the probes say otherwise).
+           from START to today in one request each → data/raw/external/wikipedia/pageviews/<title>.json, for the article AND EVERY TITLE
+           THAT REDIRECTS TO IT (`prop=redirects`; redirects.json) — pageviews are counted under the title of the day, so a renamed article
+           ('Ripple (payment protocol)' → 'XRP Ledger', 'Chainlink (blockchain)' → '… (blockchain oracle)') has its history under its old
+           names, which stay as redirects; the first run without them showed 55 … 65 % empty days on DOT, HBAR, LINK, NEO, TON, TRX, XRP.
+           The article's creation stamp (the first revision, which follows a move) → created.json. Resumable (a file whose asked range
+           covers the asked one is kept); the titles are fetched on THREADS threads.
+parquet    data/wiki_views.parquet: (base, symbol, article, day, views, present, ts_known) — `day` the UTC day's start, `views` the sum over
+           the article and its redirects, `present` whether the API returned the day for any of them (it omits days without data: zeros
+           are filled from the later of START and the article's creation), `ts_known` = day + KNOWN_AT_H hours — the only stamp a feature
+           may read the day at (48 h until the probes say otherwise). redirect_share.json: per article the share of views that came in
+           under a redirect's title.
 audit      output/wiki_audit.md (+ .json): the covered bases by set (the twelve, F1+F2's members, F3+F4's members), the members with an
            article per block (R62's breadth), per article the creation, the extent, the level and the share of zero days, F1–F5 cover,
            the DEV form on log views (the deviation from the trailing month in sd units): within-name sd, persistence, and the cross-name
@@ -31,6 +39,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -57,6 +66,7 @@ CG_PAUSE = 2.5
 START = "2021-12-01"         # F0's first month; daily data exists from 2015-07
 KNOWN_AT_H = 48              # ts_known = the day's start + 48 h until the probes measure the hour the day's count appears (probe: D present at D+1 19:38 UTC)
 MONTH_D = 30
+THREADS = 8                  # the REST API allows 100 req/s; the titles with their redirects are ≈ 1,000 requests
 MIN_MONTH_D = 15
 TWELVE = krw.TWELVE
 CRYPTO = re.compile(r"cryptocurrenc|blockchain|\btoken\b|crypto|decentrali[sz]ed|\bDeFi\b|smart contract|stablecoin|\bcoin\b|proof[- ]of|layer[- ]?[12]\b|\bNFT\b|meme", re.I)
@@ -249,15 +259,16 @@ def _pv_title(article: str) -> str:
 def probe(article: str = "Bitcoin", days: int = 6, now: pd.Timestamp | None = None) -> dict:
     """Which UTC day is the last one the API holds at this hour — the known-at's evidence, saved with the server's own `Date`."""
     now = now or pd.Timestamp.now("UTC")
-    a, b = (now - pd.Timedelta(days=days)).strftime("%Y%m%d00"), now.strftime("%Y%m%d00")
+    a, b = (now - pd.Timedelta(days=days)).strftime("%Y%m%d%H"), now.strftime("%Y%m%d00")     # the hour in `a` makes the URL new to the cache
     body, hdr = _get(PV_API.format(article=_pv_title(article), a=a, b=b), raw=True)
     items = (body or {}).get("items", [])
     last = max((x["timestamp"] for x in items), default=None)
-    server = {k.lower(): v for k, v in hdr.items()}.get("date")
+    H = {k.lower(): v for k, v in hdr.items()}
+    server = H.get("date")
     st = pd.Timestamp(server).tz_convert("UTC") if server and pd.Timestamp(server).tzinfo else (pd.Timestamp(server, tz="UTC") if server else now)
     last_day = pd.Timestamp(last[:8], tz="UTC") if last else None
     lag_h = float((st - (last_day + DAY)) / pd.Timedelta("1h")) if last_day is not None else None
-    rec = {"article": article, "asked": [a, b], "server_date": str(st), "last_day_present": str(last_day.date()) if last_day is not None else None,
+    rec = {"article": article, "asked": [a, b], "server_date": str(st), "cache_age_s": H.get("age"), "last_day_present": str(last_day.date()) if last_day is not None else None,
            "hours_after_that_day_ended": lag_h, "days_returned": len(items), "views": {x["timestamp"][:8]: x["views"] for x in items}}
     RAW.mkdir(parents=True, exist_ok=True)
     (RAW / f"probe_{st:%Y%m%dT%H%M}.json").write_text(json.dumps(rec, indent=1))
@@ -273,35 +284,69 @@ def _pv_file(article: str) -> Path:
     return RAW / "pageviews" / f"{_pv_title(article)}.json"
 
 
-def fetch(start: str = START, end: str | None = None, path: Path | None = None) -> dict:
-    """Every frozen article's daily views from `start` to `end` (today's previous day when None), one request each; the creation stamps."""
+def redirects(arts: list[str]) -> dict[str, list[str]]:
+    """Every title that redirects to each article (the old names after a move among them); cached in redirects.json."""
+    out: dict[str, list[str]] = {}
+    rj = RAW / "redirects.json"
+    if rj.exists():
+        out.update(json.loads(rj.read_text()))
+    for art in arts:
+        if art in out:
+            continue
+        titles: list[str] = []
+        params = {"action": "query", "titles": art, "redirects": "1", "prop": "redirects", "rdlimit": "max", "rdnamespace": "0"}
+        while True:
+            r = _wp(params)
+            for p in r.get("query", {}).get("pages", []):
+                titles.extend(x["title"] for x in p.get("redirects", []))
+            if "continue" in r:
+                params = {**params, **r["continue"]}
+            else:
+                break
+        out[art] = sorted(set(titles) - {art})
+    RAW.mkdir(parents=True, exist_ok=True)
+    rj.write_text(json.dumps(out, indent=1))
+    return out
+
+
+def _fetch_title(title: str, a_: str, b_: str) -> str:
+    """One title's daily views into its file; 'ok' / 'empty' / 'skip' / 'err'."""
+    f = _pv_file(title)
+    if f.exists():
+        try:
+            old = json.loads(f.read_text())
+            if old.get("asked", ["", ""])[1] >= b_ and old.get("asked", ["", ""])[0] <= a_:
+                return "skip"
+        except json.JSONDecodeError:
+            pass
+    time.sleep(PAUSE)
+    try:
+        body = _get(PV_API.format(article=_pv_title(title), a=a_, b=b_))
+    except RuntimeError as ex:
+        print(f"{title}: {ex}", file=sys.stderr, flush=True)
+        return "err"
+    items = (body or {}).get("items", [])
+    f.write_text(json.dumps({"article": title, "asked": [a_, b_], "fetched": str(pd.Timestamp.now('UTC')), "items": [{"t": x["timestamp"][:8], "v": x["views"]} for x in items]}))
+    return "ok" if items else "empty"
+
+
+def fetch(start: str = START, end: str | None = None, path: Path | None = None, threads: int = THREADS) -> dict:
+    """Every frozen article's daily views from `start` to `end` (today's previous day when None) — the article and each of its redirects one
+    request each, on threads; the creation stamps."""
     A = frozen(path)
     arts = [a for a in A["article"].tolist() if a]
+    arts = list(dict.fromkeys(arts))
     e = pd.Timestamp(end, tz="UTC") if end else pd.Timestamp.now("UTC").normalize() - DAY
     a_, b_ = pd.Timestamp(start, tz="UTC").strftime("%Y%m%d00"), e.strftime("%Y%m%d00")
     (RAW / "pageviews").mkdir(parents=True, exist_ok=True)
-    tot = {"articles": len(arts), "ok": 0, "skip": 0, "empty": 0, "err": 0}
-    for i, art in enumerate(arts):
-        f = _pv_file(art)
-        if f.exists():
-            try:
-                old = json.loads(f.read_text())
-                if old.get("asked", ["", ""])[1] >= b_ and old.get("asked", ["", ""])[0] <= a_:
-                    tot["skip"] += 1
-                    continue
-            except json.JSONDecodeError:
-                pass
-        time.sleep(PAUSE)
-        try:
-            body = _get(PV_API.format(article=_pv_title(art), a=a_, b=b_))
-        except RuntimeError as ex:
-            print(f"{i + 1:>4}/{len(arts)} {art}: {ex}", file=sys.stderr, flush=True)
-            tot["err"] += 1
-            continue
-        items = (body or {}).get("items", [])
-        f.write_text(json.dumps({"article": art, "asked": [a_, b_], "fetched": str(pd.Timestamp.now('UTC')), "items": [{"t": x["timestamp"][:8], "v": x["views"]} for x in items]}))
-        tot["ok" if items else "empty"] += 1
-        print(f"{i + 1:>4}/{len(arts)} {art:<40} {len(items)} days", flush=True)
+    rd = redirects(arts)
+    titles = list(dict.fromkeys([t for art in arts for t in (art, *rd.get(art, []))]))
+    tot = {"articles": len(arts), "redirect_titles": len(titles) - len(arts), "ok": 0, "skip": 0, "empty": 0, "err": 0}
+    with ThreadPoolExecutor(max_workers=max(1, threads)) as ex:
+        for i, (t, res) in enumerate(zip(titles, ex.map(lambda t: _fetch_title(t, a_, b_), titles))):
+            tot[res] += 1
+            if res != "skip" and (i < 80 or i % 50 == 0):
+                print(f"{i + 1:>5}/{len(titles)} {t[:50]:<50} {res}", flush=True)
     created = creation(arts)
     (RAW / "created.json").write_text(json.dumps(created, indent=1))
     tot["created"] = sum(v is not None for v in created.values())
@@ -325,18 +370,31 @@ def creation(arts: list[str]) -> dict[str, str | None]:
 
 
 # ---- ingest ------------------------------------------------------------------------------------------------------------------------------
-def read_article(art: str, start: pd.Timestamp, end: pd.Timestamp, created: pd.Timestamp | None) -> pd.DataFrame:
-    f = _pv_file(art)
+def _title_series(title: str) -> pd.Series | None:
+    f = _pv_file(title)
     if not f.exists():
-        return pd.DataFrame(columns=["day", "views", "present"])
+        return None
     j = json.loads(f.read_text())
-    s = pd.Series({pd.Timestamp(x["t"], tz="UTC"): int(x["v"]) for x in j["items"]}, dtype="int64")
+    return pd.Series({pd.Timestamp(x["t"], tz="UTC"): int(x["v"]) for x in j["items"]}, dtype="int64")
+
+
+def read_article(art: str, start: pd.Timestamp, end: pd.Timestamp, created: pd.Timestamp | None, redirect_titles: list[str] | None = None) -> tuple[pd.DataFrame, float | None]:
+    """The day grid from the later of `start` and the creation: views = the article's + its redirects' (the old names), present = any
+    title had the day; the second value the share of views that came in under a redirect."""
+    own = _title_series(art)
+    if own is None:
+        return pd.DataFrame(columns=["day", "views", "present"]), None
+    parts = [own] + [x for x in (_title_series(t) for t in (redirect_titles or [])) if x is not None]
+    tot = pd.concat(parts, axis=1).sum(axis=1, min_count=1).sort_index() if len(parts) > 1 else own
     a0 = max(start, created.normalize()) if created is not None else start
     idx = pd.date_range(a0, end, freq="D", inclusive="left")
-    if len(s):
-        idx = idx.union(s.index[(s.index >= a0) & (s.index < end)])
-    v = s.reindex(idx)
-    return pd.DataFrame({"day": idx, "views": v.fillna(0).astype("int64").to_numpy(), "present": v.notna().to_numpy()})
+    if len(tot):
+        idx = idx.union(tot.index[(tot.index >= a0) & (tot.index < end)])
+    v = tot.reindex(idx)
+    inside = v.dropna()
+    own_in = own.reindex(inside.index).fillna(0)
+    share = float(1.0 - own_in.sum() / inside.sum()) if inside.sum() > 0 else None
+    return pd.DataFrame({"day": idx, "views": v.fillna(0).astype("int64").to_numpy(), "present": v.notna().to_numpy()}), share
 
 
 def ingest(start: str = START, end: str | None = None, path: Path | None = None, out: Path | None = None, known_at_h: int | None = None) -> dict:
@@ -345,14 +403,17 @@ def ingest(start: str = START, end: str | None = None, path: Path | None = None,
     B = bases().set_index("base")
     cj = RAW / "created.json"
     created = json.loads(cj.read_text()) if cj.exists() else {}
+    rj = RAW / "redirects.json"
+    rd = json.loads(rj.read_text()) if rj.exists() else {}
     s0 = pd.Timestamp(start, tz="UTC")
     e = pd.Timestamp(end, tz="UTC") if end else pd.Timestamp.now("UTC").normalize()
     parts = []
+    shares: dict[str, float | None] = {}
     for base, art in zip(A["base"], A["article"]):
         if not art or base not in B.index:
             continue
         c = created.get(art)
-        d = read_article(art, s0, e, pd.Timestamp(c).tz_convert("UTC") if c else None)
+        d, shares[art] = read_article(art, s0, e, pd.Timestamp(c).tz_convert("UTC") if c else None, rd.get(art))
         if not len(d):
             continue
         for sym in B.loc[base, "symbols"].split():
@@ -368,8 +429,10 @@ def ingest(start: str = START, end: str | None = None, path: Path | None = None,
     df = df.sort_values(["symbol", "day"], kind="mergesort").reset_index(drop=True)[COLS]
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out, index=False)
+    (RAW / "redirect_share.json").write_text(json.dumps(shares, indent=1))
     return {"articles": int(df["article"].nunique()), "symbols": int(df["symbol"].nunique()), "rows": len(df), "first": str(df["day"].min()) if len(df) else None,
-            "last": str(df["day"].max()) if len(df) else None, "known_at_h": known_at_h, "file": str(out)}
+            "last": str(df["day"].max()) if len(df) else None, "known_at_h": known_at_h, "redirect_titles": int(sum(len(v) for v in rd.values())),
+            "redirect_share_median": float(np.nanmedian([v for v in shares.values() if v is not None])) if any(v is not None for v in shares.values()) else None, "file": str(out)}
 
 
 def load(path: Path | str | None = None) -> pd.DataFrame:
@@ -397,6 +460,9 @@ def audit(today: pd.Timestamp | None = None, path: Path | None = None, out: Path
     d = load(path) if Path(path).exists() else pd.DataFrame(columns=COLS)
     cj = RAW / "created.json"
     created = json.loads(cj.read_text()) if cj.exists() else {}
+    rj, sj = RAW / "redirects.json", RAW / "redirect_share.json"
+    rd = json.loads(rj.read_text()) if rj.exists() else {}
+    rshare = json.loads(sj.read_text()) if sj.exists() else {}
     cover = B.merge(A[["base", "article"] + [c for c in ("source", "note") if c in A.columns]], on="base", how="left").fillna({"article": ""})
     cover["has_article"] = cover["article"].astype(bool)
     cover["strict"] = cover["has_article"] & (cover["source"] != "proxy") if "source" in cover.columns else cover["has_article"]   # a meme's namesake is attention to the thing, not the coin
@@ -408,7 +474,8 @@ def audit(today: pd.Timestamp | None = None, path: Path | None = None, out: Path
         r = {"base": r0["base"], "symbols": r0["symbols"], "article": r0["article"], "created": (created.get(r0["article"]) or "")[:10] if r0["article"] else "",
              "days": int(len(g)), "first_day": str(g["day"].min().date()) if len(g) else None, "last_day": str(g["day"].max().date()) if len(g) else None,
              "median_views": float(g["views"].median()) if len(g) else None, "share_zero": float((g["views"] == 0).mean()) if len(g) else None,
-             "share_present": float(g["present"].mean()) if len(g) else None}
+             "share_present": float(g["present"].mean()) if len(g) else None,
+             "redirects": len(rd.get(r0["article"], [])) if r0["article"] else None, "redirect_share": rshare.get(r0["article"]) if r0["article"] else None}
         for f in ("F1", "F2", "F3", "F4", "F5"):
             fa, fb = folds.bounds(f, embargoed=False)
             n_days = (fb - fa).days
@@ -471,6 +538,10 @@ def audit(today: pd.Timestamp | None = None, path: Path | None = None, out: Path
           "\n\n## The known-at — the probes (the server's `Date` against the last day the API holds)\n",
           pd.DataFrame([{k: v for k, v in p.items() if k != "views"} for p in pr]).to_markdown(index=False) if pr else "(no probe yet)",
           "\n\n## The deviation from the trailing month on log views (the DEV form), within and across names\n", "```\n" + json.dumps(stats, indent=1) + "\n```\n",
+          "\n## The redirects — pageviews are counted under the title of the day; a renamed article's history sits under its old names, summed in\n",
+          f"titles fetched beside the articles: {sum(len(v) for v in rd.values())}; the share of views that came in under a redirect — median "
+          f"{per['redirect_share'].median():.3f}, max {per['redirect_share'].max():.3f} ({per.loc[per['redirect_share'].idxmax(), 'base'] if per['redirect_share'].notna().any() else '—'}); "
+          f"days present (any title) — median {per['share_present'].median():.3f}, min {per['share_present'].min():.3f}\n" if per["redirect_share"].notna().any() else "(no redirects fetched)\n",
           "\n## Per base\n", per.to_markdown(index=False, floatfmt=".2f"),
           "\n\n## Within-name statistics of the deviation\n", W_out.to_markdown(index=False, floatfmt=".3f") if len(W_out) else "(none)", "\n"]
     out.parent.mkdir(parents=True, exist_ok=True)
