@@ -120,16 +120,16 @@ otherwise knows nothing about this folder.
 Everything up to here is committed (this session's commits of 2026-10-29: dd51831 R70 registered on BN2, c7a06fc its code, 1324af8 R70's read and decision BO, 3ee8ded R71 registered on BO1, b64df01 its code, 52193a0 the first run's VOID and the `costs` re-execution, then this — R71's read, §7's row and decision BP). The work VM (`fluxtrader2-work`) is TERMINATED
 (stopped by hand 2026-10-29 ≈ 19:25 UTC after R71/costs' outputs were pulled; checked). The serve host (`fluxtrader2-serve`) runs P7 by itself — health 2026-10-22 19:05 UTC: green — 7,812 decisions, 101 taken, 4 open, 0 late, missing24h 0, marks 101/97, `check True`, `err None`, model `model_2026-09-30` (22.8 d; the refit falls at the block's start), the three timers armed (`ft2-check` next 2026-11-01 01:30 UTC). **The laptop's default gcloud account changed 2026-10-23 and the new one sees `fluxtrader2-work` only; every script that calls gcloud now pins `vadim.malykh@gmail.com` through `CLOUDSDK_CORE_ACCOUNT` (override `GCP_ACCOUNT=…`; AGENTS.md's gcloud-account line) — an ad-hoc `gcloud` call needs `--account vadim.malykh@gmail.com`.**
 
-**Open: decision BP (PLAN P8, WRITTEN 2026-10-29) — Vadim's word. R71 READ 2026-10-29 under the `costs` re-execution: NOT CONFIRMED (H −135.5 a position [se 328], u −0.41, MDE 919; F3 +422 / F4 −628; the median +410, three positions lost 0.7 … 1.5× their size); the Korean-listing line PARKED (PLAN §7), F3+F4 spent for it, F5's listings the revival.** The mode: measure
+**Open: BP1 (decision BP DECIDED 2026-10-30, Vadim's "BP1") — the Wikipedia-pageviews audit: the article per base, the known-at, the series, the counts; nothing registered until they are in. R71 READ 2026-10-29 under the `costs` re-execution: NOT CONFIRMED (H −135.5 a position [se 328], u −0.41, MDE 919; F3 +422 / F4 −628; the median +410, three positions lost 0.7 … 1.5× their size); the Korean-listing line PARKED (PLAN §7), F3+F4 spent for it, F5's listings the revival.** The mode: measure
 beside P7's clock; the wait forbids only touching R14 or the serve path.
 
 In this order:
 
-0. **Decision BP (PLAN P8, WRITTEN 2026-10-29 — OPEN).** The plain question: BM's event line is read to its end; which research line runs
-   beside P7? BP1 BM3's Wikipedia-pageviews audit (recommended — an hour on the work VM, the probes one page first, the series fetched,
-   nothing registered until the counts are in; BM1's pattern), BP2 BM2's participant-mix screen (half a day; a second line beside BP1),
-   BP3 a fresh brainstorm session in BL1's form, BP4 P7 alone. Vadim's word opens the line; the text into PLAN before any code.
-0g. **Things to carry from R71 (this session, 2026-10-29):** (i) **after any fetch of event months, re-run `costwide` before a registration
+0. **BP1 (decision BP DECIDED 2026-10-30, Vadim's "BP1").** The audit, in this order and nothing registered before it is in: the probes on the work
+   VM one page each (the Wikimedia pageviews API and the Wikipedia search API; a User-Agent is required), the article per base for the 188 members
+   and the twelve (the hits checked by hand, the covered count by fold the audit's number), the known-at measured (a UTC day's views fetched
+   at D+1 and again later; the difference the answer), the daily series from 2022-01-01 into `data/wiki_views.parquet`, DATA.md's row and §9's
+   line; THEN the next decision registers the screen in R62's form on F1+F2 (`wiki_dev`, sign NEGATIVE at 1d) on the audit's counts.
    that prices them** — R71's first run was VOID on validity (5): 8 cells of the seven F1+F2-only members had no cost row past 2024-08-31
    (BM1 fetched their F3+F4 months on 10-24; the proxy last ran 10-05 for R29). The cure was §3's re-execution `costs` — the tag written
    into the R-block first, `cp` the cost file to `_before_r71`, `costwide --universe all --start 2021-12-01` (3 min), `scripts/
