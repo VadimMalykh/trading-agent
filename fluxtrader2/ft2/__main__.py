@@ -108,6 +108,11 @@ def cmd_spot(args):
     spot.main(args.action, args.start, args.end, args.symbols, args.listed_only)
 
 
+def cmd_wiki(args):
+    from . import wiki
+    wiki.main(args.action, args.start, args.end)
+
+
 def cmd_krlist(args):
     from . import krlist
     krlist.main(args.action, fetch=args.fetch)
@@ -533,6 +538,10 @@ def main(argv=None):
     spp.add_argument("--end", default=None, help="fetch: the last month (default F5's end)")
     spp.add_argument("--symbols", nargs="*", default=None, help="a subset (perpetual or spot symbols; default every base of the twelve and the members)")
     spp.add_argument("--listed-only", action="store_true", help="fetch: only the spot symbols the saved listing holds (run `symbols` first)")
+    wkp = sub.add_parser("wiki", help="P8 (decision BP1): attention per name from outside every exchange — Wikipedia's daily pageviews of the token's article for the twelve's and the screener's members' bases: the names (the Korean venues' lists, CoinGecko), the candidate articles resolved and a proposed pick checked by hand into ft2/wiki_articles.csv, the known-at probe, the fetch → data/raw/external/wikipedia/, data/wiki_views.parquet, output/wiki_audit.md (see ft2/wiki.py)")
+    wkp.add_argument("action", choices=["names", "articles", "probe", "fetch", "ingest", "audit"])
+    wkp.add_argument("--start", default="2021-12-01", help="fetch / ingest: the first day")
+    wkp.add_argument("--end", default=None, help="fetch / ingest: the last day (default yesterday / today)")
     hlp = sub.add_parser("hl", help="P8 (decision BJ2): Hyperliquid's hourly funding and mark premium per name as a source — the venue's info API for the twelve's and the screener's members' coins, Binance's 1h premium index beside them → data/raw/external/hyperliquid/, data/hl_funding_1h.parquet, data/premium_1h.parquet, output/hl_audit.md (see ft2/hl.py)")
     hlp.add_argument("action", choices=["symbols", "fetch", "bnprem", "ingest", "audit"])
     hlp.add_argument("--start", default="2023-04-01", help="fetch / bnprem: the first stamp / month asked for")
@@ -590,7 +599,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "spot": cmd_spot, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "spot": cmd_spot, "wiki": cmd_wiki, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
