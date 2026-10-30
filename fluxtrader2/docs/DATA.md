@@ -620,7 +620,7 @@ eigenvalue's share 0.21 — one modest common attention factor (a relative form 
 **Rule for any registration: the feature is `wiki_dev` (or another form) of a day's views read at `ts_known` = day + 48 h and no earlier; the
 cells the members with a STRICT article (own / chain / company) — a proxy is a described row; the twelve's articles are described, never a
 cell (BB's clause: nothing on the twelve before R17); the audit's counts (≈ 20 strict names a block on F1+F2, 16 live at the block's start)
-are the registration's; nothing here was joined to a price.** Decision BQ (PLAN P8) carries the registration.
+are the registration's; nothing here was joined to a price.** Decision BQ DECIDED "BQ1" 2026-10-30: **R72 (PLAN §8) is the registration** — `wiki_dev` on the 38 strict F1+F2 members, one cell, sign NEGATIVE; the stamp 48 h, or 36 h if the UTC-morning probe on TWO days shows the previous day's count present by 06:00 UTC (R72's Data line — the probes' results and the chosen stamp are recorded HERE before the run; nothing else of this section changes).
 
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
