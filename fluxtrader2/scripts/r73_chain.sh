@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# R73 (docs/PLAN.md §8, registered 2026-11-01 on Vadim's "BR1"): the participant mix per member at one day — R62's screen on the trailing-day
+# trade COUNT and mean trade SIZE of the perpetual and Binance spot together, each against its month, on R68's kept F1+F2 members; the
+# count's sign NEGATIVE, the size's POSITIVE; the family two cells × 1d; both nulls at 200 draws on each feature; validity (1)–(7) first.
+#   ./fluxtrader2/scripts/vm.sh bgsh r73 'bash scripts/r73_chain.sh'      # log: output/logs/r73.log
+# The step is named r73_run, not r73 (a step named like the bgsh job clobbers the chain log). The chain's exit arms a poweroff 30 min later.
+set -euo pipefail
+mkdir -p output/logs
+trap 'nohup bash -c "sleep 1800; sudo poweroff" > /dev/null 2>&1 &' EXIT
+step() {
+  local name="$1"; shift
+  if [[ -e "output/logs/$name.done" ]]; then echo "$(date -u +%H:%M:%S) skip  $name (done)"; return; fi
+  echo "$(date -u +%H:%M:%S) start $name: $*"
+  "$@" > "output/logs/$name.log" 2>&1
+  touch "output/logs/$name.done"
+  echo "$(date -u +%H:%M:%S) done  $name"
+}
+fp() { python -m ft2 mix fingerprint | tr -d '\n '; }
+echo "$(date -u +%H:%M:%S) lists: $(md5sum ft2/spot_members_r68.csv ft2/screen_members.csv ft2/cb_members_r62.csv | cut -c1-32 | tr '\n' ' ')"
+echo "$(date -u +%H:%M:%S) perp table before: $(fp)"
+echo "$(date -u +%H:%M:%S) R62's saved screen: $(md5sum output/ceiling_coinbase_members/screen.parquet)"
+echo "$(date -u +%H:%M:%S) R60's saved bars: $(md5sum output/ceiling_coinbase/move_vs_cost.parquet)"
+echo "$(date -u +%H:%M:%S) sources: $(md5sum data/perp_mix_1h.parquet data/spot_1h.parquet data/coinbase_1h_members.parquet | cut -c1-32 | tr '\n' ' ')"
+echo "$(date -u +%H:%M:%S) code: $(md5sum ft2/mix_ext.py ft2/mix.py ft2/spot_ext.py ft2/spot.py ft2/cb_ext.py | cut -c1-32 | tr '\n' ' ')"
+FT2_JOBS=2 step r73_run python -m ft2 ceiling --target pairs --family mix --universe members --draws 200
+echo "$(date -u +%H:%M:%S) lists after: $(md5sum ft2/spot_members_r68.csv ft2/screen_members.csv ft2/cb_members_r62.csv | cut -c1-32 | tr '\n' ' ')"
+echo "$(date -u +%H:%M:%S) perp table after: $(fp)"
+echo "$(date -u +%H:%M:%S) after: $(md5sum output/ceiling_coinbase_members/screen.parquet output/ceiling_coinbase/move_vs_cost.parquet data/perp_mix_1h.parquet data/spot_1h.parquet | cut -c1-32 | tr '\n' ' ')"
+echo "$(date -u +%H:%M:%S) R73_CHAIN_DONE"
