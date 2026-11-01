@@ -489,7 +489,7 @@ kept name's perp hours; 13 names under 50 % (REEF 5 %, MORPHO 22 %, TOMO 25 %, B
 OCEAN / AUDIO 42 … 45 % — spot listed later or delisted; AUDIO / OCEAN / FTM / WAVES among R62's different-asset names); **the spot share
 of the hour's count: median 0.172 across names (p10 0.115, p90 0.266)** — the perpetual carries five trades in six. **Rule for any
 registration: a count is read at `ts_known` and no earlier; R73 (PLAN §8) is the registration — the two markets together, R68's frozen list,
-two cells, the signs − / +; nothing here was joined to a price.**
+two cells, the signs − / +; nothing here was joined to a price.** **Read 2026-11-01 (R73): the F1+F2 rows of the kept F1+F2 members were joined to P2's labels through `ft2/mix_ext.py` once; the fingerprint equal before and after the run; the F3+F4 rows (2024-09 → 2025-12) UNREAD, cut by `ceiling.END` — decision BS (PLAN) asks whether the count cell's confirmation reads them. What the read said of this table: the count's deviation from its month IS the dollar volume's (+0.971 on 8.1 M scored cells), and a busy day has more AND larger trades (count × size +0.375) — the two columns are not two quantities at a day on these names.**
 
 ### spot_1h (Binance spot, hourly, the twelve's and the screener's members' `<BASE>USDT` markets; decision BH1, §9 #3) — `data/spot_1h.parquet`: `(spot_symbol, symbol, ts, ts_known, open, high, low, close, volume, quote_volume, count, taker_buy_volume, taker_buy_quote_volume)`
 
