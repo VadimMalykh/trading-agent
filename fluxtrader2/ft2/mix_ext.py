@@ -387,3 +387,237 @@ def run_r73(taker_bps: float, maker_bps: float, fee_source: str, draws: int = ce
     out_md.write_text("".join(md))
     print("; ".join(f"{k}: {rows[(rows['feature'] == k) & (rows['bet'] == BET) & (rows['horizon'] == PRIMARY)].iloc[0]['verdict']}" for k in REGISTERED) + f"; wrote {out_md} and {out_dir}/", flush=True)
     return "".join(md)
+
+
+# ---- R74: the count cell confirmed once on F3+F4's members (P8 decision BS1, 2026-11-01; docs/PLAN.md §8 R74) ------------------------
+# R66's form on this module: `frames_mix` with the SCORED mask replaced by F3 ∪ F4 embargoed (`score_ext.frame_folds`' pattern); the guard
+# rows (R74, F3) / (R74, F4) appended to the ledger BEFORE any F3+F4 bar is loaded (`score_ext.guard`); R73's saved rows reproduced first
+# through the same path with F1+F2; a ONE-cell family (`mix_cnt24_dev` × relative × 1d), both nulls on that feature only; the verdict's
+# words R66's (CONFIRMED / NOT CONFIRMED); the ten other forms described beside and recorded. Nothing above this line is edited.
+MEMBERS_F34_CSV = Path(__file__).with_name("screen_members_f34.csv")
+R74_FOLDS = ("F3", "F4")
+R74_START = pd.Timestamp("2024-08-01", tz="UTC")                   # a month before F3: the trailing month (MONTH 720 hourly bars) exists at F3's first bar
+R74_OUT_MD = Path("output/ceiling_mix_members_f34.md")
+R74_OUT_DIR = Path("output/ceiling_mix_members_f34")
+R74_CELL = CNT                                                     # the one cell: R73's count feature, sign SIGN[CNT] = −1
+STRATEGY_R74 = "mix_cnt24_f34"
+TOL_REP = 1e-6
+
+
+def frames_mix_folds(L: dict, fold_names, perp_path: Path | str, spot_path: Path | str, slices: tuple[str, ...], members_csv: Path | str | None,
+                     start: pd.Timestamp, end: pd.Timestamp) -> dict:
+    """`frames_mix` with the SCORED mask replaced by the embargoed masks of `fold_names` (`ceiling.derive` hardcodes F1+F2 — on an F3+F4
+    panel it scores nothing). With F1+F2 the mask is derive's own, so R73's frame comes back exactly. Nothing else of the frame changes."""
+    fr = frames_mix(L, perp_path, spot_path, slices, members_csv, start, end)
+    t = pd.Series(fr["idx"], index=fr["idx"])
+    s = np.zeros(len(t), dtype=bool)
+    for f in fold_names:
+        s |= folds.mask(t, f).to_numpy()
+    fr["D"]["scored"] = s
+    fr["s"] = s
+    fr["folds"] = list(folds.order(fold_names))
+    return fr
+
+
+def _head_r74(validity: dict, taker_bps, maker_bps, fee_source) -> list[str]:
+    u, m = validity["lists"]["universe"], validity["lists"]["members_f34"]
+    return [f"# R74 — the count cell confirmed once on F3+F4's members: `{R74_CELL}` (`ft2 ceiling --target pairs --family mix --universe members_f34`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC\n",
+            f"\n**Folds read:** {'+'.join(validity['folds'])} (embargoed) on the members' cells (a name's cells while a member of the bar's block in the F3+F4 file) — "
+            f"R73's frame built for them, the window {validity['window'][0]} → {validity['window'][1]}. The universe `{u['path']}` (md5 {u['md5']}, {u['n_kept']} kept — "
+            f"a spot market beside the perpetual) on the F3+F4 members `{m['path']}` (md5 {m['md5']}); for the reproduction R73's members file "
+            f"(md5 {validity['lists']['members_f12']['md5']}). The cell: `{R74_CELL}` — the trailing-day trade COUNT of the perpetual and the spot market together, log, "
+            f"against its trailing month (sign {SIGN[R74_CELL]:+.0f}); the ten other forms described beside. Fees (input): taker {taker_bps} bps, maker {maker_bps} bps — {fee_source}.\n",
+            f"\n## Validity — read first: **{validity.get('status', 'FAIL')}**\n", "```\n", json.dumps(validity, indent=1, default=str), "\n```\n"]
+
+
+def _void_r74(validity: dict, out_md: Path, out_dir: Path, taker_bps, maker_bps, fee_source):
+    validity["status"] = "FAIL"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    out_md.write_text("".join(_head_r74(validity, taker_bps, maker_bps, fee_source) + ["\n**The read is VOID: no row of the cell was computed on F3+F4's members.**\n"]))
+    print(f"validity FAIL — the read is void; wrote {out_md}", flush=True)
+    raise SystemExit(2)
+
+
+def run_r74(taker_bps: float, maker_bps: float, fee_source: str, draws: int = ceiling.DRAWS, seed: int = 0, shift_min: int = SHIFT_MIN, jobs: int = 1,
+            perp_path: Path | str = mix.PARQUET, spot_path: Path | str = spot.PARQUET, csv: Path | str = R68_CSV, members_csv: Path | str | None = None,
+            r73_members_csv: Path | str | None = None, r73: Path = OUT_DIR, slices: tuple[str, ...] = MEMBERS_SLICES, n_check: int = N_CHECK,
+            start: pd.Timestamp = R74_START, end: pd.Timestamp | None = None, f12_start: pd.Timestamp = MEMBERS_START, f12_end: pd.Timestamp | None = None,
+            fold_names=R74_FOLDS, block_min_names: int = BLOCK_MIN_NAMES, r60: Path = cx.OUT_DIR, gap: int = NULL_GAP, shift_floor: int = SHIFT_FLOOR,
+            perp_fp: dict | None = None, spot_fp: dict | None = None, reads: Path | None = None, plan: Path | None = None,
+            out_md: Path = R74_OUT_MD, out_dir: Path = R74_OUT_DIR) -> str:
+    """R74. In order: (1) the lists, the tables' fingerprints, R60's bar, the nulls' admissibility; (2) R73's saved rows through
+    `frames_mix_folds` with F1+F2 (no nulls); (3) THE GUARD; then the F3+F4 frame — (4) the folds, (5) by hand, (6) known-at, (7)
+    membership and coverage — then the screen, the nulls on the cell's feature, the described rows. FAIL on (1) … (2) → exit 2 before
+    the guard; on (4) … (7) → exit 2 after the guard rows, no IC computed."""
+    import gc
+    from joblib import Parallel, delayed
+    from . import backtest as bt, score_ext as sx
+    from .universe import MEMBERS_CSV
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fold_names = tuple(folds.order(fold_names))
+    end = end or folds.bounds(fold_names[-1])[1]
+    f12_end = f12_end or ceiling.END
+    reads, plan = reads or bt.READS, plan or bt.PLAN
+    perp_fp = PERP_FP if perp_fp is None else perp_fp
+    spot_fp = SPOT_FP if spot_fp is None else spot_fp
+    L = r68_list(csv)
+    kept = L["kept"]
+    mcsv, m12 = Path(members_csv or MEMBERS_F34_CSV), Path(r73_members_csv or MEMBERS_CSV)
+    md5 = lambda p: hashlib.md5(Path(p).read_bytes()).hexdigest()                                  # noqa: E731
+    validity = {"registration": "R74", "folds": list(fold_names), "window": [str(start), str(end)], "draws": draws, "seed": seed, "shift_min": shift_min, "gap": gap,
+                "sources": {"perp": str(perp_path), "spot": str(spot_path)},
+                "lists": {"universe": {"path": str(csv), "md5": L["md5"], "n_kept": L["n_kept"], "n_rows": L["n_rows"], "with_series": L["with_series"], "consistent": L["consistent"]},
+                          "members_f34": {"path": str(mcsv), "md5": md5(mcsv)}, "members_f12": {"path": str(m12), "md5": md5(m12)},
+                          "status": "PASS" if L["consistent"] and L["n_kept"] > 0 else "FAIL"},
+                "gate": {"bar_twelve": BAR_TWELVE, "sign": {R74_CELL: SIGN[R74_CELL]}, "family": [(R74_CELL, PRIMARY)], "p_max": 0.05}}
+    # (1) the tables' fingerprints, R60's bar, the nulls' admissibility — all known before anything is read
+    validity["tables"] = table_check(perp_path, spot_path, perp_fp, spot_fp)
+    validity["nulls"] = {"status": "PASS" if shift_min > shift_floor and gap >= GAP_MIN else "FAIL", "shift_min": shift_min, "shift_floor": shift_floor, "gap": gap, "gap_min": GAP_MIN}
+    saved_mv = pd.read_parquet(r60 / "move_vs_cost.parquet") if (r60 / "move_vs_cost.parquet").exists() else None
+    if saved_mv is not None:
+        sm = saved_mv[(saved_mv["bet"] == BET) & (saved_mv["horizon"] == PRIMARY)]
+        validity["gate"]["bar_r60_saved"] = float(sm["ic_needed_maker"].iloc[0]) if len(sm) else np.nan
+        validity["gate"]["bar_status"] = "PASS" if len(sm) and abs(float(sm["ic_needed_maker"].iloc[0]) - BAR_TWELVE) <= BAR_TOL else "FAIL"
+    else:
+        validity["gate"]["bar_status"] = "MISSING"
+    if validity["lists"]["status"] != "PASS" or validity["tables"]["status"] != "PASS" or validity["nulls"]["status"] != "PASS" or validity["gate"]["bar_status"] != "PASS":
+        return _void_r74(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+
+    # (2) R73's saved rows through the new path with F1+F2 — the same frame, the mask set by the new code, no nulls
+    print(f"validity (2): R73's frame through frames_mix_folds({'+'.join(folds.EXPLORATION)}) — the eleven features against {r73}/screen.parquet…", flush=True)
+    fr12 = frames_mix_folds(L, folds.EXPLORATION, perp_path, spot_path, slices, m12, f12_start, f12_end)
+    sc12, _ = ceiling.ic_screen(fr12["D"], {k: fr12["F"][k] for k in ALL}, set())
+    validity["reproduction_r73"], got = sx.reproduction_rows(sc12, r73, feats=tuple(ALL), tol=TOL_REP)
+    got.to_csv(out_dir / "validity_r73.csv", index=False)
+    del fr12, sc12
+    gc.collect()
+    if validity["reproduction_r73"]["status"] != "PASS":
+        return _void_r74(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+
+    # (3) THE GUARD — the rows appended now, before any F3+F4 bar is loaded; refused if present
+    params = {"feature": R74_CELL, "sign": int(SIGN[R74_CELL]), "bet": BET, "horizon": PRIMARY, "universe": "members_f34", "list_md5": L["md5"],
+              "members_f34_md5": validity["lists"]["members_f34"]["md5"], "perp_fp": perp_fp, "spot_fp": spot_fp}
+    try:
+        validity["guard"] = {"status": "PASS", "appended_at": sx.guard(reads, plan, fold_names, "R74", STRATEGY_R74, params), "ledger": str(reads), "folds": list(fold_names)}
+    except SystemExit as e:
+        validity["guard"] = {"status": "FAIL", "note": f"refused: {e.code}", "ledger": str(reads), "folds": list(fold_names)}
+        return _void_r74(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+    print(f"guard: (R74, {', '.join(fold_names)}) appended to {reads} at {validity['guard']['appended_at']}; the F3+F4 panel is loaded now", flush=True)
+
+    # the F3+F4 frame; (4) the folds, (5) by hand, (6) known-at, (7) membership and coverage — before any IC
+    print("the F3+F4 members' panel and the mix frames…", flush=True)
+    fr = frames_mix_folds(L, fold_names, perp_path, spot_path, slices, mcsv, start, end)
+    D, idx, cols, s, F, M, m = fr["D"], fr["idx"], fr["cols"], fr["s"], fr["F"], fr["M"], fr["m"]
+    validity["folds_check"] = sx.folds_check(s, idx, fold_names)
+    if validity["folds_check"]["status"] != "PASS":
+        return _void_r74(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+    sidx = idx[s]
+    validity |= {"scored_bars": int(s.sum()), "days": validity["folds_check"]["days"], "names_in_panel": len(cols), "first": str(sidx[0]), "last": str(sidx[-1]),
+                 "kept_in_panel": int(sum(c in cols for c in kept)), "kept_with_a_value": int(sum(F[R74_CELL][s][c].notna().any() for c in kept if c in cols))}
+    print("validity (5): the features by hand…", flush=True)
+    validity["hand"] = hand_check(fr, n_check, seed)
+    validity["known_at"] = known_at(fr)
+    off = {k: int((F[k].notna() & ~M).to_numpy().sum()) for k in REGISTERED}
+    validity["membership"] = {"status": "PASS" if sum(off.values()) == 0 else "FAIL", "values_off_membership": off,
+                              "values_on": {k: int(F[k][s].notna().to_numpy().sum()) for k in REGISTERED}}
+    validity["coverage"], B = cx.block_coverage(F[R74_CELL], s, m, kept, block_min_names)
+    corr = {}
+    for a, b in ((CNT, SIZE), (CNT, QV), (SIZE, QV)):
+        both = (F[a][s].notna() & F[b][s].notna()).to_numpy()
+        corr[f"{a}_x_{b}"] = {"corr": float(pd.Series(F[a][s].to_numpy()[both]).corr(pd.Series(F[b][s].to_numpy()[both]))) if both.sum() > 2 else np.nan, "cells": int(both.sum())}
+    validity["features_corr_on_scored_cells"] = corr
+    checks = ("lists", "tables", "nulls", "reproduction_r73", "guard", "folds_check", "hand", "known_at", "membership", "coverage")
+    validity["status"] = "PASS" if all(validity[k]["status"] == "PASS" for k in checks) and validity["gate"]["bar_status"] == "PASS" else "FAIL"
+    (out_dir / "validity.json").write_text(json.dumps(validity, indent=1, default=str))
+    if validity["status"] != "PASS":
+        return _void_r74(validity, out_md, out_dir, taker_bps, maker_bps, fee_source)
+    B.to_parquet(out_dir / "blocks.parquet", index=False)
+    head = _head_r74(validity, taker_bps, maker_bps, fee_source)
+
+    print("screen: the cell's feature; the size cell, each market alone, the volume, the hourly forms and the levels beside…", flush=True)
+    sc, daily = ceiling.ic_screen(D, {k: F[k] for k in ALL}, set())
+    Zs = {h: D["z"][h][s].clip(-Z_CLIP, Z_CLIP).to_numpy() for h in HZ}
+    Zr = {h: D["zres"][h][s].to_numpy() for h in HZ}
+    print(f"nulls on {R74_CELL}: {draws} day shuffles and {draws} whole-day shifts…", flush=True)
+    desc = describe_names(fr)
+    Fc = F[R74_CELL]
+    del fr, F
+    gc.collect()
+    null_shuffle, null_shift = Parallel(n_jobs=2 if jobs > 1 else 1, prefer="threads")(
+        [delayed(_null_feature)(R74_CELL, Fc[s], Zs, Zr, draws, seed, gap=gap), delayed(shift_feature)(R74_CELL, Fc, D, s, draws, seed, shift_min)])
+
+    print("the bars…", flush=True)
+    ct, _ = ceiling.bar_cost(idx, cols, taker_bps, maker_bps, end)
+    bars_taker = {h: taker_bar(D, ct, h) for h in HORIZONS}
+    cost_cover = float(ct[s].notna().to_numpy().mean())
+
+    fa, fb = fold_names
+    rows = sc.merge(fold_ics(daily, fold_names), on=["bet", "horizon", "feature"], how="left")
+    rows["ic_se"] = rows["ic_mde"] / MDE_K
+    rows["bar_maker_twelve"] = np.where(rows["horizon"] == PRIMARY, BAR_TWELVE, np.nan)
+    rows["bar_taker_members"] = rows["horizon"].map(bars_taker)
+    for c in ("p_single_shuffle", "p_single_shift", "p_fw_shuffle", "p_fw_shift"):
+        rows[c] = np.nan
+    for i, r in rows.iterrows():
+        if r["feature"] == R74_CELL and r["bet"] in ("directional", "relative") and r["horizon"] in HZ:
+            rows.loc[i, "p_single_shuffle"] = cx.single_p(null_shuffle, r["bet"], R74_CELL, r["horizon"], r["t"])
+            rows.loc[i, "p_single_shift"] = cx.single_p(null_shift, r["bet"], R74_CELL, r["horizon"], r["t"])
+    cells = [(R74_CELL, PRIMARY)]
+    fam_rows = rows[(rows["bet"] == BET) & (rows["feature"] == R74_CELL) & (rows["horizon"] == PRIMARY)]
+    t_real = {(r["feature"], r["horizon"]): r["t"] for _, r in fam_rows.iterrows()}
+    pf1, b1 = cx.family_p(null_shuffle, cells, t_real)
+    pf2, b2 = cx.family_p(null_shift, cells, t_real)
+    for i, r in fam_rows.iterrows():
+        rows.loc[i, ["p_fw_shuffle", "p_fw_shift"]] = [pf1[r["feature"], r["horizon"]], pf2[r["feature"], r["horizon"]]]
+    rows["p_family"] = rows[["p_fw_shuffle", "p_fw_shift"]].max(axis=1)
+    rows["verdict"] = ""
+    for i, r in rows.loc[fam_rows.index].iterrows():
+        rows.loc[i, "verdict"] = sx.VERDICT_R66[cx.verdict_r62(r["ic"], r["ic_se"], r["p_family"], bool(r["folds_same_sign"]), BAR_TWELVE, SIGN[R74_CELL])]
+    rep = (rows["feature"] == R74_CELL) & (rows["horizon"] != PRIMARY) & rows["bet"].isin(["directional", "relative"]) & rows["horizon"].isin(HZ)
+    rows.loc[rep, "verdict"] = "reported, not gated"
+    words = {SIZE: "described (the size cell — closed on F1+F2 with the opposite sign; its first read on F3+F4's members, no verdict)",
+             QV: "described (the volume control: the two markets' trailing-day quote volume against its month — read within ± 0.004 of the count on F1+F2)",
+             PERP[CNT]: "described (the perpetual's count alone)", PERP[SIZE]: "described (the perpetual's mean size alone)",
+             SPOT[CNT]: "described (the spot market's count alone)", SPOT[SIZE]: "described (the spot market's mean size alone)",
+             HOURLY[CNT]: "described (the HOURLY count against its month)", HOURLY[SIZE]: "described (the HOURLY mean size against its month)",
+             LEVEL[CNT]: "described (the trailing-day count, log — the level; −0.0367 at 1d on F1+F2, seen after the read)", LEVEL[SIZE]: "described (the trailing-day mean size, log — the level)"}
+    for f_, w in words.items():
+        rows.loc[rows["feature"] == f_, "verdict"] = w
+    bi = {k: cx.block_ics(daily, m, feature=k) for k in REGISTERED}
+
+    rows.to_parquet(out_dir / "screen.parquet", index=False)
+    daily.to_parquet(out_dir / "ic_daily.parquet", index=False)
+    null_shuffle.to_parquet(out_dir / "null_shuffle.parquet", index=False)
+    null_shift.to_parquet(out_dir / "null_shift.parquet", index=False)
+    pd.DataFrame({"horizon": list(bars_taker), "ic_needed_taker_members": list(bars_taker.values()), "bar_maker_twelve": BAR_TWELVE, "cost_cover": cost_cover}).to_parquet(out_dir / "move_vs_cost.parquet", index=False)
+    desc.to_parquet(out_dir / "names.parquet", index=False)
+    Bb = B.merge(bi[CNT].rename(columns={"ic": "ic_cnt24", "se": "se_cnt24", "days": "days_cnt24"}), on="block", how="left") \
+          .merge(bi[SIZE].rename(columns={"ic": "ic_size24", "se": "se_size24", "days": "days_size24"}), on="block", how="left")
+    Bb.to_parquet(out_dir / "blocks.parquet", index=False)
+
+    show = lambda df, digits=4: df.round(digits).to_markdown(index=False)                    # noqa: E731
+    cols_show = ["bet", "horizon", "feature", "ic", "t", "ic_se", "ic_mde", "days", "months_same_sign", f"ic_{fa}", f"ic_{fb}", "folds_same_sign",
+                 "p_single_shuffle", "p_single_shift", "p_fw_shuffle", "p_fw_shift", "p_family", "bar_maker_twelve", "bar_taker_members", "verdict"]
+    g = rows.loc[fam_rows.index].iloc[0]
+    md = head + [f"\n## Verdict by R74's gate (R73's) — `{R74_CELL}`, {BET}, {PRIMARY}, on the kept F3+F4 members: **{g['verdict']}**\n",
+                 f"\nIC {g['ic']:+.4f} (t {g['t']:+.2f}, se {g['ic_se']:.4f}, MDE {g['ic_mde']:.4f}); p_family {g['p_family']:.3f} (day shuffles {g['p_fw_shuffle']:.3f}, whole-day "
+                 f"shifts {g['p_fw_shift']:.3f}; a one-cell family, so the single p is the family p); {fa} {g[f'ic_{fa}']:+.4f}, {fb} {g[f'ic_{fb}']:+.4f} "
+                 f"({'same sign' if g['folds_same_sign'] else 'signs differ or a fold missing'}); months the same sign {g['months_same_sign']:.2f}; the interval "
+                 f"[{g['ic'] - 1.96 * g['ic_se']:+.4f}, {g['ic'] + 1.96 * g['ic_se']:+.4f}] against the bar {BAR_TWELVE} (the twelve's maker bar at {PRIMARY}, a number); the members' own "
+                 f"taker bar {bars_taker[PRIMARY]:.4f} on F3+F4's days (the cost proxy covers {cost_cover:.0%} of the scored cells); the registered sign {SIGN[R74_CELL]:+.0f}; "
+                 "the correlations on the scored cells: " + ", ".join(f"{k} {v['corr']:+.3f}" for k, v in corr.items()) + ".\n"]
+    fam = (rows["feature"] == R74_CELL) & rows["horizon"].isin(HZ) & rows["bet"].isin(["directional", "relative"])
+    md += ["\n## The cell (relative, 1d) with 1h / 4h and the directional bet beside — the registered feature\n",
+           "`p_fw_*` = the share of a null's draws whose |t| on the ONE 1d cell is at or above the real |t|; `p_single_*` = the same cell alone; `p_family` = the larger of the two nulls'. "
+           f"`ic_{fa}`, `ic_{fb}` = the HAC mean of the daily IC inside each fold. `bar_maker_twelve` = the gate's number; `bar_taker_members` = the members' taker bar from their cost proxy.\n",
+           show(rows[fam][cols_show]), "\n",
+           "\n## Described beside (no nulls, no verdict): the size cell, the volume control, each market alone, the hourly forms, the levels; 15m and the vol bet\n",
+           show(rows[~fam][cols_show[:12] + ["bar_taker_members", "verdict"]]), "\n",
+           "\n## The nulls' bars on the cell (|t| per draw)\n", "```\n", json.dumps({"shuffle": b1, "shift": b2}, indent=1), "\n```\n",
+           f"\n## By block — the kept members present and the relative {PRIMARY} IC of each feature inside the block (the size described)\n", show(Bb.assign(block=lambda d_: d_["block"].dt.date)), "\n",
+           "\n## The kept names on their member cells\n", show(desc), "\n"]
+    out_md.write_text("".join(md))
+    print(f"{R74_CELL} {BET} {PRIMARY} on F3+F4's members: {g['verdict']}; wrote {out_md} and {out_dir}/", flush=True)
+    return "".join(md)
