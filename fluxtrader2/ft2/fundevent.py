@@ -513,6 +513,112 @@ def _describe(out: Path, M, C, E, Y, A, B, PRICE, YL, YB, mem, t, wk, W, bar, po
     return md
 
 
+# ====================================================================================================================================
+# Decision BW1 — the F5 Data line (nothing read): the 2026 months of the F5 names, the basket (F4's last block) and BTC; the funding rows
+# ====================================================================================================================================
+F5_LIST = fundfreq.LISTS["f5"]
+F5_LIST_MD5 = "07d48cbfe77269004a1bbed3b22a8a50"   # as frozen (commit 30ef385)
+BASKET_BLOCK = pd.Timestamp("2025-12-29", tz="UTC")  # F4's last member block: the hedge basket carried forward into 2026 (decision BW (lxii))
+DATA_MONTHS = ("2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09")
+F5_END = pd.Timestamp("2026-09-15", tz="UTC")
+DATA_OUT = OUT / "r76_data"
+
+
+def basket_names(path: Path | str | None = None) -> list[str]:
+    m = universe.members(path or universe.F34_MEMBERS_CSV)
+    return sorted(m.loc[m["block"] == BASKET_BLOCK, "symbol"].astype(str))
+
+
+def data_names() -> dict:
+    """The names the Data line fetches: every name of the frozen F5 list (the shortenings' and the lengthenings'), the basket, BTC."""
+    L = fundfreq.frozen(("f5",))
+    f5 = sorted(set(L["symbol"].astype(str)))
+    basket = basket_names()
+    return {"f5": f5, "f5_shortenings": sorted(set(L.loc[L["dir"] == "shorter", "symbol"].astype(str))), "basket": basket, "all": sorted(set(f5) | set(basket) | {BTC})}
+
+
+def funding_update(names: list[str], months=DATA_MONTHS, fetch: bool = True) -> dict:
+    """The funding archive's parquet with the names' newer monthly rows appended: every old (symbol, ts) row kept to the digit, a row is
+    new when its stamp is after the name's last old stamp (a name the parquet does not hold comes in whole). The zips of `months` are
+    fetched first. Returns the counts and the old-row check; a changed old row is a void (SystemExit 2)."""
+    from . import archive, data
+    path = data.PROC / "funding_archive.parquet"
+    old = pd.read_parquet(path)
+    old["symbol"] = old["symbol"].astype(str)
+    old["ts"] = pd.to_datetime(old["ts"], utc=True)
+    rep = {"rows_before": int(len(old)), "names_before": int(old["symbol"].nunique()), "last_before": str(old["ts"].max()), "fetch": {}, "appended": {}}
+    if fetch:
+        rep["fetch"] = {sym: archive.fetch_monthly("fundingRate", sym, months=list(months)) for sym in names}
+    last = old.groupby("symbol")["ts"].max()
+    parts = []
+    for sym in names:
+        df = data._read_zips("fundingRate", sym)
+        if df.empty:
+            rep["appended"][sym] = 0
+            continue
+        new = pd.DataFrame({"symbol": sym, "ts": pd.to_datetime(df["calc_time"], unit="ms", utc=True).dt.round("s"), "rate": df["last_funding_rate"].astype(float), "interval_h": df["funding_interval_hours"].astype("int16")})
+        if sym in last.index:
+            new = new[new["ts"] > last[sym]]
+        new = new.sort_values("ts").drop_duplicates(["symbol", "ts"], keep="last")
+        rep["appended"][sym] = int(len(new))
+        if len(new):
+            parts.append(new)
+    out = pd.concat([old, *parts], ignore_index=True).sort_values(["symbol", "ts"], kind="mergesort").reset_index(drop=True)
+    assert not out.duplicated(["symbol", "ts"]).any()
+    chk = old.merge(out, on=["symbol", "ts"], how="left", suffixes=("_o", "_n"))
+    same = bool(len(chk) == len(old) and chk["rate_n"].notna().all() and np.allclose(chk["rate_o"], chk["rate_n"], atol=0, rtol=0) and (chk["interval_h_o"].to_numpy() == chk["interval_h_n"].to_numpy()).all())
+    rep.update({"rows_after": int(len(out)), "names_after": int(out["symbol"].nunique()), "last_after": str(out["ts"].max()), "old_rows_identical": same,
+                "last_per_name_after": {s: str(out.loc[out["symbol"] == s, "ts"].max()) for s in names}})
+    if not same:
+        print(json.dumps(rep, indent=1, default=str))
+        raise SystemExit(2)
+    out["symbol"] = out["symbol"].astype("category")
+    out.to_parquet(path, index=False)
+    return rep
+
+
+def data_line(fetch: bool = True) -> dict:
+    """Decision BW1's Data line: the archive slice's fingerprint, the 2026 monthly 5m klines of the names fetched and the slice re-ingested
+    whole (every old name back row for row, or void), the funding rows appended, the coverage of the F5 events' windows and of the basket
+    over 2026-01-01 → F5's end. Nothing after an event's t0 is joined to anything."""
+    from . import archive, data
+    DATA_OUT.mkdir(parents=True, exist_ok=True)
+    N = data_names()
+    rep = {"f5_list_md5": md5(F5_LIST), "f5_list_md5_as_frozen": md5(F5_LIST) == F5_LIST_MD5, "names": {k: len(v) for k, v in N.items()}, "basket_block": str(BASKET_BLOCK), "months": list(DATA_MONTHS)}
+    fp = krlist.fingerprint()
+    fp.to_csv(DATA_OUT / "fingerprint_before.csv", index=False)
+    rep["names_fingerprinted"] = int(len(fp))
+    if fetch:
+        rep["fetch"] = {sym: archive.fetch_monthly("klines", sym, sub="5m", months=list(DATA_MONTHS)) for sym in N["all"]}
+        rep["fetch_totals"] = {k: int(sum(v[k] for v in rep["fetch"].values())) for k in ("ok", "skip", "bad", "err", "missing")}
+        rep["ingest"] = {k: str(v) for k, v in data.ingest_klines(krlist.ingest_symbols(N["all"])).items()}
+    chk = krlist.fingerprint_check(fp, after_fn=krlist.fingerprint)
+    (DATA_OUT / "fingerprint_check.json").write_text(json.dumps(chk, indent=1, default=str))
+    rep["fingerprint"] = {"pass": chk["pass"], "changed": chk["changed"][:10], "names_before": chk["names_before"], "names_after": chk["names_after"]}
+    if not chk["pass"]:
+        (DATA_OUT / "data_line.json").write_text(json.dumps(rep, indent=1, default=str))
+        print(json.dumps(rep, indent=1, default=str))
+        raise SystemExit(2)
+    rep["funding"] = funding_update(N["all"], DATA_MONTHS, fetch=fetch)
+    # coverage: the F5 events' windows (fundfreq's rule) and every name over 2026-01-01 → F5's end
+    L = fundfreq.frozen(("f5",))
+    cov = fundfreq.coverage(L)
+    cov.to_csv(DATA_OUT / "coverage_events.csv", index=False)
+    have = data.load(fundfreq.SLICE, columns=["symbol", "open_time"], symbols=N["all"])
+    have["open_time"] = pd.to_datetime(have["open_time"], utc=True)
+    a, b = pd.Timestamp("2026-01-01", tz="UTC"), F5_END
+    exp = int((b - a) / BAR)
+    span = have[(have["open_time"] >= a) & (have["open_time"] < b)].groupby("symbol", observed=True).size()
+    cov_names = pd.DataFrame({"symbol": N["all"]}).assign(bars=lambda d: d["symbol"].map(span).fillna(0).astype(int), expected=exp).assign(share=lambda d: d["bars"] / exp)
+    cov_names["group"] = np.where(cov_names["symbol"].isin(N["basket"]), "basket", np.where(cov_names["symbol"] == BTC, "btc", "f5"))
+    cov_names.to_csv(DATA_OUT / "coverage_names.csv", index=False)
+    rep["coverage"] = {"events": int(len(cov)), "events_complete": int((cov["share"] >= 0.95).sum()), "events_short": cov[cov["share"] < 0.95][["symbol", "t0", "share"]].astype(str).to_dict("records"),
+                       "names_over_2026": {g: {"n": int(len(d)), "median_share": float(d["share"].median()), "under_95pct": d.loc[d["share"] < 0.95, "symbol"].tolist()} for g, d in cov_names.groupby("group")}}
+    (DATA_OUT / "data_line.json").write_text(json.dumps(rep, indent=1, default=str))
+    print(json.dumps(rep, indent=1, default=str))
+    return rep
+
+
 def main(action: str, name: str | None = None, registration: str | None = None, reexecute: str | None = None) -> None:
     if action == "fingerprint":
         print(fingerprint(name))
@@ -525,3 +631,5 @@ def main(action: str, name: str | None = None, registration: str | None = None, 
         r = check(name)
         if not r["pass"]:
             sys.exit(2)
+    elif action == "data":
+        data_line(fetch=True)

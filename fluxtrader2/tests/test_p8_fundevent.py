@@ -306,3 +306,66 @@ def test_the_fingerprint_check_writes_its_verdict_and_fails_on_a_changed_name(tm
     assert r["status"] == "FAIL" and r["changed"][0]["symbol"] == "B"
     with pytest.raises(SystemExit):
         fundevent.main("check")
+
+
+# ---- decision BW1: the F5 Data line (nothing read) ------------------------------------------------------------------------------------
+def test_the_data_names_are_the_f5_list_the_basket_and_btc(tmp_path, monkeypatch):
+    L = pd.DataFrame({"symbol": ["A1USDT", "A2USDT", "A1USDT", "A3USDT"], "dir": ["shorter", "shorter", "longer", "longer"], "t0": [D("2026-02-01")] * 4})
+    monkeypatch.setattr(fundfreq, "frozen", lambda tags=("f34", "f5"): L)
+    mem = pd.DataFrame({"block": [D("2025-11-29")] * 2 + [D("2025-12-29")] * 3, "symbol": ["B0USDT", "A3USDT", "B1USDT", "B2USDT", "A2USDT"]})
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: mem)
+    N = fundevent.data_names()
+    assert N["f5"] == ["A1USDT", "A2USDT", "A3USDT"] and N["f5_shortenings"] == ["A1USDT", "A2USDT"] and N["basket"] == ["A2USDT", "B1USDT", "B2USDT"]
+    assert N["all"] == ["A1USDT", "A2USDT", "A3USDT", "B1USDT", "B2USDT", "BTCUSDT"]
+
+
+def test_the_funding_update_keeps_every_old_row_and_appends_the_newer_ones(tmp_path, monkeypatch):
+    from ft2 import data
+    monkeypatch.setattr(data, "PROC", tmp_path)
+    old = pd.DataFrame({"symbol": ["X"] * 3 + ["Y"] * 2, "ts": [D("2026-08-30"), D("2026-08-31 08:00"), D("2026-08-31 16:00"), D("2026-08-31"), D("2026-08-31 08:00")], "rate": [0.1, 0.2, 0.3, -0.1, -0.2], "interval_h": np.array([8, 8, 8, 8, 8], dtype="int16")})
+    old.assign(symbol=old["symbol"].astype("category")).to_parquet(tmp_path / "funding_archive.parquet", index=False)
+    ms = lambda t: int(pd.Timestamp(t, tz="UTC").value // 10 ** 6)  # noqa: E731
+    zips = {"X": pd.DataFrame({"calc_time": [ms("2026-08-31 16:00") + 1, ms("2026-09-01"), ms("2026-09-01 08:00")], "last_funding_rate": [9.9, 0.4, 0.5], "funding_interval_hours": [8, 8, 4]}),
+            "Y": pd.DataFrame(), "Z": pd.DataFrame({"calc_time": [ms("2026-09-01")], "last_funding_rate": [0.7], "funding_interval_hours": [1]})}
+    monkeypatch.setattr(data, "_read_zips", lambda kind, sym, pattern="*.zip", **kw: zips[sym])
+    r = fundevent.funding_update(["X", "Y", "Z"], ("2026-09",), fetch=False)
+    out = pd.read_parquet(tmp_path / "funding_archive.parquet")
+    assert r["old_rows_identical"] and r["appended"] == {"X": 2, "Y": 0, "Z": 1} and r["rows_after"] == 8 and r["names_after"] == 3
+    assert out.loc[(out["symbol"] == "X") & (out["ts"] == D("2026-08-31 16:00")), "rate"].item() == 0.3                    # the old row kept, the zip's 9.9 at the same stamp (rounded) not taken
+    assert out.loc[out["symbol"] == "X", "interval_h"].tolist() == [8, 8, 8, 8, 4] and out.loc[out["symbol"] == "Z", "rate"].tolist() == [0.7]
+    assert r["last_per_name_after"]["X"] == str(D("2026-09-01 08:00"))
+
+
+def test_the_data_line_voids_on_a_changed_old_name_and_writes_the_coverage(tmp_path, monkeypatch):
+    from ft2 import archive, data
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(fundevent, "DATA_OUT", tmp_path / "r76_data")
+    monkeypatch.setattr(fundevent, "F5_LIST", tmp_path / "f5.csv")
+    L = pd.DataFrame({"symbol": ["A1USDT"], "dir": ["shorter"], "t0": [D("2026-02-01 05:00")], "fold": ["F5"]})
+    L.to_csv(tmp_path / "f5.csv", index=False)
+    monkeypatch.setattr(fundevent, "F5_LIST_MD5", hashlib.md5((tmp_path / "f5.csv").read_bytes()).hexdigest())
+    monkeypatch.setattr(fundfreq, "frozen", lambda tags=("f34", "f5"): L)
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: pd.DataFrame({"block": [D("2025-12-29")], "symbol": ["B1USDT"]}))
+    before = pd.DataFrame({"symbol": ["A1USDT", "B1USDT"], "rows": [10, 20], "first": [D("2025-01-01")] * 2, "last": [D("2025-12-31")] * 2, "sum_close": [1.5, 2.5], "sum_volume": [10.0, 20.0]})
+    fps = iter([before.copy(), before.assign(rows=[10, 21])])
+    monkeypatch.setattr(krlist, "fingerprint", lambda extent=None: next(fps))
+    fetched = []
+    monkeypatch.setattr(archive, "fetch_monthly", lambda kind, sym, sub="", months=None, **kw: (fetched.append((kind, sym, tuple(months))) or {"ok": len(months), "skip": 0, "bad": 0, "err": 0, "missing": 0}))
+    monkeypatch.setattr(krlist, "ingest_symbols", lambda names: names)
+    monkeypatch.setattr(data, "ingest_klines", lambda names, interval="5m": {"rows_out": 1})
+    with pytest.raises(SystemExit):
+        fundevent.data_line(fetch=True)
+    assert {k for k, _, _ in fetched} == {"klines"} and {s for _, s, _ in fetched} == {"A1USDT", "B1USDT", "BTCUSDT"} and all(m == fundevent.DATA_MONTHS for _, _, m in fetched)
+    chk = json.loads((tmp_path / "r76_data" / "fingerprint_check.json").read_text())
+    assert not chk["pass"] and chk["changed"][0]["symbol"] == "B1USDT" and not (tmp_path / "r76_data" / "coverage_names.csv").exists()
+    # the same line with the slice intact: the funding appended, the coverage of the events' windows and of every name over 2026 written
+    fps = iter([before.copy(), before.copy()])
+    monkeypatch.setattr(fundevent, "funding_update", lambda names, months, fetch=True: {"old_rows_identical": True, "appended": {n: 0 for n in names}})
+    idx = pd.date_range("2026-01-01", "2026-03-01", freq="5min", tz="UTC", inclusive="left")
+    have = pd.concat([pd.DataFrame({"symbol": s, "open_time": idx}) for s in ("A1USDT", "B1USDT")], ignore_index=True)
+    monkeypatch.setattr(data, "load", lambda slice_, columns=None, symbols=None: have[have["symbol"].isin(symbols)].reset_index(drop=True))
+    monkeypatch.setattr(fundfreq, "coverage", lambda L: pd.DataFrame({"symbol": ["A1USDT"], "t0": [D("2026-02-01 05:00")], "fold": ["F5"], "dir": ["shorter"], "bars": [2880], "expected": [2880], "share": [1.0]}))
+    r = fundevent.data_line(fetch=False)
+    assert r["fingerprint"]["pass"] and r["coverage"]["events_complete"] == 1 and r["coverage"]["names_over_2026"]["btc"]["under_95pct"] == ["BTCUSDT"]
+    cn = pd.read_csv(tmp_path / "r76_data" / "coverage_names.csv").set_index("symbol")
+    assert cn.loc["A1USDT", "group"] == "f5" and cn.loc["B1USDT", "group"] == "basket" and abs(cn.loc["A1USDT", "share"] - 59 / 257) < 1e-9
