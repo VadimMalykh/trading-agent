@@ -118,3 +118,21 @@ def test_bars_runup_costs_and_the_audit(tmp_path, monkeypatch):
     assert J["events"] == 5 and J["shortenings"] == 3 and J["lengthenings"] == 2 and J["by_fold_dir"]["F3"] == {"longer": 1, "shorter": 1}
     assert J["shortenings_by_fold_at_floor"]["F4"]["False"] == 1 and J["shortenings_by_fold_at_floor"]["F3"]["True"] == 1 and J["notice_era"]["with_notice"] == 1 and J["notice_era"]["rule_era_without_notice"] == 2
     assert J["lengthenings_paired"] == 2 and J["candidates"]["F1F2_batch"] == 6 and "fundfreq" in md and (fundfreq.OUT / "runup.csv").exists()
+
+
+def test_bars_fetch_asks_the_f34_months_only_and_checks_the_fingerprint(tmp_path, monkeypatch):
+    from ft2 import archive, krlist
+    _plant(tmp_path, monkeypatch)
+    fundfreq.events()
+    for tag in ("f34", "f5"):
+        (fundfreq.OUT / f"fundfreq_{tag}.csv").replace(fundfreq.LISTS[tag])
+    # BBB's slice is cut short: its bars end before t0 + 8 d → the window's months are missing for an F3+F4 event; FFF (F5) stays missing too
+    c = pd.read_parquet(tmp_path / "data" / "candles_5m_archive.parquet")
+    c = c[~((c["symbol"] == "BBBUSDT") & (c["open_time"] >= pd.Timestamp("2025-11-21", tz="UTC")))]
+    c.to_parquet(tmp_path / "data" / "candles_5m_archive.parquet", index=False)
+    asked, ingested = {}, []
+    monkeypatch.setattr(archive, "fetch_monthly", lambda kind, sym, sub="", months=None, **kw: asked.setdefault(sym, months) or {"ok": len(months)})
+    monkeypatch.setattr(data, "ingest_klines", lambda syms, interval="5m": ingested.extend(syms) or {"rows": 0})
+    rep = fundfreq.bars(fetch=True)
+    assert list(asked) == ["BBBUSDT"] and asked["BBBUSDT"] == ["2025-11"] and "FFFUSDT" not in asked      # F5's months are not this step's
+    assert "BBBUSDT" in ingested and rep["fingerprint"]["pass"] and (fundfreq.OUT / "fingerprint_check.json").exists()

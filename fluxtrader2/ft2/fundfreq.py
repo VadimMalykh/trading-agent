@@ -348,14 +348,34 @@ def coverage(L: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
-def bars() -> dict:
+def bars(fetch: bool = False, fetch_tags: tuple[str, ...] = ("f34",)) -> dict:
+    """The frozen events' bars counted; with `fetch` the (name, month) files missing for the events of `fetch_tags` (F3+F4 by default — the
+    slice's non-member names end at 2024-08; F5's 2026 months are decision BV's own fetch) come from the archive's monthly 5m klines and the
+    slice is re-ingested whole under krlist's fingerprint (R28's route: every name it held comes back row for row, or the ingest is void)."""
+    from . import archive, krlist
     L = frozen()
     OUT.mkdir(parents=True, exist_ok=True)
     cov = coverage(L)
-    cov.to_csv(OUT / "bars.csv", index=False)
+    cov["list"] = L["list"].to_numpy()
+    need = krlist.missing_months(cov[cov["list"].isin(fetch_tags)].assign(months=[archive.months_between((t + WINDOW[0]).date(), (t + WINDOW[1] - BAR).date()) for t in cov[cov["list"].isin(fetch_tags)]["t0"]]))
     rep = {"events": int(len(cov)), "complete": int((cov["share"] >= 0.95).sum()),
            "by_fold": {str(k): {"events": int(len(g)), "complete": int((g["share"] >= 0.95).sum()), "median_share": float(g["share"].median())} for k, g in cov.groupby("fold")},
-           "missing_symbols": sorted(set(cov[cov["share"] < 0.95]["symbol"]))}
+           "missing_symbols": sorted(set(cov[cov["share"] < 0.95]["symbol"])), "missing_months_in_fetch_tags": need}
+    if fetch and need:
+        fp = krlist.fingerprint()
+        fp.to_csv(OUT / "fingerprint_before.csv", index=False)
+        rep["fetch"] = {sym: archive.fetch_monthly("klines", sym, sub="5m", months=months) for sym, months in need.items()}
+        rep["ingest"] = {k: str(v) for k, v in data.ingest_klines(krlist.ingest_symbols(sorted(need))).items()}
+        chk = krlist.fingerprint_check(fp)
+        (OUT / "fingerprint_check.json").write_text(json.dumps(chk, indent=1, default=str))
+        rep["fingerprint"] = {"pass": chk["pass"], "changed": chk["changed"][:10], "names_before": chk["names_before"], "names_after": chk["names_after"]}
+        if not chk["pass"]:
+            print(json.dumps(rep, indent=1, default=str))
+            raise SystemExit(2)
+        cov = coverage(L)
+        rep["complete_after"] = int((cov["share"] >= 0.95).sum())
+        rep["by_fold_after"] = {str(k): int((g["share"] >= 0.95).sum()) for k, g in cov.groupby("fold")}
+    cov.drop(columns=["list"], errors="ignore").to_csv(OUT / "bars.csv", index=False)
     print(json.dumps(rep, indent=1, default=str))
     return rep
 
@@ -462,7 +482,7 @@ def audit(today: pd.Timestamp | None = None) -> str:
          "known_at": "t0 = the first settlement at the new interval, public at its own stamp (funding_archive's fundingTime); the decision bar of a registration is the first 5m bar that closes after t0; nothing after t0 is read here"}
     (OUT / "audit.json").write_text(json.dumps(J, indent=1, default=str))
     md = [f"# fundfreq — the funding-settlement-frequency change of a running perpetual as a per-name rule event (decision BU1)",
-          f"generated {J['generated']} · the frozen lists {', '.join(str(p) for p in LISTS.values())}", "",
+          f"generated {J['generated']} · the frozen lists {', '.join(p.name for p in LISTS.values())}", "",
           f"**{len(L)} eligible events** ({len(sh)} shortenings, {len(lo)} lengthenings) on {J['distinct_names']} names (the contract ≥ {PERP_AGE.days} d old at t0, t0 in F3 … F5); "
           f"members at t0 {J['members_at_t0']['shortenings']} of the shortenings; the contract's age p10 / p50 / p90 {q_age.get(0.1)} / {q_age.get(0.5)} / {q_age.get(0.9)} days; "
           f"the first bar's source {J['perp_first_source']}; shortenings on a batch day {J['batch_shortenings']}.", "",
@@ -492,10 +512,10 @@ def main(action: str, fetch: bool = False) -> None:
         N = notices_table(fetch=fetch, write=True)
         if N is None:
             sys.exit("fundfreq: no catalog 49 list on disk (data/raw/external/binance_cms/list_49_*.json) — run `ft2 events fetch --source binance`")
-        print(f"{N['id'].nunique()} notices, {int(N['has_detail'].sum() > 0)} with details, {(N['symbol'] != '').sum()} (notice, contract) rows; by kind "
+        print(f"{N['id'].nunique()} notices, {N[N['has_detail']]['id'].nunique()} with a detail, {(N['symbol'] != '').sum()} (notice, contract) rows; by kind "
               f"{N.drop_duplicates('id')['kind'].value_counts().to_dict()}; without a detail {int((~N['has_detail']).sum())}")
     elif action == "bars":
-        bars()
+        bars(fetch=fetch)
     elif action == "audit":
         print(audit())
     else:
