@@ -12271,6 +12271,20 @@ Cost:          half a day of build (`frames_mix_folds`, `run_r74`, the CLI unive
                frame ≈ 10, the two nulls on one feature at three horizons ≈ 40 at FT2_JOBS=2 threads); one session. F5
                untouched; the twelve untouched; nothing served changes.
 Result:        —
+               **First run VOID 2026-11-01 (the chain on the work VM 09:23:50 → 09:50 UTC; the code 17d4a16): validity (5)
+               FAIL — the hand check's sampler (R73's `hand_check`) drew 4 × 2,000 candidate cells over the scored bars ×
+               the 253 kept names in the panel and kept those on membership: 1,662, short of 2,000 (44 … 55 members a block
+               — one cell in five is a member's; on F1+F2's 192 names and 54 … 60 members it was one in three, so R73's
+               8,000 draws gave its 2,000). The 1,662 cells it did check agreed to 4.4e-10. Everything before (5) PASSED on
+               this frame and is not re-read: the lists; both fingerprints; R73's 132 rows to 0.0; the guard rows (R74, F3)
+               / (R74, F4) appended 09:44 UTC; 139,104 scored bars, 483 whole days, 2024-09-03 → 2025-12-31, 0 outside the
+               folds; 253 kept names in the panel, 161 with a value; (6) known-at on 7,228,413 cells with a value, 0 early,
+               0 stale; (7) 0 off membership, 44 … 55 covered a block (median 52), every bar ≥ 5. No IC was computed, no
+               count was joined to a label. The fix (the next commit): `hand_check` draws batches of 4 × n_check until it
+               holds n_check member cells — the first batch is the same draw, so R73's 2,000 cells are the same cells;
+               nothing else of the module changes. Per this block's rule the two guard rows are removed from the ledger (the
+               VM's and the pulled copy — `output/backtest/confirmation_reads.csv` is not tracked by git) in the fix's
+               commit, named here, and the same command runs again.**
 
 ### R<n> — <name> (registered <date>, read <date or —>)
 Question:      …

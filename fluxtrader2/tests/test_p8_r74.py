@@ -120,6 +120,11 @@ def test_the_count_is_read_on_f3_after_r73_is_reproduced_and_the_guard_rows_are_
     fr34 = mx.frames_mix_folds(L, ("F3", "F4"), "data/perp_mix_1h.parquet", "data/spot_1h.parquet", SLICES, "members_f34.csv", pd.Timestamp(START2, tz="UTC"),
                                pd.Timestamp("2026-01-01", tz="UTC"))
     assert fr34["folds"] == ["F3", "F4"] and fr34["s"].sum() == v["scored_bars"]
+    # the hand check's sampler draws until it has n_check member cells even when few cells are a member's (R74's first run: one in five on F3+F4)
+    fr34["M"] = fr34["M"].copy()
+    fr34["M"].loc[:, [c for c in fr34["M"].columns if c != "M01USDT"]] = False
+    h = mx.hand_check(fr34, 100, 0)
+    assert h["status"] == "PASS" and h["recomputed"] == 100 and h["names_checked"] == 1
 
 
 def test_a_mismatching_r73_screen_a_fingerprint_off_by_one_or_a_bad_list_voids_before_the_guard(tmp_path, monkeypatch):

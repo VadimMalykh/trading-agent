@@ -131,9 +131,13 @@ def hand_check(fr: dict, n_check: int = N_CHECK, seed: int = 0, tol: float = TOL
     cols = [c for c in kept if c in F[CNT].columns]
     rng = np.random.default_rng(seed)
     Ms = M[s][cols].to_numpy()
-    cand_i, cand_j = rng.integers(0, len(sidx), 4 * n_check), rng.integers(0, len(cols), 4 * n_check)
-    on = Ms[cand_i, cand_j]
-    ii, jj = cand_i[on][:n_check], cand_j[on][:n_check]
+    ii, jj = np.empty(0, dtype=int), np.empty(0, dtype=int)
+    for _ in range(50):                                             # batches of 4 × n_check until n_check member cells are in hand (R74's void: one cell in five is a member's on F3+F4)
+        cand_i, cand_j = rng.integers(0, len(sidx), 4 * n_check), rng.integers(0, len(cols), 4 * n_check)
+        on = Ms[cand_i, cand_j]
+        ii, jj = np.concatenate([ii, cand_i[on]])[:n_check], np.concatenate([jj, cand_j[on]])[:n_check]
+        if len(ii) >= n_check or not Ms.any():
+            break
     g0 = grid[0]
     series, worst, n_nan, n_val = {}, 0.0, 0, 0
     for i, j in zip(ii, jj):
