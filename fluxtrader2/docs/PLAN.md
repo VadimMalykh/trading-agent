@@ -12677,7 +12677,30 @@ Expectation:   validity PASS; 63 … 66 eligible (LIT dropped for its bars, none
                CLEARS WITH THE OPPOSITE SIGN one in eight, CLOSED one in twenty; at 1d NOT DETECTABLE one in two; at 7d NOT
                DETECTABLE two in three. The notice era's 32 and the rule era's 39 alike in sign; the lengthenings' sold side near
                zero (the squeeze over by then); y_1d negatively correlated with the run-up (−0.1 … −0.3).
-Result:        —
+Result:        **VOID at validity — the first read, 2026-11-01 16:10 → 16:11 UTC on the work VM (`scripts/r75_chain.sh`; the guard rows
+               (R75, F3) / (R75, F4) in the ledger at 16:10 UTC, standing; the run stops before the run-up row — no number of y exists).
+               Two of the eight validity rows failed, both on facts that stand BEFORE any bar after a t0: (3) 58 of the 66 cells eligible
+               (87.9 %, under 90 % and under 60) — the eight dropped are the December shortenings whose 7-day exit passes the market's end
+               2026-01-01 (BANANA 12-25, FLOW and ONT 12-27, STORJ 12-28, ZRX 12-30, POLYX, BROCCOLI714 and LIGHT 12-31): the
+               registration's own eligibility rule on the frozen list's dates, a count fixed by the list and the window and knowable at
+               registration — the expectation's "1 … 3" was this block's arithmetic error; (8) 4 of the 58 flagged with a settlement gap
+               (6.9 %, over 5 %) — all four are the episode's REVERT inside the hold (BAN 2025-01-27 08:00 and 2025-02-26 08:00, 2 → 4 h;
+               DEGO 2025-10-29 04:00 and D 2025-12-29 04:00, 1 → 4 h — the frozen list's own lengthening rows), each gap equal to the LATER
+               row's interval: the code compared a gap to the EARLIER row's interval, a defect of the measurement; no row is missing.
+               Everything else PASS: the list's md5 and 116 rows, 66 cells, every frozen t0 / prev_h / new_h re-derived from the archive
+               (318 changes today), own cost rows 98.3 % (45 on the day before, 12 on the entry day, 1 R28's 46), bars 100 % on every
+               cell, labels 100 % at every hold, b from ≥ 59 members, the identity with `horizon.labels` and the harness 0.0 at every
+               hold, the hand check of 20 cells from the raw bars and the settlement rows 1.3e-11, t = t0 + 5 min and ts_known = t0 on
+               every cell, settlements per cell over the first day 6 … 24 (median 24). The fingerprint after the run: not reached (the
+               chain stopped at the void; the poweroff wrapper killed by hand at 16:41 UTC); the VOID's outputs kept as
+               output/listing/r75_void_1610/.**
+               **The re-execution `calendar_revert` (§3's rule; written here BEFORE the rerun; logged as R75/calendar_revert beside the first
+               read, which stays): (8) reads a gap against the LARGER of the two rows' intervals (a revert inside the hold is the
+               archive's own row, not a missing one); (3) reads ≥ 85 % and ≥ 55 eligible — the eight December cells named above dropped
+               by the calendar as registered, the same cells at every hold (a per-hold eligibility would keep five of them at 1d and
+               four at 3d: NOT taken, this block says the same events at every hold). Nothing else changes: the list, the entry, the
+               label, the statistic, the bar, the gate, the described rows, every other line of the code (`ft2/fundevent.py`'s two
+               constants and one line, `tests/test_p8_fundevent.py`'s planted revert). The rerun's read follows here.**
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 

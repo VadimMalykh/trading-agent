@@ -54,9 +54,10 @@ BAR_R28 = 46.0
 FALLBACK_DAYS = 7
 BLOCK_WEEKS, DRAWS, SEED = 6, 10_000, 75
 TRIM = 3
-MIN_MEMBERS, MIN_ELIGIBLE, MIN_ELIGIBLE_SHARE, MIN_OWN_COST, MIN_BARS, MIN_LABELS = 40, 60, 0.90, 0.90, 0.95, 0.95
+MIN_MEMBERS, MIN_OWN_COST, MIN_BARS, MIN_LABELS = 40, 0.90, 0.95, 0.95
+MIN_ELIGIBLE, MIN_ELIGIBLE_SHARE = 55, 0.85             # the re-execution `calendar_revert` (R75's Result): the registration's 60 / 90 % could not be met by its own calendar rule on the frozen list (58 of 66, the eight December cells)
 MAX_GAP_SHARE = 0.05                               # validity (8): cells with a gap in their settlement rows
-GAP_TOL = 1.5                                      # a gap between consecutive settlements over this × the earlier row's interval is a missing row
+GAP_TOL = 1.5                                      # a gap between consecutive settlements over this × the LARGER of the two rows' intervals is a missing row (a revert inside the hold is a row, not a gap — the re-execution `calendar_revert`)
 HAND_CELLS = 20
 BTC = "BTCUSDT"
 STRATEGY = "fundfreq_bought"
@@ -207,13 +208,15 @@ def hand_a(close: np.ndarray, idx: pd.DatetimeIndex, S: pd.DataFrame, symbol: st
 
 
 def settlement_gaps(S: pd.DataFrame, symbol: str, t0: pd.Timestamp, exit_t: pd.Timestamp, tol: float = GAP_TOL) -> dict:
-    """Validity (8): the name's rows from t0 to the 7-day exit; a gap between consecutive rows over `tol` × the earlier row's interval is a
-    missing row. Returns the count of rows, the largest gap ÷ its interval, and whether a gap was found."""
+    """Validity (8): the name's rows from t0 to the 7-day exit; a gap between consecutive rows over `tol` × the larger of the two rows'
+    intervals is a missing row (at a revert the gap equals the later row's interval — the archive's own row, not a gap). Returns the count of
+    rows, the largest gap ÷ its interval, and whether a gap was found."""
     g = S[(S["symbol"] == symbol) & (S["ts"] >= t0) & (S["ts"] <= exit_t)].sort_values("ts")
     if len(g) < 2:
         return {"n_rows": int(len(g)), "max_gap_ratio": np.nan, "gap": len(g) < 2}
     gap_h = (g["ts"].to_numpy()[1:] - g["ts"].to_numpy()[:-1]) / np.timedelta64(1, "h")
-    ratio = gap_h / g["interval_h"].to_numpy()[:-1]
+    h = g["interval_h"].to_numpy()
+    ratio = gap_h / np.maximum(h[:-1], h[1:])
     return {"n_rows": int(len(g)), "max_gap_ratio": float(ratio.max()), "gap": bool((ratio > tol).any())}
 
 

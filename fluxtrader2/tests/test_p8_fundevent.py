@@ -282,6 +282,12 @@ def test_a_settlement_gap_is_counted_and_over_the_share_voids(tmp_path, monkeypa
     g = fundevent.settlement_gaps(gapped, EV[0], t0s[0], t0s[0] + 7 * 24 * H)
     assert g["gap"] and g["max_gap_ratio"] == 7.0 and g["n_rows"] == 169 - 6
     assert not fundevent.settlement_gaps(S, EV[0], t0s[0], t0s[0] + 7 * 24 * H)["gap"]
+    # a revert inside the hold (hourly → every 4 h from day two, the rows on the 4-h grid labelled 4) is the archive's own row, not a gap
+    t0 = t0s[2]
+    rev = S[~((S["symbol"] == EV[2]) & (S["ts"] > t0 + 30 * H) & (((S["ts"] - t0) / H) % 4 != 0))].copy()
+    rev.loc[(rev["symbol"] == EV[2]) & (rev["ts"] > t0 + 30 * H), "interval_h"] = 4.0
+    g = fundevent.settlement_gaps(rev, EV[2], t0, t0 + 7 * 24 * H)
+    assert not g["gap"] and g["max_gap_ratio"] == 1.0 and g["n_rows"] == 31 + (168 - 32) // 4 + 1
 
 
 def test_the_fingerprint_check_writes_its_verdict_and_fails_on_a_changed_name(tmp_path, monkeypatch):

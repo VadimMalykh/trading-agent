@@ -5,6 +5,7 @@
 # and the market are loaded). No fetch: the archive slice's fingerprint before and after; the md5 of the frozen lists, the member list, the
 # cost file and the funding slice before and after.
 #   ./fluxtrader2/scripts/vm.sh bgsh r75 'bash scripts/r75_chain.sh'      # log: output/logs/r75.log
+#   ./fluxtrader2/scripts/vm.sh bgsh r75b 'R75_TAG=calendar_revert bash scripts/r75_chain.sh'   # the re-execution (R75's Result), after the VOID's outputs are moved aside
 # The steps are named fundevent_<action>, not r75 (a step named like the bgsh job clobbers the chain log). The chain's exit arms a poweroff 30 min later.
 set -euo pipefail
 mkdir -p output/logs output/listing
@@ -22,7 +23,12 @@ echo "$(date -u +%H:%M:%S) md5 before: $(md5sum $FILES | cut -c1-32 | tr '\n' ' 
 echo "$(date -u +%H:%M:%S) code: $(md5sum ft2/fundevent.py ft2/fundfreq.py ft2/krevent.py ft2/listing.py ft2/krlist.py ft2/horizon.py ft2/backtest.py | cut -c1-32 | tr '\n' ' ')"
 echo "$(date -u +%H:%M:%S) ledger before: $(wc -l < output/backtest/confirmation_reads.csv) rows; R75 rows: $(grep -c ',R75,' output/backtest/confirmation_reads.csv || true)"
 step fundevent_fingerprint python -m ft2 fundevent fingerprint
-step fundevent_run         python -m ft2 fundevent run --registration R75
+TAG="${R75_TAG:-}"                                                     # a re-execution the plan names: R75_TAG=<tag> bash scripts/r75_chain.sh (logged as R75/<tag>)
+if [[ -n "$TAG" ]]; then
+  step "fundevent_run_$TAG"  python -m ft2 fundevent run --registration R75 --reexecute "$TAG"
+else
+  step fundevent_run         python -m ft2 fundevent run --registration R75
+fi
 step fundevent_check       python -m ft2 fundevent check
 echo "$(date -u +%H:%M:%S) ledger after: $(wc -l < output/backtest/confirmation_reads.csv) rows; R75 rows: $(grep -c ',R75,' output/backtest/confirmation_reads.csv || true)"
 echo "$(date -u +%H:%M:%S) md5 after:  $(md5sum $FILES | cut -c1-32 | tr '\n' ' ')"
