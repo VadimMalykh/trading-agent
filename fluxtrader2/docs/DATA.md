@@ -652,6 +652,54 @@ cells the members with a STRICT article (own / chain / company) — a proxy is a
 cell (BB's clause: nothing on the twelve before R17); the audit's counts (≈ 20 strict names a block on F1+F2, 16 live at the block's start)
 are the registration's; nothing here was joined to a price.** Decision BQ DECIDED "BQ1" 2026-10-30: **R72 (PLAN §8) is the registration** — `wiki_dev` on the 38 strict F1+F2 members, one cell, sign NEGATIVE; the stamp 48 h, or 36 h if the UTC-morning probe on TWO days shows the previous day's count present by 06:00 UTC (R72's Data line — the probes' results and the chosen stamp are recorded HERE before the run; nothing else of this section changes). **R72 READ 2026-11-01 (PLAN §8): NOT DETECTABLE** — relative 1d IC −0.0023 (t −0.22, se 0.0103, p_family 0.816; the folds' signs differ); validity PASS, the parquet's fingerprint 93,994 rows / 66 symbols / 2021-12-01 → 2026-10-28, the sum of `views` 45,821,671 (the run's number is the record), the stamp 36 h in every row; 31 of the 38 strict F1+F2 names carried a value (AAVE's every scored day 0 views; 1INCH, SUI, PYTH, APT, BNB, NEAR, IMX no cells), 12 … 18 a block. The attention line PARKED (PLAN §7); the series stays in hand; F3+F4's 38 strict members unread. Seen after the read (described, unregistered): the directional 1d row +0.044 (t 2.35) and the vol row at every horizon (t 2.4 … 3.4) — the market's attention, which the relative form removes.
 
+### fund_freq_events (the FUNDING-SETTLEMENT-FREQUENCY CHANGE of a running Binance perpetual as a per-name RULE event — read off `funding_archive`'s `interval_h`; decision BU1, §9 #15) — `ft2/fundfreq_f34.csv`, `ft2/fundfreq_f5.csv` (FROZEN 2026-11-01, commit 30ef385, before any bar after an event was read for anything): `(symbol, base, mult, t0, ts_known, fold, dir, prev_h, new_h, perp_first, perp_first_source, perp_age_days, member_at_t0, fund_1d, fund_7d, n_1d, at_floor, cap_share_7d, batch, pair_of, episode_h, notice_release, notice_lag_h)`
+
+`ft2 fundfreq events|notices [--fetch]|bars [--fetch]|audit` (`ft2/fundfreq.py`; `scripts/bu1_chain.sh`, `bu1_audit.sh`, `bu1_fetch.sh`, `bu1_cost.sh`;
+`tests/test_p8_fundfreq.py`). No new source: an event is a settlement of `funding_archive` (598 names) whose `interval_h` differs from the
+previous settlement's of the same name — **t0 = the FIRST settlement at the new interval**, a SHORTENING (the interval falls) or a LENGTHENING
+(it rises). **The rule behind it, read from the exchange's own notices (catalog 49 on disk, `data/raw/external/binance_cms/list_49_*.json`;
+81 "Settlement Frequency" / "Funding Rate" titles, their 81 detail pages fetched from the VM 2026-11-01 into `…/binance_cms/detail/`,
+`output/fundfreq/notices.csv` 147 (notice, contract) rows):** until 2025-08 a change was announced per contract ("… Will Be Adjusted",
+"… Will Be Resumed" — RVN, MASK, … on 2025-07-18); **from 2025-09-01 the revert is automatic** — "if the funding rate of a contract on hourly
+settlement is ≤ |0.002 %| for 36 consecutive cycles, Binance Futures reverts the frequency to four hours on the 37th"; from 2026-01-02 the
+same at |0.025 %| for 16 cycles. **Known-at: t0 is the settlement's own stamp (`fundingTime`), public at that second; `ts_known` = t0; the
+decision bar of any registration is the first 5m bar that CLOSES after t0, the position entered one bar later.** A 2025-09-18 notice
+(released 09-16) changed the funding FORMULA and the mark-price calculation — a caveat for every funding quantity across F4.
+**The event rule:** the contract ≥ 30 days old at t0 (its first 5m bar in `candles_5m_archive`, every eligible event `archive 5m`; younger =
+a launch, R28's population — 111 of the 318 changes, the launch-era interval settings); ELIGIBLE = that AND t0 inside F3 … F5 (decision BU3:
+F3+F4 the FIRST read by registration, F5 the confirmation). F0 … F2's 33 are listed in `output/fundfreq/events.csv` and not frozen: **F1+F2
+holds 60 shortenings, 14 of them the batch of 2023-10-12 (a policy change at zero funding, `batch`) and most of the rest launch-era — another
+population, which is why BU3 exists.** Flags: `fund_1d` (the sum of the settled rates over the 24 h before t0 — the crowded side's sign; a
+negative sum = the shorts paid), `fund_7d`, `at_floor` (fund_1d < 0), `cap_share_7d` (the share of the 7 days' settlements at ≥ 95 % of the
+name's largest |rate| before t0), `member_at_t0` (a member of the screener's block holding t0 — F5 has no blocks), `pair_of` / `episode_h`
+(a lengthening's shortening and the hours between), `notice_release` / `notice_lag_h` (the last notice naming the contract within 14 days
+before t0; the rule era has none).
+**Counted 2026-11-01 (`output/fundfreq/audit.md` / `.json`, `events.csv`, `bars.csv`, `runup.csv`, `costs.csv`; the chains 14:31 → 14:59
+UTC on the work VM):** 318 changes on 172 names, **174 ELIGIBLE — F3 17 shortenings + 6 lengthenings, F4 54 + 39, F5 27 + 31: F3+F4 71
+shortenings on 63 names, F5 27 on 25.** The trailing-day funding at a shortening is NEGATIVE on F3 15 of 17, F4 51 of 54, F5 27 of 27 (the
+five others: BROCCOLIF3B +1.07 % and CTK +0.03 % of 2025-04, CUDIS +2.02 % and HIPPO +2.24 % of 2025-11, LIT's day empty); |fund_1d| q10 / q50 /
+q90 1.98 / 2.64 / 5.12 % a day — the shorts paying 2–5 % a day and from t0 paying it 4 × (4h → 1h 43 of F4's 54, 8h → 1h 10; F3's 4h → 2h 9,
+8h → 4h 7) to 8 × as often. The trigger row: the median name had 2.4 % of its week's settlements at its cap (the rate pinned at the cap is NOT
+what triggers the change; the cap row is described, not the mechanism). The contract's age at t0 q10 / q50 / q90 54 / 277 / 1,357 days (15
+under 90; F5's names old — median 1,396). Members of the block at t0: 9 of the 71 (REEF, BAN, LAYER, MASK, MYX ×2, BIO, AIA, LIGHT) — the
+events are mostly NON-members (the hedge is the block's members either way). t0's hour: the 4-hour clock (01 / 05 / 09 / 13 / 17 / 21 UTC)
+and the 8-hour one. **The notice era against the rule era:** 32 F3+F4 shortenings before 2025-09-01, 18 with a notice naming the contract
+(lag q10 / q50 / q90 0.4 / 2.4 / 23.5 h; MYX's two 69 / 148 h are an earlier notice's), 14 without (2025-04 → 08: CTK, LAYER, BROCCOLIF3B,
+LPT, WCT, RVN, MASK, FUN, VIC, HYPER, XTZ, API3, M, IP — the manual era's changes the lists' titles did not match); 39 in the rule era (2025-09
+1, 10 5, 11 16, 12 17), none with a notice. The 45 F3+F4 lengthenings are every one paired to a shortening (the episode 63 / 699 / 1,735 h at
+q10 / q50 / q90). **The run-up row (described, the 24 h BEFORE t0 only):** the name against its block's members +3,352 bps at the median
+over the day before a shortening (q10 −2,877, q90 +12,780; F3 +3,756 / F4 +3,323; 72 % of events ≥ +2,000, 57 % ≥ +500, 20 % below zero) —
+the shortening lands on a name that just rose a third against its peers in a day with the shorts paying the longs: a squeeze the rule flags.
+**The bars:** `candles_5m_archive` held 91 of the 116 F3+F4 events' windows (the slice's non-member names ended 2024-08); the F3+F4 events'
+missing months fetched 2026-11-01 (`fundfreq bars --fetch`, 25 names, R28's route) and the slice re-ingested whole under krlist's fingerprint
+(PASS: 598 names before and after, every old row back; 83,541,041 rows, to 2026-01-31 — December's windows reach into January, so 5 F5
+events of January have bars; F5's 2026 months are decision BV's own fetch) — **F3 23 of 23, F4 92 of 93 (LIT 2025-12-23 at 93 % — its
+window runs past the slice's end), F5 5 of 58.** **The cost rows:** `costwide` run on the 90 event names from 2023-01-01 and MERGED into the
+pre-BU1 parquet (`scripts/costwide_merge.py`: 35,628 overlapping rows identical to 0.0, 871 rows added, 584 names → `data/cost_daily_wide.parquet`,
+the old copy `data/cost_daily_wide_before_bu1.parquet`; a first `--universe all` re-run was VOID by `scripts/costwide_check.py` — `all` does
+not cover 7 of the old names); the shortenings' taker round trip on t0's day 18.8 bps at the median, on the day before 42.1 (the squeeze day
+is dearer); missing on day 0: AERGO 2025-04-16, CTK 2025-04-30 and LIT (no bars) on F3+F4, every F5 event.
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
