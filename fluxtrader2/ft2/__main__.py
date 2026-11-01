@@ -123,6 +123,11 @@ def cmd_krlist(args):
     krlist.main(args.action, fetch=args.fetch)
 
 
+def cmd_fundfreq(args):
+    from . import fundfreq
+    fundfreq.main(args.action, fetch=args.fetch)
+
+
 def cmd_hl(args):
     from . import hl
     hl.main(args.action, args.start, args.end, args.symbols)
@@ -552,6 +557,9 @@ def main(argv=None):
     klp = sub.add_parser("krlist", help="P8 (decision BM1): the Korean LISTING of an existing perpetual as a per-name event — the source audit from the KRW parquets' first bars: events (the candidates and the lists to freeze → output/krlist/), bars (the event names' 5m bars over t0 − 2 d → t0 + 8 d counted; --fetch fetches the missing months and re-ingests the archive slice under a fingerprint), audit (counts, ages, hours, the arriving crowd's volume share → output/krlist/audit.md). Nothing priced (see ft2/krlist.py)")
     klp.add_argument("action", choices=["events", "bars", "audit"])
     klp.add_argument("--fetch", action="store_true", help="bars: fetch the missing monthly 5m klines of the event names and re-ingest candles_5m_archive (fingerprint before and after)")
+    ffp = sub.add_parser("fundfreq", help="P8 (decision BU1): the funding-settlement-frequency CHANGE of a running perpetual as a per-name RULE event — the source audit from funding_archive's interval_h: events (every change with its flags and the lists to freeze → output/fundfreq/), notices (catalog 49's 'Settlement Frequency' / 'Funding Rate' titles on disk and their detail pages; --fetch fetches the details from the VM), bars (the event names' 5m bars over t0 − 2 d → t0 + 8 d counted), audit (counts, the trailing funding, the trigger row, the notice lag, the run-up row, the cost rows → output/fundfreq/audit.md). Nothing after t0 read (see ft2/fundfreq.py)")
+    ffp.add_argument("action", choices=["events", "notices", "bars", "audit"])
+    ffp.add_argument("--fetch", action="store_true", help="notices: fetch the missing detail pages (the VM reaches www.binance.com; the laptop does not)")
     spp = sub.add_parser("spot", help="P8 (decision BH1): Binance's own spot market per member as a source — the archive's spot monthly 1h klines for the twelve's and the screener's members' <BASE>USDT markets (the taker-buy columns) → data/raw/external/binance_spot/, data/spot_1h.parquet, output/spot_audit.md (see ft2/spot.py)")
     spp.add_argument("action", choices=["symbols", "fetch", "ingest", "audit"])
     spp.add_argument("--start", default="2023-04-01", help="fetch: the first month asked for")
@@ -622,7 +630,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
