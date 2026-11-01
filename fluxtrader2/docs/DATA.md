@@ -607,8 +607,11 @@ OMITS days without data: zeros are filled from the later of 2021-12-01 and the a
 48 h. **Known-at, measured:** two probes on Bitcoin — at 19:45 and 20:55 UTC on 10-29 the API held 10-28 (19.8 h and 20.9 h after that day's
 end) and NOT 10-29; the day's count arrives somewhere between the day's end and +19.8 h. **The UTC-morning probes (R72's two-valued rule):**
 probe 1, 2026-10-30 06:00:34 UTC server Date, Age 0 (a fresh answer), last day present 2026-10-29, 6.01 h after that day's end — the previous
-day's count IS present by 06:00 UTC on the first morning; probe 2 (2026-10-31 ≈ 06:00 UTC) is owed — 36 h if it shows the same, else 48 h.
-48 h stands in the parquet until the second probe is read. **Coverage:** the twelve 11 of 12 (10 strict — HYPE none, PEPE the frog a proxy);
+day's count IS present by 06:00 UTC on the first morning; probe 2, 2026-11-01 06:00:30 UTC server Date (the 10-31 morning was missed; the
+rule asks two different days, not consecutive ones), Age 0, last day present 2026-10-31, 6.01 h after that day's end — the same on the second
+morning. **THE STAMP IS 36 h** (`ts_known(d)` = d + 36 h, `KNOWN_AT_H = 36`, set 2026-11-01 before the run; the parquet re-ingested with
+`--end 2026-10-29` so the rows, symbols, days and the sum of `views` are unchanged — a default `ingest` would have extended the grid to
+10-31 and broken R72's fingerprint); the probes' JSON under `data/raw/external/wikipedia/probe_*.json` on the VM. **Coverage:** the twelve 11 of 12 (10 strict — HYPE none, PEPE the frog a proxy);
 F1+F2's 188 members 39 (38 strict); F3+F4's 216 members 45 (38 strict); per block of 60 members: F1+F2 18 … 25 with an article (median 21;
 strict 20; created AND with a day of views by the block's start — median 16, min 13), F3+F4 19 … 26 (median 24; strict 21; live 21, min 14).
 20 of the 66 articles were created during or after F1 (AAVE 2023-06, GRT 2023-08, INJ 2023-09, PENGU 2024-02, IMX / ARKM 2024-04, CAKE

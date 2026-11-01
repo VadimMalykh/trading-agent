@@ -64,7 +64,7 @@ UA = {"User-Agent": "fluxtrader2-research/1.0 (source audit; python-urllib)", "A
 PAUSE = 0.15                 # Wikimedia asks for ≤ 100 req/s on the REST API and politeness on the action API; CoinGecko's free tier ≈ 30/min
 CG_PAUSE = 2.5
 START = "2021-12-01"         # F0's first month; daily data exists from 2015-07
-KNOWN_AT_H = 48              # ts_known = the day's start + 48 h until the probes measure the hour the day's count appears (probe: D present at D+1 19:38 UTC)
+KNOWN_AT_H = 36              # ts_known = the day's start + 36 h (D+1 12:00 UTC): R72's two UTC-morning probes (2026-10-30, 2026-11-01, 06:00 UTC, Age 0) both held the previous day; was 48 before them
 MONTH_D = 30
 THREADS = 3                  # 8 threads tripped the REST API's 429 on 14 of 406 titles (2026-10-29); 3 do not
 MIN_MONTH_D = 15

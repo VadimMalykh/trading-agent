@@ -119,7 +119,7 @@ def test_fetch_ingest_and_audit_on_planted_views(tmp_path, monkeypatch):
     assert arb.loc[pd.Timestamp("2023-05-20", tz="UTC"), "views"] == 0 and not arb.loc[pd.Timestamp("2023-05-20", tz="UTC"), "present"]   # the omitted day a zero, marked
     assert arb.loc[pd.Timestamp("2023-05-15", tz="UTC"), "views"] == 50 and arb.loc[pd.Timestamp("2023-05-15", tz="UTC"), "present"]      # the old name's views counted
     assert arb.loc[pd.Timestamp("2023-06-05", tz="UTC"), "views"] > 100
-    assert (d["ts_known"] - d["day"] == pd.Timedelta(hours=48)).all() and r["symbols"] == 2 and "ZZZ" not in set(d["base"])
+    assert (d["ts_known"] - d["day"] == pd.Timedelta(hours=wiki.KNOWN_AT_H)).all() and r["symbols"] == 2 and "ZZZ" not in set(d["base"])
     sh = json.loads((wiki.RAW / "redirect_share.json").read_text())
     assert 0.1 < sh["Arbitrum"] < 0.3 and sh["Bitcoin"] == 0.0 and r["redirect_titles"] == 2
     (wiki.RAW / "probe_20261029T1938.json").write_text(json.dumps({"article": "Bitcoin", "server_date": "2026-10-29 19:38:18+00:00", "last_day_present": "2026-10-28",
