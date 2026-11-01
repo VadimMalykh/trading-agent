@@ -113,6 +113,11 @@ def cmd_wiki(args):
     wiki.main(args.action, args.start, args.end)
 
 
+def cmd_mix(args):
+    from . import mix
+    mix.main(args.action, args.symbols)
+
+
 def cmd_krlist(args):
     from . import krlist
     krlist.main(args.action, fetch=args.fetch)
@@ -548,6 +553,9 @@ def main(argv=None):
     wkp.add_argument("action", choices=["names", "articles", "probe", "fetch", "ingest", "audit"])
     wkp.add_argument("--start", default="2021-12-01", help="fetch / ingest: the first day")
     wkp.add_argument("--end", default=None, help="fetch / ingest: the last day (default yesterday / today)")
+    mxp = sub.add_parser("mix", help="P8 (R73, decision BR1): the perpetual's hourly participant mix per member — the trade count, quote volume and taker-buy quote volume summed from the archive's 5m kline zips already on the work VM → data/perp_mix_1h.parquet, output/perp_mix_audit.md (see ft2/mix.py)")
+    mxp.add_argument("action", choices=["ingest", "audit", "fingerprint"])
+    mxp.add_argument("--symbols", nargs="*", default=None, help="ingest: a subset of the member symbols (default every member with 5m zips)")
     hlp = sub.add_parser("hl", help="P8 (decision BJ2): Hyperliquid's hourly funding and mark premium per name as a source — the venue's info API for the twelve's and the screener's members' coins, Binance's 1h premium index beside them → data/raw/external/hyperliquid/, data/hl_funding_1h.parquet, data/premium_1h.parquet, output/hl_audit.md (see ft2/hl.py)")
     hlp.add_argument("action", choices=["symbols", "fetch", "bnprem", "ingest", "audit"])
     hlp.add_argument("--start", default="2023-04-01", help="fetch / bnprem: the first stamp / month asked for")
@@ -605,7 +613,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "spot": cmd_spot, "wiki": cmd_wiki, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
