@@ -369,3 +369,119 @@ def test_the_data_line_voids_on_a_changed_old_name_and_writes_the_coverage(tmp_p
     assert r["fingerprint"]["pass"] and r["coverage"]["events_complete"] == 1 and r["coverage"]["names_over_2026"]["btc"]["under_95pct"] == ["BTCUSDT"]
     cn = pd.read_csv(tmp_path / "r76_data" / "coverage_names.csv").set_index("symbol")
     assert cn.loc["A1USDT", "group"] == "f5" and cn.loc["B1USDT", "group"] == "basket" and abs(cn.loc["A1USDT", "share"] - 59 / 257) < 1e-9
+
+
+# ---- R76: the confirmation read — R75's candidate BOUGHT on the frozen F5 list, 7 days, in money, once ------------------------------------
+def _settlements5(t0s):
+    """R75's planted archive with EV3 shortened twice: 4 h → 2 h at its t0, 2 h → 1 h two days later (a second event while the position is open)."""
+    S = _settlements(t0s)
+    t0 = t0s[2]
+    S = S[~((S["symbol"] == EV[2]) & (S["ts"] >= t0))]
+    rows = [{"symbol": EV[2], "ts": t0 + k * 2 * H, "rate": CARRY, "interval_h": 2} for k in range(0, 24)]
+    rows += [{"symbol": EV[2], "ts": t0 + 48 * H + k * H, "rate": CARRY, "interval_h": 1} for k in range(0, 24 * 7)]
+    return pd.concat([S, pd.DataFrame(rows)], ignore_index=True).sort_values(["symbol", "ts"]).reset_index(drop=True)
+
+
+def _events5(t0s, path):
+    L = _events(t0s, path)
+    L["fold"] = "F5"
+    L.loc[L["symbol"] == EV[2], ["prev_h", "new_h"]] = [4.0, 2.0]
+    twin = L[L["symbol"] == EV[2]].iloc[[0]].copy()
+    twin["t0"] = twin["ts_known"] = t0s[2] + 48 * H
+    twin[["prev_h", "new_h"]] = [2.0, 1.0]
+    L = pd.concat([L, twin], ignore_index=True)
+    L.to_csv(path, index=False)
+    return L
+
+
+def test_the_cells_are_one_position_per_name_while_a_position_is_open(tmp_path):
+    M, t0s = _market(weeks=2)
+    L = fundevent.load_events(_events5(t0s, tmp_path / "f5.csv").pipe(lambda d: (d.to_csv(tmp_path / "f5.csv", index=False), tmp_path / "f5.csv")[1]))
+    cl, twins, pos, lng = fundevent.cells5(L)
+    assert len(cl) == 8 and twins["symbol"].tolist() == [EV[2]] and twins["t0"].iloc[0] == t0s[2] + 48 * H and pos["symbol"].tolist() == [POS] and lng["symbol"].tolist() == [LNG]
+    far = L.copy()
+    far.loc[far.index[-1], "t0"] = t0s[2] + 8 * 24 * H                                                                    # eight days later: the position is closed, a cell of its own
+    assert len(fundevent.cells5(far)[0]) == 9
+
+
+def _plant5(tmp_path, monkeypatch, M, t0s, C, S):
+    monkeypatch.chdir(tmp_path)
+    lst = tmp_path / "fundfreq_f5.csv"
+    L = _events5(t0s, lst)
+    out = tmp_path / "output" / "listing"
+    out.mkdir(parents=True)
+    monkeypatch.setattr(fundevent, "OUT", out)
+    monkeypatch.setattr(fundevent, "LIST5", lst)
+    monkeypatch.setattr(fundevent, "LIST5_MD5", hashlib.md5(lst.read_bytes()).hexdigest())
+    monkeypatch.setattr(fundevent, "LIST5_ROWS", len(L))
+    monkeypatch.setattr(fundevent, "CELLS5", 8)
+    monkeypatch.setattr(fundevent, "MIN_CONFIRM", 5)
+    monkeypatch.setattr(fundevent, "MIN_MEMBERS", 3)
+    monkeypatch.setattr(fundevent, "DRAWS", 2000)
+    for tag in ("c", "c2", "d", "e"):
+        (out / f"{tag}_fingerprint_before.csv").write_text("symbol,rows\n")
+    monkeypatch.setattr(listing, "window", lambda folds: (M.index[0], M.index[-1] + BAR))
+    mem = pd.DataFrame({"block": [M.index[0].floor("D")] * len(MEM), "symbol": MEM})
+    monkeypatch.setattr(fundevent, "basket_members", lambda path=None: mem)
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): M)
+    monkeypatch.setattr(bt, "load_costs", lambda index, cols, end, cost_mult=1.0, close=None: C)
+    monkeypatch.setattr(fundfreq, "settlements", lambda: S)
+    plan = tmp_path / "PLAN.md"
+    plan.write_text("### R76 — the confirmation read (registered)\n")
+    monkeypatch.setattr(bt, "PLAN", plan)
+    monkeypatch.setattr(bt, "READS", tmp_path / "output" / "backtest" / "confirmation_reads.csv")
+    return L
+
+
+def test_a_planted_carry_confirms_bought_hedged_with_the_entry_day_doubled_and_the_guard_before_the_market(tmp_path, monkeypatch):
+    M, t0s = _market()
+    S = _settlements5(t0s)
+    C = _costs(M, S)
+    _plant5(tmp_path, monkeypatch, M, t0s, C, S)
+    loaded = []
+    real_market = bt.market
+    def market(syms, end, start=None, needs=()):
+        loaded.append(pd.read_csv(bt.READS)["registration"].tolist())
+        return real_market(syms, end, start, needs)
+    monkeypatch.setattr(bt, "market", market)
+    text = fundevent.confirm("R76", "c")
+    out = tmp_path / "output" / "listing" / "c"
+    assert loaded == [["R76"]] and pd.read_csv(bt.READS)["fold"].tolist() == ["F5"]
+    V = json.loads((out / "validity.json").read_text())
+    assert V["status"] == "PASS" and V["2_cells"] == 8 and len(V["2_second_events_described"]) == 1 and V["3_eligible"] == 8 and V["3_H_share"] == 1.0 and V["3_own_cost_row_share"] == 1.0
+    assert max(v for v in V["6_identity_max_abs_diff"].values() if not isinstance(v, bool)) <= 1e-9 and V["6_hand_max_abs_diff"] <= 1e-9 and V["6_hand_cells"] == 8
+    assert V["7_no_stop"] and V["7_t_equals_t0_plus_5min"] and V["8_cells_with_a_settlement_gap"] == 0 and V["8_settlements_per_cell_7d"]["max"] == 169 and V["8_settlements_per_cell_7d"]["min"] == 145   # the rows from t0 to the exit; EV3: two days of 2-h rows and five hourly … 24 + 121 = 145
+    N = json.loads((out / "confirm.json").read_text())
+    assert N["verdict"] == "CONFIRMED" and N["M"] > 1400 and N["se"] == max(N["se_bootstrap"], N["se_week"]) and 0 < N["M_heavy"] < N["M"]
+    T = pd.read_csv(out / "trades.csv")
+    assert len(T) == 8 and (~T["stopped"]).all() and ((T["x"] - T["e"]) == 2016).all() and (T["settlements_7d"] == [169] * 2 + [145] + [169] * 5).all()
+    assert np.allclose(T["leg_entry"], 2 * 6.5) and np.allclose(T["leg_exit"], 6.5)                                     # the entry day's legs doubled, the exit at the proxy
+    assert (T["hedge_cost"] > 0).all() and np.allclose(T["hedge"], -T["hedge_gain"] - T["hedge_cost"]) and np.allclose(T["H"], T["own"] + T["hedge"])   # the basket SOLD
+    assert np.allclose(T["funding"].iloc[[0, 1, 3]], 1680, atol=5) and (T["gross"].abs() < 30).all()                     # the carry received, the price flat
+    assert "runup_y" in T and "y_7d" in T and np.allclose(T["y_7d"], T["gross"] + T["funding"] - 0, atol=30)             # R75's frame on the same cells: a − the flat basket
+    assert "Verdict: CONFIRMED" in text and "SOLD at the revert" in text and "second events" in text and (out / "second_events.csv").exists() and (out / "lengthenings_sold.csv").exists()
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["registration"] == "R76" and meta["side"] == "long" and meta["seed"] == 76 and meta["hold"] == 2016
+    with pytest.raises(SystemExit):                                                                                       # a second read of F5 is refused by the ledger
+        fundevent.confirm("R76", "c2")
+    assert not (tmp_path / "output" / "listing" / "c2" / "confirm.json").exists()
+
+
+def test_a_planted_collapse_closes_the_confirmation(tmp_path, monkeypatch):
+    M, t0s = _market(collapse=-0.30)
+    S = _settlements5(t0s)
+    C = _costs(M, S)
+    _plant5(tmp_path, monkeypatch, M, t0s, C, S)
+    text = fundevent.confirm("R76", "d")
+    N = json.loads((tmp_path / "output" / "listing" / "d" / "confirm.json").read_text())
+    assert N["verdict"] == "CLOSED" and N["M"] < -500 and N["M"] + 1.96 * N["se"] < 0 and "Verdict: CLOSED" in text
+
+
+def test_an_unregistered_f5_list_voids_after_the_guard(tmp_path, monkeypatch):
+    M, t0s = _market()
+    S = _settlements5(t0s)
+    C = _costs(M, S)
+    _plant5(tmp_path, monkeypatch, M, t0s, C, S)
+    monkeypatch.setattr(fundevent, "LIST5_MD5", "0" * 32)
+    text = fundevent.confirm("R76", "e")
+    assert "**VOID" in text and pd.read_csv(bt.READS)["registration"].tolist() == ["R76"] and not (tmp_path / "output" / "listing" / "e" / "confirm.json").exists()

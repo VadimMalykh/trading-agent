@@ -26,6 +26,7 @@ validity   (1) the archive slice's fingerprint before (`fingerprint`) and after 
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -619,6 +620,270 @@ def data_line(fetch: bool = True) -> dict:
     return rep
 
 
+# ====================================================================================================================================
+# R76 — the confirmation read (PLAN §8 R76, decision BW1): R75's candidate BOUGHT on the frozen F5 list, 7 days, no stop, in money, once
+# ====================================================================================================================================
+LIST5 = fundfreq.LISTS["f5"]
+LIST5_MD5 = F5_LIST_MD5
+LIST5_ROWS, CELLS5 = 58, 26
+CONF_FOLDS = ("F5",)
+HOLD = 2016                                        # R75's candidate: 7 days
+ENTRY_MULT = 2.0                                   # the entry day's legs: this × the name's proxy row (R29's rule)
+HEAVY = (4.0, 2.0)                                 # the heavy reading: the entry day × 4, every other proxy cost × 2
+SEED_CONFIRM = 76
+MIN_CONFIRM, MIN_CONFIRM_SHARE, MIN_H_SHARE = 23, 0.90, 0.90
+HAND5 = 10
+STRATEGY5 = "fundfreq_bought_7d"
+
+
+def cells5(L: pd.DataFrame, hold: int = HOLD) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(the cells, the described second events, the positive-funding shortenings, the lengthenings): an at-floor shortening is a cell
+    unless the same name's previous cell is still open at its entry (t0 < the previous t0 + the hold + the entry's two bars) — one position
+    per name while a position is open; the first kept."""
+    short = L["dir"] == "shorter"
+    floor = short & L["at_floor"].astype(bool)
+    S = L[floor].sort_values(["t0", "symbol"]).reset_index(drop=True)
+    open_until: dict[str, pd.Timestamp] = {}
+    keep = []
+    for r in S.itertuples(index=False):
+        u = open_until.get(r.symbol)
+        if u is not None and r.t0 < u:
+            keep.append(False)
+        else:
+            keep.append(True)
+            open_until[r.symbol] = r.t0 + (hold + 1 + bt.LATENCY) * BAR
+    keep = np.array(keep, dtype=bool)
+    return S[keep].reset_index(drop=True), S[~keep].reset_index(drop=True), L[short & ~floor].reset_index(drop=True), L[~short].reset_index(drop=True)
+
+
+def bought_trades(M: bt.Market, C: bt.Costs, E: pd.DataFrame, mask: np.ndarray, taker_bps: float, entry_mult: float = ENTRY_MULT, other_mult: float = 1.0,
+                  hold: int = HOLD, shift: int = 0) -> pd.DataFrame:
+    """One BOUGHT unit per cell of E (its decision row `row`, + `shift` bars), the mirror of `listing.sold_trades`: `backtest.price` with the
+    side +1, the entry day's legs `entry_mult` × the proxy, every other `other_mult` × it, no stop; the hedge one unit of the basket SOLD at
+    the entry bar and bought back at the exit (−`listing.hedge`'s long gain − its round trip). H = own + hedge."""
+    close, idx = M.close.to_numpy(), M.index
+    own = M.columns.get_indexer(E["contract"])
+    rows = E["row"].to_numpy() + shift
+    e = rows + bt.LATENCY
+    x = e + hold
+    legs = listing.entry_day_legs(other_mult * C.taker_leg, C.days, idx[e].floor("D"), own, entry_mult / other_mult)
+    Cs = dataclasses.replace(C, taker_leg=legs)
+    dec = pd.DataFrame({"t": idx[rows], "symbol": E["contract"].to_numpy(), "side": 1, "hold": hold, "size": 1.0, "fold": E["fold"].to_numpy(), "accepted": True})
+    f = bt.price(dec, M, Cs, "taker", taker_bps, 2.0)
+    m = mask.copy()
+    m[np.arange(len(own)), own] = False
+    h = listing.hedge(close, C.fundval, other_mult * C.taker_leg, C.days, idx, e, x, m, taker_bps)
+    out = pd.DataFrame({"contract": E["contract"].to_numpy(), "fold": E["fold"].to_numpy(), "t": idx[rows], "e": e, "x": x, "stopped": False, "entry_t": f["entry_t"].to_numpy(), "exit_t": f["exit_t"].to_numpy(),
+                        "entry_px": f["entry_px"].to_numpy(), "exit_px": f["exit_px"].to_numpy(), "gross": f["gross_bps"].to_numpy(), "funding": f["funding_bps"].to_numpy(), "fee": f["fee_bps"].to_numpy(),
+                        "spread_impact": f["other_cost_bps"].to_numpy(), "own": f["net_bps"].to_numpy(), "leg_entry": legs[C.days.get_indexer(idx[e].floor("D")), own], "leg_exit": legs[C.days.get_indexer(idx[x].floor("D")), own]})
+    out = pd.concat([out, h], axis=1)
+    out["hedge"] = -out["hedge_gain"] - out["hedge_cost"]
+    out["H"] = out["own"] + out["hedge"]
+    return out
+
+
+def _arith5(M: bt.Market, C: bt.Costs, T: pd.DataFrame, own: np.ndarray, taker_bps: float) -> dict:
+    """Validity (6): the harness's fill is the module's own arithmetic (R29's check, the side +1); gross + funding of the bought unit is
+    `horizon.labels`' number at the decision row."""
+    close = M.close.to_numpy()
+    e, x = T["e"].to_numpy(), T["x"].to_numpy()
+    pe, px_ = close[e, own], close[x, own]
+    r = px_ / pe
+    mine = {"gross": (r - 1.0) * 1e4, "funding": -(C.fundval[x, own] - C.fundval[e, own]) / pe, "fee": taker_bps + taker_bps * r,
+            "spread_impact": T["leg_entry"].to_numpy() + T["leg_exit"].to_numpy() * r}
+    mine["own"] = mine["gross"] - mine["fee"] - mine["spread_impact"] + mine["funding"]
+    d = {k: float(np.nanmax(np.abs(v - T[k].to_numpy()))) if np.isfinite(T[k].to_numpy()).any() else 0.0 for k, v in mine.items()}
+    full = horizon.labels(M, C, HOLD, bt.LATENCY)[1].to_numpy()[(e - bt.LATENCY), own]
+    d["bought_gross_funding_vs_horizon_labels"] = float(np.nanmax(np.abs((T["gross"] + T["funding"]).to_numpy() - full)))
+    d["hold_is_2016"] = bool(((x - e) == HOLD).all())
+    return d
+
+
+def _group5(T: pd.DataFrame, key: str, labels, col: str = "H") -> pd.DataFrame:
+    out = []
+    vals = T[key]
+    for v in (sorted(vals.unique(), key=str) if labels is None else (True, False)):
+        g = T.loc[vals == v, col].dropna()
+        out.append({"split": key, "group": str(v) if labels is None else labels[0 if v else 1], "n": int(len(g)), "M": float(g.mean()) if len(g) else np.nan,
+                    "median": float(g.median()) if len(g) else np.nan, "share_above_0": float((g > 0).mean()) if len(g) else np.nan, "se_plain": float(g.std(ddof=1) / np.sqrt(len(g))) if len(g) > 1 else np.nan})
+    return pd.DataFrame(out)
+
+
+def basket_members(path: Path | str | None = None) -> pd.DataFrame:
+    m = universe.members(path or universe.F34_MEMBERS_CSV)
+    return m[m["block"] == BASKET_BLOCK].reset_index(drop=True)
+
+
+def confirm(registration: str | None, name: str = "r76", taker_bps: float = TAKER_BPS, reexecute: str | None = None) -> str:
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    fp_before, _ = fp_paths(name)
+    L = load_events(LIST5)
+    list_md5 = md5(LIST5)
+    cl, twins, pos, lng = cells5(L)
+    pre = {"1_fingerprint_before": "saved" if fp_before.exists() else "MISSING", "1_fingerprint_after": f"pending → `ft2 fundevent check --name {name}` after the run",
+           "2_list_md5": list_md5, "2_list_md5_as_registered": list_md5 == LIST5_MD5, "2_list_rows": int(len(L)), "2_at_floor_shortenings": int(len(cl) + len(twins)), "2_cells": int(len(cl)), "2_cells_as_registered": len(cl) == CELLS5,
+           "2_second_events_described": twins[["symbol", "t0"]].astype(str).to_dict("records"), "2_positive_funding_described": pos[["symbol", "t0"]].astype(str).to_dict("records"), "2_lengthenings_described": int(len(lng))}
+    params = {"hold": HOLD, "stop": None, "wait": WAIT, "side": "long", "entry_mult": ENTRY_MULT, "heavy": list(HEAVY), "basket_block": str(BASKET_BLOCK.date()), "list": LIST5.name, "list_md5": list_md5, "cells": int(len(cl)), "seed": SEED_CONFIRM}
+    conf = bt._guard(CONF_FOLDS, registration, reexecute)          # registered, and once (refuses before anything is loaded)
+    tagged = bt.read_tag(registration, reexecute)
+    stamp = guard_rows(bt.READS, conf, tagged, STRATEGY5, params)  # the row (R76[/tag], F5) NOW — before the funding archive is re-read and before the market
+    pre["guard"] = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf), "logged_as": tagged}
+    print(f"guard: ({tagged}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the funding archive and the F5 market are loaded now", flush=True)
+
+    red = rederived(L)
+    S = fundfreq.settlements()
+    a0, end = listing.window(CONF_FOLDS)
+    mem = basket_members()
+    syms = list(dict.fromkeys([*cl["symbol"], *twins["symbol"], *pos["symbol"], *lng["symbol"], *mem["symbol"].astype(str), BTC]))
+    M = bt.market(syms, end, a0 - pd.Timedelta(days=1))
+    C = bt.load_costs(M.index, M.columns, end, close=M.close)
+    close, idx, fv = M.close.to_numpy(), M.index, C.fundval
+    E_all = entries(M, cl, end, a0, longest=HOLD)
+    E_all["why"] = E_all["why"].replace({"before the first member block": "before F5's first day", "the 7-day exit is not before the end": "the 7-day exit is not before F5's end"})
+    E = E_all[E_all["eligible"]].reset_index(drop=True)
+    own = M.columns.get_indexer(E["symbol"])
+    rows, t = E["row"].to_numpy(), pd.DatetimeIndex(E["t"])
+    mask = listing.member_mask(mem, M.columns, t)
+    T = bought_trades(M, C, _frame(E), mask, taker_bps, entry_mult=ENTRY_MULT, other_mult=1.0, hold=HOLD)
+    TH = bought_trades(M, C, _frame(E), mask, taker_bps, entry_mult=HEAVY[0], other_mult=HEAVY[1], hold=HOLD)
+    for k in ("t0", "ts_known", "era", "member_at_t0", "new_h", "prev_h", "fund_1d"):
+        T[k], TH[k] = E[k].to_numpy(), E[k].to_numpy()
+
+    # validity, read first
+    span = [float(np.isfinite(close[r:r + bt.LATENCY + HOLD + 1, c]).mean()) for r, c in zip(rows, own)]
+    d6 = _arith5(M, C, T, own, taker_bps)
+    hand_idx = np.linspace(0, len(E) - 1, min(HAND5, len(E))).round().astype(int) if len(E) else np.array([], dtype=int)
+    hand = pd.DataFrame([{"symbol": E.loc[i, "symbol"], "funding_hand": hand_a(close, idx, S, E.loc[i, "symbol"], own[i], rows[i] + bt.LATENCY, rows[i] + bt.LATENCY + HOLD)[1], "funding": float(T.loc[i, "funding"]),
+                          "settlements": hand_a(close, idx, S, E.loc[i, "symbol"], own[i], rows[i] + bt.LATENCY, rows[i] + bt.LATENCY + HOLD)[2]} for i in hand_idx])
+    if len(hand):
+        hand["diff"] = (hand["funding_hand"] - hand["funding"]).abs()
+    gaps = pd.DataFrame([settlement_gaps(S, s, t0, idx[r + bt.LATENCY + HOLD]) for s, t0, r in zip(E["symbol"], E["t0"], rows)]) if len(E) else pd.DataFrame(columns=["n_rows", "max_gap_ratio", "gap"])
+    T["settlements_7d"], T["settlement_gap"] = gaps["n_rows"].to_numpy(), gaps["gap"].to_numpy()
+    cday = C.days.get_indexer(idx[rows + bt.LATENCY].floor("D"))
+    own_row = np.array([bool(p >= 0 and np.isfinite(C.taker_leg[p, c])) for p, c in zip(cday, own)])
+    unpriced = T.loc[T["H"].isna(), "contract"].tolist()
+    V = dict(pre)
+    V.update({"2_rederived": red,
+              "3_eligible": int(len(E)), "3_eligible_share": float(len(E) / len(cl)) if len(cl) else 0.0, "3_H_share": float(T["H"].notna().mean()) if len(T) else 0.0, "3_unpriced": unpriced,
+              "3_own_cost_row_share": float(own_row.mean()) if len(E) else 0.0,
+              "4_min_share_of_bars": float(min(span)) if span else 0.0, "4_cells_under_95pct_bars": int(sum(v < MIN_BARS for v in span)),
+              "5_min_basket": int(T["n_b"].min()) if len(T) else 0,
+              "6_identity_max_abs_diff": d6, "6_hand_cells": int(len(hand_idx)), "6_hand_max_abs_diff": float(hand["diff"].max()) if len(hand) else np.nan,
+              "7_t_equals_t0_plus_5min": bool((t == pd.DatetimeIndex(E["t0"]) + WAIT * BAR).all()) if len(E) else False, "7_ts_known_equals_t0": bool((pd.DatetimeIndex(E["ts_known"]) == pd.DatetimeIndex(E["t0"])).all()) if len(E) else False,
+              "7_no_stop": bool(not T["stopped"].any()) if len(T) else True, "7_exits_at_or_after_end": int((pd.DatetimeIndex(T["exit_t"]) >= end).sum()) if len(T) else 0,
+              "8_cells_with_a_settlement_gap": int(T["settlement_gap"].sum()) if len(T) else 0, "8_gap_share": float(T["settlement_gap"].mean()) if len(T) else 0.0,
+              "8_settlements_per_cell_7d": {"min": int(T["settlements_7d"].min()), "median": float(T["settlements_7d"].median()), "max": int(T["settlements_7d"].max())} if len(T) else {}})
+    V["status"] = "PASS" if (V["1_fingerprint_before"] == "saved" and V["2_list_md5_as_registered"] and len(L) == LIST5_ROWS and V["2_cells_as_registered"] and red.get("status") == "PASS"
+                             and V["3_eligible_share"] >= MIN_CONFIRM_SHARE and len(E) >= MIN_CONFIRM and V["3_H_share"] >= MIN_H_SHARE and V["3_own_cost_row_share"] >= MIN_OWN_COST
+                             and V["4_cells_under_95pct_bars"] == 0 and V["5_min_basket"] >= MIN_MEMBERS
+                             and max(v for v in d6.values() if not isinstance(v, bool)) <= 1e-9 and d6["hold_is_2016"] and V["6_hand_max_abs_diff"] <= 1e-9
+                             and V["7_t_equals_t0_plus_5min"] and V["7_ts_known_equals_t0"] and V["7_no_stop"] and V["7_exits_at_or_after_end"] == 0
+                             and V["8_gap_share"] <= MAX_GAP_SHARE) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(V, indent=1, default=str))
+    E_all.to_csv(out / "cells_all.csv", index=False)
+    hand.to_csv(out / "hand_check.csv", index=False)
+    md = [f"# R76 — the confirmation read of R75's candidate on F5: the squeeze flag bought, 7 days, in money (`ft2 fundevent confirm`)\n",
+          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · unit {bt.UNIT}, charged on {bt.CHARGED} · market {idx[0]:%Y-%m-%d} → {idx[-1]:%Y-%m-%d %H:%M}, {len(M.columns)} names · the list `{LIST5.name}` md5 {list_md5} · {len(L)} rows, {len(cl)} cells ({len(twins)} second events, {len(pos)} positive-funding, {len(lng)} lengthenings described) · the basket {BASKET_BLOCK.date()} ({len(mem)} names)\n",
+          f"\n## Validity: {V['status']} (the fingerprint after the run is `ft2 fundevent check --name {name}`'s)\n", "\n```\n" + json.dumps(V, indent=1, default=str) + "\n```\n",
+          "\nCells by what became of them:\n", E_all["why"].replace("", "eligible").value_counts().rename("cells").to_frame().to_markdown(), "\n"]
+    if V["status"] != "PASS":
+        md += ["\n**VOID — the number is not computed. The guard row stands in the ledger: F5 is read for this question.**\n"]
+        (out / "confirm.md").write_text("\n".join(md))
+        return "\n".join(md)
+
+    # the number
+    ok = T["H"].notna().to_numpy()
+    N = listing.noise(T["H"].to_numpy()[ok], t[ok], seed=SEED_CONFIRM)
+    m_heavy = float(TH["H"].mean())
+    N.update({"M_heavy": m_heavy, "MDE": 2.8 * N["se"], "verdict": listing.verdict_confirm(N["M"], N["se"], m_heavy)})
+    (out / "confirm.json").write_text(json.dumps(N, indent=1))
+    T.to_csv(out / "trades.csv", index=False)
+    TH.to_csv(out / "trades_heavy.csv", index=False)
+    md += [f"\n## The number — H = own + hedge, bps of the bought unit; {N['n']} positions in {N['weeks']} weeks; the gate's se the larger of the bootstrap's and the week-clustered\n",
+           pd.DataFrame([{k: N[k] for k in ("n", "M", "se", "u", "MDE", "M_heavy", "se_bootstrap", "se_week", "se_plain", "verdict")}]).round(3).to_markdown(index=False), "\n",
+           f"\n**Verdict: {N['verdict']}.**\n"]
+    (out / "confirm.md").write_text("\n".join(md))                # the read is on disk before anything is described
+    (out / "meta.json").write_text(json.dumps({"registration": tagged, "decision": "BW1", "unit": bt.UNIT, "charged": bt.CHARGED, "hold": HOLD, "stop": None, "wait": WAIT, "side": "long", "entry_mult": ENTRY_MULT,
+                                                "heavy": HEAVY, "basket_block": str(BASKET_BLOCK.date()), "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": SEED_CONFIRM, "rows": int(len(L)), "cells": int(len(cl)), "eligible": int(len(E)),
+                                                "taker_bps": taker_bps, "list_md5": list_md5, "verdict": N["verdict"]}, indent=1))
+    try:
+        md += _describe5(out, M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, twins, pos, lng, end, a0)
+    except Exception as exc:  # noqa: BLE001 — a description that fails must not take the logged read with it
+        import traceback
+        md += ["\n## Described — FAILED (the read above stands; describe from trades.csv)\n", "\n```\n" + "".join(traceback.format_exception(exc)) + "\n```\n"]
+    T.to_csv(out / "trades.csv", index=False)
+    text = "\n".join(md)
+    (out / "confirm.md").write_text(text)
+    return text
+
+
+def _describe5(out, M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, twins, pos, lng, end, a0) -> list[str]:
+    """R76's described tables — decide nothing."""
+    close, idx, fv = M.close.to_numpy(), M.index, C.fundval
+    rows = E["row"].to_numpy()
+    parts = ["gross", "funding", "fee", "spread_impact", "own", "hedge_gain", "hedge_cost", "hedge", "H"]
+    by = pd.concat([T[parts].mean().rename("mean"), T[parts].median().rename("median"), TH[parts].mean().rename("heavy mean")], axis=1).T
+    by.insert(0, "n", [len(T), len(T), len(TH)])
+    No = listing.noise(T["own"].to_numpy()[ok], t[ok], seed=SEED_CONFIRM)
+    H = T["H"].dropna()
+    tail = {"largest_loss_H": float(H.min()), "largest_gain_H": float(H.max()), "positions_losing_over_half": int((T["own"] < -5000).sum()), "M_losses_capped_at_size": float(np.maximum(T["H"].to_numpy(), -1e4)[ok].mean()),
+            "share_above_0": float((H > 0).mean()), "median_H": float(H.median()), **{f"q{int(x * 100):02d}": float(H.quantile(x)) for x in (0.05, 0.25, 0.75, 0.95)}, "M_trim3": listing.trimmed(H.to_numpy(), 3),
+            "M_without_largest_3": float(np.sort(H.to_numpy())[:-3].mean()) if len(H) > 3 else np.nan, "price_part_mean": float(T["gross"].mean()), "funding_part_mean": float(T["funding"].mean()),
+            "price_part_median": float(T["gross"].median()), "funding_part_median": float(T["funding"].median())}
+    splits = pd.concat([_group5(T, "era", None), _group5(T, "new_h", None)], ignore_index=True)
+    # R75's frame on these cells (no cost): the run-up and y at the three holds against the basket's mean
+    ru_a, ru_b, _ = listing.excess(listing.label_at(close, fv, rows - WAIT - RUNUP - bt.LATENCY, RUNUP), own, mask)
+    ru = ru_a - ru_b
+    T["runup_y"] = ru
+    ys = {}
+    for h in HOLDS:
+        a_, b_, _ = listing.excess(listing.label_at(close, fv, rows, h), own, mask)
+        ys[h] = a_ - b_
+        T[f"y_{_days(h)}"] = ys[h]
+    runup = {"n": int(np.isfinite(ru).sum()), "median": float(np.nanmedian(ru)), "mean": float(np.nanmean(ru)), "share_ge_500": float(np.nanmean(ru >= 500)), "share_ge_2000": float(np.nanmean(ru >= 2000)), "share_below_0": float(np.nanmean(ru < 0))}
+    hi, lo = ok & (ru >= 2000), ok & ~(ru >= 2000)
+    runup["H_runup_ge_2000"] = {"n": int(hi.sum()), "M": float(T.loc[hi, "H"].mean()) if hi.any() else np.nan}
+    runup["H_runup_under_2000"] = {"n": int(lo.sum()), "M": float(T.loc[lo, "H"].mean()) if lo.any() else np.nan}
+    yrows = pd.DataFrame([{"hold": _days(h), "n": int(np.isfinite(ys[h]).sum()), "M_y": float(np.nanmean(ys[h])), "median_y": float(np.nanmedian(ys[h])), "share_above_0": float(np.nanmean(ys[h] > 0)),
+                           "se_plain": float(np.nanstd(ys[h], ddof=1) / np.sqrt(np.isfinite(ys[h]).sum()))} for h in HOLDS])
+    # the described rows that are not cells: the second events, the positive-funding shortenings, the lengthenings as the sold mirror
+    def _priced_rows(D: pd.DataFrame, side: int) -> pd.DataFrame:
+        if not len(D):
+            return D
+        DA = entries(M, D, end, a0, longest=HOLD)
+        DE = DA[DA["eligible"]].reset_index(drop=True)
+        if not len(DE):
+            return DE
+        dm = listing.member_mask(mem, M.columns, pd.DatetimeIndex(DE["t"]))
+        if side > 0:
+            return bought_trades(M, C, _frame(DE), dm, taker_bps, entry_mult=ENTRY_MULT, other_mult=1.0, hold=HOLD)
+        return listing.sold_trades(M, C, _frame(DE), dm, taker_bps, entry_mult=ENTRY_MULT, other_mult=1.0, hold=HOLD, level=np.inf)
+    TW, TP, TG = _priced_rows(twins, 1), _priced_rows(pos, 1), _priced_rows(lng, -1)
+    for nm, D in (("second_events", TW), ("positive_funding", TP), ("lengthenings_sold", TG)):
+        if len(D):
+            D.to_csv(out / f"{nm}.csv", index=False)
+    mirror = {"n": int(TG["H"].notna().sum()), "M_H_sold": float(TG["H"].mean()), "median_H_sold": float(TG["H"].median()), "share_above_0": float((TG["H"] > 0).mean()), "se_plain": float(TG["H"].std(ddof=1) / np.sqrt(TG["H"].notna().sum()))} if len(TG) else {}
+    late = E[rows + LATE + bt.LATENCY + HOLD < len(idx)].reset_index(drop=True)
+    TL = bought_trades(M, C, _frame(late), listing.member_mask(mem, M.columns, pd.DatetimeIndex(late["t"]) + LATE * BAR), taker_bps, entry_mult=ENTRY_MULT, other_mult=1.0, hold=HOLD, shift=LATE) if len(late) else pd.DataFrame({"H": []})
+    mo = T.assign(m=t.tz_localize(None).to_period("M").astype(str)).groupby("m")["H"].agg(["size", "mean", "median"])
+    md = ["\n## Described — decides nothing\n", "\nH's parts (the mean, the median; `heavy` = the entry day at four times the proxy, every other proxy cost doubled):\n", by.round(1).to_markdown(), "\n",
+          f"\n- the bought unit alone (own): mean {No['M']:.1f}, se {No['se']:.1f} (bootstrap {No['se_bootstrap']:.1f}, week {No['se_week']:.1f}, plain {No['se_plain']:.1f}), u {No['u']:.2f}\n",
+          "- H's distribution, the tail, the parts:\n", "\n```\n" + json.dumps(tail, indent=1) + "\n```\n",
+          "\nThe splits (the era; the new interval):\n", splits.round(1).to_markdown(index=False), "\n",
+          "\nThe run-up (y over t0 − 24 h → t0 against the basket, no cost — R75's frame) and H on its halves at +2,000 (a description, never a gate):\n", "\n```\n" + json.dumps(runup, indent=1, default=str) + "\n```\n",
+          "\nR75's own number on these cells (y = a − the basket's mean, no cost; R75 on F3+F4: 1d +1,080, 3d +945, 7d +2,200) — the three holds unpriced:\n", yrows.round(1).to_markdown(index=False), "\n",
+          "\nBy calendar month of the entry (positions, mean H, median H):\n", mo.round(1).to_markdown(), "\n",
+          "\nThe second events of a name with a position open (described, never cells; their H by the same rule):\n", (TW[["contract", "t", "gross", "funding", "own", "hedge", "H"]].round(1).to_markdown(index=False) if len(TW) else "none"), "\n",
+          "\nThe positive-funding shortenings (described):\n", (TP[["contract", "t", "gross", "funding", "own", "hedge", "H"]].round(1).to_markdown(index=False) if len(TP) else "none"), "\n",
+          "\nThe lengthenings as the mirror — a unit SOLD at the revert, the same pricing, hedged:\n", "\n```\n" + json.dumps(mirror, indent=1) + "\n```\n",
+          f"\n- the entry a day later, the same costs (reference): mean H {TL['H'].mean():.1f}, median {TL['H'].median():.1f} ({len(TL)} positions)\n",
+          "\nThe hour of t (UTC):\n", t.hour.value_counts().sort_index().rename("positions").to_frame().to_markdown(), "\n",
+          "\nThe settlements inside the hold per cell: " + json.dumps({"min": int(T["settlements_7d"].min()), "median": float(T["settlements_7d"].median()), "max": int(T["settlements_7d"].max())}) + "\n",
+          "\nThe five best and the five worst positions:\n", pd.concat([T.nlargest(5, "H"), T.nsmallest(5, "H")])[["contract", "entry_t", "era", "runup_y", "gross", "funding", "own", "hedge", "H"]].round(0).to_markdown(index=False), "\n"]
+    return md
+
+
 def main(action: str, name: str | None = None, registration: str | None = None, reexecute: str | None = None) -> None:
     if action == "fingerprint":
         print(fingerprint(name))
@@ -633,3 +898,8 @@ def main(action: str, name: str | None = None, registration: str | None = None, 
             sys.exit(2)
     elif action == "data":
         data_line(fetch=True)
+    elif action == "confirm":
+        text = confirm(registration, name or "r76", reexecute=reexecute)
+        print(text)
+        if "**VOID" in text:
+            sys.exit(2)
