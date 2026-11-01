@@ -467,6 +467,30 @@ archive's row where both hold one (the first run's crowd row was empty before th
 second venue's listing a described row); t0 and `ts_known` as frozen; nothing about an event's price was read here — the run-up, the
 give-back and the venue split are the registration's. Decision BN DECIDED 2026-10-29 ("BN2"): R70 REGISTERED and READ the same day (PLAN §8) — CLEARS at 1 day, the sold side −242 bps against the members (the run-up before the bar +644 at the median); R71 READ 2026-10-29 on the frozen F3+F4 list (64 cells; the first run VOID on validity (5) — the seven F1+F2-only members had no cost row past 2024-08-31 after BM1's fetch, `costwide` re-run under §3's `costs`: 271,624 rows, 584 names, every old row unchanged, the file before kept on the VM as `cost_daily_wide_before_r71.parquet`): NOT CONFIRMED — H −135.5 a position [se 328], u −0.41; F3 +422 / F4 −628; the give-back in the MEDIAN on both lists (y_1d median −452, 80 % below zero) and not in the mean (HYPER, MON, XPL ran on against the seller by 0.7 … 1.5× the size, HYPER's funding −6,416 in a day); F3+F4 spent for this question, F5's listings the revival (PLAN §7). A trap of the lists: PYTH's two rows (F1+F2) and three pairs on F3+F4 are a same-name same-hour listing on both venues — one set of bars, two rows.**
 
+### perp_mix_1h (the PERPETUAL's hourly participant mix per member — the trade count, quote volume, taker-buy quote volume, volume, last close and bar count, summed from the archive's monthly 5m kline zips already on the work VM; R73's Data line, decision BR1, 2026-11-01) — `data/perp_mix_1h.parquet`: `(symbol, ts, ts_known) → close, volume, quote_volume, count, taker_buy_volume, taker_buy_quote_volume, bars`
+
+`ft2 mix ingest|audit|fingerprint` (`ft2/mix.py`; `tests/test_p8_mix.py`). **Source:** no new download — the archive's monthly 5m zips under
+`data/raw/external/binance/klines/<SYM>/` (§9 #2's fetch for R23 / R25: the F1+F2 members through 2024-08, the F3+F4 members through
+2025-12; 631 symbol directories, 3.1 GB; `.zip.ok` beside every file), whose column 9 `count` (the bar's number of trades) and column 8
+`quote_volume` were never ingested (`candles_5m_archive` kept OHLCV). Every symbol of the two member files with zips (310 of 310), one
+symbol at a time; the 5m bars whose END lies in (H, H + 1 h] summed into the hour `ts` = H, **known at `ts_known` = H + 1 h** (the
+spot table's rule), `bars` = the number summed. **Built and audited 2026-11-01 on the work VM (≈ 25 min), BEFORE `ft2/mix_ext.py` was
+written; no count joined to a label or a price.** **FINGERPRINT (R73's validity (1) compares the run's table against it):** 5,005,729 rows,
+310 symbols, 2021-11-01 00:00 → 2025-12-31 23:00 UTC, Σ count 85,595,190,688, Σ quote_volume 22,598,540,430,854.01. **Measured
+(`output/perp_mix_audit.md` / `.json`):** hours with fewer than 12 bars: median share 0.0000, max 0.0009 (PIEVERSE, BEAT, FOLKS — their
+first hours); zero-trade hours: median share 0.0000, but COCOS 0.80 (a dead listing 2023-02 → 2024-05), TROY 0.61, STRAX 0.52 (the 2024
+migration), REEF 0.32, FTM 0.24, BNX 0.22 — the log count is NaN only where a whole trailing day has no trade; the median name trades 7,330
+times an hour at a median trade of 137 USDT. **The aggregation check** — the hour's `quote_volume` over Σ volume × close of the same hour
+from `candles_5m_archive` on R68's 256 kept names: the median ratio 1.0000 on every name (range 0.99991 … 1.00005), the share of hours more
+than 5 % off 1 at most 0.0005 — the same zips feed both, the hours line up. **The members' cover per block:** 60 of 60 on every F1+F2 block
+but 2024-07-31 (59) and 2024-08-30 (57); F3+F4 59 … 60 (2025-12-29 0 — the zips end 2025-12-31 and the last block has no whole hour). **The
+overlap with the spot table on R68's 256 kept names** (the combined quantity needs both bars in the hour): both bars on a median 93.3 % of a
+kept name's perp hours; 13 names under 50 % (REEF 5 %, MORPHO 22 %, TOMO 25 %, BIGTIME 33 %, ONDO 37 %, TROY 39 %, PUMP / OMG / WAVES / FTM /
+OCEAN / AUDIO 42 … 45 % — spot listed later or delisted; AUDIO / OCEAN / FTM / WAVES among R62's different-asset names); **the spot share
+of the hour's count: median 0.172 across names (p10 0.115, p90 0.266)** — the perpetual carries five trades in six. **Rule for any
+registration: a count is read at `ts_known` and no earlier; R73 (PLAN §8) is the registration — the two markets together, R68's frozen list,
+two cells, the signs − / +; nothing here was joined to a price.**
+
 ### spot_1h (Binance spot, hourly, the twelve's and the screener's members' `<BASE>USDT` markets; decision BH1, §9 #3) — `data/spot_1h.parquet`: `(spot_symbol, symbol, ts, ts_known, open, high, low, close, volume, quote_volume, count, taker_buy_volume, taker_buy_quote_volume)`
 
 `ft2 spot symbols|fetch --listed-only|ingest|audit` (`scripts/bh1_chain.sh`; raw month files under `data/raw/external/binance_spot/klines/<SYMBOL>/`,

@@ -52,7 +52,8 @@ R68_CSV = Path(__file__).with_name("spot_members_r68.csv")
 OUT_MD = Path("output/ceiling_mix_members.md")
 OUT_DIR = Path("output/ceiling_mix_members")
 # the tables as audited BEFORE this module (DATA.md `perp_mix_1h` / `spot_1h`): validity (1) compares the run's tables with these
-PERP_FP: dict | None = None            # filled from the VM audit's fingerprint (rows, symbols, first, last, count_sum, quote_volume_sum) before the run
+PERP_FP = {"rows": 5_005_729, "symbols": 310, "first": "2021-11-01 00:00:00+00:00", "last": "2025-12-31 23:00:00+00:00", "count_sum": 85_595_190_688,
+           "quote_volume_sum": 22_598_540_430_854.01}            # the VM audit 2026-11-01 (output/perp_mix_audit.md; DATA.md `perp_mix_1h`)
 SPOT_FP = {"rows": 6_279_915, "symbols": 272}
 
 
