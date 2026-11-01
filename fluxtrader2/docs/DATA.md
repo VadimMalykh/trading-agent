@@ -700,6 +700,19 @@ the old copy `data/cost_daily_wide_before_bu1.parquet`; a first `--universe all`
 not cover 7 of the old names); the shortenings' taker round trip on t0's day 18.8 bps at the median, on the day before 42.1 (the squeeze day
 is dearer); missing on day 0: AERGO 2025-04-16, CTK 2025-04-30 and LIT (no bars) on F3+F4, every F5 event.
 
+### F5 Data line for R76 (decision BW1, 2026-11-01; `ft2 fundevent data`, `scripts/bw1_fetch.sh`, 18:12 → 18:35 UTC on the work VM; `output/listing/r76_data/`)
+
+Nothing read: the names are the frozen F5 list's 32 (`ft2/fundfreq_f5.csv`: 25 shortening names + 7 lengthening-only), F4's last member
+block (2025-12-29, 60 names, the hedge basket carried forward into 2026) and BTC — 91 names. The 2026-01 → 2026-09 monthly 5m klines
+from the archive (812 files fetched, 7 already on disk, 0 bad / missing); `candles_5m_archive` re-ingested whole under `krlist.fingerprint`
+(PASS: 598 names before and after, 0 changed): 90,633,329 rows, 2019-12-31 → 2026-09-30 23:55. `funding_archive`: the names' newer rows
+appended (47,757 rows on 83 names; every old row identical; the parquet 1,900,834 rows, 598 names, to 2026-09-30 23:00; 26 (name, month)
+fundingRate files absent at the archive — listed after or delisted before). `cost_daily_wide`: `costwide --symbols` for the 91 names merged
+into the parquet it replaced (78,767 new rows on 90 names, 55,278 overlapping rows identical to 0.0; 295,984 rows, 584 names; the old copy
+`data/cost_daily_wide_before_bw1.parquet`, the funding's `data/funding_archive_before_bw1.parquet`). Coverage: all 58 F5 event windows
+(t0 − 2 d → t0 + 8 d) complete at ≥ 95 %; every one of the 91 names at 100 % of the bars over 2026-01-01 → 2026-09-15. F5's end for R76:
+2026-09-15 (the fold as defined; frozen at R76's read).
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
