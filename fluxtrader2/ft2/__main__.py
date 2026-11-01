@@ -179,6 +179,11 @@ def cmd_krevent(args):
     krevent.main(args.action, args.name, args.registration, args.reexecute)
 
 
+def cmd_fundevent(args):
+    from . import fundevent
+    fundevent.main(args.action, args.name, args.registration, args.reexecute)
+
+
 def cmd_universe(args):
     from . import universe
     if args.screen:
@@ -621,6 +626,11 @@ def main(argv=None):
     ke.add_argument("--name", default=None, help="run / confirm: the output directory under output/listing/ (default r70 / r71); fingerprint / check: the tag of the fingerprint files (r71 for the confirmation)")
     ke.add_argument("--reexecute", default=None, help="confirm: the tag of a re-execution the plan names (PLAN §3; `re-execution `<tag>``) — logged as R<n>/<tag> beside the first read, which stays")
     ke.add_argument("--registration", default=None, help="confirm: R71 — a guarded read of F3+F4, made once and logged before the market is loaded; `recheck` reproduces R70's pricing through the confirmation's path first (validity (3))")
+    fe = sub.add_parser("fundevent", help="P8, R75 (decision BV1): the exchange's squeeze flag bought — LONG the perpetual at the at-floor shortenings of its funding interval on the frozen ft2/fundfreq_f34.csv, 1/3/7 days against the F3+F4 members — `fingerprint` saves the archive slice's per-name fingerprint before the run, `run --registration R75` the guarded read of F3+F4 (the ledger rows before the market) → output/listing/r75/, `check` compares the fingerprint after (see ft2/fundevent.py)")
+    fe.add_argument("action", choices=["fingerprint", "run", "check"])
+    fe.add_argument("--name", default=None, help="run: the output directory under output/listing/ (default r75); fingerprint / check: the tag of the fingerprint files")
+    fe.add_argument("--registration", default=None, help="run: R75 — F3+F4 are read once, logged before the funding archive and the market are loaded")
+    fe.add_argument("--reexecute", default=None, help="run: the tag of a re-execution the plan names (PLAN §3) — logged as R<n>/<tag> beside the first read, which stays")
     sv =sub.add_parser("serve", help="P7: R14 paper-traded live on the serve host → output/serve/ (see ft2/serve.py, docs/SERVE.md)")
     sv.add_argument("action", choices=["seed", "fetch", "start", "decide", "mark", "status", "check", "replay", "ledger"])
     sv.add_argument("--src", default="data/candles_5m.parquet", help="seed: the collector's 5m candles (on the work VM)")
@@ -630,7 +640,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
