@@ -13360,6 +13360,26 @@ Data line:     decision BZ1's, run FIRST on the work VM (`scripts/r78_data.sh`; 
                the overlap to 1e-9); then `fundep audit` again for the counts (the eligibility, the cost presence). Coverage recorded: the
                309 windows' shares (t0 − 2 d → t0 + 8 d), the 294 cells' expected complete. No bar after an episode's t0 is joined to a
                label; no price of a cell is read; the md5 of the three frozen lists and the two member lists equal before and after.
+               **RUN 2026-11-02 09:30 → 10:05 UTC on the work VM (`scripts/r78_data.sh`, three launches; `output/listing/r78_data/`): the first
+               launch fetched the 78 files (0 bad, 0 missing) and was OOM-KILLED at 32 GB inside the whole-slice re-sort of the ingest
+               (09:41; the slice untouched, md5 equal) — `data.ingest_klines` made memory-lean the same hour (the per-name parts sorted on
+               their own, the same rows in the same order; commit 2d4a7e6); the second launch (09:44 → 09:54) re-ingested the slice whole
+               (91,257,137 rows, 598 names, to 2026-09-30 23:55; +623,808 rows) and FAILED R28's extent rule on 11 of the 41 names (ACE,
+               ALICE, API3, ENJ, GAS, KAVA, OGN, ONG, ONT, RDNT, STORJ): their fetched months are HOLES inside their old extent (BU1's and
+               BW1's fetches took event windows, not whole histories), so the rows inside the extent grew by whole months (8,640 / 8,928 a
+               month) — a rule written for appended tails, not for fills. The finer check written then (`krlist.rowcheck`, commit ce9765f,
+               tested on a planted hole): a changed name passes only if this line fetched it AND every one of its old rows, re-derived from
+               its pre-existing zips by the ingest's own reading, is in the slice now unchanged — the 11 names: 0 old rows missing, the
+               largest difference 0.0 on every price and volume column; the 30 other fetched names unchanged on their extent (their months
+               were tails). The third launch (10:00 → 10:05; the data step's `.done` written by hand after the check was split out, noted in
+               the log): the row check PASS → `costwide --symbols` for every name of the frozen f34 list (175 names, the 41 among them;
+               79,129 rows on 174 names, the 77,187 overlapping rows identical to 0.0) merged into the parquet it replaced → 297,926 rows,
+               584 names (+1,942) → `fundep audit` again. After: the 309 windows' bars complete 309 of 309 (F3 100 / 100, F4 209 / 209;
+               before 254); own cost rows on the entry day or the day before on 294 of the 296 bought-side cells (the two without are the
+               calendar's two); the funding archive untouched (1,900,834 rows, 598 names, to 2026-09-30 23:00) — six list names' rows end
+               before their last cell's exit (BROCCOLI714, BSW, LEVER, NEIROETH, SKATE, SXP: delistings; validity (8) counts them). The
+               md5 of the three frozen lists and the two member lists equal before and after each launch; no bar after an episode's t0 was
+               joined to a label; no price of a cell was read.**
 Events:        `ft2/fundep_f34.csv` as FROZEN 2026-11-02 (commit 7cf47a1, md5 f576578263c93b0dfe69418a54272534; the audit's rule in DATA.md
                `fund_episodes`: t0 = the first settlement of `funding_archive` at which the 24-hour sum of the settled rate reaches 2 % a
                day in size, a new episode after 14 quiet days, the contract ≥ 30 days old, t0 in F3 or F4): **309 rows — 296 `bought`

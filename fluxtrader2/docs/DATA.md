@@ -749,7 +749,13 @@ NAMED: 1000FLOKI 2024-08-30 00:00 and RDNT 2024-08-30 16:00 (the 7-day exit past
 one of the 58 bought, with its own cost row on the entry day or the day before (58 of 58), bars complete; F1 30, F2 28; 11 members at t0; 7
 flagged.** F3+F4 (R78's Data line, BU1's route): 294 of 309 pass the calendar (15 December-2025 cells' exits pass 2026-01-01), 254 of 309 have
 their bars (F3 73 of 100, F4 181 of 209) — 41 names short, 78 (name, month) 5m files to fetch, then `costwide --symbols` for the names;
-F5: 105 of 106 pass the calendar, 67 of 106 have bars — 29 names, 45 files. Described thresholds (counts only, never frozen): ≥ 1 % 992
+F5: 105 of 106 pass the calendar, 67 of 106 have bars — 29 names, 45 files. **R78's Data line RUN 2026-11-02 (PLAN §8 R78's Data line;
+`output/listing/r78_data/`): the 78 files fetched and the slice re-ingested whole (91,257,137 rows, 598 names) — R28's extent fingerprint
+read 11 of the 41 names as changed because their fetched months were HOLES inside their old extent; `krlist.rowcheck` (every old row re-derived
+from the pre-existing zips back in the slice unchanged: 0 missing, 0.0 difference on the 11) is the rule for fills from here; `costwide
+--symbols` for the 175 names of the f34 list merged (+1,942 rows, the overlap identical); after: 309 of 309 windows complete, own cost rows on
+294 of 296 bought-side cells; the funding archive untouched (six delisted names' rows end before their last cell's exit).** Described
+thresholds (counts only, never frozen): ≥ 1 % 992
 episodes on 346 names (F1+F2 112, F3+F4 506, F5 169; 886 bought); ≥ 3 % 332 on 180 (F1+F2 43, F3+F4 203, F5 68).
 
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
