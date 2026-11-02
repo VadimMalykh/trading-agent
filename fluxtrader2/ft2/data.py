@@ -148,8 +148,8 @@ def ingest_klines(symbols: list[str], interval: str = "5m") -> dict:
     """archive klines → data/candles_<interval>_archive.parquet, the collector's candle columns. The pre-history
     (2020 → 2022-08) the collector never recorded; fetched a day past the collector's first bar so that the
     inventory can compare the two on the overlap. Older daily files have no header row, newer ones do."""
-    parts = []
-    for sym in symbols:
+    parts, n_in = [], 0
+    for sym in sorted(symbols):                                    # the names in category order: the concat of the per-name parts IS the (symbol, open_time) sort
         df = _read_zips("klines", sym, pattern=f"{sym}-{interval}-*.zip", header=None, names=KLINE_COLS, dtype=str)
         if df.empty:
             continue
@@ -157,11 +157,13 @@ def ingest_klines(symbols: list[str], interval: str = "5m") -> dict:
         out = pd.DataFrame({"symbol": _as_category([sym] * len(df), symbols), "open_time": pd.to_datetime(df["open_time"].astype("int64"), unit="ms", utc=True)})
         for c in ("open", "high", "low", "close", "volume", "quote_volume"):
             out[c] = df[c].astype(float).to_numpy()
-        parts.append(out)
+        del df
+        n_in += len(out)
+        parts.append(out.sort_values("open_time", kind="mergesort").drop_duplicates("open_time", keep="last"))   # sorted and deduplicated per name: no whole-slice sort copy (R78's Data line: the 90M-row slice OOM-killed the old whole sort on 32 GB)
     df = pd.concat(parts, ignore_index=True)
     del parts
-    n_in, dst = len(df), PROC / f"candles_{interval}_archive.parquet"
-    df = _tidy_symbol(df.sort_values(["symbol", "open_time"], kind="mergesort").drop_duplicates(["symbol", "open_time"], keep="last").reset_index(drop=True))
+    dst = PROC / f"candles_{interval}_archive.parquet"
+    df = _tidy_symbol(df)
     df.to_parquet(dst, index=False)
     return {"slice": dst.stem, "rows_in": n_in, "dups_dropped": n_in - len(df), "rows_out": len(df),
             "first": df["open_time"].min(), "last": df["open_time"].max(), "file": str(dst)}
