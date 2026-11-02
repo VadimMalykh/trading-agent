@@ -713,6 +713,45 @@ into the parquet it replaced (78,767 new rows on 90 names, 55,278 overlapping ro
 (t0 − 2 d → t0 + 8 d) complete at ≥ 95 %; every one of the 91 names at 100 % of the bars over 2026-01-01 → 2026-09-15. F5's end for R76:
 2026-09-15 (the fold as defined; frozen at R76's read).
 
+### fund_episodes (the EXTREME trailing-day funding of a running Binance perpetual WITHOUT the exchange's flag, as a per-name EVENT population — read off `funding_archive`'s settled rates; decision BY1, 2026-11-02) — `ft2/fundep_f12.csv`, `ft2/fundep_f34.csv`, `ft2/fundep_f5.csv` (FROZEN 2026-11-02, commit 7cf47a1, md5 75c0fbd0… / f5765782… / c1770dd4…, before any bar after a t0 was read for anything): `(symbol, base, mult, t0, ts_known, fold, side, thr, rate_t0, interval_h, fund_1d, n_1d, fund_7d, prior_episodes, days_since_prior, perp_first, perp_first_source, perp_age_days, member_at_t0, flag_t0, flag_lag_h, flagged_7d, cap_share_7d, cap_rate)`
+
+`ft2 fundep events [--threshold 0.02]|audit` (`ft2/fundep.py`; `scripts/by1_events.sh`, `by1_audit.sh`; `tests/test_p8_fundep.py`; the brainstorm's count
+`scripts/by_count3.py`). No new source: per name the 24-HOUR ROLLING SUM of the settled rate over `funding_archive` (598 names), the window
+(ts − 24 h, ts] — the settlement's own rate counted, it is public at its stamp; **an EPISODE = the FIRST settlement at which |sum| ≥ 2 % a day,
+and a new episode of the name only after 14 days without a settlement at or over the threshold** (a run of extreme days is one episode, its t0
+the first crossing); the contract ≥ 30 days old at t0 by the EARLIER of its first 5m bar in `candles_5m_archive` and its first settlement (the
+slice holds some non-members from 2023-04 only; `fundfreq` took the bar first — under the count's rule, the first settlement alone, 524, under
+this one 525: one F0 episode moves). **Known-at: t0 is the settlement's own stamp (`fundingTime`), public at that second; `ts_known` = t0; a
+registration's decision bar is the first 5m bar that CLOSES after t0, the position entered one bar later (R75's entry).** `side`: `bought`
+when the sum is negative (the shorts paid — a long receives), `sold` when positive. Flags: `rate_t0` / `interval_h` (the crossing settlement's
+own), `fund_1d` / `n_1d` (the sum and its rows: 3 on an 8-hour clock, 6 on a 4-hour one), `fund_7d`, `prior_episodes` / `days_since_prior`
+(the name's earlier episodes at this threshold), `member_at_t0` (a member of the screener's block holding t0 — F1+F2's and F3+F4's 60;
+F5 has no blocks), **the FLAG `flag_t0` / `flag_lag_h` / `flagged_7d` — a `fundfreq` SHORTENING of the name within ± 7 days of t0, the
+exchange's answer (R75 / R76's events)**, `cap_share_7d` / `cap_rate` (fundfreq's trigger row). ELIGIBLE = the age AND t0 in F1 … F5, frozen
+per fold pair (f12 R77's exploration list, f34 R78's confirmation, f5 a later one's); FP / F0's 48 and the 2 after F5's end are listed in
+`output/fundep/events.csv`, not frozen.
+**Counted 2026-11-02 (`output/fundep/audit.md` / `.json`, `events.csv`, `events_described.json`, `eligibility_f12.csv` / `_f34.csv` / `_f5.csv`;
+the two chains 08:35 → 08:37 UTC on the work VM, 12 s and 15 s of compute):** 525 episodes on 230 names, **475 ELIGIBLE on 216 names —
+F1 30 + F2 30 (all `bought`, 41 names), F3 100 + F4 209 (296 bought, 13 sold; 175 names), F5 106 (all bought)**; members at t0 F1 9, F2 3,
+F3 10, F4 21, F5 3; **flagged within ± 7 days F1 6, F2 1, F3 12, F4 45, F5 31 = 95 of 475** — the flagged events are a fifth of the population
+and the flag came AFTER the crossing in 77 of 95 (the lag q10 / q50 / q90 −39 / −1 / 0 h; before it in 4): the exchange's rule answers the
+same condition this list reads at its first settlement. The interval at t0: 8h F1 25 / F2 10 / F3 32 / F4 22 / F5 36, 4h 4 / 20 / 66 / 164 / 65,
+1h F4 23 / F5 5 (names already shortened), 2h 3. |fund_1d| at t0 q10 / q50 / q90 2.04 / 2.29 / 3.22 % a day (F1+F2 2.04 / 2.49 / 3.52; the
+flagged shortenings' 2.64); the rate at t0 0.23 / 0.86 / 2.0 % a settlement (F1+F2 0.31 / 1.5 / 2.5); |fund_7d| 1.99 / 2.69 / 4.7 %. The
+contract's age 68 / 448 / 1,797 days (F1+F2 123 / 542 / 1,122). Prior episodes: 196 first, 124 second, 69 third, 86 fourth or later (the
+days since the prior 24 / 84 / 478); on F1+F2 33 first, 27 repeats (ONG, OGN, API3, TRB, GLM, NMR three each; the same-name gaps ≥ 16 days —
+no two cells of a name inside one 7-day hold). The trigger row: the median name had 0 % of its week's settlements at its cap (q90 4.8 %) — the
+rate is extreme by the day's sum, not pinned. t0's hour: the 8-hour clock (00 / 08 / 16 UTC: 295) and the 4-hour one (04 / 12 / 20: 155); 25
+off-grid. F1+F2 per month 1 … 9 (2023-08 and 09 seven each, 2024-08 nine; 35 weeks of 70 hold an event). **The eligibility rule on the frozen
+F1+F2 list (R75's frame: the decision bar at t0 + 5 min, the entry at t0 + 10 min, the 7-day exit before 2024-09-01, the first member block
+2023-05-03, bars ≥ 95 % over t0 − 2 d → t0 + 8 d, `cost_daily_wide` on the entry day or the day before): 58 of 60 eligible — the two dropped
+NAMED: 1000FLOKI 2024-08-30 00:00 and RDNT 2024-08-30 16:00 (the 7-day exit past F2's end; RDNT's window also holds a third of its bars); every
+one of the 58 bought, with its own cost row on the entry day or the day before (58 of 58), bars complete; F1 30, F2 28; 11 members at t0; 7
+flagged.** F3+F4 (R78's Data line, BU1's route): 294 of 309 pass the calendar (15 December-2025 cells' exits pass 2026-01-01), 254 of 309 have
+their bars (F3 73 of 100, F4 181 of 209) — 41 names short, 78 (name, month) 5m files to fetch, then `costwide --symbols` for the names;
+F5: 105 of 106 pass the calendar, 67 of 106 have bars — 29 names, 45 files. Described thresholds (counts only, never frozen): ≥ 1 % 992
+episodes on 346 names (F1+F2 112, F3+F4 506, F5 169; 886 bought); ≥ 3 % 332 on 180 (F1+F2 43, F3+F4 203, F5 68).
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
