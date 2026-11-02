@@ -770,3 +770,49 @@ def test_r78_the_calendar_drops_are_named_the_void_keeps_the_guard_rows_and_the_
     monkeypatch.setattr(fundep, "coverage", lambda L_: pd.DataFrame({"symbol": L_["symbol"], "t0": L_["t0"], "fold": L_["fold"], "share": [0.5] + [1.0] * (len(L_) - 1)}))
     need = fundevent.data_need78()
     assert need["events"] == 9 and need["complete"] == 8 and need["names_short"] == 1 and list(need["need"]) == [L["symbol"].iloc[0]] and need["files"] >= 1
+
+
+def _kline_zip(path, start, n):
+    """A monthly 5m kline file of the archive's form: n bars from `start`, the close rising a thousandth a bar."""
+    import io
+    import zipfile
+    ms = pd.date_range(start, periods=n, freq="5min", tz="UTC").asi8 // 10**6
+    rows = "\n".join(f"{a},{10 + i * 1e-3},10.1,9.9,{10 + i * 1e-3},100,{a + 299999},1000,5,50,500,0" for i, a in enumerate(ms))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(path.stem + ".csv", rows)
+    path.write_bytes(buf.getvalue())
+    path.with_suffix(".zip.ok").touch()
+
+
+def test_r78_the_data_check_passes_a_hole_filled_name_by_its_old_rows_and_voids_a_changed_or_unfetched_one(tmp_path, monkeypatch):
+    from ft2 import data
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(data, "PROC", tmp_path / "data")
+    monkeypatch.setattr(data, "RAW", tmp_path / "data" / "raw")
+    monkeypatch.setattr(data, "EXT", tmp_path / "data" / "raw" / "external" / "binance")
+    monkeypatch.setattr(fundevent, "DATA_OUT78", tmp_path / "r78_data")
+    a, b = data.EXT / "klines" / "A1USDT", data.EXT / "klines" / "B1USDT"
+    a.mkdir(parents=True)
+    b.mkdir(parents=True)
+    _kline_zip(a / "A1USDT-5m-2025-01.zip", "2025-01-01", 288 * 31)
+    _kline_zip(a / "A1USDT-5m-2025-03.zip", "2025-03-01", 288 * 31)                                                     # February is a hole inside A1's extent
+    _kline_zip(b / "B1USDT-5m-2025-01.zip", "2025-01-01", 288 * 31)
+    data.ingest_klines(["A1USDT", "B1USDT"])
+    (tmp_path / "r78_data").mkdir()
+    krlist.fingerprint().to_csv(tmp_path / "r78_data" / "fingerprint_before.csv", index=False)
+    _kline_zip(a / "A1USDT-5m-2025-02.zip", "2025-02-01", 288 * 28)                                                     # the hole filled
+    r = data.ingest_klines(["A1USDT", "B1USDT"])
+    assert r["rows_out"] == 288 * (31 + 28 + 31 + 31) and r["dups_dropped"] == 0
+    chk = fundevent.data_check78({"A1USDT": ["2025-02"]})
+    assert not chk["pass_extent"] and chk["changed_names"] == ["A1USDT"] and chk["pass_rows"] and chk["pass"]
+    rc = chk["rowcheck"][0]
+    assert rc["old_files"] == 2 and rc["new_files"] == ["A1USDT-5m-2025-02.zip"] and rc["old_rows"] == 288 * 62 and rc["rows_now"] == 288 * 90 and rc["old_rows_missing"] == 0 and rc["max_abs_diff"] == 0.0
+    assert json.loads((tmp_path / "r78_data" / "fingerprint_check.json").read_text())["pass"]
+    chk2 = fundevent.data_check78({"B1USDT": ["2025-02"]})                                                               # A1 changed but not fetched by this line: void
+    assert not chk2["pass"] and chk2["rowcheck_failed"] == ["A1USDT"] and chk2["rowcheck"][0]["fetched"] is False
+    x = pd.read_parquet(tmp_path / "data" / "candles_5m_archive.parquet")
+    x.loc[0, "close"] += 1.0                                                                                             # an old row altered in the slice
+    x.to_parquet(tmp_path / "data" / "candles_5m_archive.parquet", index=False)
+    chk3 = fundevent.data_check78({"A1USDT": ["2025-02"]})
+    assert not chk3["pass"] and chk3["rowcheck"][0]["max_abs_diff"] == 1.0 and chk3["rowcheck_failed"] == ["A1USDT"]

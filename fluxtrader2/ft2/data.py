@@ -144,22 +144,33 @@ KLINE_COLS = ["open_time", "open", "high", "low", "close", "volume", "close_time
               "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
 
 
+def kline_part(sym: str, symbols: list[str], interval: str = "5m", files: list | None = None) -> tuple[pd.DataFrame, int]:
+    """One name's rows of the slice as the ingest builds them (from `files`, default every ok zip of the name): the rows read, the open_time
+    parsed, the six columns as floats, sorted by open_time, a bar kept once (the LAST file's row). Returns (the part, the rows read)."""
+    if files is None:
+        df = _read_zips("klines", sym, pattern=f"{sym}-{interval}-*.zip", header=None, names=KLINE_COLS, dtype=str)
+    else:
+        df = pd.concat((pd.read_csv(f, header=None, names=KLINE_COLS, dtype=str) for f in files), ignore_index=True) if files else pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame(), 0
+    df = df[df["open_time"].str.isdigit()]
+    out = pd.DataFrame({"symbol": _as_category([sym] * len(df), symbols), "open_time": pd.to_datetime(df["open_time"].astype("int64"), unit="ms", utc=True)})
+    for c in ("open", "high", "low", "close", "volume", "quote_volume"):
+        out[c] = df[c].astype(float).to_numpy()
+    n = len(out)
+    return out.sort_values("open_time", kind="mergesort").drop_duplicates("open_time", keep="last"), n
+
+
 def ingest_klines(symbols: list[str], interval: str = "5m") -> dict:
     """archive klines → data/candles_<interval>_archive.parquet, the collector's candle columns. The pre-history
     (2020 → 2022-08) the collector never recorded; fetched a day past the collector's first bar so that the
     inventory can compare the two on the overlap. Older daily files have no header row, newer ones do."""
     parts, n_in = [], 0
     for sym in sorted(symbols):                                    # the names in category order: the concat of the per-name parts IS the (symbol, open_time) sort
-        df = _read_zips("klines", sym, pattern=f"{sym}-{interval}-*.zip", header=None, names=KLINE_COLS, dtype=str)
-        if df.empty:
-            continue
-        df = df[df["open_time"].str.isdigit()]
-        out = pd.DataFrame({"symbol": _as_category([sym] * len(df), symbols), "open_time": pd.to_datetime(df["open_time"].astype("int64"), unit="ms", utc=True)})
-        for c in ("open", "high", "low", "close", "volume", "quote_volume"):
-            out[c] = df[c].astype(float).to_numpy()
-        del df
-        n_in += len(out)
-        parts.append(out.sort_values("open_time", kind="mergesort").drop_duplicates("open_time", keep="last"))   # sorted and deduplicated per name: no whole-slice sort copy (R78's Data line: the 90M-row slice OOM-killed the old whole sort on 32 GB)
+        out, n = kline_part(sym, symbols, interval)
+        if n:
+            n_in += n
+            parts.append(out)                                      # sorted and deduplicated per name: no whole-slice sort copy (R78's Data line: the 90M-row slice OOM-killed the old whole sort on 32 GB)
     df = pd.concat(parts, ignore_index=True)
     del parts
     dst = PROC / f"candles_{interval}_archive.parquet"

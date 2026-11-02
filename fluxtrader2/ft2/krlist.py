@@ -241,6 +241,27 @@ def fingerprint_check(before: pd.DataFrame, after_fn=fingerprint) -> dict:
     return {"names_before": int(len(b)), "names_after": int(len(a)), "changed": bad, "pass": not bad}
 
 
+def rowcheck(symbol: str, new_files: set[str], interval: str = "5m") -> dict:
+    """R78's Data line: a name whose fetched months were HOLES inside its old extent gains rows there, which R28's extent rule reads as
+    'changed'. The finer statement: the name's old rows — re-derived from its pre-existing zips (every ok file but `new_files`, the
+    ingest's own reading) — are all in the slice now with identical prices and volumes."""
+    d = data.EXT / "klines" / symbol
+    files = [f for f in sorted(d.glob(f"{symbol}-{interval}-*.zip")) if f.with_suffix(".zip.ok").exists() and f.name not in new_files]
+    old, _ = data.kline_part(symbol, [symbol], interval, files)
+    cols = ["open", "high", "low", "close", "volume", "quote_volume"]
+    now = data.load(SLICE, columns=["symbol", "open_time", *cols], symbols=[symbol])
+    now["open_time"] = _utc(now["open_time"])
+    r = {"symbol": symbol, "old_files": len(files), "new_files": sorted(f for f in new_files if (d / f).exists()), "old_rows": int(len(old)), "rows_now": int(len(now))}
+    if not len(old):
+        r.update({"old_rows_missing": 0, "max_abs_diff": 0.0, "pass": True})
+        return r
+    m = old.merge(now.drop(columns=["symbol"]), on="open_time", how="left", suffixes=("_o", "_n"))
+    missing = int(m["close_n"].isna().sum())
+    diff = max(float(np.nanmax(np.abs(m[f"{c}_o"].to_numpy() - m[f"{c}_n"].to_numpy()))) if m[f"{c}_n"].notna().any() else 0.0 for c in cols)
+    r.update({"old_rows_missing": missing, "max_abs_diff": diff, "pass": missing == 0 and diff == 0.0})
+    return r
+
+
 def ingest_symbols(event_symbols: list[str]) -> list[str]:
     """Every name the slice holds now plus the event names — the slice is rewritten whole."""
     held = data.load(SLICE, columns=["symbol"])["symbol"].astype(str).unique().tolist() if (data.PROC / f"{SLICE}.parquet").exists() else []

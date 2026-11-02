@@ -1225,9 +1225,9 @@ def data_line78(fetch: bool = True) -> dict:
         rep["fetch"] = {sym: archive.fetch_monthly("klines", sym, sub="5m", months=list(months)) for sym, months in need["need"].items()}
         rep["fetch_totals"] = {k: int(sum(v[k] for v in rep["fetch"].values())) for k in ("ok", "skip", "bad", "err", "missing")}
         rep["ingest"] = {k: str(v) for k, v in data.ingest_klines(krlist.ingest_symbols(names)).items()}
-    chk = krlist.fingerprint_check(fp, after_fn=krlist.fingerprint)
-    (DATA_OUT78 / "fingerprint_check.json").write_text(json.dumps(chk, indent=1, default=str))
-    rep["fingerprint"] = {"pass": chk["pass"], "changed": chk["changed"][:10], "names_before": chk["names_before"], "names_after": chk["names_after"]}
+    (DATA_OUT78 / "data_line.json").write_text(json.dumps(rep, indent=1, default=str))
+    chk = data_check78(need["need"], fp)
+    rep["fingerprint"] = {k: chk[k] for k in ("pass", "pass_extent", "pass_rows", "names_before", "names_after", "changed_names", "rowcheck_failed")}
     if not chk["pass"]:
         (DATA_OUT78 / "data_line.json").write_text(json.dumps(rep, indent=1, default=str))
         print(json.dumps(rep, indent=1, default=str))
@@ -1247,6 +1247,35 @@ def data_line78(fetch: bool = True) -> dict:
     return rep
 
 
+def data_check78(need: dict | None = None, fp_before: pd.DataFrame | None = None) -> dict:
+    """The Data line's check, also runnable on its own (`ft2 fundevent datacheck --registration R78`) against the saved fingerprint: R28's
+    extent rule first (`krlist.fingerprint_check`); a name it reads as changed passes only if it is one the Data line fetched AND
+    `krlist.rowcheck` finds every one of its old rows in the slice unchanged (its fetched months were holes inside its old extent). The
+    verdict and both checks are written to fingerprint_check.json; a name changed that was not fetched, or an old row missing or
+    different, is a void."""
+    DATA_OUT78.mkdir(parents=True, exist_ok=True)
+    if need is None:
+        need = json.loads((DATA_OUT78 / "data_line.json").read_text())["files_before"]
+    if fp_before is None:
+        fp_before = pd.read_csv(DATA_OUT78 / "fingerprint_before.csv")
+    chk = krlist.fingerprint_check(fp_before, after_fn=krlist.fingerprint)
+    rows = []
+    for c in chk["changed"]:
+        sym = c["symbol"]
+        if c["why"] != "changed" or sym not in need:
+            rows.append({"symbol": sym, "why": c["why"], "fetched": sym in need, "pass": False})
+            continue
+        r = krlist.rowcheck(sym, {f"{sym}-5m-{m}.zip" for m in need[sym]})
+        r.update({"why": c["why"], "fetched": True, "rows_extent": c.get("rows")})
+        rows.append(r)
+    chk.update({"pass_extent": bool(chk["pass"]), "rowcheck": rows, "pass_rows": bool(all(r["pass"] for r in rows)), "changed_names": [c["symbol"] for c in chk["changed"]],
+                "rowcheck_failed": [r["symbol"] for r in rows if not r["pass"]]})
+    chk["pass"] = bool(chk["pass_extent"] or chk["pass_rows"])
+    (DATA_OUT78 / "fingerprint_check.json").write_text(json.dumps(chk, indent=1, default=str))
+    print(f"R78 data check: extent rule {'PASS' if chk['pass_extent'] else 'FAIL'} ({len(chk['changed'])} changed); row check {'PASS' if chk['pass_rows'] else 'FAIL'} on {len(rows)} names → {'PASS' if chk['pass'] else 'FAIL'}", flush=True)
+    return chk
+
+
 def main(action: str, name: str | None = None, registration: str | None = None, reexecute: str | None = None) -> None:
     if action == "fingerprint":
         print(fingerprint(name))
@@ -1261,6 +1290,11 @@ def main(action: str, name: str | None = None, registration: str | None = None, 
             sys.exit(2)
     elif action == "data":
         (data_line78 if registration == "R78" else data_line)(fetch=True)
+    elif action == "datacheck":
+        if registration != "R78":
+            raise SystemExit("fundevent datacheck: R78's Data line check only (--registration R78)")
+        if not data_check78()["pass"]:
+            sys.exit(2)
     elif action == "confirm":
         text = confirm(registration, name, reexecute=reexecute)
         print(text)
