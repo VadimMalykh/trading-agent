@@ -626,3 +626,147 @@ def test_r77_the_rederivation_voids_on_a_changed_frozen_rate_the_calendar_drop_i
     V = json.loads((tmp_path / "b" / "output" / "listing" / "w" / "validity.json").read_text())
     assert V["3_eligible"] == 3 and {d["why"] for d in V["3_dropped"]} == {"the 7-day exit is not before the end", "the decision bar is not in the market"} and V["3_dropped_as_named"] is False
     assert V["status"] == "FAIL"                                                                                          # 3 of 8 eligible: under the planted minimum of 5 — a void by (3), the dropped named
+
+
+# ---- R78 (decision BZ1): the SOLD side at the crossing held one day on the frozen F3+F4 episode list, in money, the trimmed gate with the unflagged clause ----
+def _settlements78(t0s, carry=CARRY):
+    """R77's planted archive (the shorts paid 2.4 % over the day to t0, then hourly at `carry` — paid by a SHORT) plus P1, whose LONGS paid
+    the same into t0s[2] (a sold-side row of the list: the described mirror, never a cell)."""
+    S = _settlements77(t0s, carry=carry)
+    t0 = t0s[2]
+    rows = [{"symbol": POS, "ts": ts, "rate": 0.0001, "interval_h": 4} for ts in pd.date_range(D("2024-01-01"), t0 - 16 * H, freq="4h")]
+    rows += [{"symbol": POS, "ts": t0 - k * 4 * H, "rate": +0.006, "interval_h": 4} for k in (3, 2, 1, 0)]
+    rows += [{"symbol": POS, "ts": t0 + k * H, "rate": 0.0, "interval_h": 1} for k in range(1, 8 * 24 + 1)]
+    return pd.concat([S, pd.DataFrame(rows)], ignore_index=True).sort_values(["symbol", "ts"]).reset_index(drop=True)
+
+
+def _events78(S, t0s, path, flagged=None):
+    """The frozen F3+F4 list as `fundep.episodes` writes it from the planted settlements: the eight bought-side cells (F3 the first four, F4 the
+    rest) and P1's sold-side row."""
+    from ft2 import fundep
+    T = fundep.trailing(S)
+    first = S.groupby("symbol")["ts"].min()
+    E = fundep.episodes(T, 0.02, first)
+    assert sorted(E["t0"].tolist()) == sorted([*t0s, t0s[2]]) and E["side"].tolist().count("sold") == 1
+    E["base"], E["mult"], E["ts_known"] = E["symbol"].str[:-4], 1.0, E["t0"]
+    E["fold"] = np.where(E["t0"] < t0s[4], "F3", "F4")
+    E["perp_first"], E["perp_first_source"], E["perp_age_days"] = first.reindex(E["symbol"]).to_numpy(), "funding", 240
+    E["member_at_t0"] = [j % 2 == 0 for j in range(len(E))]
+    cell_no = E["symbol"].map({s: j for j, s in enumerate(EV)})
+    E["flag_t0"], E["flag_lag_h"] = pd.NaT, np.nan
+    E["flagged_7d"] = [bool(j in (flagged if flagged is not None else (1,))) if pd.notna(j) else False for j in cell_no]
+    E["cap_share_7d"], E["cap_rate"] = 0.0, 0.006
+    E = E[fundep.LIST_COLS]
+    E.to_csv(path, index=False)
+    return E
+
+
+def _plant78(tmp_path, monkeypatch, M, t0s, C, S, flagged=None, expected_dropped=frozenset()):
+    monkeypatch.chdir(tmp_path)
+    lst = tmp_path / "fundep_f34.csv"
+    L = _events78(S, t0s, lst, flagged)
+    out = tmp_path / "output" / "listing"
+    out.mkdir(parents=True)
+    monkeypatch.setattr(fundevent, "OUT", out)
+    monkeypatch.setattr(fundevent, "LIST78", lst)
+    monkeypatch.setattr(fundevent, "LIST78_MD5", hashlib.md5(lst.read_bytes()).hexdigest())
+    monkeypatch.setattr(fundevent, "LIST78_ROWS", len(L))
+    monkeypatch.setattr(fundevent, "CELLS78", 8)
+    monkeypatch.setattr(fundevent, "MIN_CONFIRM78", 5)
+    monkeypatch.setattr(fundevent, "EXPECTED_DROPPED78", set(expected_dropped))
+    monkeypatch.setattr(fundevent, "MIN_MEMBERS", 3)
+    monkeypatch.setattr(fundevent, "DRAWS", 2000)
+    for tag in ("r78", "r78b", "r78c", "r78d"):
+        (out / f"{tag}_fingerprint_before.csv").write_text("symbol,rows\n")
+    monkeypatch.setattr(listing, "window", lambda folds: (M.index[0], M.index[-1] + BAR))
+    mem = pd.DataFrame({"block": [M.index[0].floor("D")] * len(MEM), "symbol": MEM})
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: mem)
+    monkeypatch.setattr(universe, "screen_symbols", lambda path=None: MEM)
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): M)
+    monkeypatch.setattr(bt, "load_costs", lambda index, cols, end, cost_mult=1.0, close=None: C)
+    monkeypatch.setattr(fundfreq, "settlements", lambda: S)
+    monkeypatch.setattr(fundfreq, "perp_first", lambda syms, F: pd.DataFrame({"symbol": list(syms), "perp_first": pd.NaT, "perp_first_source": "none"}))
+    plan = tmp_path / "PLAN.md"
+    plan.write_text("### R78 — the extreme-funding episode SOLD at the crossing, one day (registered)\n")
+    monkeypatch.setattr(bt, "PLAN", plan)
+    monkeypatch.setattr(bt, "READS", tmp_path / "output" / "backtest" / "confirmation_reads.csv")
+    return L, lst
+
+
+def test_r78_a_planted_give_back_confirms_the_sold_unit_with_the_members_bought_the_guard_rows_before_the_market_and_a_second_run_refused(tmp_path, monkeypatch):
+    M, t0s = _market(collapse=-0.08)                                                                                    # the cells fall 8 % over the day after the entry: the give-back
+    S = _settlements78(t0s)                                                                                              # the short PAYS 0.1 % an hour: 240 bps over the day
+    C = _costs(M, S)
+    _plant78(tmp_path, monkeypatch, M, t0s, C, S)
+    loaded = []
+    real_market = bt.market
+    def market(syms, end, start=None, needs=()):
+        loaded.append(pd.read_csv(bt.READS)["registration"].tolist())
+        return real_market(syms, end, start, needs)
+    monkeypatch.setattr(bt, "market", market)
+    text = fundevent.confirm("R78")
+    out = tmp_path / "output" / "listing" / "r78"
+    assert loaded == [["R78", "R78"]] and pd.read_csv(bt.READS)["fold"].tolist() == ["F3", "F4"]                           # the guard rows before the market
+    V = json.loads((out / "validity.json").read_text())
+    assert V["status"] == "PASS" and V["2_cells"] == 8 and V["2_rederived"]["status"] == "PASS" and V["2_rederived"]["episodes_today"] == 9 and len(V["2_longs_paying_bought_described"]) == 1
+    assert V["3_eligible"] == 8 and V["3_dropped"] == [] and V["3_calendar_dropped_as_named"] is True and V["3_H_share"] == 1.0 and V["3_own_cost_row_share"] == 1.0
+    assert max(v for v in V["6_identity_max_abs_diff"].values() if not isinstance(v, bool)) <= 1e-9 and V["6_identity_max_abs_diff"]["hold_is_288"] and V["6_hand_max_abs_diff"] <= 1e-9 and V["6_hand_cells"] == 8
+    assert V["7_no_stop"] and V["7_t_equals_t0_plus_5min"] and V["8_cells_with_a_settlement_gap"] == 0 and V["8_settlements_per_cell_1d"]["min"] >= 24
+    N = json.loads((out / "confirm.json").read_text())
+    assert N["gate"] == "trimmed" and N["verdict"] == "CONFIRMED" and N["k_trim"] == 1 and N["M_trim"] > 350 and N["u_trim"] >= 2 and 0 < N["M_heavy_trim"] < N["M_trim"] and N["M_unflagged_trim"] > 0 and N["n_unflagged"] == 7
+    assert N["trim_identity"] <= 1e-9 and N["verdict_plain_beside"] == "CONFIRMED"
+    T = pd.read_csv(out / "trades.csv")
+    assert len(T) == 8 and (~T["stopped"]).all() and ((T["x"] - T["e"]) == 288).all() and (T["settlements_1d"] >= 24).all()
+    assert np.allclose(T["leg_entry"], 2 * 6.5) and np.allclose(T["leg_exit"], 6.5)                                     # the entry day's legs doubled, the exit at the proxy
+    assert (T["hedge_cost"] > 0).all() and np.allclose(T["hedge"], T["hedge_gain"] - T["hedge_cost"]) and np.allclose(T["H"], T["own"] + T["hedge"])   # the members BOUGHT
+    assert np.allclose(T["funding"], -230, atol=6) and np.allclose(T["gross"], 769, atol=30)                              # the carry PAID by the short on the position's falling value (240 × ≈ 0.96), the give-back earned
+    assert "y_1d" in T and np.allclose(T["y_1d"], -(T["gross"] + T["funding"]), atol=30)                                   # R77's frame on the same cells: the bought side's y is minus the sold unit's gross + funding
+    assert "Verdict: CONFIRMED" in text and "TRIMMED mean" in text and "longs-paying" in text and (out / "longs_paying_bought.csv").exists()
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["registration"] == "R78" and meta["decision"] == "BZ1" and meta["side"] == "short" and meta["seed"] == 78 and meta["hold"] == 288 and meta["gate"] == "trimmed" and meta["unflagged_clause"]
+    with pytest.raises(SystemExit):                                                                                       # a second read of F3+F4 is refused by the ledger
+        fundevent.confirm("R78", "r78b")
+    assert not (tmp_path / "output" / "listing" / "r78b" / "confirm.json").exists()
+
+
+def test_r78_a_planted_carry_only_population_is_closed(tmp_path, monkeypatch):
+    M, t0s = _market()                                                                                                   # the price flat: the short pays the carry and earns nothing
+    S = _settlements78(t0s)
+    C = _costs(M, S)
+    _plant78(tmp_path, monkeypatch, M, t0s, C, S)
+    text = fundevent.confirm("R78")
+    N = json.loads((tmp_path / "output" / "listing" / "r78" / "confirm.json").read_text())
+    assert N["verdict"] == "CLOSED" and N["M_trim"] < -250 and N["M_trim"] + 1.96 * N["se_trim"] < 0 and "Verdict: CLOSED" in text
+
+
+def test_r78_the_unflagged_clause_refuses_a_confirmation_carried_by_the_flagged_cells(tmp_path, monkeypatch):
+    M, t0s = _market()
+    M2 = _runon(M, t0s, cells=[0, 2, 4, 6], bps=-1000)                                                                     # the FLAGGED cells fall 10 % an hour after the entry; the others flat
+    S = _settlements78(t0s, carry=0.0)                                                                                   # no carry after t0
+    C = _costs(M2, S)
+    _plant78(tmp_path, monkeypatch, M2, t0s, C, S, flagged=(0, 2, 4, 6))
+    fundevent.confirm("R78")
+    N = json.loads((tmp_path / "output" / "listing" / "r78" / "confirm.json").read_text())
+    assert N["M_trim"] > 0 and N["u_trim"] >= 2 and N["M_heavy_trim"] > 0 and N["M_unflagged_trim"] < 0 and N["n_unflagged"] == 4 and N["M_flagged_trim"] > 500
+    assert N["verdict"] == "NOT CONFIRMED"                                                                                 # the three clauses hold; the unflagged one refuses
+    assert fundevent.verdict_confirm_trimmed(N["M_trim"], N["se_trim"], N["M_heavy_trim"]) == "CONFIRMED"                  # without the clause it would have confirmed
+
+
+def test_r78_the_calendar_drops_are_named_the_void_keeps_the_guard_rows_and_the_data_need_comes_from_the_frozen_list(tmp_path, monkeypatch):
+    from ft2 import fundep
+    M, t0s = _market(weeks=4)
+    S = _settlements78(t0s)
+    C = _costs(M, S)
+    beyond = {(EV[j], str(t0s[j])) for j in range(4, 8)}                                                                   # the four t0s past the market's end
+    _plant78(tmp_path, monkeypatch, M, t0s, C, S, expected_dropped=beyond)
+    text = fundevent.confirm("R78", "r78c")
+    V = json.loads((tmp_path / "output" / "listing" / "r78c" / "validity.json").read_text())
+    assert "**VOID" in text and V["status"] == "FAIL" and V["3_eligible"] == 4 and len(V["3_dropped"]) == 4 and V["3_calendar_dropped_as_named"] is True and set(map(tuple, V["3_calendar_dropped"])) == beyond
+    assert pd.read_csv(bt.READS)["fold"].tolist() == ["F3", "F4"]                                                          # the guard rows stand on a void
+    with pytest.raises(SystemExit):                                                                                       # an unregistered registration is refused before anything is loaded
+        fundevent.confirm(None, "r78d")
+    L = fundevent.load_events(fundevent.LIST78)
+    monkeypatch.setattr(fundep, "frozen", lambda tags=("f34",): L)
+    monkeypatch.setattr(fundep, "coverage", lambda L_: pd.DataFrame({"symbol": L_["symbol"], "t0": L_["t0"], "fold": L_["fold"], "share": [0.5] + [1.0] * (len(L_) - 1)}))
+    need = fundevent.data_need78()
+    assert need["events"] == 9 and need["complete"] == 8 and need["names_short"] == 1 and list(need["need"]) == [L["symbol"].iloc[0]] and need["files"] >= 1
