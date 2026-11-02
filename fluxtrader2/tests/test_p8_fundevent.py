@@ -485,3 +485,144 @@ def test_an_unregistered_f5_list_voids_after_the_guard(tmp_path, monkeypatch):
     monkeypatch.setattr(fundevent, "LIST5_MD5", "0" * 32)
     text = fundevent.confirm("R76", "e")
     assert "**VOID" in text and pd.read_csv(bt.READS)["registration"].tolist() == ["R76"] and not (tmp_path / "output" / "listing" / "e" / "confirm.json").exists()
+
+
+# ====================================================================================================================================
+# R77 (decision BY1): the same frame on the frozen EPISODE list — no guard, the gate on the 10 % trimmed mean, fundep's rederivation
+# ====================================================================================================================================
+def _settlements77(t0s, carry=CARRY, runon=()):
+    """The archive's rows for R77's cells: flat 4-hourly settlements from 2024-01 (the age), the four settlements up to t0 at −0.6 % each (the
+    day's sum crosses −2 % AT t0 and not before), then hourly at `carry` for eight days (0 → no carry)."""
+    rows = []
+    for j, t0 in enumerate(t0s):
+        name = EV[j]
+        for ts in pd.date_range(D("2024-01-01"), t0 - 16 * H, freq="4h"):
+            rows.append({"symbol": name, "ts": ts, "rate": 0.0001, "interval_h": 4})
+        for k in (3, 2, 1, 0):
+            rows.append({"symbol": name, "ts": t0 - k * 4 * H, "rate": -0.006, "interval_h": 4})
+        for k in range(1, 8 * 24 + 1):
+            rows.append({"symbol": name, "ts": t0 + k * H, "rate": carry, "interval_h": 1})
+    return pd.DataFrame(rows).sort_values(["symbol", "ts"]).reset_index(drop=True)
+
+
+def _events77(S, t0s, path):
+    """The frozen list as `fundep.episodes` writes it from the planted settlements (so that the rederivation agrees to the digit)."""
+    from ft2 import fundep
+    T = fundep.trailing(S)
+    first = S.groupby("symbol")["ts"].min()
+    E = fundep.episodes(T, 0.02, first)
+    assert E["t0"].tolist() == sorted(t0s), (E["t0"].tolist(), t0s)
+    E["base"], E["mult"], E["ts_known"] = E["symbol"].str[:-4], 1.0, E["t0"]
+    E["fold"] = ["F1" if j < 4 else "F2" for j in range(len(E))]
+    E["perp_first"], E["perp_first_source"], E["perp_age_days"] = first.reindex(E["symbol"]).to_numpy(), "funding", 240
+    E["member_at_t0"] = [j % 2 == 0 for j in range(len(E))]
+    E["flag_t0"], E["flag_lag_h"], E["flagged_7d"] = pd.NaT, np.nan, [j == 1 for j in range(len(E))]
+    E["cap_share_7d"], E["cap_rate"] = 0.0, 0.006
+    E = E[fundep.LIST_COLS]
+    E.to_csv(path, index=False)
+    return E
+
+
+def _plant77(tmp_path, monkeypatch, M, t0s, C, S, expected_dropped=frozenset()):
+    monkeypatch.chdir(tmp_path)
+    lst = tmp_path / "fundep_f12.csv"
+    L = _events77(S, t0s, lst)
+    out = tmp_path / "output" / "listing"
+    out.mkdir(parents=True)
+    monkeypatch.setattr(fundevent, "OUT", out)
+    monkeypatch.setattr(fundevent, "LIST77", lst)
+    monkeypatch.setattr(fundevent, "LIST77_MD5", hashlib.md5(lst.read_bytes()).hexdigest())
+    monkeypatch.setattr(fundevent, "LIST77_ROWS", len(L))
+    monkeypatch.setattr(fundevent, "CELLS77", len(L))
+    monkeypatch.setattr(fundevent, "MIN_ELIGIBLE77", 5)
+    monkeypatch.setattr(fundevent, "EXPECTED_DROPPED77", set(expected_dropped))
+    monkeypatch.setattr(fundevent, "MIN_MEMBERS", 3)
+    monkeypatch.setattr(fundevent, "DRAWS", 2000)
+    (out / "r77_fingerprint_before.csv").write_text("symbol,rows\n")
+    monkeypatch.setattr(listing, "window", lambda folds: (M.index[0], M.index[-1] + BAR))
+    mem = pd.DataFrame({"block": [M.index[0].floor("D")] * len(MEM), "symbol": MEM})
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: mem)
+    monkeypatch.setattr(universe, "screen_symbols", lambda path=None: MEM)
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): M)
+    monkeypatch.setattr(bt, "load_costs", lambda index, cols, end, cost_mult=1.0, close=None: C)
+    monkeypatch.setattr(fundfreq, "settlements", lambda: S)
+    monkeypatch.setattr(fundfreq, "perp_first", lambda syms, F: pd.DataFrame({"symbol": list(syms), "perp_first": pd.NaT, "perp_first_source": "none"}))   # no slice: the first settlement is the stamp
+    monkeypatch.setattr(bt, "READS", tmp_path / "output" / "backtest" / "confirmation_reads.csv")
+    return L, lst
+
+
+def _runon(M, t0s, cells, bps):
+    """The cells' price jumps by `bps` over the first hour after the entry (a run-on in the mean, not in the trimmed statistic)."""
+    close = M.close.copy()
+    for j in cells:
+        i0 = M.index.get_loc(t0s[j])
+        close.iloc[i0 + 3:, j] *= 1 + bps / 1e4
+    return bt.Market(close, close * 1.001, close * 0.999, M.dv)
+
+
+def test_r77_a_planted_carry_clears_on_the_trimmed_statistic_without_a_guard_row_and_the_episode_splits_come_out(tmp_path, monkeypatch):
+    M, t0s = _market()
+    S = _settlements77(t0s)
+    C = _costs(M, S)
+    _plant77(tmp_path, monkeypatch, M, t0s, C, S)
+    text = fundevent.run("R77")
+    out = tmp_path / "output" / "listing" / "r77"
+    assert not bt.READS.exists()                                                                                           # the exploration folds: no ledger row
+    V = json.loads((out / "validity.json").read_text())
+    assert V["status"] == "PASS" and V["2_rederived"]["status"] == "PASS" and V["2_rederived"]["episodes_today"] == 8 and V["3_eligible"] == 8 and V["3_dropped"] == [] and V["3_dropped_as_named"]
+    assert V["6_guard"]["status"].startswith("none") and V["6_hand_max_abs_diff"] <= 1e-9 and V["8_settlements_per_cell_1d"]["median"] == 24.0
+    fam = pd.read_csv(out / "holds.csv").set_index("hold")
+    for d, carry in (("1d", 240), ("3d", 720), ("7d", 1680)):
+        assert abs(fam.loc[d, "M_trim"] - carry) < 10 * np.sqrt(carry / 240) and fam.loc[d, "k_trim"] == 1 and fam.loc[d, "trim_identity"] <= 1e-9
+    assert (fam["verdict"] == "CLEARS").all() and (fam["u_gate"] == fam["u_trim"]).all() and (fam["M_trim_F1"] > 0).all() and (fam["M_trim_F2"] > 0).all() and fam["p_fw_trim"].max() <= 0.05
+    ru = pd.read_csv(out / "runup.csv").set_index("group")
+    assert set(ru.index) >= {"flagged_7d = flagged within 7 d", "flagged_7d = not flagged", "first_episode = first episode", "clock = 4h", "fold = F1", "fold = F2"} and ru.loc["flagged_7d = flagged within 7 d", "n"] == 1
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["registration"] == "R77" and meta["decision"] == "BY1" and meta["gate"] == "trimmed" and meta["seed"] == 77 and meta["verdict"] == "CLEARS"
+    assert "TRIMMED mean" in text and "Verdict: CLEARS" in text and "sum_half" in text and "SOLD at the revert" in text        # the mirror's line prints 'none eligible' on an episode list
+    E = pd.read_csv(out / "events.csv")
+    assert set(E["clock"]) == {"4h"} and E["first_episode"].all()
+
+
+def test_r77_a_run_on_moves_the_mean_and_not_the_trimmed_statistic_which_gates(tmp_path, monkeypatch):
+    M, t0s = _market()
+    S = _settlements77(t0s, carry=0.0)                                                                                  # no carry after t0: the typical cell earns nothing
+    M2 = _runon(M, t0s, cells=[2], bps=5000)
+    C = _costs(M2, S)
+    _plant77(tmp_path, monkeypatch, M2, t0s, C, S)
+    fundevent.run("R77")
+    fam = pd.read_csv(tmp_path / "output" / "listing" / "r77" / "holds.csv").set_index("hold")
+    assert (fam["M"] > 500).all() and (fam["M_trim"].abs() < 30).all() and (fam["se_trim"] < fam["se"]).all()               # the mean is the run-on; the trimmed statistic is the population's
+    assert not (fam["verdict"] == "CLEARS").any() and (fam["M_without_5"].abs() < 30).all()
+    meta = json.loads((tmp_path / "output" / "listing" / "r77" / "meta.json").read_text())
+    assert meta["verdict"] in ("NOT DETECTABLE", "CLOSED")
+
+
+def test_r77_the_rederivation_voids_on_a_changed_frozen_rate_the_calendar_drop_is_named_and_the_registration_is_required(tmp_path, monkeypatch):
+    M, t0s = _market()
+    S = _settlements77(t0s)
+    C = _costs(M, S)
+    L, lst = _plant77(tmp_path, monkeypatch, M, t0s, C, S)
+    with pytest.raises(SystemExit):                                                                                       # no guard, but the read is R77's
+        fundevent.run(None)
+    assert not (tmp_path / "output" / "listing" / "r77" / "validity.json").exists()
+    # a frozen row's fund_1d edited: the md5 is re-pinned to the edited file so that (2)'s rederivation is what fails
+    L2 = pd.read_csv(lst)
+    L2.loc[0, "fund_1d"] = -0.03
+    L2.to_csv(lst, index=False)
+    monkeypatch.setattr(fundevent, "LIST77_MD5", hashlib.md5(lst.read_bytes()).hexdigest())
+    text = fundevent.run("R77", "v")
+    V = json.loads((tmp_path / "output" / "listing" / "v" / "validity.json").read_text())
+    assert "**VOID" in text and V["status"] == "FAIL" and V["2_rederived"]["status"] == "FAIL" and V["2_rederived"]["bad"][0]["why"] == "fund_1d differs"
+    # the last cell's exit passes the end: dropped, named, and not the expected set
+    M3, t0s3 = _market(weeks=4)
+    t0s3 = t0s3[:8]
+    S3 = _settlements77(t0s3)
+    C3 = _costs(M3, S3)
+    monkeypatch.undo()
+    (tmp_path / "b").mkdir()
+    _plant77(tmp_path / "b", monkeypatch, M3, t0s3, C3, S3, expected_dropped={(EV[3], str(t0s3[3]))})
+    fundevent.run("R77", "w")
+    V = json.loads((tmp_path / "b" / "output" / "listing" / "w" / "validity.json").read_text())
+    assert V["3_eligible"] == 3 and {d["why"] for d in V["3_dropped"]} == {"the 7-day exit is not before the end", "the decision bar is not in the market"} and V["3_dropped_as_named"] is False
+    assert V["status"] == "FAIL"                                                                                          # 3 of 8 eligible: under the planted minimum of 5 — a void by (3), the dropped named

@@ -23,6 +23,13 @@ validity   (1) the archive slice's fingerprint before (`fingerprint`) and after 
            cost row; (4) bars and labels ≥ 95 %; (5) members ≥ 40; (6) the label identity with `horizon.labels`, the harness and a hand
            check of 20 cells from the raw bars and the settlement rows; (7) t = t0 + 5 min and ts_known = t0 for every cell; (8) the
            settlement rows inside the hold: a cell with a gap in them is counted, over 5 % of the cells a void.
+
+R77 (PLAN §8, decision BY1, registered 2026-11-02) runs the SAME frame through a `Spec` (R75's values the default, read at call time):
+the frozen `ft2/fundep_f12.csv` (decision BY1's audit, DATA.md `fund_episodes`; 60 episodes, every row a cell, all bought), F1+F2 and
+`ft2/screen_members.csv`, NO guard (the exploration folds), the rederivation by `fundep.episodes`, and the GATE ON THE 10 % TRIMMED MEAN
+(`bootstrap_trimmed`: the same block draw over weeks, each draw's statistic the trimmed mean of its cells' y, k = round(0.05 × n)); the
+plain mean, the median, the share above zero and the mean without the five largest beside; the splits flagged / member / first episode /
+clock / the day's sum; `output/listing/r77/`. `listing.py`, `krevent.py`, `fundep.py` untouched; R75's and R76's paths unchanged.
 """
 from __future__ import annotations
 
@@ -85,6 +92,10 @@ def load_events(path: Path | str = LIST) -> pd.DataFrame:
             L[c] = pd.to_datetime(L[c], utc=True, format="ISO8601")
     L["era"] = np.where(L["t0"] < RULE_START, "notice", "rule")
     L["formula"] = np.where(L["t0"] < FORMULA_CHANGE, "before 2025-09-18", "after 2025-09-18")
+    if "prior_episodes" in L:                                      # an episode list (R77): the described splits' columns
+        L["first_episode"] = L["prior_episodes"].astype(int) == 0
+        L["clock"] = L["interval_h"].astype(float).astype(int).astype(str) + "h"
+        L["sum_half"] = np.where(L["fund_1d"].abs() >= L["fund_1d"].abs().median(), "day's sum ≥ median", "day's sum < median")
     return L
 
 
@@ -253,6 +264,117 @@ def check(name: str | None = None) -> dict:
     return r
 
 
+# ---- R77 (decision BY1): the same frame on the frozen episode list, the gate on the trimmed mean, no guard -----------------------------------
+from . import fundep  # noqa: E402
+
+NAME77 = "r77"
+LIST77 = fundep.LISTS["f12"]
+LIST77_MD5 = "75c0fbd0512421e67a093a338e8cbf98"    # as registered (PLAN §8 R77; frozen 7cf47a1)
+LIST77_ROWS, CELLS77 = 60, 60
+FOLDS77 = ("F1", "F2")
+SEED77 = 77
+TRIM_FRAC = 0.05                                   # the 10 % trimmed mean: round(0.05 × n) out at each end — 3 and 3 on 58
+MIN_ELIGIBLE77, MIN_ELIGIBLE_SHARE77, MAX_DROPPED77 = 56, 0.90, 4
+EXPECTED_DROPPED77 = {("1000FLOKIUSDT", "2024-08-30 00:00:00+00:00"), ("RDNTUSDT", "2024-08-30 16:00:00+00:00")}   # the audit's two, by the calendar
+STRATEGY77 = "fundep_bought"
+SPLITS77 = {"flagged_7d": ("flagged within 7 d", "not flagged"), "member_at_t0": ("member at t0", "not a member"), "first_episode": ("first episode", "a repeat"),
+            "clock": None, "sum_half": None, "fold": None}
+
+
+@dataclasses.dataclass
+class Spec:
+    """What differs between R75's read and R77's; everything else of `run` is shared and unchanged."""
+    registration: str
+    name: str
+    title: str
+    decision: str
+    list: Path
+    md5: str
+    rows: int
+    n_cells: int
+    folds: tuple
+    members_csv: Path | str
+    strategy: str
+    guard: bool
+    gate: str                                      # "mean" (R75) or "trimmed" (R77)
+    seed: int
+    splits: dict
+    cells: object                                  # L → (the cells, the positive-funding shortenings described, the lengthenings described)
+    rederive: object                               # L → validity (2)'s dict
+    min_eligible: int
+    min_share: float
+    max_dropped: int | None = None
+    expected_dropped: set | None = None
+
+
+def cells_all(L: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """R77: every frozen row is a cell (the list holds the bought side only); nothing described apart."""
+    return L.reset_index(drop=True), L.iloc[0:0].reset_index(drop=True), L.iloc[0:0].reset_index(drop=True)
+
+
+def rederived_episodes(L: pd.DataFrame) -> dict:
+    """R77's validity (2): every frozen row's t0 is an episode under `fundep.episodes`' rule from `funding_archive` today (the same threshold,
+    quiet window and age rule) and its fund_1d agrees to 1e-12."""
+    try:
+        S = fundfreq.settlements()
+        T = fundep.trailing(S)
+        FS = fundep.first_stamps(S)
+        E = fundep.episodes(T, float(L["thr"].iloc[0]), FS["perp_first"]).set_index(["symbol", "t0"])
+    except Exception as e:                                         # noqa: BLE001 — recorded, and the validity fails
+        return {"status": "MISSING", "why": str(e)[:200]}
+    bad = []
+    for r in L.itertuples(index=False):
+        k = (r.symbol, r.t0)
+        if k not in E.index:
+            bad.append({"symbol": r.symbol, "t0": str(r.t0), "why": "no episode at this settlement today"})
+        elif abs(float(E.loc[k, "fund_1d"]) - float(r.fund_1d)) > 1e-12:
+            bad.append({"symbol": r.symbol, "t0": str(r.t0), "why": "fund_1d differs", "frozen": float(r.fund_1d), "today": float(E.loc[k, "fund_1d"])})
+    return {"status": "PASS" if not bad else "FAIL", "rows": int(len(L)), "episodes_today": int(len(E)), "bad": bad}
+
+
+def spec_for(registration: str | None) -> Spec:
+    """R77's spec by its registration; R75's otherwise — both read the module's constants at call time (the tests replace them)."""
+    if registration == "R77":
+        return Spec("R77", NAME77, "R77 — the extreme-funding episode, bought, without the exchange's flag: LONG at the first settlement past 2 % a day on the frozen F1+F2 episode list, the gate on the 10 % trimmed mean",
+                    "BY1", LIST77, LIST77_MD5, LIST77_ROWS, CELLS77, FOLDS77, universe.MEMBERS_CSV, STRATEGY77, False, "trimmed", SEED77, SPLITS77, cells_all, rederived_episodes,
+                    MIN_ELIGIBLE77, MIN_ELIGIBLE_SHARE77, MAX_DROPPED77, EXPECTED_DROPPED77)
+    return Spec("R75", NAME, "R75 — the exchange's squeeze flag, bought: LONG at the at-floor shortenings of the funding interval", "BV1", LIST, LIST_MD5, LIST_ROWS, CELLS, FOLDS,
+                universe.F34_MEMBERS_CSV, STRATEGY, True, "mean", SEED, SPLITS, cells, rederived, MIN_ELIGIBLE, MIN_ELIGIBLE_SHARE)
+
+
+def k_trim(n: int, frac: float = TRIM_FRAC) -> int:
+    return max(1, int(round(frac * n)))
+
+
+def bootstrap_trimmed(Y: np.ndarray, wk: np.ndarray, W: int, frac: float = TRIM_FRAC, block: int = BLOCK_WEEKS, draws: int = DRAWS, seed: int = SEED77) -> dict:
+    """R77's statistic and its noise: `listing.bootstrap`'s draw (⌈W/block⌉ circular runs of `block` consecutive weeks, cut to W), each
+    draw's statistic the TRIMMED mean of the y of the cells in its weeks (k = round(frac × that draw's n) out at each end, per hold);
+    se = the sd of the draws; u = M_trim ÷ se; the family-wise p two-sided over the holds."""
+    fin = np.isfinite(Y)
+    rng = np.random.default_rng(seed)
+    starts = rng.integers(0, W, size=(draws, int(np.ceil(W / block))))
+    idx = ((starts[:, :, None] + np.arange(block)[None, None, :]) % W).reshape(draws, -1)[:, :W]
+    by_week = [np.where(wk == w)[0] for w in range(W)]
+
+    def tm(v: np.ndarray) -> float:
+        v = np.sort(v[np.isfinite(v)])
+        k = k_trim(len(v), frac)
+        return float(v[k:-k].mean()) if len(v) > 2 * k else np.nan
+
+    m = np.array([tm(Y[:, h]) for h in range(Y.shape[1])])
+    Ms = np.empty((draws, Y.shape[1]))
+    for d in range(draws):
+        rows = np.concatenate([by_week[w] for w in idx[d]])
+        for h in range(Y.shape[1]):
+            Ms[d, h] = tm(Y[rows, h])
+    Ms = Ms[np.isfinite(Ms).all(1)]
+    se = Ms.std(axis=0, ddof=1)
+    u = m / se
+    T = (np.abs(Ms - m) / se).max(axis=1)
+    return {"m": m, "se": se, "u": u, "p_fw": float((T >= np.abs(u).max()).mean()), "draws": len(Ms), "k": [k_trim(int(fin[:, h].sum()), frac) for h in range(Y.shape[1])],
+            "n": fin.sum(0).astype(int)}
+
+
 # ---- the run ------------------------------------------------------------------------------------------------------------------------------
 def _frame(E: pd.DataFrame) -> pd.DataFrame:
     return E.rename(columns={"symbol": "contract"})
@@ -280,29 +402,38 @@ def _labels(close, fv, rows, own, mask) -> tuple[dict, dict, dict, dict]:
     return A, B, NB, Y
 
 
-def run(registration: str | None, name: str = NAME, taker_bps: float = TAKER_BPS, reexecute: str | None = None) -> str:
+def run(registration: str | None, name: str | None = None, taker_bps: float = TAKER_BPS, reexecute: str | None = None, spec: Spec | None = None) -> str:
+    spec = spec or spec_for(registration)
+    name = name or spec.name
+    fa, fb = spec.folds[0], spec.folds[-1]
     out = OUT / name
     out.mkdir(parents=True, exist_ok=True)
     fp_before, _ = fp_paths(name)
-    L = load_events(LIST)
-    list_md5 = md5(LIST)
-    cl, pos, lng = cells(L)
+    L = load_events(spec.list)
+    list_md5 = md5(spec.list)
+    cl, pos, lng = spec.cells(L)
     pre = {"1_fingerprint_before": "saved" if fp_before.exists() else "MISSING", "1_fingerprint_after": f"pending → `ft2 fundevent check{'' if name == NAME else ' --name ' + name}` after the run",
-           "2_list_md5": list_md5, "2_list_md5_as_registered": list_md5 == LIST_MD5, "2_list_rows": int(len(L)), "2_cells": int(len(cl)), "2_cells_as_registered": len(cl) == CELLS,
+           "2_list_md5": list_md5, "2_list_md5_as_registered": list_md5 == spec.md5, "2_list_rows": int(len(L)), "2_cells": int(len(cl)), "2_cells_as_registered": len(cl) == spec.n_cells,
            "2_positive_funding_shortenings_described": pos[["symbol", "t0"]].astype(str).to_dict("records"), "2_lengthenings_described": int(len(lng))}
-    params = {"holds": list(HOLDS), "side": "long", "wait": WAIT, "bar_mult": BAR_MULT, "list": LIST.name, "list_md5": list_md5, "cells": int(len(cl)), "seed": SEED}
-    conf = bt._guard(FOLDS, registration, reexecute)               # registered, and once (refuses before anything is loaded)
-    tagged = bt.read_tag(registration, reexecute)
-    stamp = guard_rows(bt.READS, conf, tagged, STRATEGY, params)   # the rows (R75[/tag], F3) / (…, F4) NOW — before the funding archive is re-read and before the market
-    pre["6_guard"] = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf), "logged_as": tagged}
-    print(f"guard: ({tagged}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the funding archive and the F3+F4 market are loaded now", flush=True)
+    params = {"holds": list(HOLDS), "side": "long", "wait": WAIT, "bar_mult": BAR_MULT, "list": spec.list.name, "list_md5": list_md5, "cells": int(len(cl)), "seed": spec.seed, "gate": spec.gate}
+    if spec.guard:
+        conf = bt._guard(spec.folds, registration, reexecute)      # registered, and once (refuses before anything is loaded)
+        tagged = bt.read_tag(registration, reexecute)
+        stamp = guard_rows(bt.READS, conf, tagged, spec.strategy, params)   # the rows (R75[/tag], F3) / (…, F4) NOW — before the funding archive is re-read and before the market
+        pre["6_guard"] = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf), "logged_as": tagged}
+        print(f"guard: ({tagged}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the funding archive and the {fa}+{fb} market are loaded now", flush=True)
+    else:
+        if registration != spec.registration:                     # the exploration folds: no ledger row, but the read is the registration's
+            raise SystemExit(f"fundevent run: {spec.name}'s read is {spec.registration}'s — pass --registration {spec.registration}")
+        conf, tagged = spec.folds, (registration if not reexecute else f"{registration}/{reexecute}")
+        pre["6_guard"] = {"status": "none — the exploration folds, no ledger row", "folds": list(conf), "logged_as": tagged}
 
-    red = rederived(L)                                             # validity (2), after the guard: the archive is read whole
+    red = spec.rederive(L)                                         # validity (2), after the guard: the archive is read whole
     S = fundfreq.settlements()
-    a0, end = listing.window(FOLDS)
-    mem = universe.members(universe.F34_MEMBERS_CSV)
+    a0, end = listing.window(spec.folds)
+    mem = universe.members(spec.members_csv)
     first_block = mem["block"].min()
-    syms = list(dict.fromkeys([*cl["symbol"], *pos["symbol"], *lng["symbol"], *universe.screen_symbols(universe.F34_MEMBERS_CSV), BTC]))
+    syms = list(dict.fromkeys([*cl["symbol"], *pos["symbol"], *lng["symbol"], *universe.screen_symbols(spec.members_csv), BTC]))
     M = bt.market(syms, end, a0 - pd.Timedelta(days=1))
     C = bt.load_costs(M.index, M.columns, end, close=M.close)
     close, fv, idx = M.close.to_numpy(), C.fundval, M.index
@@ -351,9 +482,13 @@ def run(registration: str | None, name: str = NAME, taker_bps: float = TAKER_BPS
     E["settlements_7d"], E["settlement_gap"] = gaps["n_rows"].to_numpy(), gaps["gap"].to_numpy()
     for h in HOLDS:
         E[f"settlements_{_days(h)}"] = [len(settlement_rows(S, s, idx[r + bt.LATENCY], idx[r + bt.LATENCY + h])) for s, r in zip(E["symbol"], rows)]
+    dropped = E_all[~E_all["eligible"]]
+    dropped_keys = {(str(a), str(b)) for a, b in zip(dropped["symbol"], dropped["t0"])}
     V = dict(pre)
     V.update({"2_rederived": red,
               "3_eligible": int(len(E)), "3_eligible_share": float(len(E) / len(cl)) if len(cl) else 0.0,
+              "3_dropped": [{"symbol": a, "t0": b, "why": w} for a, b, w in zip(dropped["symbol"], dropped["t0"].astype(str), dropped["why"])],
+              "3_dropped_as_named": None if spec.expected_dropped is None else bool(dropped_keys == set(spec.expected_dropped)),
               "3_own_cost_row_share": float((E["B_source"] != "R28's 46").mean()) if len(E) else 0.0, "3_B_source": E["B_source"].value_counts().to_dict(),
               "4_min_share_of_bars": float(min(span)) if span else 0.0, "4_events_under_95pct_bars": int(sum(s < MIN_BARS for s in span)),
               "4_label_share": {_days(h): float(np.isfinite(Y[h]).mean()) if len(E) else 0.0 for h in HOLDS},
@@ -364,20 +499,20 @@ def run(registration: str | None, name: str = NAME, taker_bps: float = TAKER_BPS
               "7_ts_known_equals_t0": bool((pd.DatetimeIndex(E["ts_known"]) == pd.DatetimeIndex(E["t0"])).all()) if len(E) else False,
               "8_cells_with_a_settlement_gap": int(E["settlement_gap"].sum()) if len(E) else 0, "8_gap_share": float(E["settlement_gap"].mean()) if len(E) else 0.0,
               "8_settlements_per_cell_1d": {"min": int(E["settlements_1d"].min()), "median": float(E["settlements_1d"].median()), "max": int(E["settlements_1d"].max())} if len(E) else {}})
-    V["status"] = "PASS" if (V["1_fingerprint_before"] == "saved" and V["2_list_md5_as_registered"] and len(L) == LIST_ROWS and V["2_cells_as_registered"] and red.get("status") == "PASS"
-                             and V["3_eligible_share"] >= MIN_ELIGIBLE_SHARE and len(E) >= MIN_ELIGIBLE and V["3_own_cost_row_share"] >= MIN_OWN_COST
+    V["status"] = "PASS" if (V["1_fingerprint_before"] == "saved" and V["2_list_md5_as_registered"] and len(L) == spec.rows and V["2_cells_as_registered"] and red.get("status") == "PASS"
+                             and V["3_eligible_share"] >= spec.min_share and len(E) >= spec.min_eligible and (spec.max_dropped is None or len(dropped) <= spec.max_dropped) and V["3_own_cost_row_share"] >= MIN_OWN_COST
                              and V["4_events_under_95pct_bars"] == 0 and min(V["4_label_share"].values()) >= MIN_LABELS
                              and min(V["5_min_members"].values()) >= MIN_MEMBERS and max(max(v) for v in V["6_identity_max_abs_diff"].values()) <= 1e-9 and V["6_same_cells"]
                              and V["6_hand_max_abs_diff"] <= 1e-9 and V["7_t_equals_t0_plus_5min"] and V["7_ts_known_equals_t0"] and V["8_gap_share"] <= MAX_GAP_SHARE) else "FAIL"
     (out / "validity.json").write_text(json.dumps(V, indent=1, default=str))
     E_all.to_csv(out / "cells_all.csv", index=False)
     hand.to_csv(out / "hand_check.csv", index=False)
-    md = [f"# R75 — the exchange's squeeze flag, bought: LONG at the at-floor shortenings of the funding interval (`ft2 fundevent run`)\n",
-          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · unit {bt.UNIT}, charged on {bt.CHARGED} · market {idx[0]:%Y-%m-%d} → {idx[-1]:%Y-%m-%d %H:%M}, {len(M.columns)} names · the list `{LIST.name}` md5 {list_md5} · {len(L)} rows, {len(cl)} cells ({len(pos)} positive-funding shortenings and {len(lng)} lengthenings described)\n",
+    md = [f"# {spec.title} (`ft2 fundevent run --registration {spec.registration}`)\n",
+          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · unit {bt.UNIT}, charged on {bt.CHARGED} · market {idx[0]:%Y-%m-%d} → {idx[-1]:%Y-%m-%d %H:%M}, {len(M.columns)} names · the list `{spec.list.name}` md5 {list_md5} · {len(L)} rows, {len(cl)} cells ({len(pos)} positive-funding shortenings and {len(lng)} lengthenings described)\n",
           f"\n## Validity: {V['status']} (the fingerprint after the run is `ft2 fundevent check`'s)\n", "\n```\n" + json.dumps(V, indent=1, default=str) + "\n```\n",
           "\nCells by what became of them:\n", E_all["why"].replace("", "eligible").value_counts().rename("cells").to_frame().to_markdown(), "\n"]
     if V["status"] != "PASS":
-        md += ["\n**VOID — the run-up row and the family are not computed. The guard rows stand in the ledger: the folds are read for this question.**\n"]
+        md += ["\n**VOID — the run-up row and the family are not computed." + (" The guard rows stand in the ledger: the folds are read for this question.**\n" if spec.guard else "**\n")]
         (out / "fundevent.md").write_text("\n".join(md))
         return "\n".join(md)
 
@@ -387,7 +522,7 @@ def run(registration: str | None, name: str = NAME, taker_bps: float = TAKER_BPS
     q = [0.05, 0.10, 0.25, 0.5, 0.75, 0.90, 0.95]
     ru = [{"group": "all", "n": int(len(rv)), "median": float(np.median(rv)), "mean": float(rv.mean()), **{f"q{int(x * 100):02d}": float(np.quantile(rv, x)) for x in q}, "share_ge_500": float((rv >= 500).mean()),
            "share_ge_2000": float((rv >= 2000).mean()), "share_below_0": float((rv < 0).mean()), "median_a": float(np.nanmedian(E["runup_a"])), "median_b": float(np.nanmedian(E["runup_b"]))}]
-    for key, labels in SPLITS.items():
+    for key, labels in spec.splits.items():
         for v in (sorted(E[key].unique(), key=str) if labels is None else (True, False)):
             m = (E[key] == v).to_numpy()
             g = ry[m]
@@ -398,34 +533,53 @@ def run(registration: str | None, name: str = NAME, taker_bps: float = TAKER_BPS
     ru.to_csv(out / "runup.csv", index=False)
     little = bool(ru.loc[0, "median"] < 300)
     md += ["\n## The run-up — y over t0 − 24 h → t0 against the members (validity of mechanism; read first, decides nothing)\n", ru.round(1).to_markdown(index=False), "\n",
-           f"\n{'The median run-up is under +300 bps: by the registration the flag is not a squeeze here — recorded beside the verdict, the gate unchanged.' if little else 'The median run-up is at or above +300 bps: a squeeze.'} The audit read +3,352 at the median on the 71 shortenings.\n"]
+           f"\n{'The median run-up is under +300 bps: by the registration the flag is not a squeeze here — recorded beside the verdict, the gate unchanged.' if little else 'The median run-up is at or above +300 bps: a squeeze.'} The audit read +3,352 at the median on the 71 shortenings; R75 +3,805 on its 58.\n"]
 
     # the family
     wk, W = listing.weeks(t)
     Ymat = np.column_stack([Y[h] for h in HOLDS])
-    bs = listing.bootstrap(Ymat, wk, W, block=BLOCK_WEEKS, draws=DRAWS, seed=SEED)
-    f3, f4 = (E["fold"] == "F3").to_numpy(), (E["fold"] == "F4").to_numpy()
+    bs = listing.bootstrap(Ymat, wk, W, block=BLOCK_WEEKS, draws=DRAWS, seed=spec.seed)
+    bt_ = bootstrap_trimmed(Ymat, wk, W, TRIM_FRAC, block=BLOCK_WEEKS, draws=DRAWS, seed=spec.seed) if spec.gate == "trimmed" else None
+    f3, f4 = (E["fold"] == fa).to_numpy(), (E["fold"] == fb).to_numpy()
     fam = []
     for k, h in enumerate(HOLDS):
         y = Y[h]
+        v = y[np.isfinite(y)]
         r = {"hold": _days(h), "n": int(bs["n"][k]), "M": float(bs["m"][k]), "se": float(bs["se"][k]), "u": float(bs["u"][k]), "p_fw": float(bs["p_fw"]), "MDE": 2.8 * float(bs["se"][k]),
-             "M_F3": float(np.nanmean(y[f3])), "M_F4": float(np.nanmean(y[f4])), "M_trim": listing.trimmed(y, TRIM), "se_week": float(bs["se_week"][k]), "se_plain": float(bs["se_plain"][k]), "B": bar,
-             "funding_part": float(np.nanmean(A[h] - PRICE[h])), "price_part": float(np.nanmean(PRICE[h]))}
-        r["verdict"] = hold_verdict(r["M"], r["se"], r["u"], r["p_fw"], r["M_F3"], r["M_F4"], r["M_trim"], bar)
+             f"M_{fa}": float(np.nanmean(y[f3])), f"M_{fb}": float(np.nanmean(y[f4])), "M_trim": listing.trimmed(y, TRIM), "se_week": float(bs["se_week"][k]), "se_plain": float(bs["se_plain"][k]), "B": bar,
+             "funding_part": float(np.nanmean(A[h] - PRICE[h])), "price_part": float(np.nanmean(PRICE[h])),
+             "median": float(np.median(v)) if len(v) else np.nan, "share_above_0": float((v > 0).mean()) if len(v) else np.nan, "M_without_5": float(np.sort(v)[:-5].mean()) if len(v) > 5 else np.nan}
+        if bt_ is not None:
+            kk = int(bt_["k"][k])
+            r.update({"k_trim": kk, "M_trim": float(bt_["m"][k]), "se_trim": float(bt_["se"][k]), "u_trim": float(bt_["u"][k]), "p_fw_trim": float(bt_["p_fw"]), "MDE_trim": 2.8 * float(bt_["se"][k]),
+                      f"M_trim_{fa}": listing.trimmed(y[f3], k_trim(int(np.isfinite(y[f3]).sum()))), f"M_trim_{fb}": listing.trimmed(y[f4], k_trim(int(np.isfinite(y[f4]).sum()))),
+                      "trim_identity": abs(float(bt_["m"][k]) - listing.trimmed(y, kk))})
+            r["verdict"] = hold_verdict(r["M_trim"], r["se_trim"], r["u_trim"], r["p_fw_trim"], r[f"M_trim_{fa}"], r[f"M_trim_{fb}"], r["M_trim"], bar)
+            r["u_gate"] = r["u_trim"]
+        else:
+            r["verdict"] = hold_verdict(r["M"], r["se"], r["u"], r["p_fw"], r[f"M_{fa}"], r[f"M_{fb}"], r["M_trim"], bar)
+            r["u_gate"] = r["u"]
         fam.append(r)
     fam = pd.DataFrame(fam)
-    verdict, cand = family_verdict(fam)
+    verdict, cand = family_verdict(fam.assign(u=fam["u_gate"]))
+    if bt_ is not None and (fam["trim_identity"] > 1e-9).any():   # validity (6)'s last clause: the gate's statistic is listing.trimmed on the run's own y
+        verdict, cand = "VOID", None
+        V["6_trimmed_identity"] = "FAIL"
+        V["status"] = "FAIL"
+        (out / "validity.json").write_text(json.dumps(V, indent=1, default=str))
     fam.to_csv(out / "holds.csv", index=False)
-    md += [f"\n## The family — y = a − b, bps of the position; {len(E)} cells in {W} weeks; B {bar:.1f} (the mean of the names' own doubled round trips on the dearer day; R28's 46 beside); {bs['draws']:,} draws of {BLOCK_WEEKS}-week blocks; the sign POSITIVE\n",
+    gate_note = (f"the GATE on the {int(round(2 * TRIM_FRAC * 100))} % TRIMMED mean (k = {fam['k_trim'].tolist()} out at each end; its own block bootstrap, se_trim / u_trim / p_fw_trim); the plain mean, the median, the share above zero and M without the five largest beside, deciding nothing"
+                 if bt_ is not None else "the gate on the mean")
+    md += [f"\n## The family — y = a − b, bps of the position; {len(E)} cells in {W} weeks; B {bar:.1f} (the mean of the names' own doubled round trips on the dearer day; R28's 46 beside); {bs['draws']:,} draws of {BLOCK_WEEKS}-week blocks; the sign POSITIVE; {gate_note}\n",
            fam.round(3).to_markdown(index=False), "\n", f"\n**Verdict: {verdict}{f' — the candidate hold {cand}' if cand else ''}.**\n",
-           f"\nn in F3 {int(f3.sum())}, in F4 {int(f4.sum())}; events per week: mean {len(E) / W:.2f}, most {int(np.bincount(wk, minlength=W).max())}, weeks with none {int((np.bincount(wk, minlength=W) == 0).sum())}.\n"]
+           f"\nn in {fa} {int(f3.sum())}, in {fb} {int(f4.sum())}; events per week: mean {len(E) / W:.2f}, most {int(np.bincount(wk, minlength=W).max())}, weeks with none {int((np.bincount(wk, minlength=W) == 0).sum())}.\n"]
     E.to_csv(out / "events.csv", index=False)
     (out / "fundevent.md").write_text("\n".join(md))              # the read is on disk before anything is described
-    (out / "meta.json").write_text(json.dumps({"registration": tagged, "decision": "BV1", "unit": bt.UNIT, "charged": bt.CHARGED, "holds": HOLDS, "side": "long", "wait": WAIT, "runup": RUNUP, "bar": bar,
-                                                "bar_mult": BAR_MULT, "bar_r28": BAR_R28, "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": SEED, "rows": int(len(L)), "cells": int(len(cl)), "eligible": int(len(E)),
-                                                "weeks": W, "taker_bps": taker_bps, "list_md5": list_md5, "verdict": verdict, "candidate_hold": cand}, indent=1))
+    (out / "meta.json").write_text(json.dumps({"registration": tagged, "decision": spec.decision, "unit": bt.UNIT, "charged": bt.CHARGED, "holds": HOLDS, "side": "long", "wait": WAIT, "runup": RUNUP, "bar": bar,
+                                                "bar_mult": BAR_MULT, "bar_r28": BAR_R28, "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": spec.seed, "rows": int(len(L)), "cells": int(len(cl)), "eligible": int(len(E)),
+                                                "weeks": W, "taker_bps": taker_bps, "list_md5": list_md5, "gate": spec.gate, "trim_frac": TRIM_FRAC if bt_ is not None else None, "verdict": verdict, "candidate_hold": cand}, indent=1))
     try:
-        md += _describe(out, M, C, E, Y, A, B, PRICE, YL, YB, mem, t, wk, W, bar, pos, lng, end, first_block, taker_bps)
+        md += _describe(out, M, C, E, Y, A, B, PRICE, YL, YB, mem, t, wk, W, bar, pos, lng, end, first_block, taker_bps, spec.splits)
     except Exception as exc:  # noqa: BLE001 — a description that fails must not take the logged read with it
         import traceback
         md += ["\n## Described — FAILED (the read above stands; describe from events.csv)\n", "\n```\n" + "".join(traceback.format_exception(exc)) + "\n```\n"]
@@ -435,7 +589,7 @@ def run(registration: str | None, name: str = NAME, taker_bps: float = TAKER_BPS
     return text
 
 
-def _describe(out: Path, M, C, E, Y, A, B, PRICE, YL, YB, mem, t, wk, W, bar, pos, lng, end, first_block, taker_bps) -> list[str]:
+def _describe(out: Path, M, C, E, Y, A, B, PRICE, YL, YB, mem, t, wk, W, bar, pos, lng, end, first_block, taker_bps, splits: dict = SPLITS) -> list[str]:
     """R75's described tables — decide nothing."""
     close, fv = M.close.to_numpy(), C.fundval
     q = [0.05, 0.25, 0.5, 0.75, 0.95]
@@ -460,7 +614,7 @@ def _describe(out: Path, M, C, E, Y, A, B, PRICE, YL, YB, mem, t, wk, W, bar, po
                 net.append({"hold": d, "side": sname, "cost": f"×{mult}", "n_priced": int(f["net_bps"].notna().sum()), "gross": f["gross_bps"].mean(), "fee": f["fee_bps"].mean(), "spread_impact": f["other_cost_bps"].mean(),
                             "funding": f["funding_bps"].mean(), "net": f["net_bps"].mean(), "net_median": f["net_bps"].median()})
         E[f"y_late_{d}"], E[f"y_btc_{d}"] = YL[h], YB[h]
-    splits = pd.concat([_split_rows(E, Y, k, lab) for k, lab in SPLITS.items()], ignore_index=True)
+    splits = pd.concat([_split_rows(E, Y, k, lab) for k, lab in splits.items()], ignore_index=True)
     ycols = [f"y_{_days(h)}" for h in HOLDS]
     qt = E.assign(q=t.tz_localize(None).to_period("Q").astype(str)).groupby("q")[ycols].agg(["size", "mean", "median"]).round(1)
     ext = pd.concat([E.nlargest(5, "y_7d"), E.nsmallest(5, "y_7d")])[["symbol", "t", "fold", "era", "member_at_t0", "runup_y", *ycols, *[f"funding_{_days(h)}" for h in HOLDS]]].round(0)
@@ -498,7 +652,7 @@ def _describe(out: Path, M, C, E, Y, A, B, PRICE, YL, YB, mem, t, wk, W, bar, po
         G.to_csv(out / "lengthenings.csv", index=False)
     md = ["\n## Described — decides nothing\n",
           "\nThe funding part and the price part of a, apart (the mechanism's own check: a price part ≈ −(funding part) says the carry is a mirage):\n", pd.DataFrame(parts).round(1).to_markdown(index=False), "\n",
-          "\nThe splits (the notice era / the rule era; before and after the formula change of 2025-09-18; the folds; members at t0):\n", splits.round(1).to_markdown(index=False), "\n",
+          "\nThe splits (" + "; ".join(splits["split"].unique()) + "):\n", splits.round(1).to_markdown(index=False), "\n",
           "\nThe distribution of y, and a and b apart:\n", pd.DataFrame(desc).round(1).to_markdown(index=False), "\n",
           "\nThe money of a LONG position (y; a loss capped at the position's size is a different rule, shown beside; a stop is not written in):\n", pd.DataFrame(money).round(3).to_markdown(index=False), "\n",
           f"\nEach position through the harness as a taker (fee {taker_bps} bps a leg, `costwide`'s proxy and its double; the name's own legs, no benchmark):\n", pd.DataFrame(net).round(1).to_markdown(index=False), "\n",
@@ -888,7 +1042,7 @@ def main(action: str, name: str | None = None, registration: str | None = None, 
     if action == "fingerprint":
         print(fingerprint(name))
     elif action == "run":
-        text = run(registration, name or NAME, reexecute=reexecute)
+        text = run(registration, name, reexecute=reexecute)
         print(text)
         if "**VOID" in text:
             sys.exit(2)
