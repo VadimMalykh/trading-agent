@@ -179,6 +179,11 @@ def cmd_krevent(args):
     krevent.main(args.action, args.name, args.registration, args.reexecute)
 
 
+def cmd_fundep(args):
+    from . import fundep
+    fundep.main(args.action, threshold=args.threshold)
+
+
 def cmd_fundevent(args):
     from . import fundevent
     fundevent.main(args.action, args.name, args.registration, args.reexecute)
@@ -626,6 +631,9 @@ def main(argv=None):
     ke.add_argument("--name", default=None, help="run / confirm: the output directory under output/listing/ (default r70 / r71); fingerprint / check: the tag of the fingerprint files (r71 for the confirmation)")
     ke.add_argument("--reexecute", default=None, help="confirm: the tag of a re-execution the plan names (PLAN §3; `re-execution `<tag>``) — logged as R<n>/<tag> beside the first read, which stays")
     ke.add_argument("--registration", default=None, help="confirm: R71 — a guarded read of F3+F4, made once and logged before the market is loaded; `recheck` reproduces R70's pricing through the confirmation's path first (validity (3))")
+    fdp = sub.add_parser("fundep", help="P8 (decision BY1): the EXTREME trailing-day funding of a running perpetual WITHOUT the exchange's flag as a per-name event population — the source audit from funding_archive: events (the 24-hour rolling sum of the settled rate per name; an episode = the first settlement at |sum| ≥ 2 % a day after 14 quiet days, the name ≥ 30 d old; every episode with its flags and the lists per fold pair to freeze → output/fundep/), audit (the frozen lists' counts, the eligibility rule on the F1+F2 list in R75's frame with every dropped cell named, the F3+F4 / F5 bars a Data line would fetch → output/fundep/audit.md). Nothing after t0 read, nothing priced (see ft2/fundep.py)")
+    fdp.add_argument("action", choices=["events", "audit"])
+    fdp.add_argument("--threshold", type=float, default=0.02, help="events: |the 24-hour sum of the settled rate| at t0 as a fraction (default 0.02 = 2 %% a day; 0.01 and 0.03 are counted beside as described rows)")
     fe = sub.add_parser("fundevent", help="P8, R75 (decision BV1): the exchange's squeeze flag bought — LONG the perpetual at the at-floor shortenings of its funding interval on the frozen ft2/fundfreq_f34.csv, 1/3/7 days against the F3+F4 members — `fingerprint` saves the archive slice's per-name fingerprint before the run, `run --registration R75` the guarded read of F3+F4 (the ledger rows before the market) → output/listing/r75/, `check` compares the fingerprint after; `data` is decision BW1's Data line — the 2026 months of the F5 names, F4's last block and BTC fetched and ingested under the fingerprint, the funding rows appended, the coverage written → output/listing/r76_data/ (see ft2/fundevent.py)")
     fe.add_argument("action", choices=["fingerprint", "run", "check", "data", "confirm"])
     fe.add_argument("--name", default=None, help="run: the output directory under output/listing/ (default r75); fingerprint / check: the tag of the fingerprint files")
@@ -640,7 +648,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
