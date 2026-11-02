@@ -13081,6 +13081,151 @@ Result:        **READ 2026-11-01 18:41 → 18:42 UTC on the work VM (`scripts/r7
                cost; decides nothing): mean +2,047, median −343, 45 % above zero, se 724, trimmed (3) +1,526, without the five largest
                +808 — a carry that is real at every cell and a mean that is six run-ons.**
 
+### R77 — the extreme-funding EPISODE, bought, without the exchange's flag: when the shorts have paid a running perpetual's longs 2 % or more over a day, does a LONG position entered at that settlement and held 1, 3 and 7 days earn, with the funding it receives, more against the screener's members than its round trip — R75's frame on the FROZEN F1+F2 episode list, the gate on the 10 % TRIMMED mean, the sign fixed POSITIVE in advance, the exploration read (decision BY1; registered 2026-11-02 on Vadim's "BY1 at 2 %" (P8 decision BY), after the audit's counts (DATA.md `fund_episodes`) and before any code was written or any bar after an episode's t0 was joined to a label)
+Question:      R75 (F3+F4) and R76 (F5) read the exchange's squeeze FLAG bought: the carry real at every cell (the funding received +1,219
+               at the median over a week on R75's 58, +900 … +1,400 on R76's 24), the price's median give-back larger, a mean carried by
+               run-ons — CLEARS, then NOT CONFIRMED, the fifth of five. Decision BY's brainstorm counted the flag's own precondition as a
+               POPULATION: the trailing-day funding at or over 2 % a day with the shorts paying, read at its FIRST settlement, flag or no
+               flag — 475 eligible episodes, of which the exchange's shortenings answer 95 and answer them AFTER the crossing in 77 (the
+               flag's lag −1 h at the median). The question: a perpetual BOUGHT at the crossing settlement and held, does the TYPICAL
+               episode earn — the funding it receives plus its own move against the members — more than its round trip over the next day,
+               three days, week? The sign is FIXED POSITIVE (a long earns +y; the gate reads M_trim ≥ +B): the funding formula pays the long
+               the crowded shorts' premium at every settlement, no crowd has to arrive. The statistic is the TRIMMED mean, by the record's
+               own lesson (README 0p (i), 0o (iv)): R75's and R76's means were tails; a rule trades the typical cell. The plain mean, the
+               median, the share above zero and the mean without the five largest y are read beside and decide nothing. A ceiling audit
+               (Principle 2): no model, no book, no signal — a population statistic per hold, on the EXPLORATION folds.
+Events:        `ft2/fundep_f12.csv` as FROZEN 2026-11-02 (commit 7cf47a1, md5 75c0fbd0512421e67a093a338e8cbf98; the audit's rule in DATA.md
+               `fund_episodes`: t0 = the first settlement of `funding_archive` at which the 24-hour sum of the settled rate reaches 2 % a
+               day in size, a new episode after 14 quiet days, the contract ≥ 30 days old, t0 in F1 or F2): **60 rows, every one `bought`
+               (the sum negative — the shorts paid): F1 30, F2 30; 41 names (ONG, OGN, API3, TRB, GLM, NMR three episodes each, seven names
+               two; the same-name gaps ≥ 16 days — no two cells of a name inside one 7-day hold); 12 members of the block holding t0; 7
+               within ± 7 days of a `fundfreq` shortening (MTL 2023-06-07, STMX 07-22, LPT 08-07, BLZ 08-14, NMR 09-02, FLM 09-06, UMA
+               2024-01-19 — the flag after the crossing in six) — INSIDE the family, a split beside; one 1000× contract (1000FLOKI).** The
+               interval at t0: 8 h on 35, 4 h on 24, 2 h on 1 — the rate at t0 1.5 % a settlement at the median (q10 0.31, q90 2.5), the
+               day's sum 2.49 % (q10 2.04, q90 3.52). The list is the event: nothing is added, dropped or re-dated here; an episode the
+               entry rule cannot hold is counted by reason — **the audit named the two: 1000FLOKI 2024-08-30 00:00 and RDNT 2024-08-30
+               16:00, the 7-day exit past F2's end; 58 cells expected, every one with its own cost row.**
+Entry:         t0 = the crossing settlement's own stamp as frozen (`ts_known` = t0 — public at that second; DATA.md's rule). The decision
+               bar is the 5m bar that closes at t = t0 + 5 min; the position is entered at the close one bar later: t0 + 10 min. LONG.
+               One entry in the family. (R75's entry, unchanged.)
+Eligible:      an episode whose decision bar exists in the market (a finite close at the decision row and the entry row), with t ≥ F1's
+               first member block (2023-05-03 00:00 UTC) and whose 7-day exit bar is before 2024-09-01 00:00 UTC — the same cells at every
+               hold. The market is loaded with its end at 2024-09-01: nothing of F3 … F5 can be read. Dropped cells counted by reason.
+Holds:         three, the family: 288, 864 and 2,016 bars (1, 3, 7 days). R75's.
+Label:         R75's, unchanged: per cell and hold, bps of the position's size at entry, by `horizon.labels`: a = exit ÷ entry − 1 minus
+               the funding the long pays (a negative rate PAYS it), each payment on the position's value; b = the mean of the same over
+               the members of the screener's F1+F2 block that holds t (`ft2/screen_members.csv`, 18 blocks of 60, 2023-05-03 → 2024-08-30)
+               that have both prices, the name itself left out where it is a member. y = a − b. A long earns +y.
+Statistic:     **M_trim,H = the 10 % TRIMMED mean of y over the eligible cells, per hold: the k largest and the k smallest y left out,
+               k = round(0.05 × n) — 3 and 3 on 58 (`listing.trimmed(y, 3)`, R75's M_trim).** Its noise: R28's moving-block draw over
+               calendar weeks (Monday 00:00 UTC, by t; a week with no event stays in the sequence), blocks of 6 consecutive weeks,
+               circular, 10,000 draws, seed 77 — each draw's statistic is the TRIMMED mean of the y of the cells in its drawn weeks (k
+               from that draw's own n); se_trim,H = the sd of the draws; u_H = M_trim,H ÷ se_trim,H. Family-wise p, two-sided, over the
+               three holds: the share of draws in which max_H |M*_trim,H − M_trim,H| ÷ se_trim,H ≥ max_H |u_H|. Beside, deciding nothing:
+               the plain mean M_H with R75's bootstrap (se, u), the median, the share above zero, M_H without the five largest y, the
+               plain se, and the trimmed mean per fold (k = round(0.05 × n_fold): 2 on F1's 30, 1 on F2's 28).
+Bar:           R75's B, unchanged: the mean over the eligible cells of B_i = 2 × 2 × (5 bps + `taker_leg`) on the DEARER of the entry
+               day and the day before; a name without a row on either takes its last within 7 days before; none: R28's 46, counted. The
+               distribution of B_i reported. The gate uses B at every hold.
+Run-up:        R75's validity-of-mechanism row, read FIRST and before the family, no gate: y over t0 − 24 h → t0, its median, mean,
+               quantiles, the share ≥ +500 and ≥ +2,000, by fold, by flagged and by member — does the extreme funding WITHOUT the flag
+               also land on a name that rose against its peers in the day before (R75's +3,805)? A median under +300 is recorded beside
+               the verdict (the population is not a squeeze), the gate unchanged.
+Guard:         none — F1 and F2 are the exploration folds; no row in `confirmation_reads.csv`. The once rule holds all the same: this
+               block is R77's one read of these cells; a re-execution only by §3's rule, tagged, written here before the rerun; no second
+               threshold, hold, entry or benchmark is read on F1+F2's episode cells as a variant of this block — a second threshold's
+               cells are a new registration's or nothing.
+Validity:      read first, or the run is void:
+               (1) no fetch for this read: the archive slice's fingerprint per name (`krlist.fingerprint`) saved before and identical
+               after; the md5 of the three frozen lists, `ft2/screen_members.csv`, `cost_daily_wide.parquet` and `funding_archive.parquet`
+               equal before and after in the chain's log;
+               (2) the frozen list's md5 as registered, 60 rows, 60 cells (all bought); `fundep.episodes`' rule re-derives every frozen
+               row's t0 from `funding_archive` today at the same threshold, quiet window and age rule, and its fund_1d to 1e-12 (a frozen
+               t0 the archive no longer gives is a void);
+               (3) at least 56 of the 60 cells eligible by the entry rule AND the dropped cells are 1000FLOKI 2024-08-30 and RDNT
+               2024-08-30 (the audit's two, by the calendar); any other drop is counted and, past four drops in all, a void; at least 90 %
+               of the eligible cells with their own cost row on the entry day or within the 7 days before (the audit: 58 of 58 on the
+               entry day or the day before);
+               (4) every eligible cell has a close on ≥ 95 % of the 5m bars from t to its 7-day exit, and y exists for ≥ 95 % of the
+               eligible cells at every hold;
+               (5) b is the mean of ≥ 40 members for every cell at every hold;
+               (6) the module's a equals `horizon.labels` at the same cells to 1e-9, every cell, every hold; a cell's a equals
+               `backtest.price`'s gross + funding of a long at the same t; a hand check of 20 cells' a from the raw bars and the
+               settlement rows inside the hold to 1e-9; AND the trimmed statistic equals `listing.trimmed(y, 3)` on the run's own y;
+               (7) known-at: every cell's t equals its frozen t0 + 5 min and its ts_known equals t0; a planted test on made-up bars (a bar
+               before t0's close that must not move a decision) is run BEFORE the real bars;
+               (8) the funding leg: the settlement rows the hold spans are the archive's own rows for the name (a gap over 1.5 × the
+               LARGER of the two neighbouring intervals is a missing row — R75's `calendar_revert` rule); a cell with a gap is counted
+               and, over 5 % of the cells, a void.
+Described:     decides nothing. Per hold: the funding part and the price part of a apart (the mechanism's own check); the splits — the 7
+               FLAGGED against the 51 not (the exchange's answer inside the population), the 11 members at t0 against the non-members,
+               first episodes (33) against repeats (27), the 8-hour clock against the 4-hour one at t0, the day's sum above and below its
+               median (2.49 %), F1 against F2, by calendar quarter; the median, the share above zero, the quantiles; M_H without the
+               three, the five and the ten largest y; a and b apart; the money of a long (the mean of y, each loss capped at the
+               position's size, the largest single loss, the share of cells with y_7d < −5,000; no stop written in); each position priced
+               through the harness as a taker, bought and sold, with `costwide`'s proxy and with it doubled; the five best and the five
+               worst cells at 7 days; the hour of t; B_i's distribution; the events per week; y_1d against the run-up (the correlation and
+               the halves at +2,000); the settlements per cell inside each hold (where the episode ended, README 0p (vi)). Reference rows,
+               no verdict: the entry a day later; y against BTCUSDT; a alone. The sold side: none on F1+F2 (the 13 sold episodes are
+               F3+F4's) — R78 describes them. The 1 % band (52 more F1+F2 episodes at 1 … 2 % a day): a COUNT in the audit, no bar read.
+Code:          `ft2/fundevent.py`, written AFTER this block — R75's `run` generalised by a `Spec` whose default is R75 (the list, its md5
+               and rows, the cell rule, the folds, the member list, the guard, the gate statistic, the splits, the rederivation, the output
+               name): R77's spec names `ft2/fundep_f12.csv`, every row a cell, F1+F2, `ft2/screen_members.csv`, NO guard, the trimmed
+               statistic with its own block bootstrap (a new function in `fundevent.py`), the splits above, `fundep.episodes` as the
+               rederivation, `output/listing/r77/`. `listing.py`, `krevent.py`, `fundep.py` are not edited; R75's and R76's outputs and tests
+               unchanged. CLI: `ft2 fundevent run --registration R77` (the spec chosen by the registration), `fingerprint --name r77`,
+               `check --name r77`. Tests on planted bars FIRST (`tests/test_p8_fundevent.py`): a planted uniform carry CLEARS on the
+               trimmed statistic; a planted carry whose mean is two run-ons CLEARS on the plain mean and NOT on the trimmed (the gate's
+               statistic is the trimmed one, the plain reported beside); the trimmed bootstrap's se under the plain's on a planted tail;
+               no guard row is written for R77 and R75's guard still is; the frozen row rederivation voids on a changed rate; the
+               flagged / member / prior / interval splits come out; R75's tests green unchanged.
+Commands:      on the work VM, `scripts/r77_chain.sh` through `./fluxtrader2/scripts/vm.sh bgsh r77 'bash scripts/r77_chain.sh'` (the steps
+               named fundevent_<action>, the poweroff trap, launched in the background): the md5 of the frozen lists, `ft2/screen_members.csv`,
+               `data/cost_daily_wide.parquet` and `data/funding_archive.parquet` → `python -m ft2 fundevent fingerprint --name r77` →
+               `python -m ft2 fundevent run --registration R77` → `python -m ft2 fundevent check --name r77` → the md5 after. Then `vm.sh
+               pull`, the read into this block, the VM stopped by hand. ≈ 10 … 20 minutes (the F1+F2 market: the 192-name screen universe
+               and the 41 event names over 16 months).
+Folds read:    F1+F2, the exploration folds: the episode cells of 41 names (t0 − 2 d → t0 + 8 d) and the members' bars beside them, for this
+               quantity the first time (R20 / R22 read funding as a rank on the members' daily cells; R41′ the settlement hour; none an
+               extreme-day event). F3+F4's 309 and F5's 106 frozen episodes UNTOUCHED: the market ends at 2024-09-01.
+Gate:          validity PASS, then per hold, the sign POSITIVE, on the TRIMMED statistic:
+               CLEARS at H if M_trim,H ≥ +B AND |u_H| ≥ 2 AND the family-wise p ≤ 0.05 AND the trimmed mean > 0 in F1's AND in F2's
+               cells. If more than one hold clears, the candidate is the one with the largest |u_H|. A candidate on the folds that showed
+               it: it licenses no trade.
+               CLEARS WITH THE OPPOSITE SIGN at H if M_trim,H ≤ −B with the same conditions mirrored: a fact of the record, licensing
+               nothing.
+               CLOSED if at every hold |M_trim,H| + 1.96·se_trim,H < B.
+               NOT DETECTABLE otherwise, with its MDE (2.8·se_trim,H).
+               What a clear licenses: R78 — ONE confirmation read on F3+F4's 309 frozen episodes (`ft2/fundep_f34.csv`, md5 f5765782…) in
+               R76's form: bought at the same entry, the clearing hold, every bought cell the calendar holds (the 15 cells whose 7-day
+               exit passes 2026-01-01 dropped by the calendar and named; the 13 sold described), priced through the harness at the entry
+               day's doubled proxy, hedged with the F3+F4 block's members sold beside, the guard rows (R78, F3) / (R78, F4) first, once;
+               its Data line first (the 41 names' 78 monthly 5m files and `costwide --symbols` for them, BU1's route, nothing read); its
+               registration (decision BZ) written before any bar of an F3+F4 episode is read, its expectation against THIS read's trimmed
+               number and its power on ≈ 290 cells. A clear with the opposite sign, NOT DETECTABLE or CLOSED: the population PARKED in §7
+               with this read; decision BZ says what is next. Whatever the verdict: no variant on F1+F2's episode cells.
+Power:         stated before the read, against the TRIMMED statistic (README 0p (i)). R75's se on 58 cells was 506 / 497 / 819 (1d / 3d /
+               7d; the run-on tail, q95 of y_1d +9,940); this population is less violent — the rate at t0 1.5 % a settlement on 4- and
+               8-hour clocks, against the flagged's pinned hourly cap, and 85 % of it unflagged — so the plain se ≈ 350 … 500 / 350 … 500 /
+               600 … 800, and the trimmed se, the tail out, ≈ 0.5 … 0.7 of it: **se_trim ≈ 200 … 350 / 200 … 350 / 350 … 550; MDE_trim ≈
+               600 … 1,000 / 600 … 1,000 / 1,000 … 1,500.** The carry at the t0 rate held: 1.5 % × 3 settlements ≈ 450 bps a day, decaying
+               as the episode ends (R76's episodes ended inside the week); B ≈ 60 … 125 is under the noise — the gate is decided by |u| ≥ 2
+               and the family's p, not by the bar. CLOSED needs se_trim < 40 at every hold: out of reach — the verdict space is CLEARS /
+               CLEARS WITH THE OPPOSITE SIGN / NOT DETECTABLE.
+Expectation:   validity PASS; 58 eligible (the two named cells by the calendar, none other); own cost rows 58 of 58; b from 59 … 60 members;
+               B ≈ 60 … 125 (the median B_i 60 … 90). The run-up: median +800 … +2,500 (under R75's +3,805 — the exchange flags the violent
+               ones; 55 … 70 % ≥ +500, 25 … 35 % below zero); the 7 flagged above +3,000. The family: the FUNDING part +200 … +400 a day in
+               the mean, decaying (+700 … +1,400 at 7d, against R75's +1,973); the PRICE part NEGATIVE at the median at every hold (−300 …
+               −800 at 1d, −400 … −1,200 at 7d) and in the mean at 1d; M_trim 1d −200 … +300, 3d −300 … +500, 7d −300 … +900; the plain M
+               above M_trim by +200 … +800 at 7d (two to five run-ons); the median below zero at 1d and 3d, near zero at 7d; the share above
+               zero 40 … 50 %. Verdicts, every cell: at 7d CLEARS one in three (decision BY wrote one in two before the audit; the audit's
+               rate at t0 and the trimmed gate take it down), NOT DETECTABLE one in two, CLEARS WITH THE OPPOSITE SIGN one in ten, CLOSED
+               one in twenty; at 3d CLEARS one in five, NOT DETECTABLE two in three, the opposite sign one in ten; at 1d CLEARS one in six,
+               NOT DETECTABLE two in three, the opposite sign one in eight. The candidate, if any, 7d. The splits: the 7 flagged larger in
+               both parts than the 51 not; the 11 members below the non-members (R75's pattern); first episodes and repeats alike in the
+               carry; the 8-hour and 4-hour clocks alike per day; F1 and F2 alike in sign. y_1d against the run-up +0.1 … +0.3.
+Result:        pending.
+
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
 Ranked by what it unlocks. Indicators are *not* on this list: anything computed from candles is
