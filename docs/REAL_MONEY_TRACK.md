@@ -452,7 +452,8 @@ repo; they are on the VM as said above.
 IP-restricted to the VM if possible) and ~$500 USDT in the USDⓈ-M futures wallet. Then say
 "turn the pilot on" — Claude runs the steps below over `gcloud compute ssh`.** Decided by
 Vadim 2026-09-21: build now, $500 budget for now, revisit the amount later (every number
-below is an env var, changed with a restart).
+below is an env var, changed with a restart). **Revisited 2026-11-03: the budget is $1,000 —
+notional $200, $20 a day, $200 kill ("Decided 2026-11-03" at the end of this section).**
 
 **In plain language.** Each time the paper policy opens a trade, the app also places the same
 trade on Binance with real money, small and at a fixed size, holds it the same four hours
@@ -466,12 +467,12 @@ the backtested edge (+33 bps, 1 bp = 0.01%) is ~$0.33 a trade; R0–R5 never rea
 | setting (env var) | default | meaning |
 |---|---|---|
 | `LIVE_PILOT` | `false` | the switch; also needs credentials and a non-`auto` executor |
-| `LIVE_PILOT_NOTIONAL_USD` | 100 | position size per trade, flat (the 1/3..5/3 ladder is not mirrored) |
-| `LIVE_PILOT_LEVERAGE` | 1 | exchange leverage setting |
-| `LIVE_PILOT_MAX_POSITIONS` | 4 | concurrent `live` positions → at most $400 deployed at 1x |
-| `LIVE_PILOT_DAILY_LOSS_USD` | 10 | realised loss since 00:00 UTC after which entries stop for the day |
-| `LIVE_PILOT_MAX_TOTAL_LOSS_USD` | 100 | **kill level**: cumulative realised loss after which the pilot stays off until raised |
-| `LIVE_PILOT_CAPITAL_USD` | 500 | informational (reported on `/api/health`), the budget decided above |
+| `LIVE_PILOT_NOTIONAL_USD` | 100 | position size per trade, flat (the 1/3..5/3 ladder is not mirrored); **the VM runs 200 from 2026-11-03** |
+| `LIVE_PILOT_LEVERAGE` | 1 | exchange leverage setting; **the VM runs 2 from 2026-10-19** |
+| `LIVE_PILOT_MAX_POSITIONS` | 4 | concurrent `live` positions → at most $400 deployed at 1x; **the VM runs 8 from 2026-10-19** |
+| `LIVE_PILOT_DAILY_LOSS_USD` | 10 | realised loss since 00:00 UTC after which entries stop for the day; **the VM runs 20 from 2026-11-03** |
+| `LIVE_PILOT_MAX_TOTAL_LOSS_USD` | 100 | **kill level**: cumulative realised loss after which the pilot stays off until raised; **the VM runs 200 from 2026-11-03** |
+| `LIVE_PILOT_CAPITAL_USD` | 500 | informational (reported on `/api/health`), the budget decided above; **the VM runs 1000 from 2026-11-03** |
 | `LIVE_PILOT_STOP_PCT` | unset → `STOP_LOSS_PCT` (0.02) | **added 2026-10-19:** the pilot's own stop as a fraction; the target is `TAKE_PROFIT_RATIO` × it. The VM is to run **0.10** (below) |
 
 Limits are computed from the `live` rows in `paper_trades` on every entry, so a restart cannot
@@ -617,3 +618,34 @@ log `MICRO-PILOT IS ON … 2x, max 8 open`; `.env` backed up as `.env.bak_202610
 clock is untouched (same start, same checkpoint). The `live` arm's rows before 07:38 UTC carry
 the 2 % brake and are not read beside the paper arms; from the next `live` entry on they are. The first `live` trade after the deploy: its `stop_order_id` order on the exchange sits
 10 % from the fill. From that trade on the `live` arm can be read beside `policy` on shared entries.
+
+**Decided 2026-11-03, Vadim's word: "increase pilot risk level. It was set previously as 500$
+nominal deposit. Make it 1000 now."** Read as the budget every dollar knob was scaled from, so
+the three dollar knobs double with it and the structure (8 slots at 2x, the 10 % catastrophe
+stop, the maker path, the ledger-derived counters) stays: `LIVE_PILOT_CAPITAL_USD=1000`,
+`LIVE_PILOT_NOTIONAL_USD=200` (8 × $200 at 2x = $800 margin of $1,000 — the same 80 % as
+8 × $100 of $500), `LIVE_PILOT_DAILY_LOSS_USD=20` (2 % of the budget, 2.5 % of the $800
+deployed; was 1.25 %), `LIVE_PILOT_MAX_TOTAL_LOSS_USD=200` (20 %; the counter is not reset —
+realised −$31.72 since the fifth start counts against it, headroom $168). Per trade: twice the
+P&L, the stop's worst case ≈ $20 instead of $10. ⚠️ **The wallet is not $1,000.** Read on the
+exchange before the change (`/fapi/v2/balance`, read-only): USDT balance **$393.97**, available
+$424.17 with the manual ADA long's unrealised +$52.91 (ADA 1,326 at 20x, $253 notional — still
+the position that blocks ADA for the pilot). At $100 margin a slot, **four $200 slots fit**; a
+fifth simultaneous entry fails at the exchange for margin (`live_open_failed`, the pilot's own
+handling — nothing breaks, the paper arms are untouched) until the wallet is topped up to the
+nominal $1,000, when all eight fit. Cross margin is shared with the ADA position: four pilot
+slots use the whole available balance, exactly as eight $50 slots did before — the margin
+ceiling is unchanged in dollars, the P&L per trade doubles.
+
+**DEPLOYED 2026-11-03 by Claude over `gcloud compute ssh`, on the word above.** Pre-check 16:00
+UTC: `live_pilot.open 0`, `ab[].open [0, 0]`, realised total −$31.72. `.env` backed up as
+`.env.bak_20261103`, the four lines appended, `docker compose up -d app` at 16:00:18 UTC (one
+recreate; the four variables were already on the compose service's list). Verified 16:02:25 UTC:
+`capital_usd 1000`, `notional_usd 200`, `daily_loss_usd 20`, `max_total_loss_usd 200`,
+`max_positions 8`, `leverage 2`, `stop_pct 0.1`, `take_profit_pct 0.2`, `maker_path true`,
+`enabled true`, `refusal null`, `open 0`, `realised_usd_total −31.72`; `checkpoint_bound true`,
+cut 0.5860595703125, `last_error` null, `executor.mode simulation`, `live_orders true`, user
+stream connected, `ab[].open [0, 0]`; boot log `MICRO-PILOT IS ON … at $200.0 a trade, 2x, max 8
+open — MAKER PATH`. The forward clock is untouched (same start, same checkpoint; the pilot is not
+the registered test). `live` rows from the next entry on are $200 rows; the arm's per-notional
+figures stay comparable across the change, its dollar figures do not.
