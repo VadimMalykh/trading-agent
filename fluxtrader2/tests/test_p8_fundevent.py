@@ -28,8 +28,9 @@ def _t0s(idx, n=8):
     return [idx[0].floor("D") + pd.Timedelta(days=4 + 7 * k, hours=8) for k in range(n)]
 
 
-def _market(weeks=12, seed=0, collapse=0.0):
-    """Twelve weeks of 5m bars on a near-flat price (a tiny noise so that no se is zero); with `collapse`, the cells fall by that much over the day after the entry."""
+def _market(weeks=12, seed=0, collapse=0.0, bars=288):
+    """Twelve weeks of 5m bars on a near-flat price (a tiny noise so that no se is zero); with `collapse`, the cells fall by that much over
+    the `bars` bars after the entry (the day by default; R79's tests: the first hour alone)."""
     rng = np.random.default_rng(seed)
     n = weeks * 7 * 288
     idx = pd.date_range("2024-09-02 00:05", periods=n, freq="5min", tz="UTC", name="t")
@@ -38,8 +39,8 @@ def _market(weeks=12, seed=0, collapse=0.0):
     if collapse:
         for j, t0 in enumerate(t0s):
             i0 = idx.get_loc(t0)
-            if i0 + 3 + 288 < n:
-                r[i0 + 3:i0 + 3 + 288, j] += collapse / 288                                     # the day after the entry (row i0 + 1 is the decision, i0 + 2 the entry)
+            if i0 + 3 + bars < n:
+                r[i0 + 3:i0 + 3 + bars, j] += collapse / bars                                   # after the entry (row i0 + 1 is the decision, i0 + 2 the entry)
     close = pd.DataFrame(100 * np.exp(np.cumsum(r, axis=0)), index=idx, columns=COLS)
     dv = pd.DataFrame(1e6, index=idx, columns=COLS)
     return bt.Market(close, close * 1.001, close * 0.999, dv), t0s
@@ -816,3 +817,94 @@ def test_r78_the_data_check_passes_a_hole_filled_name_by_its_old_rows_and_voids_
     x.to_parquet(tmp_path / "data" / "candles_5m_archive.parquet", index=False)
     chk3 = fundevent.data_check78({"A1USDT": ["2025-02"]})
     assert not chk3["pass"] and chk3["rowcheck"][0]["max_abs_diff"] == 1.0 and chk3["rowcheck_failed"] == ["A1USDT"]
+
+
+# ---- R79 (decision CB1): the SOLD side AFTER THE EXCHANGE'S HOUR on the frozen F1+F2 episode list — the exploration read with the clause ----
+def _events79(S, t0s, path, flags):
+    """R78's planted list with the flag's STAMP: `flags` = {cell index: hours after t0 of the shortening} (negative: before t0)."""
+    E = _events78(S, t0s, path, flagged=tuple(flags))
+    cell_no = E["symbol"].map({s: j for j, s in enumerate(EV)})
+    E["flag_t0"] = [E.loc[i, "t0"] + flags[j] * H if (pd.notna(j) and j in flags) else pd.NaT for i, j in cell_no.items()]
+    E["flag_lag_h"] = [-flags[j] if (pd.notna(j) and j in flags) else np.nan for j in cell_no]
+    E["flagged_7d"] = E["flag_t0"].notna()
+    E.to_csv(path, index=False)
+    return E
+
+
+def _plant79(tmp_path, monkeypatch, M, t0s, C, S, flags, expected_excluded):
+    monkeypatch.chdir(tmp_path)
+    lst = tmp_path / "fundep_f12.csv"
+    L = _events79(S, t0s, lst, flags)
+    out = tmp_path / "output" / "listing"
+    out.mkdir(parents=True)
+    monkeypatch.setattr(fundevent, "OUT", out)
+    monkeypatch.setattr(fundevent, "LIST79", lst)
+    monkeypatch.setattr(fundevent, "LIST79_MD5", hashlib.md5(lst.read_bytes()).hexdigest())
+    monkeypatch.setattr(fundevent, "LIST79_ROWS", len(L))
+    monkeypatch.setattr(fundevent, "CELLS79", 8 - len(expected_excluded))
+    monkeypatch.setattr(fundevent, "MIN_CONFIRM79", 5)
+    monkeypatch.setattr(fundevent, "EXPECTED_EXCLUDED79", set(expected_excluded))
+    monkeypatch.setattr(fundevent, "MIN_MEMBERS", 3)
+    monkeypatch.setattr(fundevent, "DRAWS", 2000)
+    for tag in ("r79", "r79b"):
+        (out / f"{tag}_fingerprint_before.csv").write_text("symbol,rows\n")
+    monkeypatch.setattr(listing, "window", lambda folds: (M.index[0], M.index[-1] + BAR))
+    mem = pd.DataFrame({"block": [M.index[0].floor("D")] * len(MEM), "symbol": MEM})
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: mem)
+    monkeypatch.setattr(universe, "screen_symbols", lambda path=None: MEM)
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): M)
+    monkeypatch.setattr(bt, "load_costs", lambda index, cols, end, cost_mult=1.0, close=None: C)
+    monkeypatch.setattr(fundfreq, "settlements", lambda: S)
+    monkeypatch.setattr(fundfreq, "perp_first", lambda syms, F: pd.DataFrame({"symbol": list(syms), "perp_first": pd.NaT, "perp_first_source": "none"}))
+    plan = tmp_path / "PLAN.md"
+    plan.write_text("### R79 — the extreme-funding episode SOLD AFTER THE EXCHANGE'S HOUR, one day (registered)\n")
+    monkeypatch.setattr(bt, "PLAN", plan)
+    monkeypatch.setattr(bt, "READS", tmp_path / "output" / "backtest" / "confirmation_reads.csv")
+    return L, lst
+
+
+def test_r79_a_planted_give_back_clears_at_t0_plus_70min_with_no_ledger_row_the_clause_removing_the_answered_cell_and_the_entries_described(tmp_path, monkeypatch):
+    M, t0s = _market(collapse=-0.08)                                                                                    # the cells fall 8 % over the day after the base entry
+    S = _settlements78(t0s)                                                                                              # the short PAYS 0.1 % an hour
+    C = _costs(M, S)
+    flags = {1: -6, 3: 2}                                                                                                # EV2 shortened 6 h BEFORE t0 (removed); EV4 two hours AFTER (entered, flagged)
+    _plant79(tmp_path, monkeypatch, M, t0s, C, S, flags, {(EV[1], str(t0s[1]))})
+    with pytest.raises(SystemExit):                                                                                       # the registration is required even without a guard
+        fundevent.confirm(None, "r79b")
+    text = fundevent.confirm("R79")
+    out = tmp_path / "output" / "listing" / "r79"
+    assert not bt.READS.exists()                                                                                          # the exploration folds: no ledger row
+    V = json.loads((out / "validity.json").read_text())
+    assert V["status"] == "PASS" and V["2_cells"] == 7 and V["2_removed_by_clause"] == [{"symbol": EV[1], "t0": str(t0s[1])}] and V["2_removed_as_registered"] is True
+    assert V["3_eligible"] == 7 and V["3_dropped"] == [] and V["3_own_cost_row_share"] == 1.0 and V["7_t_equals_t0_plus_5min"] and V["7_entry_equals_t0_plus_70min"] and V["7_entered_cells_answered_by_the_decision_bar"] == 0
+    assert V["guard"]["status"].startswith("none") and V["6_hand_cells"] == 7 and V["6_hand_max_abs_diff"] <= 1e-9 and max(v for v in V["6_identity_max_abs_diff"].values() if not isinstance(v, bool)) <= 1e-9
+    T = pd.read_csv(out / "trades.csv")
+    assert len(T) == 7 and EV[1] not in set(T["contract"]) and EV[3] in set(T["contract"]) and ((T["x"] - T["e"]) == 288).all()
+    assert (pd.DatetimeIndex(T["entry_t"]).tz_convert("UTC") == pd.DatetimeIndex(T["t0"]).tz_convert("UTC") + pd.Timedelta(minutes=70)).all()
+    assert np.allclose(T["gross"], 740, atol=30) and np.allclose(T["funding"], -230, atol=8)                             # 277 of the 288 falling bars are inside the hold; the carry on the falling value
+    N = json.loads((out / "confirm.json").read_text())
+    assert N["verdict"] == "CLEARS" and N["M_trim"] > 350 and N["u_trim"] >= 2 and 0 < N["M_heavy_trim"] < N["M_trim"] and "M_unflagged_trim" not in N and N["verdict_plain_beside"] == "CLEARS"
+    assert "Verdict: CLEARS" in text and "The ENTRIES" in text and "FIRST HOUR" in text and (out / "removed_by_the_clause_sold.csv").exists()
+    R = pd.read_csv(out / "removed_by_the_clause_sold.csv")
+    assert R["contract"].tolist() == [EV[1]] and R["H"].iloc[0] > 350                                                     # the removed cell, the same sold unit, priced and described
+    ent = pd.read_csv(out / "entries.csv")
+    assert ent["shift_bars"].tolist() == [0, 48, 96, 288] and ent["removed_by_clause"].tolist() == [1, 2, 2, 2] and ent["eligible"].tolist() == [7, 6, 6, 6]
+    assert ent.loc[0, "M"] > ent.loc[1, "M"] > ent.loc[2, "M"] > ent.loc[3, "M"] and ent.loc[0, "M"] - N["M"] == pytest.approx(30, abs=15)   # the base entry holds the hour's 33 bps more; each later entry less
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["registration"] == "R79" and meta["decision"] == "CB1" and meta["shift"] == 12 and meta["clause"] and not meta["guard"] and meta["side"] == "short" and meta["seed"] == 79
+
+
+def test_r79_a_give_back_inside_the_first_hour_alone_is_not_clear_at_t0_plus_70min_while_the_base_entry_and_the_first_hour_row_carry_it(tmp_path, monkeypatch):
+    M, t0s = _market(collapse=-0.08, bars=12)                                                                           # the cells fall 8 % over the hour after the base entry and nothing after
+    S = _settlements78(t0s)
+    C = _costs(M, S)
+    _plant79(tmp_path, monkeypatch, M, t0s, C, S, {1: -6}, {(EV[1], str(t0s[1]))})
+    fundevent.confirm("R79")
+    out = tmp_path / "output" / "listing" / "r79"
+    N = json.loads((out / "confirm.json").read_text())
+    assert N["verdict"] in ("CLOSED", "NOT DETECTABLE") and N["M_trim"] < -150                                             # at t0 + 70 min: the carry paid, the give-back gone
+    ent = pd.read_csv(out / "entries.csv")
+    assert ent.loc[0, "M"] > 400 and ent.loc[0, "removed_by_clause"] == 1                                                   # the base entry (t0 + 10 min) holds the whole give-back
+    md = (out / "confirm.md").read_text()
+    fh = json.loads(md.split("share of the day's gross at the base entry:\n")[1].split("```")[1])
+    assert fh["bars"] == 12 and fh["gross_mean"] > 700 and fh["share_of_the_day_gross_at_base_entry"] > 0.9                   # the first hour carries it

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -812,6 +813,25 @@ DESCRIBED78 = {"twins": "The second events of a name with a position open (none 
                "y_note": "R77's frame on these cells (y = a − the members' mean, no cost; R77 on F1+F2: 1d −266 trimmed, 3d −111, 7d −191) — the bought side's three holds unpriced", "unit": "sold"}
 DATA_OUT78 = OUT / "r78_data"
 
+# ---- R79 (decision CB1): the SOLD side AFTER THE EXCHANGE'S HOUR, one day, on the frozen F1+F2 episode list — the exploration read ----
+NAME79 = "r79"
+LIST79 = fundep.LISTS["f12"]
+LIST79_MD5 = "75c0fbd0512421e67a093a338e8cbf98"    # as registered (PLAN §8 R79; frozen 7cf47a1 — R77's list unchanged)
+LIST79_ROWS, CELLS79 = 60, 59                      # 60 bought-side rows; the clause removes FLM 2023-09-06 02:00 (its interval already 2 h at t0) → 59 cells
+FOLDS79 = ("F1", "F2")
+SHIFT79 = 12                                       # the rule's decision bar: the first 5m bar closing after t0 + 60 min = t0 + 65 min, 12 bars after the base row; the entry at t0 + 70 min
+SEED79 = 79
+MIN_CONFIRM79, MAX_DROPPED79 = 56, 4
+EXPECTED_EXCLUDED79 = {("FLMUSDT", "2023-09-06 02:00:00+00:00")}   # validity (7): the clause's removals as registered
+ENTRIES79 = (0, 48, 96, 288)                       # the described entries from the base row: t0 + 10 min (R77's), + 4 h, + 8 h, + 24 h
+HOUR79 = 12                                        # the first hour's own sold move: the unit sold at t0 + 10 min and bought back at t0 + 70 min
+STRATEGY79 = "fundep_sold_1d_after_hour"
+WORDS79 = {"CONFIRMED": "CLEARS", "NOT CONFIRMED": "NOT DETECTABLE"}   # an exploration read's words; CLOSED unchanged
+DESCRIBED79 = {"twins": "The second events of a name with a position open (none expected: the same-name gaps ≥ 16 days)", "pos": "The longs-paying episodes: none on F1+F2",
+               "pos_file": "longs_paying_bought", "lng": "The cells the clause removed — the exchange had shortened the name's interval by the decision bar's close (the same sold unit priced, never a cell)",
+               "lng_file": "removed_by_the_clause_sold", "mirror": "pos",
+               "y_note": "R77's frame on these cells from the base row (y = a − the members' mean, no cost; R77 on F1+F2: 1d −266 trimmed, 3d −111, 7d −191) — the bought side's three holds unpriced", "unit": "sold"}
+
 
 @dataclasses.dataclass
 class ConfirmSpec:
@@ -842,6 +862,23 @@ class ConfirmSpec:
     expected_dropped: set | None = None            # validity (3): the calendar's drops, exactly these (symbol, str(t0))
     max_dropped: int | None = None                 # validity (3): every drop counted; past this, a void
     unflagged_clause: bool = False                 # the gate's fourth clause: the trimmed mean of the cells not flagged within 7 days > 0
+    guard: bool = True                             # False (R79): the exploration folds — no ledger row; the registration and its block required all the same
+    shift: int = 0                                 # R79: the rule's decision bar is `shift` bars after the base row (t0 + 5 min); the entry one bar after it
+    clause: bool = False                           # R79: a row whose `flag_t0` (the shortening's stamp) is at or before the decision bar's close is not a cell
+    expected_excluded: set | None = None           # validity (7): the clause's removals, exactly these (symbol, str(t0))
+    entries_described: tuple = ()                  # the described entries (bars from the base row), each with the clause at its own decision bar
+    words: dict | None = None                      # the verdict's words (R79: CLEARS / NOT DETECTABLE for an exploration read)
+
+
+def decision_close(t0, shift: int):
+    """The rule's decision bar's close: t0 + (WAIT + shift) bars."""
+    return t0 + (WAIT + shift) * BAR
+
+
+def clause_removes(L: pd.DataFrame, shift: int) -> np.ndarray:
+    """R79's clause: the rows whose shortening is stamped at or before the decision bar's close (`flag_t0` from the frozen list; NaT never)."""
+    ft = pd.to_datetime(L["flag_t0"], utc=True) if "flag_t0" in L else pd.Series(pd.NaT, index=L.index)
+    return (ft.notna() & (ft <= decision_close(pd.DatetimeIndex(L["t0"]), shift))).to_numpy()
 
 
 def _one_per_name(S: pd.DataFrame, hold: int) -> np.ndarray:
@@ -877,8 +914,24 @@ def cells78(L: pd.DataFrame, hold: int = HOLD78) -> tuple[pd.DataFrame, pd.DataF
     return B[keep].reset_index(drop=True), B[~keep].reset_index(drop=True), L[L["side"] == "sold"].reset_index(drop=True), L.iloc[0:0].reset_index(drop=True)
 
 
+def cells79(L: pd.DataFrame, hold: int = HOLD78, shift: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """R79: (the cells = the bought-side rows under the one-position-per-name rule LESS the clause's removals, the second events (none
+    expected), the sold-side rows (none on F1+F2), the removed cells — described as the same sold unit, never cells)."""
+    shift = SHIFT79 if shift is None else shift
+    B = L[L["side"] == "bought"].sort_values(["t0", "symbol"]).reset_index(drop=True)
+    keep = _one_per_name(B, hold + shift)
+    K = B[keep].reset_index(drop=True)
+    rm = clause_removes(K, shift)
+    return K[~rm].reset_index(drop=True), B[~keep].reset_index(drop=True), L[L["side"] == "sold"].reset_index(drop=True), K[rm].reset_index(drop=True)
+
+
 def confirm_spec_for(registration: str | None) -> ConfirmSpec:
-    """R78's spec by its registration; R76's otherwise — both read the module's constants at call time (the tests replace them)."""
+    """R78's / R79's spec by its registration; R76's otherwise — all read the module's constants at call time (the tests replace them)."""
+    if registration == "R79":
+        return ConfirmSpec("R79", NAME79, "R79 — the extreme-funding episode SOLD AFTER THE EXCHANGE'S HOUR and held ONE day, in money: the exploration read on the frozen F1+F2 episode list, the unit sold at t0 + 70 min only without a shortening by the decision bar's close, the gate on the 10 % trimmed mean with the heavy clause",
+                           "CB1", LIST79, LIST79_MD5, LIST79_ROWS, CELLS79, FOLDS79, universe.MEMBERS_CSV, None, STRATEGY79, -1, HOLD78, "trimmed", SEED79, cells79, rederived_episodes,
+                           MIN_CONFIRM79, MIN_CONFIRM_SHARE78, HAND78, SPLITS78, DESCRIBED79, set(), MAX_DROPPED79, False,
+                           guard=False, shift=SHIFT79, clause=True, expected_excluded=EXPECTED_EXCLUDED79, entries_described=ENTRIES79, words=WORDS79)
     if registration == "R78":
         return ConfirmSpec("R78", NAME78, "R78 — the extreme-funding episode SOLD at the crossing and held ONE day, in money: the confirmation read on the frozen F3+F4 episode list, the gate on the 10 % trimmed mean with the heavy and the unflagged clauses",
                            "BZ1", LIST78, LIST78_MD5, LIST78_ROWS, CELLS78, FOLDS78, universe.F34_MEMBERS_CSV, None, STRATEGY78, -1, HOLD78, "trimmed", SEED78, cells78, rederived_episodes,
@@ -913,12 +966,15 @@ def bought_trades(M: bt.Market, C: bt.Costs, E: pd.DataFrame, mask: np.ndarray, 
     return out
 
 
-def trades_for(spec: ConfirmSpec, M: bt.Market, C: bt.Costs, E: pd.DataFrame, mask: np.ndarray, taker_bps: float, entry_mult: float, other_mult: float, shift: int = 0, side: int | None = None) -> pd.DataFrame:
-    """The spec's unit (or `side`'s) per cell: bought through `bought_trades`, sold through `listing.sold_trades` with no stop (the members BOUGHT as the hedge)."""
+def trades_for(spec: ConfirmSpec, M: bt.Market, C: bt.Costs, E: pd.DataFrame, mask: np.ndarray, taker_bps: float, entry_mult: float, other_mult: float, shift: int = 0, side: int | None = None,
+               hold: int | None = None) -> pd.DataFrame:
+    """The spec's unit (or `side`'s) per cell: bought through `bought_trades`, sold through `listing.sold_trades` with no stop (the members BOUGHT as the hedge);
+    `shift` bars from the base row to the decision bar, `hold` the spec's unless given."""
     s = spec.side if side is None else side
+    hold = spec.hold if hold is None else hold
     if s > 0:
-        return bought_trades(M, C, _frame(E), mask, taker_bps, entry_mult=entry_mult, other_mult=other_mult, hold=spec.hold, shift=shift)
-    return listing.sold_trades(M, C, _frame(E), mask, taker_bps, entry_mult=entry_mult, other_mult=other_mult, hold=spec.hold, level=np.inf, shift=shift)
+        return bought_trades(M, C, _frame(E), mask, taker_bps, entry_mult=entry_mult, other_mult=other_mult, hold=hold, shift=shift)
+    return listing.sold_trades(M, C, _frame(E), mask, taker_bps, entry_mult=entry_mult, other_mult=other_mult, hold=hold, level=np.inf, shift=shift)
 
 
 def _arith5(M: bt.Market, C: bt.Costs, T: pd.DataFrame, own: np.ndarray, taker_bps: float, side: int = 1, hold: int = HOLD) -> dict:
@@ -1011,11 +1067,22 @@ def confirm(registration: str | None, name: str | None = None, taker_bps: float 
     side_name = "long" if spec.side > 0 else "short"
     params = {"hold": spec.hold, "stop": None, "wait": WAIT, "side": side_name, "entry_mult": ENTRY_MULT, "heavy": list(HEAVY), "members": str(BASKET_BLOCK.date()) if spec.fixed_block is not None else f"point-in-time {fa}+{fb} blocks",
               "list": spec.list.name, "list_md5": list_md5, "cells": int(len(cl)), "seed": spec.seed, "gate": spec.gate}
-    conf = bt._guard(spec.folds, registration, reexecute)          # registered, and once (refuses before anything is loaded)
-    tagged = bt.read_tag(registration, reexecute)
-    stamp = guard_rows(bt.READS, conf, tagged, spec.strategy, params)  # the rows (R<n>[/tag], fold) NOW — before the funding archive is re-read and before the market
-    pre["guard"] = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf), "logged_as": tagged}
-    print(f"guard: ({tagged}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the funding archive and the {'+'.join(spec.folds)} market are loaded now", flush=True)
+    if spec.clause:
+        pre["2_removed_by_clause"] = lng[["symbol", "t0"]].astype(str).to_dict("records")
+        pre["2_removed_as_registered"] = ({(r["symbol"], r["t0"]) for r in pre["2_removed_by_clause"]} == set(spec.expected_excluded)) if spec.expected_excluded is not None else "not registered"
+    if spec.guard:
+        conf = bt._guard(spec.folds, registration, reexecute)          # registered, and once (refuses before anything is loaded)
+        tagged = bt.read_tag(registration, reexecute)
+        stamp = guard_rows(bt.READS, conf, tagged, spec.strategy, params)  # the rows (R<n>[/tag], fold) NOW — before the funding archive is re-read and before the market
+        pre["guard"] = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf), "logged_as": tagged}
+        print(f"guard: ({tagged}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the funding archive and the {'+'.join(spec.folds)} market are loaded now", flush=True)
+    else:
+        if registration != spec.registration:                          # the exploration folds: no ledger row, but the read is the registration's
+            raise SystemExit(f"fundevent confirm: {spec.name}'s read is {spec.registration}'s — pass --registration {spec.registration}")
+        if not bt.PLAN.exists() or not re.search(rf"^### {registration} ", bt.PLAN.read_text(), flags=re.M):
+            raise SystemExit(f"no '### {registration} ' block in {bt.PLAN}: write the registration before the read")
+        conf, tagged = spec.folds, bt.read_tag(registration, reexecute)
+        pre["guard"] = {"status": "none — the exploration folds, no ledger row", "folds": list(conf), "logged_as": tagged}
 
     red = spec.rederive(L)
     S = fundfreq.settlements()
@@ -1026,30 +1093,32 @@ def confirm(registration: str | None, name: str | None = None, taker_bps: float 
     M = bt.market(syms, end, a0 - pd.Timedelta(days=1))
     C = bt.load_costs(M.index, M.columns, end, close=M.close)
     close, idx, fv = M.close.to_numpy(), M.index, C.fundval
-    E_all = entries(M, cl, end, first_block, longest=spec.hold)
+    sh = spec.shift
+    E_all = entries(M, cl, end, first_block, longest=spec.hold + sh)
     E_all["why"] = E_all["why"].replace({"before the first member block": f"before {fa}'s first day" if spec.fixed_block is not None else f"before {fa}'s first member block",
                                          "the 7-day exit is not before the end": f"the {dh} exit is not before {fb}'s end"})
     E = E_all[E_all["eligible"]].reset_index(drop=True)
     own = M.columns.get_indexer(E["symbol"])
-    rows, t = E["row"].to_numpy(), pd.DatetimeIndex(E["t"])
+    rows, t0_ = E["row"].to_numpy(), pd.DatetimeIndex(E["t"])
+    t = pd.DatetimeIndex(idx[rows + sh])                                # the rule's decision bar (the base row when the shift is 0): the member block, the weeks, the months are its
     mask = listing.member_mask(mem, M.columns, t)
-    T = trades_for(spec, M, C, E, mask, taker_bps, ENTRY_MULT, 1.0)
-    TH = trades_for(spec, M, C, E, mask, taker_bps, HEAVY[0], HEAVY[1])
-    carried = [c for c in ("t0", "ts_known", "era", "member_at_t0", "new_h", "prev_h", "fund_1d", "rate_t0", "interval_h", "prior_episodes", "flagged_7d", "first_episode", "clock", "sum_half") if c in E]
+    T = trades_for(spec, M, C, E, mask, taker_bps, ENTRY_MULT, 1.0, shift=sh)
+    TH = trades_for(spec, M, C, E, mask, taker_bps, HEAVY[0], HEAVY[1], shift=sh)
+    carried = [c for c in ("t0", "ts_known", "era", "member_at_t0", "new_h", "prev_h", "fund_1d", "rate_t0", "interval_h", "prior_episodes", "flagged_7d", "flag_t0", "first_episode", "clock", "sum_half") if c in E]
     for k in carried:
         T[k], TH[k] = E[k].to_numpy(), E[k].to_numpy()
 
     # validity, read first
-    span = [float(np.isfinite(close[r:r + bt.LATENCY + spec.hold + 1, c]).mean()) for r, c in zip(rows, own)]
+    span = [float(np.isfinite(close[r:r + sh + bt.LATENCY + spec.hold + 1, c]).mean()) for r, c in zip(rows, own)]
     d6 = _arith5(M, C, T, own, taker_bps, side=spec.side, hold=spec.hold)
     hand_idx = np.linspace(0, len(E) - 1, min(spec.hand, len(E))).round().astype(int) if len(E) else np.array([], dtype=int)
-    hand = pd.DataFrame([{"symbol": E.loc[i, "symbol"], "funding_hand": spec.side * hand_a(close, idx, S, E.loc[i, "symbol"], own[i], rows[i] + bt.LATENCY, rows[i] + bt.LATENCY + spec.hold)[1], "funding": float(T.loc[i, "funding"]),
-                          "settlements": hand_a(close, idx, S, E.loc[i, "symbol"], own[i], rows[i] + bt.LATENCY, rows[i] + bt.LATENCY + spec.hold)[2]} for i in hand_idx])
+    hand = pd.DataFrame([{"symbol": E.loc[i, "symbol"], "funding_hand": spec.side * hand_a(close, idx, S, E.loc[i, "symbol"], own[i], rows[i] + sh + bt.LATENCY, rows[i] + sh + bt.LATENCY + spec.hold)[1], "funding": float(T.loc[i, "funding"]),
+                          "settlements": hand_a(close, idx, S, E.loc[i, "symbol"], own[i], rows[i] + sh + bt.LATENCY, rows[i] + sh + bt.LATENCY + spec.hold)[2]} for i in hand_idx])
     if len(hand):
         hand["diff"] = (hand["funding_hand"] - hand["funding"]).abs()
-    gaps = pd.DataFrame([settlement_gaps(S, s, t0, idx[r + bt.LATENCY + spec.hold]) for s, t0, r in zip(E["symbol"], E["t0"], rows)]) if len(E) else pd.DataFrame(columns=["n_rows", "max_gap_ratio", "gap"])
+    gaps = pd.DataFrame([settlement_gaps(S, s, t0, idx[r + sh + bt.LATENCY + spec.hold]) for s, t0, r in zip(E["symbol"], E["t0"], rows)]) if len(E) else pd.DataFrame(columns=["n_rows", "max_gap_ratio", "gap"])
     T[f"settlements_{dh}"], T["settlement_gap"] = gaps["n_rows"].to_numpy(), gaps["gap"].to_numpy()
-    cday = C.days.get_indexer(idx[rows + bt.LATENCY].floor("D"))
+    cday = C.days.get_indexer(idx[rows + sh + bt.LATENCY].floor("D"))
     own_row = np.array([bool(p >= 0 and np.isfinite(C.taker_leg[p, c])) for p, c in zip(cday, own)])
     unpriced = T.loc[T["H"].isna(), "contract"].tolist()
     dropped = E_all.loc[~E_all["eligible"], ["symbol", "t0", "why"]].astype(str).to_dict("records")
@@ -1062,7 +1131,9 @@ def confirm(registration: str | None, name: str | None = None, taker_bps: float 
               "4_min_share_of_bars": float(min(span)) if span else 0.0, "4_cells_under_95pct_bars": int(sum(v < MIN_BARS for v in span)),
               "5_min_basket": int(T["n_b"].min()) if len(T) else 0,
               "6_identity_max_abs_diff": d6, "6_hand_cells": int(len(hand_idx)), "6_hand_max_abs_diff": float(hand["diff"].max()) if len(hand) else np.nan,
-              "7_t_equals_t0_plus_5min": bool((t == pd.DatetimeIndex(E["t0"]) + WAIT * BAR).all()) if len(E) else False, "7_ts_known_equals_t0": bool((pd.DatetimeIndex(E["ts_known"]) == pd.DatetimeIndex(E["t0"])).all()) if len(E) else False,
+              "7_t_equals_t0_plus_5min": bool((t0_ == pd.DatetimeIndex(E["t0"]) + WAIT * BAR).all()) if len(E) else False, "7_ts_known_equals_t0": bool((pd.DatetimeIndex(E["ts_known"]) == pd.DatetimeIndex(E["t0"])).all()) if len(E) else False,
+              f"7_entry_equals_t0_plus_{(WAIT + sh + bt.LATENCY) * 5}min": bool((pd.DatetimeIndex(T["entry_t"]) == pd.DatetimeIndex(E["t0"]) + (WAIT + sh + bt.LATENCY) * BAR).all()) if len(E) else False,
+              "7_entered_cells_answered_by_the_decision_bar": int(clause_removes(E, sh).sum()) if (spec.clause and len(E)) else "no clause",
               "7_no_stop": bool(not T["stopped"].any()) if len(T) else True, "7_exits_at_or_after_end": int((pd.DatetimeIndex(T["exit_t"]) >= end).sum()) if len(T) else 0,
               "8_cells_with_a_settlement_gap": int(T["settlement_gap"].sum()) if len(T) else 0, "8_gap_share": float(T["settlement_gap"].mean()) if len(T) else 0.0,
               f"8_settlements_per_cell_{dh}": {"min": int(T[f"settlements_{dh}"].min()), "median": float(T[f"settlements_{dh}"].median()), "max": int(T[f"settlements_{dh}"].max())} if len(T) else {}})
@@ -1072,6 +1143,8 @@ def confirm(registration: str | None, name: str | None = None, taker_bps: float 
                              and V["4_cells_under_95pct_bars"] == 0 and V["5_min_basket"] >= MIN_MEMBERS
                              and max(v for v in d6.values() if not isinstance(v, bool)) <= 1e-9 and d6[f"hold_is_{spec.hold}"] and V["6_hand_max_abs_diff"] <= 1e-9
                              and V["7_t_equals_t0_plus_5min"] and V["7_ts_known_equals_t0"] and V["7_no_stop"] and V["7_exits_at_or_after_end"] == 0
+                             and V[f"7_entry_equals_t0_plus_{(WAIT + sh + bt.LATENCY) * 5}min"] and V["7_entered_cells_answered_by_the_decision_bar"] in (0, "no clause")
+                             and V.get("2_removed_as_registered", True) in (True, "not registered")
                              and V["8_gap_share"] <= MAX_GAP_SHARE) else "FAIL"
     (out / "validity.json").write_text(json.dumps(V, indent=1, default=str))
     E_all.to_csv(out / "cells_all.csv", index=False)
@@ -1095,8 +1168,10 @@ def confirm(registration: str | None, name: str | None = None, taker_bps: float 
         G = trimmed_gate(H, t, spec.seed, heavy=TH["H"].to_numpy(), unflagged=T["flagged_7d"].to_numpy() == False if spec.unflagged_clause else None)   # noqa: E712
         N.update(G)
         N["M_without_k_largest"] = float(np.sort(H[ok])[:-G["k_trim"]].mean()) if ok.sum() > G["k_trim"] else np.nan
-        N["verdict_plain_beside"] = listing.verdict_confirm(N["M"], N["se"], m_heavy)
-        N["verdict"] = verdict_confirm_trimmed(G["M_trim"], G["se_trim"], G["M_heavy_trim"], G.get("M_unflagged_trim") if spec.unflagged_clause else None)
+        words = spec.words or {}
+        N["verdict_plain_beside"] = words.get(listing.verdict_confirm(N["M"], N["se"], m_heavy), listing.verdict_confirm(N["M"], N["se"], m_heavy))
+        v = verdict_confirm_trimmed(G["M_trim"], G["se_trim"], G["M_heavy_trim"], G.get("M_unflagged_trim") if spec.unflagged_clause else None)
+        N["verdict"] = words.get(v, v)
         shown = ["n", "weeks", "k_trim", "M_trim", "se_trim", "u_trim", "MDE_trim", "M_heavy_trim"] + (["n_unflagged", "M_unflagged_trim", "u_unflagged_trim", "M_flagged_trim"] if spec.unflagged_clause else []) + ["verdict"]
         beside = ["M", "se", "u", "M_heavy", "median", "share_above_0", "M_without_k_largest", "se_bootstrap", "se_week", "se_plain", "verdict_plain_beside"]
         head = f"\n## The number — H = own + hedge, bps of the {spec.described['unit']} unit; {N['n']} positions in {N['weeks']} weeks; the gate on the 10 % TRIMMED mean (k = round(0.05 n)), its se the sd of the block draws' trimmed means\n"
@@ -1113,11 +1188,11 @@ def confirm(registration: str | None, name: str | None = None, taker_bps: float 
         md += ["\nBeside, deciding nothing (the plain mean with R76's noise, the median, the share above zero, the mean without the k largest H):\n", pd.DataFrame([{k: N[k] for k in beside}]).round(3).to_markdown(index=False), "\n"]
     md += [f"\n**Verdict: {N['verdict']}.**\n"]
     (out / "confirm.md").write_text("\n".join(md))                # the read is on disk before anything is described
-    (out / "meta.json").write_text(json.dumps({"registration": tagged, "decision": spec.decision, "unit": bt.UNIT, "charged": bt.CHARGED, "hold": spec.hold, "stop": None, "wait": WAIT, "side": side_name, "entry_mult": ENTRY_MULT,
-                                                "heavy": HEAVY, "members": params["members"], "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": spec.seed, "gate": spec.gate, "unflagged_clause": spec.unflagged_clause,
-                                                "rows": int(len(L)), "cells": int(len(cl)), "eligible": int(len(E)), "taker_bps": taker_bps, "list_md5": list_md5, "verdict": N["verdict"]}, indent=1))
+    (out / "meta.json").write_text(json.dumps({"registration": tagged, "decision": spec.decision, "unit": bt.UNIT, "charged": bt.CHARGED, "hold": spec.hold, "stop": None, "wait": WAIT, "shift": sh, "side": side_name, "entry_mult": ENTRY_MULT,
+                                                "heavy": HEAVY, "members": params["members"], "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": spec.seed, "gate": spec.gate, "unflagged_clause": spec.unflagged_clause, "clause": spec.clause,
+                                                "guard": spec.guard, "rows": int(len(L)), "cells": int(len(cl)), "eligible": int(len(E)), "taker_bps": taker_bps, "list_md5": list_md5, "verdict": N["verdict"]}, indent=1))
     try:
-        md += _describe5(out, M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, twins, pos, lng, end, a0, spec)
+        md += _describe5(out, M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, twins, pos, lng, end, a0, spec, cl=cl, first_block=first_block)
     except Exception as exc:  # noqa: BLE001 — a description that fails must not take the logged read with it
         import traceback
         md += ["\n## Described — FAILED (the read above stands; describe from trades.csv)\n", "\n```\n" + "".join(traceback.format_exception(exc)) + "\n```\n"]
@@ -1127,8 +1202,35 @@ def confirm(registration: str | None, name: str | None = None, taker_bps: float 
     return text
 
 
-def _describe5(out, M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, twins, pos, lng, end, a0, spec: ConfirmSpec | None = None) -> list[str]:
-    """R76's / R78's described tables — decide nothing."""
+def _entries_table(spec: ConfirmSpec, M: bt.Market, C: bt.Costs, mem: pd.DataFrame, base: pd.DataFrame, end, first_block, taker_bps: float) -> tuple[pd.DataFrame, dict]:
+    """R79's described entries: the same base population (the one-position-per-name rows before the clause), the clause applied at each
+    entry's own decision bar, the sold unit priced from that bar with the spec's pricing; and the FIRST HOUR's own sold move — the unit sold
+    at the base row's entry and bought back `HOUR79` bars later — with its share of the day's gross at the base entry. Decides nothing."""
+    idx = M.index
+    rows_out, first_hour = [], {}
+    for sh in spec.entries_described:
+        D = base[~clause_removes(base, sh)].reset_index(drop=True) if spec.clause else base
+        DA = entries(M, D, end, first_block, longest=spec.hold + sh)
+        DE = DA[DA["eligible"]].reset_index(drop=True)
+        r = {"entry": f"t0 + {(WAIT + sh + bt.LATENCY) * 5} min", "shift_bars": sh, "removed_by_clause": int(len(base) - len(D)), "eligible": int(len(DE))}
+        if len(DE):
+            dm = listing.member_mask(mem, M.columns, pd.DatetimeIndex(idx[DE["row"].to_numpy() + sh]))
+            X = trades_for(spec, M, C, DE, dm, taker_bps, ENTRY_MULT, 1.0, shift=sh)
+            Hx = X["H"].dropna().to_numpy()
+            r.update({"n": int(len(Hx)), "M": float(Hx.mean()) if len(Hx) else np.nan, "median": float(np.median(Hx)) if len(Hx) else np.nan, "M_trim": listing.trimmed(Hx, k_trim(len(Hx))) if len(Hx) > 2 * k_trim(len(Hx)) else np.nan,
+                      "share_above_0": float((Hx > 0).mean()) if len(Hx) else np.nan, "gross": float(X["gross"].mean()), "funding": float(X["funding"].mean()), "own": float(X["own"].mean()), "hedge": float(X["hedge"].mean()),
+                      "se_plain": float(Hx.std(ddof=1) / np.sqrt(len(Hx))) if len(Hx) > 1 else np.nan})
+            if sh == 0 and spec.shift > 0:
+                Y = trades_for(spec, M, C, DE, dm, taker_bps, ENTRY_MULT, 1.0, shift=0, hold=min(HOUR79, spec.shift))
+                first_hour = {"bars": int(min(HOUR79, spec.shift)), "n": int(Y["H"].notna().sum()), "gross_mean": float(Y["gross"].mean()), "gross_median": float(Y["gross"].median()), "funding_mean": float(Y["funding"].mean()),
+                              "own_mean": float(Y["own"].mean()), "H_mean": float(Y["H"].mean()), "H_median": float(Y["H"].median()), "share_gross_above_0": float((Y["gross"] > 0).mean()),
+                              "share_of_the_day_gross_at_base_entry": float(Y["gross"].mean() / X["gross"].mean()) if X["gross"].mean() else np.nan}
+        rows_out.append(r)
+    return pd.DataFrame(rows_out), first_hour
+
+
+def _describe5(out, M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, twins, pos, lng, end, a0, spec: ConfirmSpec | None = None, cl: pd.DataFrame | None = None, first_block=None) -> list[str]:
+    """R76's / R78's / R79's described tables — decide nothing."""
     spec = spec or confirm_spec_for("R76")
     dh = _days(spec.hold)
     close, idx, fv = M.close.to_numpy(), M.index, C.fundval
@@ -1168,9 +1270,13 @@ def _describe5(out, M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, twins, pos
         DE = DA[DA["eligible"]].reset_index(drop=True)
         if not len(DE):
             return DE
-        dm = listing.member_mask(mem, M.columns, pd.DatetimeIndex(DE["t"]))
-        return trades_for(spec, M, C, DE, dm, taker_bps, ENTRY_MULT, 1.0, side=side)
+        dm = listing.member_mask(mem, M.columns, pd.DatetimeIndex(idx[DE["row"].to_numpy() + spec.shift]))
+        return trades_for(spec, M, C, DE, dm, taker_bps, ENTRY_MULT, 1.0, side=side, shift=spec.shift)
     TW, TP, TG = _priced_rows(twins, spec.side), _priced_rows(pos, 1), _priced_rows(lng, -1)
+    ent, first_hour = (_entries_table(spec, M, C, mem, pd.concat([cl, lng], ignore_index=True) if spec.clause else cl, end, first_block if first_block is not None else a0, taker_bps)
+                       if (spec.entries_described and cl is not None) else (pd.DataFrame(), {}))
+    if len(ent):
+        ent.to_csv(out / "entries.csv", index=False)
     for nm, D in (("second_events", TW), (spec.described["pos_file"], TP), (spec.described["lng_file"], TG)):
         if len(D):
             D.to_csv(out / f"{nm}.csv", index=False)
@@ -1195,6 +1301,8 @@ def _describe5(out, M, C, E, T, TH, mem, mask, own, ok, t, taker_bps, twins, pos
           f"\n{spec.described['pos']}:\n", (TP[["contract", "t", "gross", "funding", "own", "hedge", "H"]].round(1).to_markdown(index=False) if len(TP) else "none eligible"), "\n",
           f"\n{spec.described['lng']}:\n", "\n```\n" + json.dumps(mirror, indent=1, default=str) + "\n```\n",
           f"\n- the entry a day later, the same costs (reference): mean H {TL['H'].mean():.1f}, median {TL['H'].median():.1f} ({len(TL)} positions)\n",
+          *(["\nThe ENTRIES — the same base population, the clause at each entry's own decision bar, the sold unit priced from it (the mean, the median, the trimmed mean of H and the parts' means):\n", ent.round(1).to_markdown(index=False), "\n",
+             "\nThe FIRST HOUR's own sold move (the unit sold at the base entry and bought back at the rule's entry bar) and its share of the day's gross at the base entry:\n", "\n```\n" + json.dumps(first_hour, indent=1, default=str) + "\n```\n"] if len(ent) else []),
           "\nThe hour of t (UTC):\n", t.hour.value_counts().sort_index().rename("positions").to_frame().to_markdown(), "\n",
           f"\nThe settlements inside the hold per cell: " + json.dumps({"min": int(T[f"settlements_{dh}"].min()), "median": float(T[f"settlements_{dh}"].median()), "max": int(T[f"settlements_{dh}"].max())}) + "\n",
           "\nThe five best and the five worst positions:\n", pd.concat([T.nlargest(5, "H"), T.nsmallest(5, "H")])[["contract", "entry_t", tag, "runup_y", "gross", "funding", "own", "hedge", "H"]].round(0).to_markdown(index=False), "\n"]
