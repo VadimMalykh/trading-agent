@@ -1593,6 +1593,7 @@ its cap is the mechanism's own and never a per-name announcement).
 **Recommendation: CB1** — R79 registered in §8 before any code, the clause's counts from the lists written into the registration, the
 expectation against the trimmed statistic, decision CC on its numbers. Needed from Vadim: the word ("CB1" the registration of R79, then the
 code with planted tests, the VM, the read, decision CC; "CB2" the count on the VM first; "CB3" / "CB4" record the mode).
+**DECIDED 2026-11-03, Vadim's "CB1": R79 registered in §8 the same day before any code — the sold crossing after the exchange's hour on F1+F2's frozen 60 (59 cells: FLM 2023-09-06 removed by the clause), the entries at + 10 min / + 4 h / + 8 h / + 24 h and the first hour described; decision CC on its numbers.**
 
 **Decision CA (2026-11-02) — R78 is IN: VALIDITY PASS, NOT CONFIRMED on F3+F4 with power — M_trim +63 (se_trim 72, u 0.88, MDE_trim 201; the heavy +13), the median +247 and 60 % of 294 positions above zero, the plain mean −259; the 54 FLAGGED cells −1,736 in the mean (TNSR −24,677, HYPER −15,939, VOXEL −15,576, LPT −11,107 — the squeeze continues on the exchange's cells), the 240 unflagged +174 trimmed at u 3.0; both sides of the population PARKED (§7). What next? WRITTEN 2026-11-02 — OPEN, Vadim's word.**
 The question in plain words: the one-day sold position found on F1+F2 (+266 before costs, +117 net) was read on F3+F4's 294 episodes with
@@ -13673,6 +13674,173 @@ Result:        **READ 2026-11-02 10:07 → 10:16 UTC on the work VM (`scripts/r7
                flag arriving AFTER the crossing in 43 of 54 (the seller cannot exclude them at t0) — are the squeeze's continuation and
                carry a −25,000 tail; the registered gate held the population to its own typical cell and the typical cell is +63 at u 0.9.
                The unflagged split is a described fact, not a rule: decision CA.**
+### R79 — the extreme-funding episode SOLD AFTER THE EXCHANGE'S HOUR, held ONE day, in money — the exploration read on the FROZEN F1+F2 episode list: the perpetual sold at t0 + 70 min at every bought-side episode whose interval the exchange has NOT shortened by the decision bar's close (t0 + 65 min), priced through the harness at the entry day's doubled proxy, hedged with the F1+F2 block's members bought beside it, the gate on the 10 % TRIMMED mean, the entries at t0 + 10 min / + 4 h / + 8 h described beside (decision CB1; registered 2026-11-03 on Vadim's "CB1" (P8 decision CB), before any code was written and before any bar of an F1+F2 episode was joined to a label for this question)
+Question:      R78 (2026-11-02) read the one-day SOLD position at the crossing on F3+F4's 294 cells with power and found it NOT CONFIRMED
+               (M_trim +63, u 0.88): the typical cell earns a little; the 240 cells the exchange never flagged earn +174 trimmed at u 3.0;
+               the 54 it flagged — the squeezes that CONTINUE — lose −1,736 in the mean and the 10 % trim does not reach them. The flag is
+               not known at t0 + 10 min. Decision CB's count on the frozen lists (no bar): in the rule era the exchange answers INSIDE THE
+               CROSSING'S HOUR — of the 95 flags 62 are stamped within 1 h of t0 (q25 = q50 = 1 h: the first hourly settlement after the
+               crossing), 80 within a day; nothing the list knows at t0 predicts the answer ((lxxxvi): the pin 66 % / 24 %). So the one
+               thing the seller lacked is public one hour later, and the unread question is what the hour costs: the record prices the
+               entry at t0 + 10 min (R77: gross +414, funding −277, net +117 in the mean, ≈ +240 trimmed) and at t0 + 24 h (R78: −116 / +22),
+               nothing between. The question: does a unit SOLD at t0 + 70 min — one hour after the crossing, only when the exchange has not
+               shortened the name's interval by then — and held ONE day earn money against the screener's members through the harness,
+               on F1+F2's frozen episodes? One rule, one read, the sign POSITIVE: the sold unit earns +H. The statistic is the TRIMMED mean
+               (README 0p (i), 0r (i)). What this fold can and cannot see (decision CB (lxxxv), (lxxxvii)): F1+F2's seven flags are the
+               NOTICE era's — the exchange answered half a day or more after the crossing (MTL +12 h, STMX +26, LPT +140, BLZ +12, NMR +2,
+               UMA +16; FLM 6 h BEFORE) — so on F1+F2 the clause removes ONE cell (FLM 2023-09-06 02:00, its interval already 2 h at t0) and
+               the read is of the TIMING: whether the crossing's first hour holds the give-back. The clause is the rule's and is written
+               here because the rule is one rule on every fold; its count per fold from the frozen lists, before any bar: F1+F2 1 of 60,
+               F3+F4 (spent) 49 of 309 — 12 at or before t0 and 37 inside the hour —, F5 24 of 106. The flag part of the rule rests on
+               F3+F4's two reads of the flag (R75 bought, R78 sold) and F1+F2 cannot test it: stated, not hidden; F5 is where the whole
+               rule is read, once, by decision CC.
+Data line:     none. The F1+F2 bars are in the slice from R77 (the 41 episode names, t0 − 2 d → t0 + 8 d; 59 of the 60 windows hold
+               ≥ 95 % of the week's 5m bars — the one short is a late-August window past the slice's end for a non-member, whose ONE-day
+               window is inside it); the cost rows from R77 (58 of 58 own rows on the entry day or the day before) and `costwide` for every
+               f12 name among the 175 of R78's merge; the funding archive to 2026-09-30. No fetch, no ingest: validity (1)'s fingerprint
+               before and after is the whole check. The md5 of the three frozen lists, `ft2/screen_members.csv`, `ft2/screen_members_f34.csv`,
+               the cost parquet and the funding parquet equal before and after in the chain's log.
+Events:        `ft2/fundep_f12.csv` as FROZEN 2026-11-02 (commit 7cf47a1, md5 75c0fbd0512421e67a093a338e8cbf98; the audit's rule in DATA.md
+               `fund_episodes`): **60 rows, all `bought` (the shorts paid; F1 30, F2 30; 41 names), R77's list unchanged. The cells: the 60
+               rows under R76's one-position-per-name rule (the same-name gaps ≥ 16 days: no second event inside a one-day hold) LESS the
+               cells the clause removes — a row whose `flag_t0` (the shortening's first settlement, DATA.md `fund_freq_events`' known-at)
+               is at or before the decision bar's close t0 + 65 min: FLM 2023-09-06 02:00 (flag_t0 2023-09-05 20:00; interval_h 2 at t0) —
+               → 59 cells**, the removed cell described (the same sold unit priced, never a cell). Of the 59: 6 flagged within ± 7 days
+               (the flag AFTER the decision bar in all six: NMR +2 h, MTL +12, BLZ +12, UMA +16, STMX +26, LPT +140), 53 not; members of the
+               block holding t0 12; F1 29 / F2 30; 33 first episodes, 26 repeats; the interval at t0 8 h on 35, 4 h on 24; the rate at t0
+               1.5 % a settlement at the median; the day's sum 2.49 %; per month 1 … 9 (2023-08 and 09 seven each, 2024-08 nine); 35 weeks
+               of 70 hold a cell. Nothing is added, dropped or re-dated here; a cell the entry rule cannot hold is counted by reason.
+Entry:         t0 = the crossing settlement's own stamp as frozen (`ts_known` = t0 — public at that second; DATA.md's rule). The base row
+               is R77's / R78's decision bar (the 5m bar closing at t0 + 5 min; validity (7) checks it as before); **the rule's decision bar
+               is the first 5m bar that CLOSES after t0 + 60 min — t0 + 65 min, 12 bars after the base row (`shift` 12) — and the unit is
+               SOLD at the close one bar later: t0 + 70 min**, the harness's latency. **The clause: at the decision bar's close the name's
+               funding interval has not been shortened — no `fundfreq` shortening of the name with its settlement stamp ≤ t0 + 65 min
+               (the archive's own `interval_h` row, public at its stamp; the frozen list's `flag_t0`); a name the exchange has answered by
+               then is not entered.** Eligible: the base row and the entry bar with a close, t ≥ F1's first member block (2023-05-03 00:00
+               UTC; every frozen t0 is after it), the one-day exit before 2024-09-01 00:00 UTC (every cell: the latest, RDNT 2024-08-30
+               16:00, exits 2024-08-31 17:10 — R77's two 7-day drops are inside a one-day window; the calendar drops NONE). The market is
+               loaded with its end at 2024-09-01: nothing of F3 … F5 can be read.
+Hold:          288 bars (ONE day) from the entry: the exit at the close of the 288th bar after it, t0 + 1 d + 70 min. NO stop (R29's lesson).
+Pricing:       R78's, unchanged: `listing.sold_trades` with no stop level, the shift 12 — gross = 1 − exit ÷ entry in bps; the taker fee 5 bps
+               a leg (the exit leg on the position's value); the spread and the impact from `costwide`'s proxy row of the day, the ENTRY
+               day's legs at TWICE the name's row (`ENTRY_MULT` 2; a name without a row on the entry day takes its first row after,
+               `listing.entry_day_legs`), the exit day's at the row; the funding each settlement inside the hold on the position's value
+               (`backtest.CHARGED`; a negative rate is PAID by the short). own = gross − fee − spread/impact − funding paid. The hedge: one
+               unit of the members BOUGHT at the entry bar and sold at the exit — equal weights over the members of the F1+F2 block holding
+               the ENTRY bar with both prices (`listing.hedge`; the name itself left out where it is a member). H = own + hedge, bps of the
+               unit. The heavy reading beside: the entry day at FOUR times the row, every other proxy cost doubled (`HEAVY` (4, 2)).
+Members:       the screener's F1+F2 point-in-time blocks (`ft2/screen_members.csv`, md5 0e55255d37412d3b63a021d3c8a732ab, 18 blocks of 60,
+               2023-05-03 → 2024-08-30), the block holding each cell's entry bar (`listing.member_mask`) — R77's benchmark, in money; the
+               members with both prices at each cell's bars (≥ 40 required).
+Statistic:     **M_trim = the 10 % TRIMMED mean of H over the priced cells: the k largest and the k smallest H left out, k = round(0.05 × n)
+               — 3 and 3 on 59 (`listing.trimmed`, R77's / R78's statistic).** Its noise: R77's block draw over calendar weeks (Monday 00:00
+               UTC, by the entry bar; a week with no cell stays in the sequence; blocks of 6 consecutive weeks, circular, 10,000 draws, seed
+               79, `fundevent.bootstrap_trimmed`) — each draw's statistic is the trimmed mean of the H of the cells in its drawn weeks (k
+               from that draw's own n); se_trim = the sd of the draws; u_trim = M_trim ÷ se_trim; MDE_trim = 2.8 se_trim. Beside, deciding
+               nothing: the plain M with R76's noise, the median, the share above zero, M without the three largest H, the trimmed mean of
+               the heavy reading (the gate's third clause), the trimmed mean per fold (k = round(0.05 × n_fold): 1 on 29 / 30), and of the
+               6 flagged and the 53 unflagged (k 0 / 3 — a split, not a clause: on F1+F2 the clause has done its work at the entry).
+Guard:         none — F1 and F2 are the exploration folds; no row in `confirmation_reads.csv` (R77's rule; `confirm` with the spec's guard
+               off requires `--registration R79` and this block all the same). The once rule holds: this block is R79's one read of these
+               cells at this entry; a re-execution only by §3's rule, tagged, written here before the rerun; **no second entry time, hold,
+               threshold, benchmark or clause is read on F1+F2's episode cells as a variant of this block beyond the described entries this
+               block names (t0 + 10 min — R77's row —, + 4 h, + 8 h, + 24 h)**: a different rule's cells are a new registration's or nothing.
+Validity:      read first, or the run is void:
+               (1) no fetch for this read: the slice's fingerprint before and after identical (`fingerprint --name r79`, `check --name r79`);
+               the md5 of the seven files equal before and after in the chain's log;
+               (2) the list's md5 as frozen and 60 rows, 60 bought, 59 cells, the removed cell exactly FLM 2023-09-06 02:00 (the clause's
+               count as registered); `fundep.episodes`' rule re-derives every frozen row's t0 from `funding_archive` today at the same
+               threshold, quiet window and age rule, and its fund_1d to 1e-12 (a frozen t0 the archive no longer gives is a void);
+               (3) at least 56 of the 59 cells eligible AND the calendar's drops NONE (any drop counted by name and reason; past 4 drops in
+               all, a void); ≥ 90 % of the eligible cells PRICED (own and hedge both finite); ≥ 90 % with their own cost row on the ENTRY
+               day (t0 + 70 min's day) or the first after;
+               (4) every eligible cell with a close on ≥ 95 % of the bars from the base row to its exit;
+               (5) the hedge from ≥ 40 members with both prices at every cell;
+               (6) the harness's fill is the module's own arithmetic to 1e-9 (R29's check: gross, funding, fee, spread/impact, own); the
+               sold unit's gross + funding equals MINUS `horizon.labels`' a of a long at the same entry row to 1e-9; a hand check of 20
+               cells' funding leg from the settlement rows inside the hold (the rate × the close at the settlement ÷ the entry, the sign of
+               a short) to 1e-9; AND the gate's statistic equals `listing.trimmed(H, 3)` on the run's own H;
+               (7) known-at: the base row's t = t0 + 5 min and ts_known = t0 on every cell; **the entry bar's close = t0 + 70 min on every
+               cell (the exit − the entry = 288 bars); no entered cell has a shortening stamp ≤ t0 + 65 min, and the cells removed by the
+               clause are exactly the registered one**; no stop fired; every exit before 2024-09-01; the planted tests (below) run BEFORE the
+               real bars;
+               (8) the settlement rows inside each hold against 1.5 × the larger of the two neighbouring intervals (R75's rule): a cell with
+               a gap counted, over 5 % of the cells a void.
+Described:     decides nothing. H's parts (gross, funding paid, fee, spread/impact, own, hedge gain, hedge cost) in the mean and at the
+               median, the trimmed mean of each; the price part and the funding part apart; the median H, the share above zero, the
+               quantiles, the largest loss and gain, the three trimmed cells named, the five best and five worst; the splits — the 6
+               flagged against the 53 not, the 12 members at t0 against the non-members, first episodes against repeats, the 8-hour clock
+               against the 4-hour one at t0, the day's sum above and below its median (2.49 %), F1 against F2, by calendar month and the
+               read without the two busiest months, by the hour of t. **The ENTRIES, the same cells, the same pricing, each with the clause
+               at its own decision bar (the count of cells the clause removes at each, from the list: + 10 min 1, + 4 h 2 (FLM, NMR), + 8 h
+               2, + 24 h 5): the unit sold at t0 + 10 min (R77's / R78's entry — the reference, the found +117 net), at + 4 h, at + 8 h, and at
+               + 24 h (R78's day-later row); per entry n, the mean, the median, the trimmed mean of H and its parts; and the FIRST HOUR's own
+               sold move — the unit sold at t0 + 10 min and bought back at t0 + 70 min (12 bars; gross, funding, own, hedged), its mean and
+               median, and its share of the day's gross at the + 10 min entry (the mechanism's own check: how much of the give-back the hour
+               holds).** The run-up (t0 − 24 h → t0 against the members, no cost; R77's +2,739); R77's unpriced frame on these cells (y at
+               1d / 3d / 7d, the bought side, F1+F2's −266 / −111 / −191 reproduced from the base row); the heavy reading's parts; the
+               removed cell (FLM 2023-09-06) as the same sold unit priced; the settlements per cell inside the day (R77's 3.5 at the
+               median); the 13 sold-side episodes: none on F1+F2.
+Code:          `ft2/fundevent.py`, written AFTER this block — `ConfirmSpec` gains `guard` (False here: no ledger row, the registration and
+               the block required all the same), `shift` (12: the rule's decision bar and entry from the base row), `clause` (a row whose
+               `flag_t0` ≤ t0 + (WAIT + shift) bars is not a cell — `cells79` puts it in the described slot the longs-paying rows held for
+               R78, priced as the sold unit), `expected_excluded` (validity (7): the clause's removals as registered), `entries_described`
+               ((0, 48, 96, 288) bars from the base row: the table above, the clause at each) and the verdict's words for an exploration
+               read (CLEARS / NOT DETECTABLE in place of CONFIRMED / NOT CONFIRMED; CLOSED unchanged). `confirm` applies the shift to the
+               entry bar, the cost-row day, the bars span, the hand check, the settlement gaps and the member block, and writes validity (7)'s
+               entry-bar and clause checks; `_describe5` gains the entries table and the first hour's row. R79's spec: `ft2/fundep_f12.csv`,
+               F1+F2, `ft2/screen_members.csv` point-in-time, the side −1 through `listing.sold_trades` with no stop, 288 bars, shift 12, the
+               trimmed gate with the heavy clause and NO unflagged clause (`bootstrap_trimmed`, seed 79), `fundep.episodes` as the
+               rederivation, no calendar drops expected, the one removed cell expected, `output/listing/r79/`. `listing.py`, `krevent.py`,
+               `fundep.py` are not edited; R75's … R78's outputs and tests unchanged. CLI: `ft2 fundevent confirm --registration R79`,
+               `fingerprint --name r79`, `check --name r79`. Tests on planted bars FIRST (`tests/test_p8_fundevent.py`): a planted give-back
+               over the day CLEARS the sold unit at t0 + 70 min with NO ledger row written, the entry bar at t0 + 70 min on every cell, a
+               cell whose shortening is stamped before the decision bar removed and described while a cell whose shortening comes two hours
+               after t0 is entered, the + 10 min reference row beside; a planted give-back that happens INSIDE the first hour and nothing
+               after is NOT DETECTABLE or CLOSED at t0 + 70 min while the + 10 min row and the first-hour row carry it (the read answers the
+               timing); the registration required (`confirm(None)` refused) and the frozen-row rederivation voiding on a changed rate as before.
+Commands:      on the work VM (`vm.sh start`, `vm.sh push`), `scripts/r79_chain.sh` through `./fluxtrader2/scripts/vm.sh bgsh r79 'bash
+               scripts/r79_chain.sh'` (the steps named fundevent79_<action>; the md5 of the seven files → `python -m ft2 fundevent
+               fingerprint --name r79` → `python -m ft2 fundevent confirm --registration R79` → `python -m ft2 fundevent check --name r79` →
+               the md5 after; ≈ 10 … 20 minutes: the F1+F2 market, the 192-name screen universe and the 41 episode names over 16 months),
+               launched in the background (bgsh blocks until the chain exits), the poweroff wrapper killed after. Then `vm.sh pull`, the
+               read into this block, decision CC written, the VM stopped by hand.
+Folds read:    F1+F2, the exploration folds, for this entry the first time (R77 read the same cells bought at t0 + 10 min at 1 / 3 / 7 days
+               and described the sold unit at t0 + 10 min; the hour after the crossing is unread anywhere in the record). F3+F4's 309 and
+               F5's 106 frozen episodes UNTOUCHED: the market ends at 2024-09-01. F3+F4 are SPENT for the sold side (R78); F5 is the last
+               fold for it.
+Gate:          validity PASS, then on the TRIMMED statistic, the sign POSITIVE: **CLEARS** if M_trim > 0 AND u_trim ≥ 2 AND the heavy reading's
+               trimmed mean > 0; **CLOSED** if M_trim + 1.96 se_trim < 0; **NOT DETECTABLE** otherwise, with its MDE_trim. What CLEARS
+               licenses: decision CC — R80, ONE read of F5's 106 frozen episodes (`ft2/fundep_f5.csv`, md5 c1770dd4f81ba255be40862fdf3f4975)
+               in THIS form after their Data line (the F5 names' months and `costwide --symbols`, BU1's route, nothing read), the clause LIVE
+               in the rule era (24 of the 106 removed by the lists' count, ≈ 82 entered), the hedge R76's (F5 has no blocks: F4's last block
+               carried forward) or the F3+F4 list's last block — decision CC fixes it —, the guard rows (R80, F5) first, its registration
+               written before any 2026 bar after an episode's t0 is read, its expectation against THIS read's trimmed number and its power
+               on ≈ 82 cells (MDE_trim ≈ 270 against R78's unflagged +174 … R77's +240: a coin's chance, said in the registration) — OR the
+               same read registered on F5 + F6 pooled at a date (2027-05, ≈ 120 … 140 cells, MDE ≈ 220), the choice made in decision CC on
+               this read's size. NOT DETECTABLE or CLOSED: the §7 row carries this read; decision CC says what is next (the sold side's
+               line has F5 and nothing else). Whatever the verdict: no variant on F1+F2's episode cells beyond the described entries named
+               here; a described row licenses nothing; a clear on an exploration fold licenses no trade.
+Power:         stated before the read, against the TRIMMED statistic. R77's se_trim at 1d on y was 103 on 58 cells in 65 weeks (unpriced,
+               the hedge the members' mean); in money R78's hedge and costs added a fifth to a quarter (R76's hedge a quarter): **se_trim ≈
+               100 … 130; CLEARS needs M_trim ≥ +200 … +260 (u ≥ 2); MDE_trim (2.8 se) ≈ 280 … 360; CLOSED needs M_trim ≤ −200 … −260.** The
+               found size at t0 + 10 min is ≈ +240 trimmed in money (decision BZ (lxxx)): the read finds the hour's entry only if the hour
+               holds little of the give-back; an effect halved by the hour (≈ +120) is NOT DETECTABLE here (decision CB (lxxxviii)). The
+               heavy reading costs ≈ 20 … 40 more than the plain on these calmer names (the entry day's legs ×4 on proxy rows of 10 … 25 bps).
+Expectation:   validity PASS; 59 cells, 57 … 59 eligible (0 … 2 to missing bars at the slice's end, none by the calendar); ≥ 56 priced; own
+               cost rows ≥ 95 %; the hedge from 58 … 60 members; the entry day's legs ≈ 20 … 50 bps (×2). The FIRST HOUR sold (t0 + 10 →
+               t0 + 70 min): gross +50 … +200 in the mean (an eighth to a half of the day's +414 — the crossing's settlement is the squeeze's
+               last print and the first hour its fastest unwind, or the unwind is spread over the day), the median +20 … +120, funding ≈ 0
+               … −30 (one settlement at most inside the hour). At t0 + 70 min, the day: the funding PAID −220 … −300 (R77's +277 from the
+               other side, the window one hour later), the gross +200 … +380 (R77's +414 less the hour's), the costs −20 … −40, the hedge
+               −30 … +30; **M_trim +60 … +200 (R77's ≈ +240 trimmed less the hour's share), the median +20 … +150, the share above zero 52 …
+               62 %, the plain M within ±80 of M_trim (the notice era's flags are few and late: no −25,000 tail here), se_trim 100 … 130.**
+               The entries table: + 10 min above + 70 min above + 4 h above + 8 h; + 24 h −150 … +20 (R78's −116 / +22; R77's day-later
+               bought +130 in the mean). The splits: the 6 flagged below the 53 (the notice-era flags answer the squeezes that continued:
+               R77's +929 bought at 1d), the 12 members near the non-members, F1 and F2 alike in sign, the 8-hour clock above the 4-hour.
+               Verdict: CLEARS one in four, NOT DETECTABLE two in three, CLOSED one in twelve. Whatever it is, the rule's answer part is F5's
+               question (decision CC).
+
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
 Ranked by what it unlocks. Indicators are *not* on this list: anything computed from candles is
