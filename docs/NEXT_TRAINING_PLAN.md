@@ -2362,7 +2362,7 @@ vs a +5 gate, day-clustered band ±8.4 → FAIL as written, gate inside the band
 confirmed FAIL (not digit-identical: the dump refreshed, trap 10 below). O5 filed there. The one
 follow-up is **B3c** — the identical 15m registration on a ~53-day val window, **on or after
 2026-11-02**, parked in [BACKLOG.md](./BACKLOG.md) with the exact command in §R.3; it uses the
-new `GBT_VAL_FRACTION` launcher passthrough. No third setting, no sweep.
+new `GBT_VAL_FRACTION` launcher passthrough. No third setting, no sweep. **B3c DONE 2026-11-03 (`gbt-20261103T172455Z`, `logs/b3c_gbt_15m_20261103.log`): FAIL, the gate excluded at cov 5% — net at maker −3.43 ± 3.75 on 55 days / 3,102 trades, dir_acc 0.536 (LB 0.522) on 4,571 against B3b's 0.627 on 911; at 1% +2.63 ± 4.4 with the gate inside the band (no further calendar recommended); O5 reproduced. B3 closed on the letter; BOOK_ERA_PLAN §R.3 item 1. Its launcher regenerated `dumps/latest.sql.gz` (now 2026-11-03 17:23 UTC, CRC32C `Hq5U/g==`) — the X21 restore lines above stand if ever needed.**
 
 **Nothing else in the B-wave needs a GPU or a training run.** B0, B1 and B2 all ran on the
 laptop's `ml_analysis` container.

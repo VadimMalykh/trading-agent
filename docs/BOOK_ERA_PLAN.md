@@ -1,6 +1,6 @@
 # Book-era plan — the B-wave
 
-**Status (2026-09-11): the wave is CLOSED on B3's verdict.** ✅ B4 · ✅ B0, ✅ B1, ✅ B2 re-run
+**Status (2026-09-11): the wave is CLOSED on B3's verdict.** *2026-11-03: the calendar re-test B3c ran and read FAIL with the gate excluded at cov 5% (−3.43 net at maker, ±3.75 on 55 days; B3b's 0.627 dir_acc fell to 0.536 on 4,571 calls) — B3 closed on the letter, O5 reproduced (`xs_disp_1h` 38.9%, the book block 13.3%); §R.3 item 1. Only B2's `spread_bps_mkt_lo` re-test stays parked.* ✅ B4 · ✅ B0, ✅ B1, ✅ B2 re-run
 on the full era with repaired candles (§R) · ✅ **B3 both arms measured (§R.2, §R.3): 5m fails
 §4.3 decisively; 15m fails as written (+0.29 net at maker vs +5) but the gate sits inside the
 window's ±8.4-bps resolution, so per §B3's pre-registration the answer is more calendar, not a
@@ -358,6 +358,60 @@ BACKLOG.md:
    stays near +0 to +3 net at maker and the run reads FAIL with the gate excluded — that would be
    the clean close. A pass promotes nothing (§4.3) and would license only a registration for the
    maker path, which the executor does not have (M3-5 §3.1).
+   **B3c RESULT — run 2026-11-03, read the same day (Vadim's "go with B3c"): FAIL §4.3, the gate
+   excluded at the coverage B3b was read at.** Run `gbt-20261103T172455Z` (17:26 → 17:42 UTC on a
+   fresh `fluxtrader-gbt`, e2-standard-4, self-deleted on DONE; git `1d50b98`; `logs/b3c_gbt_15m_20261103.log`,
+   md5 `f7f647f3`; report `~/fluxtrader-train-export/gbt_baseline_gbt-20261103T172455Z.json`).
+   A first attempt `gbt-20261103T162358Z` (16:27 UTC) is void by infrastructure: the collector's
+   `pg_dump` now takes ~55 min (the database has grown since September) and the remote job's
+   45-minute wait for `dumps/latest.sql.gz` expired before any fit; nothing in it is read. The
+   re-launch took that dump as a cache hit (6 min old). **Acceptance:** `--tail-days 108`,
+   `val_frac=0.5`, the registered pairs, horizons 5/15/60 primary 15m, `num_leaves 15 /
+   n_estimators 200 / learning_rate 0.03`, seed 42, 30 columns (`legacy,multiscale,market`,
+   O5's set); `Split … train=123856 val=123856 | train [2026-07-19 03:10 → 2026-09-10 21:15 UTC] |
+   val [2026-09-10 21:20 → 2026-11-03 15:25 UTC]` — val opens where B3b's closed, 53.8 days,
+   `Train samples` = `Val samples` as the registration asked; 76,960 moved train bars; no `BROKEN
+   SCALE` line this time (the 8.2-bps ETH bar of 2026-09-01 is inside train, under the winsor).
+
+   | cov | dir_acc | Wilson LB | n_dir | trades | gross | net @ maker 5 | net @ taker 14 | ±95 (days) |
+   |---|---|---|---|---|---|---|---|---|
+   | 1% | 0.601 | 0.571 | 1,016 | 590 | +7.63 | **+2.63** | −6.37 | ±4.4 (37) → [−1.8, +7.0] |
+   | 2% | 0.556 | 0.533 | 1,940 | 1,198 | +2.94 | −2.06 | −11.06 | ±5.4 (48) → [−7.5, +3.4] |
+   | **5%** | 0.536 | 0.522 | **4,571** | 3,102 | **+1.57** | **−3.43** | −12.43 | **±3.75 (55) → [−7.2, +0.3]** |
+   | 10% | 0.534 | 0.524 | 8,899 | 6,217 | +0.03 | −4.97 | −13.97 | ±2.8 (55) |
+   | 20% | 0.530 | 0.523 | 17,353 | 11,924 | −0.04 | −5.04 | −14.04 | ±1.8 (55) |
+
+   (The ± column as in B3b: the day as the unit, from the report's `daily_sharpe` and `n_days`
+   per row; 1% and 2% trade on 37 / 48 of the 55 days.) **The gate reads FAIL at every eligible
+   coverage** — now every row clears `n_dir ≥ 500`, so the honest statement is per row: at 5%,
+   where B3b was read, **−3.43 vs +5, the gate excluded** (upper bound +0.3), exactly the
+   registered expectation ("FAIL with the gate excluded — the clean close"); the point estimate
+   came in *under* the expected +0 … +3. At 2% and 10–20% the gate is excluded too. The one row
+   where +5 sits inside the band is **1%**: +2.63 ± 4.4 on 590 trades over 37 trading days — the
+   same shape as B3b's whole-window near miss, on a fifth of the trades; resolving it to ±2 would
+   need ≈ 180 more trading days. **The eleven-day skill did not persist:** B3b's cov-5% dir_acc
+   0.627 (LB 0.595, 911 calls, "the strongest directional read any model has shown on the book
+   era") is **0.536 (LB 0.522) on 4,571 calls** over 54 days; gross per trade +5.29 → +1.57.
+   Walk-forward LB at cov 5%: 0.511 / 0.532 / 0.520 / **0.466** (the last fortnight, 2026-10-21 →
+   11-03, below chance). Side split at 5%: up 4,047 at 0.533 (LB 0.517), down 524 at 0.561 (LB
+   0.518) — still 89% longs, both sides within a point or two of chance. Brier **0.2579** (B3b
+   0.2525) on 82,757 moved bars, worse than a constant 0.5. **O5 reproduces:** `xs_disp_1h`
+   38.9% of the gain (B3b 38.2%), `ret_1h` 8.3%, `ret_4h` 6.0%; the eleven book scalars together
+   **13.3%** (B3b 15.3%), the best of them `oi_chg` at 1.9%; the six window blocks 12–20% each.
+
+   **Disposition.** The re-test the pre-registration asked for ("more calendar, not a third
+   setting") has run on five times B3b's trades and read FAIL with the gate excluded at the
+   registered coverage: **B3 is closed on the letter; the B-wave stays closed; no B5, no third
+   setting, no coverage change, no policy edit.** What a reader may still ask — whether the 1%
+   row's +2.63 ± 4.4 is worth another calendar wait — is a decision for Vadim, not this read's;
+   the read's recommendation is **no**: every coverage's estimate sits under the gate, the larger
+   coverages exclude it, the 1% row's gross halved from B3b's +15.6, and §4.3 promotes nothing
+   on a pass anyway (the maker path the executor lacks, M3-5 §3.1). B2's `spread_bps_mkt_lo`
+   re-test (item 2) is unchanged. ⚠️ Side effect, recorded: the launcher regenerated the shared
+   dump — `dumps/latest.sql.gz` is now the 2026-11-03 17:23 UTC dump (1,902,684,793 bytes, CRC32C
+   `Hq5U/g==`; copy `dumps/gbt-20261103T172455Z.sql.gz`) and the collector's cache the same file;
+   the X21 family is closed, so nothing depends on the pinned snapshot, and the three restore
+   lines in NEXT_TRAINING_PLAN §2 X21 stand if any X21-family re-run is ever licensed.
 2. **B2's `spread_bps_mkt_lo` re-test** when its arm resolves ±30 bps (§R.1) — unchanged.
 
 What O5 changes elsewhere: BACKLOG row 6's revival trigger for a learned M3 challenger reads
