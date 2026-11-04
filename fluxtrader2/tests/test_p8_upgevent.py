@@ -3,6 +3,7 @@ off the 5-minute grid, and the position enters one bar later; the twelve's row i
 the calendar and counted; a planted run-up from the notice and give-back after the hour is found NEGATIVE by the trimmed gate with the INTO
 row showing the run-up; a planted run-on in one cell moves the plain mean and not the trimmed one; the label identity with `horizon.labels`
 and the harness and the trimmed identity; validity (2), (3) and (7) read; the family-wise p over the three holds."""
+import dataclasses
 import hashlib
 import json
 
@@ -260,3 +261,27 @@ def test_r81_an_unregistered_list_or_an_unexpected_described_row_voids_the_run_a
     monkeypatch.setattr(upgevent, "EXPECTED_DESCRIBED34", {("ADAUSDT", str(t0s[6])), ("ETHUSDT", str(t0s[8]))})
     monkeypatch.setattr(upgevent, "LIST34_MD5", "0" * 32)
     assert "**VOID" in upgevent.run("t81", spec=upgevent.spec_r81())
+
+
+def test_r81_a_notice_released_before_the_markets_first_bar_voids_the_run_at_validity_5_and_the_re_execution_pads_the_market_and_is_logged_under_its_tag(tmp_path, monkeypatch):
+    M, t0s = _market(names=EV81)
+    C = _costs(M)
+    L, today, guarded = _plant81(tmp_path, monkeypatch, M, t0s, C)
+    early = L.copy()
+    early.loc[0, ["ts_known", "release"]] = M.index[0] - pd.Timedelta(days=3)                                        # EV1's notice three days before the first bar
+    early.to_csv(tmp_path / "upgrades_f34.csv", index=False)
+    monkeypatch.setattr(upgevent, "LIST34_MD5", hashlib.md5((tmp_path / "upgrades_f34.csv").read_bytes()).hexdigest())
+    monkeypatch.setattr(upgrades, "events", lambda write=True: early.assign(why="eligible"))
+    text = upgevent.run("t81", spec=upgevent.spec_r81())
+    V = json.loads((tmp_path / "output" / "listing" / "t81" / "validity.json").read_text())
+    assert "**VOID" in text and V["status"] == "FAIL" and V["5_min_members_into"] == 0 and V["3_cells"] == 6                 # the defect R81's first run met (18:36 UTC)
+    starts = []
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): (starts.append(start), M)[1])
+    monkeypatch.setattr(bt, "_guard", lambda folds, registration, reexecute=None: (guarded.append((tuple(folds), registration, reexecute)), list(folds))[1])
+    spec = dataclasses.replace(upgevent.spec_r81(), pad_days=35)
+    assert upgevent.spec_r81().pad_days == 35 and upgevent.spec_r80().pad_days == 1
+    upgevent.run("t81", spec=spec, reexecute="into_window")
+    assert starts[-1] == M.index[0] - pd.Timedelta(days=35) and guarded[-1] == (("F3", "F4"), "R81", "into_window")
+    meta = json.loads((tmp_path / "output" / "listing" / "t81" / "meta.json").read_text()) if (tmp_path / "output" / "listing" / "t81" / "meta.json").exists() else None
+    V = json.loads((tmp_path / "output" / "listing" / "t81" / "validity.json").read_text())
+    assert V["0_guard"]["logged_as"] == "R81/into_window" and pd.read_csv(tmp_path / "confirmation_reads.csv")["registration"].tolist()[-2:] == ["R81/into_window"] * 2

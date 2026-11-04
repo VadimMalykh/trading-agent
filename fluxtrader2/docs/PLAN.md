@@ -14406,7 +14406,21 @@ Expectation:   written against the trimmed statistic SHRUNK (0p (i)): validity P
                forks (68) within ±50 of the plain upgrades; the money row H (the sold unit, hedged, after both legs' costs) +10 … +80 in the
                mean with the median lower and 50 … 60 % above zero, the heavy reading 20 … 30 bps under it; the suspension-stamp entry within ±50
                of the registered one. The ledger 55 → 57 lines.
-Result:        pending.
+Re-execution:  **the re-execution `into_window` (2026-11-04, the same session, before any number was read).** The first run (18:36 UTC, the guard
+               rows (R81, F3) / (R81, F4) appended at 18:36, `output/listing/r81_void_1836/` kept) was VOID at validity (5) on the registration's
+               own arithmetic: the F3+F4 market was loaded from the folds' start minus ONE day (R80's pad, copied), and two of F3's first cells
+               have their notice released before that bar (the earliest release 2024-08-27; the list's longest lead 33.6 days) — their INTO row's
+               entry has no bar, so its b has 0 members, and (5) says "≥ 40 on both validity rows". The INTO row is a description; the gate's
+               cells, labels and statistic were untouched by it, and NO number of the run was read (the VOID path writes validity.json and the
+               rows-by-reason table only — 101 cells, exactly the three described and ADA Chang dropped, own cost rows 95 of 101, b from ≥ 58
+               members on every cell at every hold and on the run-up row, the label and money-row identities 0.0, every exit before 2026-01-01).
+               The defect is in the MEASUREMENT of a described row, 0o (i)'s lesson once more (the registration's count was not checked against
+               the window's START). The fix: the market is loaded from the folds' start minus ⌈the list's longest lead⌉ + 1 = 35 days
+               (2024-07-28; F2's bars, read by R80 — nothing of F3+F4 before the folds' start exists) — `Spec.pad_days` (R80's stays 1; its path
+               unchanged). Nothing else changes: the same list, cells, entry, hold, label, statistic, seed, bar, gate. Logged as `R81/into_window`
+               beside R81's own rows (the ledger 57 → 59 lines); the fingerprint step reused (no fetch between); `scripts/r81_chain.sh`'s run
+               step carries `--reexecute into_window`. The planted test of the defect and of the pad: `tests/test_p8_upgevent.py`.
+Result:        pending (the re-execution `into_window`).
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 

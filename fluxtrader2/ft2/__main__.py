@@ -186,7 +186,7 @@ def cmd_krevent(args):
 
 def cmd_upgevent(args):
     from . import upgevent
-    upgevent.main(args.action, args.name)
+    upgevent.main(args.action, args.name, args.reexecute)
 
 
 def cmd_fundep(args):
@@ -647,6 +647,7 @@ def main(argv=None):
     ke.add_argument("--registration", default=None, help="confirm: R71 — a guarded read of F3+F4, made once and logged before the market is loaded; `recheck` reproduces R70's pricing through the confirmation's path first (validity (3))")
     ue = sub.add_parser("upgevent", help="P8, R80 (decision CD1): the scheduled network upgrade of a name SOLD at the first 5m bar closing after the exchange's stated hour, 1/3/7 days against the F1+F2 members, the gate on the 10 % trimmed mean — `fingerprint` saves the archive slice's per-name fingerprint before the run, `run` reads R80 on the frozen ft2/upgrades_f12.csv → output/listing/r80/, `check` compares the fingerprint after (see ft2/upgevent.py)")
     ue.add_argument("action", choices=["fingerprint", "run", "check"])
+    ue.add_argument("--reexecute", metavar="TAG", default=None, help="run: a registered read made again after a defect in the measurement (PLAN §3) — only of folds the registration has read, only under a tag the plan names, once per tag; logged as R<n>/<tag>")
     ue.add_argument("--name", default=None, help="the run's folder under output/listing/ (default r80 — R80 on the frozen F1+F2 list; `r81` — decision CE1's confirmation read on the frozen F3+F4 list, R80's path with upgevent.Spec swapped: one gate hold (1 day), the guard rows (R81, F3) / (R81, F4) in the ledger before the market, the money row through the harness hedged with the members)")
     fdp = sub.add_parser("fundep", help="P8 (decision BY1): the EXTREME trailing-day funding of a running perpetual WITHOUT the exchange's flag as a per-name event population — the source audit from funding_archive: events (the 24-hour rolling sum of the settled rate per name; an episode = the first settlement at |sum| ≥ 2 % a day after 14 quiet days, the name ≥ 30 d old; every episode with its flags and the lists per fold pair to freeze → output/fundep/), audit (the frozen lists' counts, the eligibility rule on the F1+F2 list in R75's frame with every dropped cell named, the F3+F4 / F5 bars a Data line would fetch → output/fundep/audit.md). Nothing after t0 read, nothing priced (see ft2/fundep.py)")
     fdp.add_argument("action", choices=["events", "audit"])

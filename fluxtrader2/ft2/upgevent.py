@@ -74,6 +74,7 @@ EXPECTED_DROPPED34 = {("ADAUSDT", "2024-09-01 21:45:00+00:00")}   # ADA's Chang 
 MIN_ELIGIBLE81 = 96                                # ≥ 95 % of the 101 cells (written after the Data line's audit: 105 of 105 windows complete, 4 rows the twelve's)
 ENTRY_MULT81, HEAVY81 = 2.0, (4.0, 2.0)            # the money row: the entry day's legs at twice the proxy; the heavy reading ×4 / ×2 (R71's)
 STRATEGY81 = "upgrade_sold_1d"
+PAD_DAYS81 = 35                                    # the F3+F4 list's longest lead is 33.6 days: the market from 2024-07-28 (F2's bars, R80's), so every INTO entry has a row (re-execution `into_window`)
 
 
 @dataclasses.dataclass
@@ -94,17 +95,18 @@ class Spec:
     gate_holds: tuple[int, ...]
     confirm: bool                                  # the guard rows, the single-hold CONFIRMED / NOT CONFIRMED verdict, the money row
     other_list: Path | None
+    pad_days: int = 1                              # the market is loaded from the folds' start minus this: R80's 1 day; R81's ⌈the list's longest lead⌉ + 1 (the INTO row's entry of a notice released before the fold — re-execution `into_window`)
 
 
 def spec_r80() -> Spec:
     """Read at call time, so a test's monkeypatch of the module's constants applies (R77's `spec_for`)."""
     return Spec("R80", "CD1", "R80 — the scheduled network upgrade of a name, sold at the first bar after the stated hour (`ft2 upgevent run`)",
-                LIST, LIST_MD5, LIST_ROWS, FOLDS, None, SEED, EXPECTED_DESCRIBED, EXPECTED_DROPPED, MIN_ELIGIBLE, HOLDS, False, upgrades.LISTS["f34"])
+                LIST, LIST_MD5, LIST_ROWS, FOLDS, None, SEED, EXPECTED_DESCRIBED, EXPECTED_DROPPED, MIN_ELIGIBLE, HOLDS, False, upgrades.LISTS["f34"], 1)
 
 
 def spec_r81() -> Spec:
     return Spec("R81", "CE1", "R81 — the confirmation read of the scheduled network upgrade sold at the first bar after the stated hour, 1 day, on F3+F4 (`ft2 upgevent run --name r81`)",
-                LIST34, LIST34_MD5, LIST34_ROWS, FOLDS34, universe.F34_MEMBERS_CSV, SEED81, EXPECTED_DESCRIBED34, EXPECTED_DROPPED34, MIN_ELIGIBLE81, GATE_HOLDS81, True, upgrades.LISTS["f12"])
+                LIST34, LIST34_MD5, LIST34_ROWS, FOLDS34, universe.F34_MEMBERS_CSV, SEED81, EXPECTED_DESCRIBED34, EXPECTED_DROPPED34, MIN_ELIGIBLE81, GATE_HOLDS81, True, upgrades.LISTS["f12"], PAD_DAYS81)
 
 
 SPECS = {NAME: spec_r80, NAME81: spec_r81}
@@ -262,8 +264,9 @@ def money_row(M: bt.Market, C: bt.Costs, E: pd.DataFrame, mask: np.ndarray, take
     return T, TH, d
 
 
-def run(name: str = NAME, taker_bps: float = TAKER_BPS, spec: Spec | None = None) -> str:
+def run(name: str = NAME, taker_bps: float = TAKER_BPS, spec: Spec | None = None, reexecute: str | None = None) -> str:
     spec = spec or SPECS.get(name, spec_r80)()
+    tagged = bt.read_tag(spec.registration, reexecute)
     fa, fb = spec.folds
     L = load_events(spec.list_path)
     list_md5 = krevent.md5(spec.list_path)
@@ -272,8 +275,7 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS, spec: Spec | None = None
     fp_before, _ = krevent.fp_paths(name)
     guard = None
     if spec.confirm:                                                   # R71's form: registered, once, the guard rows in the ledger BEFORE the market is loaded
-        conf = bt._guard(spec.folds, spec.registration)
-        tagged = bt.read_tag(spec.registration, None)
+        conf = bt._guard(spec.folds, spec.registration, reexecute)   # a re-execution only under a tag the plan names (§3), of folds R81 has read, once per tag
         params = {"holds": list(spec.gate_holds), "stop": None, "entry_mult": ENTRY_MULT81, "heavy": list(HEAVY81), "list": spec.list_path.name, "list_md5": list_md5, "rows": int(len(L))}
         stamp = krevent.guard_rows(bt.READS, conf, tagged, STRATEGY81, params)
         guard = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf), "logged_as": tagged}
@@ -282,7 +284,7 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS, spec: Spec | None = None
     mem = universe.members(spec.members_csv)
     first_block = mem["block"].min()
     syms = list(dict.fromkeys([*L["symbol"], *universe.screen_symbols(spec.members_csv), BTC]))
-    M = bt.market(syms, end, a0 - pd.Timedelta(days=1))
+    M = bt.market(syms, end, a0 - pd.Timedelta(days=spec.pad_days))
     C = bt.load_costs(M.index, M.columns, end, close=M.close)
     close, fv = M.close.to_numpy(), C.fundval
     E_all = entries(M, L, end, first_block)
@@ -499,7 +501,7 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS, spec: Spec | None = None
            "\nThe described rows (the twelve's; every number the cells have, no gate):\n", "none" if drow is None else drow.round(1).to_markdown(index=False), "\n",
            "\nCounts recorded, not priced:\n", "\n```\n" + json.dumps(counts, indent=1, default=str) + "\n```\n",
            "\n## Reference rows — no verdict (the entry a day later; against BTC; a alone; the entry at the deposit suspension's stamp — the same sold unit, a described entry)\n", pd.DataFrame(ref).round(1).to_markdown(index=False), "\n"]
-    (out / "meta.json").write_text(json.dumps({"registration": spec.registration, "decision": spec.decision, "unit": bt.UNIT, "charged": bt.CHARGED, "holds": HOLDS, "gate_holds": list(spec.gate_holds), "runup": RUNUP, "bar": bar, "bar_mult": krevent.BAR_MULT,
+    (out / "meta.json").write_text(json.dumps({"registration": tagged, "decision": spec.decision, "unit": bt.UNIT, "charged": bt.CHARGED, "holds": HOLDS, "gate_holds": list(spec.gate_holds), "runup": RUNUP, "bar": bar, "bar_mult": krevent.BAR_MULT,
                                                 "bar_r28": krevent.BAR_R28, "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": spec.seed, "trim_frac": TRIM_FRAC, "frozen": int(len(L)), "cells": int(len(E)), "weeks": W,
                                                 "taker_bps": taker_bps, "list_md5": list_md5, "verdict": verdict, "candidate_hold": cand, "into_little": little, "folds": list(spec.folds)}, indent=1))
     text = "\n".join(md)
@@ -507,11 +509,11 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS, spec: Spec | None = None
     return text
 
 
-def main(action: str, name: str | None = None) -> None:
+def main(action: str, name: str | None = None, reexecute: str | None = None) -> None:
     if action == "fingerprint":
         print(krevent.fingerprint(name or NAME))
     elif action == "run":
-        text = run(name or NAME)
+        text = run(name or NAME, reexecute=reexecute)
         print(text)
         if "**VOID" in text or '"status": "FAIL"' in text:
             sys.exit(2)
