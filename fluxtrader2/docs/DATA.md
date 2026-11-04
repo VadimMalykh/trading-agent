@@ -801,7 +801,7 @@ F1+F2 92 — KLAY 2024-08-29's 7-day hold runs past F2's end; F3+F4 63 with bars
 taker round trip, `cost_daily_wide.parquet`): on t0's day for 75 of the 93 F1+F2 rows (median 16.5 bps, q10 / q90 9.7 / 37.9), none for
 18 rows of 8 names never in a member block of 2023 … 24 (BTS, CTK, DASH, IOTX, KLAY, ONE, QTUM — and ETH, priced from the twelve's own
 cost file at run time): R28's 46 is their bar. **No price of an event's name was read: the run-up, the INTO row (bought at the notice,
-closed at the stated hour) and the give-back are R80's.** Decision CD DECIDED "CD1" 2026-11-04: R80 REGISTERED (PLAN §8) on these counts.
+closed at the stated hour) and the give-back are R80's.** Decision CD DECIDED "CD1" 2026-11-04: R80 REGISTERED (PLAN §8) on these counts. **R80 READ 2026-11-04 (PLAN §8): the F1+F2 rows' bars after t0 joined to R70's label ONCE — 91 cells, VALIDITY PASS, CLEARS at 1d on the trimmed gate (M_trim −107); the fingerprint before and after 599 names (598 + BTSUSDT, the audit's fetch), 0 changed. F3+F4's 105 rows still untouched (63 with bars; the 42 non-member windows and `costwide` for the names without rows are decision CE's Data line); F5's 29 listed, not frozen.**
 
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
