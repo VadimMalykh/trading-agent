@@ -115,6 +115,8 @@ serves ~30 days; the collector keeps what it saw).
 
 ### liquidations — empty by design (the stream is not reachable from the VM). Ignore.
 
+The public archive (decision CD's probe, 2026-11-04, from the work VM): **no liquidation file for USDT-margined contracts** (`futures/um/daily/` holds aggTrades, bookDepth, bookTicker, indexPriceKlines, klines, markPriceKlines, metrics, premiumIndexKlines, trades — AI5 verified; two direct `liquidationSnapshot` files 404); **a coin-margined one exists** — `futures/cm/daily/liquidationSnapshot/<SYMBOL>/`, 45 `…USD_PERP` names (the large coins) plus the quarterlies, daily zips 2023-06-25 → 2024-10-14 (BTCUSD_PERP 472 files), one row an order: `time, side, order_type, time_in_force, original_quantity, price, average_price, order_status, last_fill_quantity, accumulated_fill_quantity`. Not fetched (F1+F2 and six weeks of F3 only; decision CD).
+
 ## External data — Binance public archive (`ft2 archive`, `data/raw/external/binance/`)
 
 Coverage measured 2026-09-15 (PLAN §9 #1). **P0b (2026-09-15) fetched and ingested** three
