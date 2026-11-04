@@ -45,6 +45,8 @@ ARTS = [
     {"id": 7, "code": "c1", "title": "Binance Will Support the Ccc (CCC) Network Upgrade", "releaseDate": _ms("2024-03-05 12:00"), "body": _body("2024-03-05 09:00", "2024-03-05 10:00")},
     # DDD: no stamp in the body → out
     {"id": 8, "code": "d1", "title": "Binance Will Support the Ddd (DDD) Network Upgrade", "releaseDate": _ms("2024-03-20 12:00"), "body": json.dumps({"node": "text", "text": "Binance will support the upgrade. Deposits are suspended."})},
+    # LLL: F2, the old contract LLLUSDT dead since 2022-05, the relaunch LLL2USDT live → the event is LLL2USDT's
+    {"id": 11, "code": "l1", "title": "Binance Will Support the Lll (LLL) Network Upgrade", "releaseDate": _ms("2024-04-10 03:00"), "body": _body("2024-04-11 12:00", "2024-04-11 13:00")},
     # a wallet-maintenance title: not an upgrade; and a ticker we do not list
     {"id": 9, "code": "w1", "title": "Binance Will Suspend Deposits and Withdrawals on the Aaa (AAA) Network", "releaseDate": _ms("2024-05-01 00:00"), "body": ""},
     {"id": 10, "code": "z1", "title": "Binance Will Support the Zzz (QQQ) Network Upgrade", "releaseDate": _ms("2024-05-02 00:00"), "body": _body("2024-05-03 01:00", "2024-05-03 02:00")},
@@ -69,8 +71,9 @@ def _plant(tmp_path, monkeypatch):
                       _bars("CCCUSDT", "2023-01-01", "2024-06-01"), _bars("DDDUSDT", "2023-01-01", "2024-06-01")], ignore_index=True)
     bars["symbol"] = bars["symbol"].astype("category")
     bars.to_parquet(tmp_path / "data" / "candles_5m_archive.parquet", index=False)
-    pd.DataFrame({"symbol": ["BBBUSDT", "AAAUSDT", "YYYUSDT", "FFFUSDT", "CCCUSDT", "DDDUSDT", "1000AAAUSDT"],
-                  "first_month": ["2024-01", "2023-01", "2023-10", "2025-01", "2023-01", "2023-01", "2025-06"], "last_month": ["2026-09"] * 7}).to_csv(upgrades.FIRST, index=False)
+    pd.DataFrame({"symbol": ["BBBUSDT", "AAAUSDT", "YYYUSDT", "FFFUSDT", "CCCUSDT", "DDDUSDT", "1000AAAUSDT", "LLLUSDT", "LLL2USDT"],
+                  "first_month": ["2024-01", "2023-01", "2023-10", "2025-01", "2023-01", "2023-01", "2025-06", "2021-01", "2022-09"],
+                  "last_month": ["2026-09"] * 7 + ["2022-05", "2026-09"]}).to_csv(upgrades.FIRST, index=False)
     M = pd.DataFrame({"block": pd.to_datetime(["2023-06-02", "2024-09-28"], utc=True), "block_end": pd.to_datetime(["2023-07-02", "2024-10-28"], utc=True),
                       "symbol": ["AAAUSDT", "CCCUSDT"], "folds": ["F1+F2", "F3+F4"]})
     monkeypatch.setattr(upgrades, "member_symbols", lambda: M)
@@ -99,7 +102,7 @@ def test_stated_time_reads_the_upgrade_sentence_not_the_suspension():
 def test_events_flags_and_the_frozen_lists(tmp_path, monkeypatch):
     _plant(tmp_path, monkeypatch)
     D = upgrades.details(fetch=False, write=False)
-    assert len(D) == 9 and set(D["tick"]) == {"AAA", "BBB", "YYY", "FFF", "CCC", "DDD", "QQQ"} and not D[D["code"] == "z1"]["has_detail"].iloc[0]
+    assert len(D) == 10 and set(D["tick"]) == {"AAA", "BBB", "YYY", "FFF", "CCC", "DDD", "QQQ", "LLL"} and not D[D["code"] == "z1"]["has_detail"].iloc[0]
     E = upgrades.events()
     assert "QQQ" not in set(E["tick"])                                                                   # no perpetual of ours
     by = E.set_index("code")
@@ -110,11 +113,12 @@ def test_events_flags_and_the_frozen_lists(tmp_path, monkeypatch):
     assert by.loc["a2", "why"].startswith("a follow-up within 7 days") and by.loc["a3", "why"] == "eligible" and by.loc["a3", "repeat_n"] == 2 and by.loc["a1", "repeat_n"] == 0
     assert by.loc["b1", "why"] == "eligible" and by.loc["b1", "fold"] == "F3" and not bool(by.loc["b1", "member_at_t0"]) and by.loc["b1", "perp_first_source"] == "first_month"
     assert pd.Timestamp(by.loc["b1", "perp_first"]) == pd.Timestamp("2024-02-01", tz="UTC") and pd.Timestamp(by.loc["b1", "block"]) == pd.Timestamp("2024-09-28", tz="UTC")   # the block exists; the name is not in it
+    assert by.loc["l1", "symbol"] == "LLL2USDT" and by.loc["l1", "why"] == "eligible" and by.loc["l1", "perp_first_source"] == "first_month"   # the relaunch, not the dead contract
     assert by.loc["y1", "why"].startswith("the perpetual younger") and by.loc["f1", "why"] == "outside F1 … F4 (F5: listed, not frozen)"
     assert by.loc["c1", "why"] == "released after its stated time (not known ahead)" and by.loc["d1", "why"] == "no stated time in the body"
     f12 = pd.read_csv(upgrades.OUT / "upgrades_f12.csv")
     f34 = pd.read_csv(upgrades.OUT / "upgrades_f34.csv")
-    assert list(f12.columns) == upgrades.LIST_COLS and list(f12["code"]) == ["a1", "a3"] and list(f34["code"]) == ["b1"]
+    assert list(f12.columns) == upgrades.LIST_COLS and list(f12["code"]) == ["a1", "a3", "l1"] and list(f34["code"]) == ["b1"]
     assert not any(c in ("open", "close", "high", "low", "volume") for c in f12.columns)                 # no price in the frozen table
 
 
@@ -130,7 +134,7 @@ def test_bars_fingerprint_cells_and_the_audit(tmp_path, monkeypatch):
     assert a1["expected"] == int((pd.Timestamp("2023-06-19 10:00", tz="UTC") - pd.Timestamp("2023-06-09 10:00", tz="UTC")) / pd.Timedelta("5min")) and a1["bars"] == a1["expected"]
     assert cov.loc["BBBUSDT", "bars"] == 0
     rep = upgrades.bars(fetch=False)
-    assert rep["complete"] == 2 and rep["missing_months_in_fetch_tags"] == {} and rep["missing_symbols"] == ["BBBUSDT"]   # F3+F4's months are decision CE's
+    assert rep["complete"] == 2 and rep["missing_months_in_fetch_tags"] == {"LLL2USDT": ["2024-04"]} and rep["missing_symbols"] == ["BBBUSDT", "LLL2USDT"]   # F3+F4's months are decision CE's
     rep = upgrades.bars(fetch=False, fetch_tags=("f34",))
     assert rep["missing_months_in_fetch_tags"] == {"BBBUSDT": ["2024-09", "2024-10"]}
     from ft2 import krlist
@@ -141,9 +145,9 @@ def test_bars_fingerprint_cells_and_the_audit(tmp_path, monkeypatch):
     assert not krlist.fingerprint_check(fp)["pass"]
     md = upgrades.audit(today=pd.Timestamp("2026-11-04 15:00", tz="UTC"))
     J = json.loads((upgrades.OUT / "audit.json").read_text())
-    assert J["events"] == 3 and J["distinct_names"] == 2 and J["by_fold_hardfork"] == {"F1": {"False": 1, "True": 1}, "F3": {"False": 0, "True": 1}}
-    assert J["by_fold_first_repeat"]["F1"] == {"first": 1, "repeat": 1} and J["members_at_t0"] == 2 and J["stated_how"] == {"upgrade_sentence": 3}
+    assert J["events"] == 4 and J["distinct_names"] == 3 and J["by_fold_hardfork"] == {"F1": {"False": 1, "True": 1}, "F2": {"False": 1, "True": 0}, "F3": {"False": 0, "True": 1}}
+    assert J["by_fold_first_repeat"]["F1"] == {"first": 1, "repeat": 1} and J["members_at_t0"] == 2 and J["stated_how"] == {"upgrade_sentence": 4}
     assert J["t0_minus_suspend_h"]["q10_50_90"] == [1.0, 1.0, 1.0] and J["lead_negative"] == 0
-    assert J["cells_0o"]["f12"] == {"frozen": 2, "hold_inside_market": 2, "bars_complete": 2, "cells": 2, "dropped_by_market_end": []}
+    assert J["cells_0o"]["f12"] == {"frozen": 3, "hold_inside_market": 3, "bars_complete": 2, "cells": 2, "dropped_by_market_end": []}
     assert J["cells_0o"]["f34"]["cells"] == 0 and J["candidates"]["F5_listed_not_frozen"] == 1
     assert "Known-at" in md and "releaseDate" in J["known_at"]

@@ -271,12 +271,18 @@ def contracts() -> pd.DataFrame:
 
 
 def contract_for(fm: pd.DataFrame, tick: str, t0: pd.Timestamp) -> str | None:
-    """The perpetual of `tick` listed in t0's month (its first month ≤ t0's ≤ its last); several → the plain name over a 1000× one, else the oldest."""
+    """The perpetual of `tick` listed in t0's month (its first month ≤ t0's ≤ its last); several → the plain name over a 1000× one, else the oldest.
+    A ticker whose every contract is dead at t0 takes the exchange's relaunch `<TICK>2USDT` where that one is live (Terra's LUNA → LUNA2USDT
+    from 2022-09; the old LUNAUSDT ended 2022-05 — found 2026-11-04 by two frozen rows with no bars)."""
     c = fm[fm["base"] == tick]
     if not len(c):
         return None
     pm = pd.Period(t0.tz_convert("UTC").tz_localize(None), freq="M")
     live = c[(c["fm"] <= pm) & (c["lm"] >= pm)]
+    if not len(live):
+        c2 = fm[(fm["base"] == tick + "2") & (fm["fm"] <= pm) & (fm["lm"] >= pm)]
+        if len(c2):
+            return str(c2["symbol"].iloc[0])
     pool = live if len(live) else c[c["fm"] <= pm]
     if not len(pool):
         pool = c
@@ -285,8 +291,10 @@ def contract_for(fm: pd.DataFrame, tick: str, t0: pd.Timestamp) -> str | None:
 
 
 def perp_first(symbols: list[str], fm: pd.DataFrame) -> pd.DataFrame:
-    """Per symbol the perpetual's first bar: the archive slice's first 5m bar where held (`archive 5m`), else the first day of the month after
-    `um_first_month.csv`'s first month (`first_month`, an upper bound of the start), else NaT."""
+    """Per symbol the perpetual's first bar: the EARLIER of the archive slice's first 5m bar where held (`archive 5m`) and the first day of the
+    month after `um_first_month.csv`'s first month (`first_month`). Both are upper bounds of the start — the slice's where a fetch put only an
+    event's window into it (BTSUSDT after this audit's fetch: one month of 2023-11 for a 2021 contract, found 2026-11-04) — so the earlier is
+    the tighter bound and the age a lower bound either way; else NaT."""
     rows = {s: (pd.NaT, "none") for s in symbols}
     if (data.PROC / f"{SLICE}.parquet").exists() or (data.PROC / SLICE).is_dir():
         c = data.load(SLICE, columns=["symbol", "open_time"], symbols=list(symbols))
@@ -296,8 +304,10 @@ def perp_first(symbols: list[str], fm: pd.DataFrame) -> pd.DataFrame:
                 rows[str(s)] = (t, "archive 5m")
     k = fm.set_index("symbol")["fm"]
     for s in symbols:
-        if rows[s][1] == "none" and s in k.index:
-            rows[s] = (pd.Timestamp((k[s] + 1).start_time, tz="UTC"), "first_month")
+        if s in k.index:
+            t = pd.Timestamp((k[s] + 1).start_time, tz="UTC")
+            if rows[s][1] == "none" or t < rows[s][0]:
+                rows[s] = (t, "first_month")
     return pd.DataFrame([{"symbol": s, "perp_first": t, "perp_first_source": src} for s, (t, src) in rows.items()])
 
 

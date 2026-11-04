@@ -760,6 +760,49 @@ from the pre-existing zips back in the slice unchanged: 0 missing, 0.0 differenc
 thresholds (counts only, never frozen): ≥ 1 % 992
 episodes on 346 names (F1+F2 112, F3+F4 506, F5 169; 886 bought); ≥ 3 % 332 on 180 (F1+F2 43, F3+F4 203, F5 68).
 
+### upgrade_events (the scheduled NETWORK UPGRADE / HARD FORK of a name, dated by the exchange to the minute, as a per-name EVENT — Binance's CMS catalog 157 "Maintenance Updates"; decision CD1, §9 #16) — `ft2/upgrades_f12.csv`, `ft2/upgrades_f34.csv` (FROZEN 2026-11-04 — first 3ab5dcd, re-frozen the same session after two mapping corrections found by the bars count, md5 511494694fdf206c30738eff20e4a2d9 / da570f4c030b8887c5e8bdc2b89a81cf; before any bar after a t0 was read for anything): `(symbol, base, mult, t0, ts_known, release, code, fold, block, perp_first, perp_first_source, perp_age_days, member_at_t0, lead_d, hardfork, multi, repeat_n, t_suspend, stated_how, title_date, title)`
+
+`ft2 upgrades list [--fetch]|details [--fetch]|events|bars [--fetch]|audit` (`ft2/upgrades.py`; `scripts/cd1_audit.sh`, `cd1_rowcheck.py`;
+`tests/test_p8_upgrades.py`). **The source:** catalog 157 of the exchange's CMS (`www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&catalogId=157`,
+13 pages of 50; reachable from the work VM; 614 titles 2022-02-15 → 2026-10-29, `data/raw/external/binance_cms/list_157_20261104.json`) —
+388 titles "Binance Will Support the <Name> (<TICKER>) Network Upgrade [& Hard Fork] [- YYYY-MM-DD]", 362 with a ticker in the title, their
+362 bodies fetched 2026-11-04 (`…/binance_cms/detail/<code>.json`, one every 3 s; the CMS answers 429 after ≈ 250 pages and the fetch
+waits it out — 2 min, then 4). A two-chain notice ("the MANTRA (OM) and MultiversX (EGLD) Network Upgrades", 43 titles) is one row a
+chain (`multi`), each parsed from the sentences naming it: 407 (notice, name) rows. **The event rule:** t0 = the UPGRADE's stated time,
+parsed from the body as the first stamp in a sentence naming the upgrade / the hard fork / the block height / "take place" and NOT the
+deposit suspension ("The network upgrade and hard fork will take place at the block height of 36,893,881, or approximately at 2025-06-19
+01:28 (UTC)") — the suspension's stamp, one hour earlier on 182 of 198 eligible rows (q10 / q50 / q90 of t0 − t_suspend 1.0 / 1.0 / 1.0 h),
+is kept beside as `t_suspend` and is NOT the event; an upgrade dated by a block height alone is OUT (21 rows, "the upgrade's time stated
+as a block height only"), a body without a stamp OUT (8), a notice released after its stated time OUT (0 of the 348 with a perpetual of
+ours), one cell a name per 7 days (a multi-day upgrade's follow-up collapsed, 2). The ticker → the perpetual listed in t0's month
+(`um_first_month.csv`; the plain name over a 1000× one; a ticker whose every contract is dead at t0 takes the relaunch `<TICK>2USDT`
+— LUNA → LUNA2USDT, the correction of the first freeze: two F1 rows carried LUNAUSDT, dead since 2022-05, with 0 bars); the perpetual's
+first bar = the EARLIER of the slice's first 5m bar and the first day of the month after its first month (both upper bounds; the second
+correction: after the fetch BTSUSDT's slice held one month, 2023-11, and the slice rule read a 2021 contract as 15 days old); ELIGIBLE =
+the perpetual ≥ 30 days old at t0 (21 younger: launches, R28's population) AND t0 inside F1 … F4 (F5's 29 listed in `output/upgrades/events.csv`,
+not frozen; 70 before F1 or after F5). **Known-at: the notice's `releaseDate` = `ts_known` — the upgrade's hour is public from then, 1.5
+days ahead at the median (lead q10 / q25 / q50 / q75 / q90 0.45 / 0.6 / 1.59 / 5.4 / 9.17 days, none negative); the decision bar of any
+registration is the first 5m bar that CLOSES after t0 (t0 on the hour on 62 of the 93 F1+F2 rows, off the 5-minute grid on 10).**
+Flags: `fold`, `block` (the screener's block holding t0), `member_at_t0`, `lead_d`, `hardfork` (the title says "Hard Fork"), `multi`,
+`repeat_n` (the name's earlier notices in the whole catalog), `title_date`, `stated_how`.
+**Counted 2026-11-04 (`output/upgrades/audit.md` / `.json`, `details.csv`, `events.csv`, `bars.csv`, `costs.csv`, `rowcheck.json`; the chain
+15:07 → 16:02 UTC on the work VM, the re-runs to 16:28):** 348 notices with a perpetual of ours, **198 ELIGIBLE on 59 names — F1 45 (hard
+fork 26), F2 48 (32), F3 47 (29), F4 58 (39): F1+F2 93 on 38 names (members of the block at t0 37, a name's FIRST notice 14, two-chain rows
+35; SEI 9, EGLD 7, OP 6, IOTX 5, ZEN 5), F3+F4 105 on 44 (members 22, first 14)**; the perpetual's age at t0 q10 / q50 / q90 237 / 1,028 /
+1,729 days (the F1+F2 rows 170 / 918 / 1,365). **The hour:** 115 of 198 upgrades land 12 … 17 UTC (15:00 the mode, 28), 14 at 00:00;
+the weekday 0 … 3 (Mon … Thu) 184 of 198 — the chains schedule a weekday afternoon; the title's date is t0's day on 60 of the 66 titled.
+**The bars (the window min(release, t0 − 2 d) → t0 + 8 d):** the F1+F2 events' missing months fetched (`upgrades bars --fetch`, 21 monthly
+files for 9 names — BTS, CTK ×4, DASH, ETH, IOTX ×5, KLAY ×3, ONE, QTUM ×2, LUNA2 held already) and the slice re-ingested whole
+(91,441,457 rows, 598 names, 2019-12-31 → 2026-09-30); R28's extent fingerprint read CTK, DASH and QTUM as "changed" (rows gained INSIDE
+their old extent — the fetched months filled holes, R78's case) and `krlist.rowcheck` PASSED all three (every old row re-derived from the
+pre-existing zips back identical, `rowcheck.json`); the other 595 names unchanged. **After: F1+F2 93 of 93 complete; F3+F4 63 of 105
+(the slice's non-member names end 2024-08 — the confirmation's own Data line, decision CE); the cells a registration can read (0o (i)):
+F1+F2 92 — KLAY 2024-08-29's 7-day hold runs past F2's end; F3+F4 63 with bars, 105 inside the market.** **The cost rows** (`costwide`'s
+taker round trip, `cost_daily_wide.parquet`): on t0's day for 75 of the 93 F1+F2 rows (median 16.5 bps, q10 / q90 9.7 / 37.9), none for
+18 rows of 8 names never in a member block of 2023 … 24 (BTS, CTK, DASH, IOTX, KLAY, ONE, QTUM — and ETH, priced from the twelve's own
+cost file at run time): R28's 46 is their bar. **No price of an event's name was read: the run-up, the INTO row (bought at the notice,
+closed at the stated hour) and the give-back are R80's.** Decision CD DECIDED "CD1" 2026-11-04: R80 REGISTERED (PLAN §8) on these counts.
+
 ### unlock_events, unlock_asof (DefiLlama, token unlock schedules; P8, §9 #8) — `data/unlock_events.parquet`, `data/unlock_asof.parquet`: `(pid, name, symbol, gecko_id, max_supply, ts, kind, recipient, category, tokens)`, the second with `asof`
 
 A token's vesting schedule as DefiLlama describes it: one row an event, `kind` = `cliff` (a block of tokens released at one
