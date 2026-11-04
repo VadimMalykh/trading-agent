@@ -20,21 +20,21 @@ MEM = ["M1USDT", "M2USDT", "M3USDT", "M4USDT", "M5USDT"]
 LEAD = pd.Timedelta(hours=36)
 
 
-def _t0s(idx):
+def _t0s(idx, n=len(EV)):
     """Nine stated times, 07:03 (off the grid) and 07:00 (on it) alternately, every ninth day — except EV8's (the eighth), on day 108 of a 16-week
     (112-day) market: its 7-day exit past the end, dropped by the calendar; ETHUSDT's (the ninth) on day 76, inside."""
     days = [4, 13, 22, 31, 40, 49, 58, 108, 76]
-    return [idx[0].floor("D") + pd.Timedelta(days=d, hours=7, minutes=3 if k % 2 == 0 else 0) for k, d in enumerate(days)]
+    return [idx[0].floor("D") + pd.Timedelta(days=d, hours=7, minutes=3 if k % 2 == 0 else 0) for k, d in enumerate(days[:n])]
 
 
-def _market(weeks=16, seed=0, runup=0.06, giveback=-0.04, runon=None):
+def _market(weeks=16, seed=0, runup=0.06, giveback=-0.04, runon=None, names=EV):
     """Sixteen weeks of 5m bars; the event names run up from the notice (t0 − 36 h) to the hour and give it back over the day after the entry."""
     rng = np.random.default_rng(seed)
     n = weeks * 7 * 288
     idx = pd.date_range("2023-06-05 00:05", periods=n, freq="5min", tz="UTC", name="t")
-    cols = [*EV, *MEM, "BTCUSDT"]
+    cols = [*names, *MEM, "BTCUSDT"]
     r = rng.normal(0, 0.0005, (n, len(cols)))                                                              # 0.85 % a day: the planted ±4 % stands above the noise of seven cells
-    t0s = _t0s(idx)
+    t0s = _t0s(idx, len(names))
     for j, t0 in enumerate(t0s):
         if t0 + pd.Timedelta(days=2) > idx[-1]:
             continue
@@ -57,9 +57,10 @@ def _costs(M):
     return bt.Costs(days, leg, one * 0, one, np.cumsum(rate, axis=0), np.cumsum(rate * M.close.to_numpy(), axis=0))
 
 
-def _events(t0s, path):
+def _events(t0s, path, names=EV, folds=("F1",) * 4 + ("F2",) * 5):
+    EV = names
     L = pd.DataFrame({"symbol": EV, "base": [s[:-4] for s in EV], "mult": 1.0, "t0": t0s, "ts_known": [t - LEAD for t in t0s], "release": [t - LEAD for t in t0s],
-                      "code": [f"c{k}" for k in range(len(EV))], "fold": ["F1"] * 4 + ["F2"] * 5, "block": D("2023-06-05"), "perp_first": D("2022-01-01"), "perp_first_source": "archive 5m",
+                      "code": [f"c{k}" for k in range(len(EV))], "fold": list(folds), "block": D("2023-06-05"), "perp_first": D("2022-01-01"), "perp_first_source": "archive 5m",
                       "perp_age_days": 500, "member_at_t0": [True, False] * 4 + [True], "lead_d": 1.5, "hardfork": [True, False] * 4 + [True], "multi": [False] * 7 + [True, True],
                       "repeat_n": [0, 0, 0, 1, 1, 1, 2, 2, 0], "t_suspend": [t - pd.Timedelta(hours=1) for t in t0s[:6]] + [pd.NaT] * 3, "stated_how": "upgrade_sentence",
                       "title_date": pd.NaT, "title": [f"Binance Will Support the {s[:-4]} ({s[:-4]}) Network Upgrade" for s in EV]})[upgrades.LIST_COLS]
@@ -171,3 +172,91 @@ def test_a_moved_t0_an_unregistered_list_or_an_unexpected_drop_voids_the_run(tmp
     assert "**VOID" in upgevent.run("t")
     with pytest.raises(SystemExit):
         upgevent.main("run", "t")
+
+
+# ---- R81: the confirmation on the frozen F3+F4 list (decision CE1) — R80's path with the Spec swapped --------------------------------
+EV81 = ["EV1USDT", "EV2USDT", "EV3USDT", "EV4USDT", "EV5USDT", "EV6USDT", "ADAUSDT", "EV8USDT", "ETHUSDT"]       # ADA and ETH the twelve's (described), EV8 past the end (dropped)
+
+
+def _plant81(tmp_path, monkeypatch, M, t0s, C, name="t81"):
+    monkeypatch.chdir(tmp_path)
+    lst = tmp_path / "upgrades_f34.csv"
+    L = _events(t0s, lst, names=EV81, folds=("F3",) * 3 + ("F4",) * 6)
+    out = tmp_path / "output" / "listing"
+    monkeypatch.setattr(upgevent, "OUT", out)
+    monkeypatch.setattr(krevent, "OUT", out)
+    monkeypatch.setattr(upgevent, "LIST34", lst)
+    monkeypatch.setattr(upgevent, "LIST34_MD5", hashlib.md5(lst.read_bytes()).hexdigest())
+    monkeypatch.setattr(upgevent, "LIST34_ROWS", len(L))
+    monkeypatch.setattr(upgevent, "MIN_ELIGIBLE81", 5)
+    monkeypatch.setattr(upgevent, "MIN_MEMBERS", 3)
+    monkeypatch.setattr(upgevent, "DRAWS", 2000)
+    monkeypatch.setattr(upgevent, "EXPECTED_DESCRIBED34", {("ADAUSDT", str(t0s[6])), ("ETHUSDT", str(t0s[8]))})
+    monkeypatch.setattr(upgevent, "EXPECTED_DROPPED34", {("EV8USDT", str(t0s[7]))})
+    monkeypatch.setattr(listing, "window", lambda folds: (M.index[0], M.index[-1] + BAR))
+    mem = pd.DataFrame({"block": [M.index[0].floor("D")] * len(MEM), "symbol": MEM})
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: mem)
+    monkeypatch.setattr(universe, "screen_symbols", lambda path=None: MEM)
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): M)
+    monkeypatch.setattr(bt, "load_costs", lambda index, cols, end, cost_mult=1.0, close=None: C)
+    monkeypatch.setattr(bt, "READS", tmp_path / "confirmation_reads.csv")
+    guarded = []
+    monkeypatch.setattr(bt, "_guard", lambda folds, registration, reexecute=None: (guarded.append((tuple(folds), registration)), list(folds))[1])
+    today = L.assign(why="eligible")
+    monkeypatch.setattr(upgrades, "events", lambda write=True: today)
+    out.mkdir(parents=True)
+    krevent.fp_paths(name)[0].write_text("symbol,rows\n")
+    return L, today, guarded
+
+
+def test_r81_the_guard_rows_go_into_the_ledger_before_the_market_the_twelves_rows_are_described_and_a_planted_give_back_is_confirmed_on_the_one_hold(tmp_path, monkeypatch):
+    M, t0s = _market(names=EV81)
+    C = _costs(M)
+    L, today, guarded = _plant81(tmp_path, monkeypatch, M, t0s, C)
+    text = upgevent.run("t81", spec=upgevent.spec_r81())
+    out = tmp_path / "output" / "listing" / "t81"
+    V = json.loads((out / "validity.json").read_text())
+    assert guarded == [(("F3", "F4"), "R81")] and V["0_guard"]["folds"] == ["F3", "F4"] and V["0_guard"]["logged_as"] == "R81"
+    reads = pd.read_csv(tmp_path / "confirmation_reads.csv")
+    assert list(reads["fold"]) == ["F3", "F4"] and (reads["registration"] == "R81").all() and (reads["strategy"] == "upgrade_sold_1d").all()
+    assert V["status"] == "PASS" and V["3_cells"] == 6 and V["3_described_as_registered"] and V["3_dropped_as_registered"] and sorted(x[0] for x in V["3_described"]) == ["ADAUSDT", "ETHUSDT"]
+    assert V["6_money_row_identity"]["sold_gross_funding_vs_minus_a"] <= 1e-9 and V["6_money_row_identity"]["hold_is_the_gate_hold"] and V["6_money_row_identity"]["no_stop"] and V["7_exits_at_or_after_end"] == 0
+    fam = pd.read_csv(out / "holds.csv").set_index("hold")
+    assert fam["gate"].to_dict() == {"1d": True, "3d": False, "7d": False} and {"M_trim_F3", "M_trim_F4", "M_F3", "M_F4"} <= set(fam.columns)
+    assert fam.loc["1d", "M_trim"] < -300 and fam.loc["1d", "M_trim_F3"] < 0 and fam.loc["1d", "M_trim_F4"] < 0
+    assert "Verdict: CONFIRMED — the gate hold 1d" in text
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["registration"] == "R81" and meta["decision"] == "CE1" and meta["folds"] == ["F3", "F4"] and meta["gate_holds"] == [288] and meta["seed"] == 81 and meta["verdict"] == "CONFIRMED"
+    T = pd.read_csv(out / "trades.csv")
+    assert len(T) == 6 and T["H"].notna().all() and (T["x"] - T["e"] == 288).all() and T["H"].mean() > 250                 # the sold unit earns the give-back less the costs and the hedge's drift
+    assert "## The money row" in text and (out / "trades_heavy.csv").exists()
+    dr = pd.read_csv(out / "described_rows.csv")
+    assert sorted(dr["symbol"]) == ["ADAUSDT", "ETHUSDT"]
+    sp = pd.read_csv(out / "splits.csv")
+    assert set(sp[sp["split"] == "fold"]["group"]) == {"F3", "F4"}
+
+
+def test_r81_a_planted_drift_the_other_way_is_recorded_as_the_opposite_sign_and_the_verdict_rule_is_as_registered(tmp_path, monkeypatch):
+    M, t0s = _market(names=EV81, giveback=+0.04)                                                                     # the name keeps RISING after the hour: the sold unit loses
+    C = _costs(M)
+    _plant81(tmp_path, monkeypatch, M, t0s, C)
+    text = upgevent.run("t81", spec=upgevent.spec_r81())
+    meta = json.loads((tmp_path / "output" / "listing" / "t81" / "meta.json").read_text())
+    assert meta["verdict"] == "NOT CONFIRMED — the opposite sign" and "NOT CONFIRMED" in text
+    assert upgevent.confirm_verdict(-100, 30, -3.3, -80, -120, 46) == "CONFIRMED"
+    assert upgevent.confirm_verdict(-100, 30, -3.3, -80, +5, 46) == "NOT CONFIRMED"                                   # one fold the other way
+    assert upgevent.confirm_verdict(-40, 30, -1.3, -80, -120, 46) == "NOT CONFIRMED"                                   # under the bar's size, the interval not inside ±B
+    assert upgevent.confirm_verdict(-10, 10, -1.0, -8, -12, 46) == "NOT CONFIRMED — under the bar"
+    assert upgevent.confirm_verdict(+100, 30, 3.3, 80, 120, 46) == "NOT CONFIRMED — the opposite sign"
+
+
+def test_r81_an_unregistered_list_or_an_unexpected_described_row_voids_the_run_and_the_guard_rows_stand(tmp_path, monkeypatch):
+    M, t0s = _market(names=EV81)
+    C = _costs(M)
+    _plant81(tmp_path, monkeypatch, M, t0s, C)
+    monkeypatch.setattr(upgevent, "EXPECTED_DESCRIBED34", {("ETHUSDT", str(t0s[8]))})                                  # ADA's row not expected as described
+    text = upgevent.run("t81", spec=upgevent.spec_r81())
+    assert "**VOID" in text and "The guard rows stand in the ledger" in text and (tmp_path / "confirmation_reads.csv").exists()
+    monkeypatch.setattr(upgevent, "EXPECTED_DESCRIBED34", {("ADAUSDT", str(t0s[6])), ("ETHUSDT", str(t0s[8]))})
+    monkeypatch.setattr(upgevent, "LIST34_MD5", "0" * 32)
+    assert "**VOID" in upgevent.run("t81", spec=upgevent.spec_r81())

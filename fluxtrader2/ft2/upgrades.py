@@ -552,7 +552,7 @@ def audit(today: pd.Timestamp | None = None) -> str:
     return "\n".join(md)
 
 
-def main(action: str, fetch: bool = False) -> None:
+def main(action: str, fetch: bool = False, tags: tuple[str, ...] = ("f12",)) -> None:
     if action == "list":
         if fetch:
             print(f"saved {fetch_list()}")
@@ -564,7 +564,7 @@ def main(action: str, fetch: bool = False) -> None:
     elif action == "events":
         events()
     elif action == "bars":
-        bars(fetch=fetch)
+        bars(fetch=fetch, fetch_tags=tags)
     elif action == "audit":
         print(audit())
     else:

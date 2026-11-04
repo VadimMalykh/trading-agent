@@ -24,6 +24,7 @@ validity   (1) the archive slice's fingerprint before (`fingerprint`) and after 
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -54,6 +55,71 @@ EXPECTED_DROPPED = {("KLAYUSDT", "2024-08-29 01:30:00+00:00")}
 BTC = "BTCUSDT"
 SPLITS = {"hardfork": ("hard fork", "upgrade only"), "first": ("first notice", "repeat"), "member_at_t0": ("member at t0", "not a member"), "multi": ("two-chain notice", "single")}
 INTO_LITTLE = 100.0                                # the INTO row's median under this: little to give back (recorded beside the verdict)
+
+# R81 — the confirmation read on the frozen F3+F4 list (decision CE1, PLAN §8 R81): R80's path with the list, the members, the folds and the
+# verdict swapped — ONE gate hold (1 day, R80's candidate), 3d / 7d described rows; the twelve's rows described (ETH 2025-05-07 Pectra,
+# ETH 2025-11-26 Fusaka, ADA 2025-01-29 Plomin; ADA 2024-09-01 Chang lies before the members' first block — dropped by the calendar, counted);
+# the guard rows (R81, F3) / (R81, F4) appended to the ledger BEFORE the
+# F3+F4 market is loaded (R71's form, `krevent.guard_rows`); the money row — the sold unit through the harness at the entry day's doubled
+# proxy, hedged with the block's members (`listing.sold_trades`, H = own + hedge), the heavy reading ×4 / ×2 beside — described, deciding nothing.
+NAME81 = "r81"
+LIST34 = upgrades.LISTS["f34"]
+LIST34_MD5 = "da570f4c030b8887c5e8bdc2b89a81cf"    # as frozen 2026-11-04 (DATA.md `upgrade_events`) and registered (PLAN §8 R81)
+LIST34_ROWS = 105
+FOLDS34 = ("F3", "F4")
+SEED81 = 81
+GATE_HOLDS81 = (288,)                              # the clearing hold of R80; 3d and 7d described
+EXPECTED_DESCRIBED34 = {("ADAUSDT", "2025-01-29 21:45:00+00:00"), ("ETHUSDT", "2025-05-07 10:05:00+00:00"), ("ETHUSDT", "2025-11-26 06:00:00+00:00")}
+EXPECTED_DROPPED34 = {("ADAUSDT", "2024-09-01 21:45:00+00:00")}   # ADA's Chang row: t0 two days BEFORE the F3+F4 members' first block (2024-09-03) — dropped by the calendar, counted (the twelve's fourth row); every 7-day exit of the 105 lies before 2026-01-01
+MIN_ELIGIBLE81 = 96                                # ≥ 95 % of the 101 cells (written after the Data line's audit: 105 of 105 windows complete, 4 rows the twelve's)
+ENTRY_MULT81, HEAVY81 = 2.0, (4.0, 2.0)            # the money row: the entry day's legs at twice the proxy; the heavy reading ×4 / ×2 (R71's)
+STRATEGY81 = "upgrade_sold_1d"
+
+
+@dataclasses.dataclass
+class Spec:
+    """What differs between R80's read and R81's; everything else of `run` is shared and unchanged (R77's `Spec` pattern)."""
+    registration: str
+    decision: str
+    title: str
+    list_path: Path
+    list_md5: str
+    list_rows: int
+    folds: tuple[str, str]
+    members_csv: Path | None
+    seed: int
+    expected_described: set
+    expected_dropped: set
+    min_eligible: int
+    gate_holds: tuple[int, ...]
+    confirm: bool                                  # the guard rows, the single-hold CONFIRMED / NOT CONFIRMED verdict, the money row
+    other_list: Path | None
+
+
+def spec_r80() -> Spec:
+    """Read at call time, so a test's monkeypatch of the module's constants applies (R77's `spec_for`)."""
+    return Spec("R80", "CD1", "R80 — the scheduled network upgrade of a name, sold at the first bar after the stated hour (`ft2 upgevent run`)",
+                LIST, LIST_MD5, LIST_ROWS, FOLDS, None, SEED, EXPECTED_DESCRIBED, EXPECTED_DROPPED, MIN_ELIGIBLE, HOLDS, False, upgrades.LISTS["f34"])
+
+
+def spec_r81() -> Spec:
+    return Spec("R81", "CE1", "R81 — the confirmation read of the scheduled network upgrade sold at the first bar after the stated hour, 1 day, on F3+F4 (`ft2 upgevent run --name r81`)",
+                LIST34, LIST34_MD5, LIST34_ROWS, FOLDS34, universe.F34_MEMBERS_CSV, SEED81, EXPECTED_DESCRIBED34, EXPECTED_DROPPED34, MIN_ELIGIBLE81, GATE_HOLDS81, True, upgrades.LISTS["f12"])
+
+
+SPECS = {NAME: spec_r80, NAME81: spec_r81}
+
+
+def confirm_verdict(m_trim: float, se_trim: float, u_trim: float, m_fa: float, m_fb: float, bar: float) -> str:
+    """R81's gate on the one hold: CONFIRMED if M_trim ≤ −B, |u_trim| ≥ 2 and both folds' trimmed means < 0; the opposite sign recorded as
+    such; NOT CONFIRMED otherwise (with "under the bar" when the interval lies inside ±B — a fact beside, the verdict stays NOT CONFIRMED)."""
+    if m_trim <= -bar and abs(u_trim) >= 2 and m_fa < 0 and m_fb < 0:
+        return "CONFIRMED"
+    if m_trim >= bar and abs(u_trim) >= 2 and m_fa > 0 and m_fb > 0:
+        return "NOT CONFIRMED — the opposite sign"
+    if abs(m_trim) + 1.96 * se_trim < bar:
+        return "NOT CONFIRMED — under the bar"
+    return "NOT CONFIRMED"
 
 
 def _days(h: int) -> str:
@@ -114,7 +180,7 @@ def entries(M: bt.Market, L: pd.DataFrame, end: pd.Timestamp, first_block: pd.Ti
         elif row < 0:
             why = "the decision bar is not in the market"
         elif idx[row] < first_block:
-            why = "before F1's first member block"
+            why = "before the folds' first member block"
         elif row + latency >= n or not (np.isfinite(cl[row, c]) and np.isfinite(cl[row + latency, c])):
             why = "no close at the decision or entry bar"
         else:
@@ -143,8 +209,10 @@ def label_pair(close: np.ndarray, fundval: np.ndarray, e: np.ndarray, x: np.ndar
 
 
 # ---- the gate: the trimmed statistic ------------------------------------------------------------------------------------------
-def trimmed_family(Y: dict, t: pd.DatetimeIndex, f1: np.ndarray, f2: np.ndarray, bar: float, seed: int = SEED) -> tuple[pd.DataFrame, dict, dict]:
-    """Per hold the trimmed statistic with its own block bootstrap (the gate) and the plain mean with R28's (beside)."""
+def trimmed_family(Y: dict, t: pd.DatetimeIndex, f1: np.ndarray, f2: np.ndarray, bar: float, seed: int = SEED, folds: tuple[str, str] = FOLDS) -> tuple[pd.DataFrame, dict, dict]:
+    """Per hold the trimmed statistic with its own block bootstrap (the gate) and the plain mean with R28's (beside); the fold columns named
+    after `folds` (F1 / F2 for R80, F3 / F4 for R81)."""
+    fa, fb = folds
     wk, W = listing.weeks(t)
     Ymat = np.column_stack([Y[h] for h in HOLDS])
     bs = listing.bootstrap(Ymat, wk, W, block=BLOCK_WEEKS, draws=DRAWS, seed=seed)
@@ -155,12 +223,12 @@ def trimmed_family(Y: dict, t: pd.DatetimeIndex, f1: np.ndarray, f2: np.ndarray,
         v = y[np.isfinite(y)]
         kk = int(bt_["k"][k])
         r = {"hold": _days(h), "n": int(bs["n"][k]), "k_trim": kk, "M_trim": float(bt_["m"][k]), "se_trim": float(bt_["se"][k]), "u_trim": float(bt_["u"][k]), "p_fw_trim": float(bt_["p_fw"]),
-             "MDE_trim": 2.8 * float(bt_["se"][k]), "M_trim_F1": listing.trimmed(y[f1], fundevent.k_trim(int(np.isfinite(y[f1]).sum()))), "M_trim_F2": listing.trimmed(y[f2], fundevent.k_trim(int(np.isfinite(y[f2]).sum()))),
+             "MDE_trim": 2.8 * float(bt_["se"][k]), f"M_trim_{fa}": listing.trimmed(y[f1], fundevent.k_trim(int(np.isfinite(y[f1]).sum()))), f"M_trim_{fb}": listing.trimmed(y[f2], fundevent.k_trim(int(np.isfinite(y[f2]).sum()))),
              "B": bar, "M": float(bs["m"][k]), "se": float(bs["se"][k]), "u": float(bs["u"][k]), "p_fw": float(bs["p_fw"]), "MDE": 2.8 * float(bs["se"][k]), "se_week": float(bs["se_week"][k]),
-             "se_plain": float(bs["se_plain"][k]), "M_F1": float(np.nanmean(y[f1])), "M_F2": float(np.nanmean(y[f2])), "median": float(np.median(v)) if len(v) else np.nan,
+             "se_plain": float(bs["se_plain"][k]), f"M_{fa}": float(np.nanmean(y[f1])), f"M_{fb}": float(np.nanmean(y[f2])), "median": float(np.median(v)) if len(v) else np.nan,
              "share_below_0": float((v < 0).mean()) if len(v) else np.nan, "M_without_5_largest": float(np.sort(v)[:-5].mean()) if len(v) > 5 else np.nan,
              "M_without_5_smallest": float(np.sort(v)[5:].mean()) if len(v) > 5 else np.nan, "trim_identity": abs(float(bt_["m"][k]) - listing.trimmed(y, kk))}
-        r["verdict"] = krevent.hold_verdict(r["M_trim"], r["se_trim"], r["u_trim"], r["p_fw_trim"], r["M_trim_F1"], r["M_trim_F2"], r["M_trim"], bar)
+        r["verdict"] = krevent.hold_verdict(r["M_trim"], r["se_trim"], r["u_trim"], r["p_fw_trim"], r[f"M_trim_{fa}"], r[f"M_trim_{fb}"], r["M_trim"], bar)
         fam.append(r)
     fam = pd.DataFrame(fam)
     return fam, bs, bt_
@@ -181,22 +249,45 @@ def _split_rows(E: pd.DataFrame, Y: dict, key: str, labels) -> pd.DataFrame:
 
 
 # ---- the run ------------------------------------------------------------------------------------------------------------------------------
-def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
-    a0, end = listing.window(FOLDS)
-    L = load_events(LIST)
-    list_md5 = krevent.md5(LIST)
-    mem = universe.members()
+def money_row(M: bt.Market, C: bt.Costs, E: pd.DataFrame, mask: np.ndarray, taker_bps: float, hold: int, entry_mult: float = ENTRY_MULT81, heavy: tuple[float, float] = HEAVY81) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """R81's money row (described, deciding nothing): the sold unit through the harness at the entry day's legs × `entry_mult` the proxy, hedged
+    with the block's members bought (`listing.sold_trades`, H = own + hedge); the heavy reading beside; the arithmetic identity of the harness's
+    fill with the module's own (R71's `_arith`): gross + funding of the sold position = −a of the same cell."""
+    Ec = E.rename(columns={"symbol": "contract"})
+    T = listing.sold_trades(M, C, Ec, mask, taker_bps, entry_mult=entry_mult, other_mult=1.0, hold=hold, level=np.inf)
+    TH = listing.sold_trades(M, C, Ec, mask, taker_bps, entry_mult=heavy[0], other_mult=heavy[1], hold=hold, level=np.inf)
+    a = E[f"a_{_days(hold)}"].to_numpy()
+    d = {"sold_gross_funding_vs_minus_a": float(np.nanmax(np.abs((T["gross"] + T["funding"]).to_numpy() + a))) if np.isfinite(a).any() else 0.0,
+         "hold_is_the_gate_hold": bool(((T["x"] - T["e"]) == hold).all()), "no_stop": bool(not T["stopped"].any()), "n_priced": int(T["H"].notna().sum()), "n": int(len(T))}
+    return T, TH, d
+
+
+def run(name: str = NAME, taker_bps: float = TAKER_BPS, spec: Spec | None = None) -> str:
+    spec = spec or SPECS.get(name, spec_r80)()
+    fa, fb = spec.folds
+    L = load_events(spec.list_path)
+    list_md5 = krevent.md5(spec.list_path)
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    fp_before, _ = krevent.fp_paths(name)
+    guard = None
+    if spec.confirm:                                                   # R71's form: registered, once, the guard rows in the ledger BEFORE the market is loaded
+        conf = bt._guard(spec.folds, spec.registration)
+        tagged = bt.read_tag(spec.registration, None)
+        params = {"holds": list(spec.gate_holds), "stop": None, "entry_mult": ENTRY_MULT81, "heavy": list(HEAVY81), "list": spec.list_path.name, "list_md5": list_md5, "rows": int(len(L))}
+        stamp = krevent.guard_rows(bt.READS, conf, tagged, STRATEGY81, params)
+        guard = {"status": "PASS", "appended_at": stamp, "ledger": str(bt.READS), "folds": list(conf), "logged_as": tagged}
+        print(f"guard: ({tagged}, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the {fa}+{fb} market is loaded now", flush=True)
+    a0, end = listing.window(spec.folds)
+    mem = universe.members(spec.members_csv)
     first_block = mem["block"].min()
-    syms = list(dict.fromkeys([*L["symbol"], *universe.screen_symbols(), BTC]))
+    syms = list(dict.fromkeys([*L["symbol"], *universe.screen_symbols(spec.members_csv), BTC]))
     M = bt.market(syms, end, a0 - pd.Timedelta(days=1))
     C = bt.load_costs(M.index, M.columns, end, close=M.close)
     close, fv = M.close.to_numpy(), C.fundval
     E_all = entries(M, L, end, first_block)
     E = E_all[E_all["eligible"]].reset_index(drop=True)
     D = E_all[E_all["described"]].reset_index(drop=True)
-    out = OUT / name
-    out.mkdir(parents=True, exist_ok=True)
-    fp_before, _ = krevent.fp_paths(name)
 
     def labels_for(F: pd.DataFrame) -> tuple[dict, dict, dict, dict, dict, dict, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
         rows, own = F["row"].to_numpy(), M.columns.get_indexer(F["symbol"])
@@ -246,9 +337,9 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
     drop = E_all[~E_all["eligible"] & ~E_all["described"]]
     drop_set = {(r.symbol, str(r.t0)) for r in drop.itertuples(index=False)}
     V = {"1_fingerprint_before": "saved" if fp_before.exists() else "MISSING", "1_fingerprint_after": "pending → `ft2 upgevent check` after the run",
-         "2_list_md5": list_md5, "2_list_md5_as_registered": list_md5 == LIST_MD5, "2_list_rows": int(len(L)), "2_rederived": red,
-         "3_frozen": int(len(L)), "3_cells": int(len(E)), "3_described": sorted(desc_set), "3_described_as_registered": desc_set == EXPECTED_DESCRIBED,
-         "3_dropped": {f"{s} {t0}": w for s, t0, w in zip(drop["symbol"], drop["t0"].astype(str), drop["why"])}, "3_dropped_as_registered": drop_set == EXPECTED_DROPPED,
+         "2_list_md5": list_md5, "2_list_md5_as_registered": list_md5 == spec.list_md5, "2_list_rows": int(len(L)), "2_rederived": red,
+         "3_frozen": int(len(L)), "3_cells": int(len(E)), "3_described": sorted(desc_set), "3_described_as_registered": desc_set == spec.expected_described,
+         "3_dropped": {f"{s} {t0}": w for s, t0, w in zip(drop["symbol"], drop["t0"].astype(str), drop["why"])}, "3_dropped_as_registered": drop_set == spec.expected_dropped,
          "3_own_cost_row_share": float((E["B_source"] != "R28's 46").mean()) if len(E) else 0.0, "3_B_source": E["B_source"].value_counts().to_dict(),
          "3_at_46": sorted(E[E["B_source"] == "R28's 46"]["symbol"].unique().tolist()),
          "4_min_share_of_bars": float(min(span)) if span else 0.0, "4_events_under_95pct_bars": int(sum(s < MIN_BARS for s in span)),
@@ -258,27 +349,43 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
          "7_decision_after_t0": bool((t > pd.DatetimeIndex(E["t0"])).all()) if len(E) else False, "7_decision_after_release": bool((t > pd.DatetimeIndex(E["ts_known"])).all()) if len(E) else False,
          "7_into_entry_after_release": bool((pd.DatetimeIndex(E["t_into"]) + bt.LATENCY * BAR > pd.DatetimeIndex(E["ts_known"])).all()) if len(E) else False,
          "7_decision_within_5min_of_t0": bool(((t - pd.DatetimeIndex(E["t0"])) <= BAR).all()) if len(E) else False}
-    V["status"] = "PASS" if (V["1_fingerprint_before"] == "saved" and V["2_list_md5_as_registered"] and len(L) == LIST_ROWS and red.get("status") == "PASS"
-                             and V["3_described_as_registered"] and V["3_dropped_as_registered"] and len(E) >= MIN_ELIGIBLE and V["3_own_cost_row_share"] >= MIN_OWN_COST
+    money = None
+    if spec.confirm:
+        V["0_guard"] = guard
+        mask_e = listing.member_mask(mem, M.columns, t)
+        T, TH, d6m = money_row(M, C, E, mask_e, taker_bps, spec.gate_holds[0])
+        V["6_money_row_identity"] = d6m
+        V["7_exits_at_or_after_end"] = int((pd.DatetimeIndex(T["exit_t"]) >= end).sum()) if len(T) else 0
+        money = (T, TH)
+    V["status"] = "PASS" if (V["1_fingerprint_before"] == "saved" and V["2_list_md5_as_registered"] and len(L) == spec.list_rows and red.get("status") == "PASS"
+                             and V["3_described_as_registered"] and V["3_dropped_as_registered"] and len(E) >= spec.min_eligible and V["3_own_cost_row_share"] >= MIN_OWN_COST
                              and V["4_events_under_95pct_bars"] == 0 and min(V["4_label_share"].values()) >= MIN_LABELS
                              and min(V["5_min_members"].values()) >= MIN_MEMBERS and V["5_min_members_runup"] >= MIN_MEMBERS and V["5_min_members_into"] >= MIN_MEMBERS
                              and max(max(v) for v in V["6_identity_max_abs_diff"].values()) <= 1e-9 and V["6_same_cells"]
-                             and V["7_decision_after_t0"] and V["7_decision_after_release"] and V["7_into_entry_after_release"] and V["7_decision_within_5min_of_t0"]) else "FAIL"
+                             and V["7_decision_after_t0"] and V["7_decision_after_release"] and V["7_into_entry_after_release"] and V["7_decision_within_5min_of_t0"]
+                             and (not spec.confirm or (V["6_money_row_identity"]["sold_gross_funding_vs_minus_a"] <= 1e-9 and V["6_money_row_identity"]["hold_is_the_gate_hold"]
+                                                       and V["6_money_row_identity"]["no_stop"] and V["7_exits_at_or_after_end"] == 0))) else "FAIL"
     E_all.to_csv(out / "events_all.csv", index=False)
-    md = [f"# R80 — the scheduled network upgrade of a name, sold at the first bar after the stated hour (`ft2 upgevent run`)\n",
-          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · unit {bt.UNIT}, charged on {bt.CHARGED} · market {M.index[0]:%Y-%m-%d} → {M.index[-1]:%Y-%m-%d %H:%M}, {len(M.columns)} names · the list `{LIST.name}` md5 {list_md5}\n",
+    md = [f"# {spec.title}\n",
+          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · unit {bt.UNIT}, charged on {bt.CHARGED} · market {M.index[0]:%Y-%m-%d} → {M.index[-1]:%Y-%m-%d %H:%M}, {len(M.columns)} names · the list `{spec.list_path.name}` md5 {list_md5}\n",
           f"\n## Validity: {V['status']} (the fingerprint after the run is `ft2 upgevent check`'s)\n", "\n```\n" + json.dumps(V, indent=1, default=str) + "\n```\n",
           "\nRows by what became of them:\n", E_all["why"].replace("", "cell").value_counts().rename("rows").to_frame().to_markdown(), "\n"]
 
     # the family on the trimmed statistic (computed before the void test so a FAIL still writes nothing of it)
     if V["status"] != "PASS":
-        md += ["\n**VOID — the validity rows and the family are not computed.**\n"]
+        md += ["\n**VOID — the validity rows and the family are not computed." + (" The guard rows stand in the ledger: the folds are read for this question." if spec.confirm else "") + "**\n"]
         (out / "validity.json").write_text(json.dumps(V, indent=1, default=str))
         (out / "upgevent.md").write_text("\n".join(md))
         return "\n".join(md)
-    f1, f2 = (E["fold"] == "F1").to_numpy(), (E["fold"] == "F2").to_numpy()
-    fam, bs, bt_ = trimmed_family(Y, t, f1, f2, bar)
-    verdict, cand = krevent.family_verdict(fam.assign(u=fam["u_trim"]))
+    f1, f2 = (E["fold"] == fa).to_numpy(), (E["fold"] == fb).to_numpy()
+    fam, bs, bt_ = trimmed_family(Y, t, f1, f2, bar, seed=spec.seed, folds=spec.folds)
+    if spec.confirm:                                                   # ONE gate hold; the other holds' rows are described (their `verdict` column is R80's family rule, not the gate)
+        g = fam[fam["hold"] == _days(spec.gate_holds[0])].iloc[0]
+        verdict = confirm_verdict(float(g["M_trim"]), float(g["se_trim"]), float(g["u_trim"]), float(g[f"M_trim_{fa}"]), float(g[f"M_trim_{fb}"]), bar)
+        cand = _days(spec.gate_holds[0])
+        fam["gate"] = fam["hold"] == cand
+    else:
+        verdict, cand = krevent.family_verdict(fam.assign(u=fam["u_trim"]))
     V["6_trimmed_identity_max"] = float(fam["trim_identity"].max())
     if V["6_trimmed_identity_max"] > 1e-9:
         verdict, cand, V["status"] = "VOID", None, "FAIL"
@@ -311,9 +418,12 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
     # the family
     W = listing.weeks(t)[1]
     fam.to_csv(out / "holds.csv", index=False)
-    md += [f"\n## The family — y = a − b, bps of the position; {len(E)} cells in {W} weeks; B {bar:.1f} (the mean of the names' own doubled round trips; R28's 46 beside); {DRAWS:,} draws of {BLOCK_WEEKS}-week blocks; the sign NEGATIVE; THE GATE ON THE 10 % TRIMMED MEAN (k = {fam['k_trim'].tolist()} out at each end, its own block bootstrap: M_trim / se_trim / u_trim / p_fw_trim; the plain mean, the median, the share below zero and M without the five largest / smallest beside, deciding nothing)\n",
-           fam.round(3).to_markdown(index=False), "\n", f"\n**Verdict: {verdict}{f' — the candidate hold {cand}' if cand else ''}.**\n",
-           f"\nn in F1 {int(f1.sum())}, in F2 {int(f2.sum())}; cells per week: mean {len(E) / W:.2f}; names {E['symbol'].nunique()}.\n"]
+    gate_note = (f"THE GATE ON THE 10 % TRIMMED MEAN OF THE {cand} HOLD ALONE (R80's candidate; M_trim ≤ −B, |u_trim| ≥ 2, {fa}'s and {fb}'s trimmed means < 0; no family-wise p — the 3d and 7d rows are DESCRIBED, their `verdict` column R80's family rule and not the gate)"
+                 if spec.confirm else "THE GATE ON THE 10 % TRIMMED MEAN")
+    md += [f"\n## The family — y = a − b, bps of the position; {len(E)} cells in {W} weeks; B {bar:.1f} (the mean of the names' own doubled round trips; R28's 46 beside); {DRAWS:,} draws of {BLOCK_WEEKS}-week blocks; the sign NEGATIVE; {gate_note} (k = {fam['k_trim'].tolist()} out at each end, its own block bootstrap: M_trim / se_trim / u_trim / p_fw_trim; the plain mean, the median, the share below zero and M without the five largest / smallest beside, deciding nothing)\n",
+           fam.round(3).to_markdown(index=False), "\n", f"\n**Verdict: {verdict}{(' — the ' + ('gate' if spec.confirm else 'candidate') + ' hold ' + cand) if cand else ''}.**\n",
+           f"\nn in {fa} {int(f1.sum())}, in {fb} {int(f2.sum())}; cells per week: mean {len(E) / W:.2f}; names {E['symbol'].nunique()}.\n"]
+    (out / "upgevent.md").write_text("\n".join(md))                   # the read is on disk before anything is described
 
     # described — decides nothing
     desc, sold, ref, net = [], [], [], []
@@ -340,7 +450,7 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
     E.to_csv(out / "events.csv", index=False)
     splits = pd.concat([_split_rows(E, Y, k, lab) for k, lab in SPLITS.items()], ignore_index=True)
     fold_rows = pd.DataFrame([{"split": "fold", "group": f, "hold": _days(h), "n": int(np.isfinite(Y[h][(E['fold'] == f).to_numpy()]).sum()), "M_trim": listing.trimmed(Y[h][(E["fold"] == f).to_numpy()], fundevent.k_trim(int(np.isfinite(Y[h][(E['fold'] == f).to_numpy()]).sum()))),
-                               "M": float(np.nanmean(Y[h][(E["fold"] == f).to_numpy()])), "median": float(np.nanmedian(Y[h][(E["fold"] == f).to_numpy()]))} for f in FOLDS for h in HOLDS])
+                               "M": float(np.nanmean(Y[h][(E["fold"] == f).to_numpy()])), "median": float(np.nanmedian(Y[h][(E["fold"] == f).to_numpy()]))} for f in spec.folds for h in HOLDS])
     splits = pd.concat([splits, fold_rows], ignore_index=True)
     splits.to_csv(out / "splits.csv", index=False)
     ycols = [f"y_{_days(h)}" for h in HOLDS]
@@ -351,7 +461,7 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
     corr = {d: float(pd.Series(iy).corr(pd.Series(Y[h]))) for d, h in zip(["1d", "3d", "7d"], HOLDS)}
     hi = iy >= np.nanmedian(iy)
     corr_split = {f"y_1d trimmed, INTO row ≥ median": listing.trimmed(Y[288][hi], fundevent.k_trim(int(np.isfinite(Y[288][hi]).sum()))), "y_1d trimmed, INTO row < median": listing.trimmed(Y[288][~hi], fundevent.k_trim(int(np.isfinite(Y[288][~hi]).sum())))}
-    # the described row (the twelve)
+    # the described rows (the twelve)
     drow = None
     if len(D):
         Ad, Bd, NBd, Yd, YLd, YBd, (rd_a, rd_b, _), (id_a, id_b, _), SUSd, bars_d = labels_for(D)
@@ -360,8 +470,22 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
             drow[f"y_{_days(h)}"] = Yd[h]
         drow["into_y"], drow["runup_y"], drow["B_i"] = id_a - id_b, rd_a - rd_b, bars_d["B_i"].to_numpy()
         drow.to_csv(out / "described_rows.csv", index=False)
-    counts = {"F3+F4 frozen rows (untouched)": int(len(pd.read_csv(upgrades.LISTS["f34"]))) if upgrades.LISTS["f34"].exists() else None, "F5 listed, not frozen": 29}
+    counts = {f"frozen rows of `{spec.other_list.name}` (untouched here)": int(len(pd.read_csv(spec.other_list))) if spec.other_list is not None and spec.other_list.exists() else None, "F5 listed, not frozen": 29}
+    # the money row (R81): the sold unit through the harness, hedged with the members — described, deciding nothing
+    money_md = []
+    if money is not None:
+        T, TH = money
+        T.to_csv(out / "trades.csv", index=False)
+        TH.to_csv(out / "trades_heavy.csv", index=False)
+        Hv = T["H"].to_numpy()
+        ok = np.isfinite(Hv)
+        hr = {"n_priced": int(ok.sum()), "M_H": float(Hv[ok].mean()), "M_trim_H": listing.trimmed(Hv[ok], fundevent.k_trim(int(ok.sum()))), "median_H": float(np.median(Hv[ok])), "share_H_above_0": float((Hv[ok] > 0).mean()),
+              "M_own": float(T["own"].mean()), "M_hedge": float(T["hedge"].mean()), "M_gross": float(T["gross"].mean()), "M_funding": float(T["funding"].mean()), "M_fee": float(T["fee"].mean()), "M_spread_impact": float(T["spread_impact"].mean()),
+              "M_H_heavy": float(TH["H"].mean()), "M_trim_H_heavy": listing.trimmed(TH["H"].dropna().to_numpy(), fundevent.k_trim(int(TH["H"].notna().sum()))), "min_members_hedge": int(T["n_b"].min()), "largest_single_loss_H": float(-Hv[ok].min()) if ok.any() else np.nan}
+        money_md = [f"\n## The money row — the SOLD unit through the harness at the entry day's legs × {ENTRY_MULT81} the proxy, hedged with the block's members bought (H = own + hedge, bps of the position; the heavy reading × {HEAVY81[0]} / × {HEAVY81[1]} beside); described, deciding nothing; no stop\n",
+                    pd.DataFrame([hr]).round(1).to_markdown(index=False), "\n"]
     md += ["\n## Described — decides nothing\n",
+           *money_md,
            "\nThe splits (hard fork / upgrade only; a name's first notice / repeat; members at t0; two-chain notices; the folds) — the trimmed mean, the plain, the median:\n", splits.round(1).to_markdown(index=False), "\n",
            "\nThe distribution of y, and a and b apart:\n", pd.DataFrame(desc).round(1).to_markdown(index=False), "\n",
            "\nThe money of a SOLD position (−y; the trimmed beside; a loss capped at the position's size is a different rule, shown beside; a stop is not written in):\n", pd.DataFrame(sold).round(3).to_markdown(index=False), "\n",
@@ -372,12 +496,12 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS) -> str:
            "\nThe INTO row against the give-back: the correlation of into_y with y per hold, and y_1d's trimmed mean on the cells with an INTO row at or above the median against the rest (a fact, not a rule):\n",
            "\n```\n" + json.dumps({"corr": corr, **corr_split}, indent=1) + "\n```\n",
            "\nThe bar: B_i's distribution and its sources:\n", "\n```\n" + json.dumps(bdist, indent=1) + "\n```\n",
-           "\nThe described row (one of the twelve; every number the cells have, no gate):\n", "none" if drow is None else drow.round(1).to_markdown(index=False), "\n",
+           "\nThe described rows (the twelve's; every number the cells have, no gate):\n", "none" if drow is None else drow.round(1).to_markdown(index=False), "\n",
            "\nCounts recorded, not priced:\n", "\n```\n" + json.dumps(counts, indent=1, default=str) + "\n```\n",
            "\n## Reference rows — no verdict (the entry a day later; against BTC; a alone; the entry at the deposit suspension's stamp — the same sold unit, a described entry)\n", pd.DataFrame(ref).round(1).to_markdown(index=False), "\n"]
-    (out / "meta.json").write_text(json.dumps({"registration": "R80", "decision": "CD1", "unit": bt.UNIT, "charged": bt.CHARGED, "holds": HOLDS, "runup": RUNUP, "bar": bar, "bar_mult": krevent.BAR_MULT,
-                                                "bar_r28": krevent.BAR_R28, "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": SEED, "trim_frac": TRIM_FRAC, "frozen": int(len(L)), "cells": int(len(E)), "weeks": W,
-                                                "taker_bps": taker_bps, "list_md5": list_md5, "verdict": verdict, "candidate_hold": cand, "into_little": little}, indent=1))
+    (out / "meta.json").write_text(json.dumps({"registration": spec.registration, "decision": spec.decision, "unit": bt.UNIT, "charged": bt.CHARGED, "holds": HOLDS, "gate_holds": list(spec.gate_holds), "runup": RUNUP, "bar": bar, "bar_mult": krevent.BAR_MULT,
+                                                "bar_r28": krevent.BAR_R28, "block_weeks": BLOCK_WEEKS, "draws": DRAWS, "seed": spec.seed, "trim_frac": TRIM_FRAC, "frozen": int(len(L)), "cells": int(len(E)), "weeks": W,
+                                                "taker_bps": taker_bps, "list_md5": list_md5, "verdict": verdict, "candidate_hold": cand, "into_little": little, "folds": list(spec.folds)}, indent=1))
     text = "\n".join(md)
     (out / "upgevent.md").write_text(text)
     return text

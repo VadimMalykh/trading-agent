@@ -130,7 +130,7 @@ def cmd_fundfreq(args):
 
 def cmd_upgrades(args):
     from . import upgrades
-    upgrades.main(args.action, fetch=args.fetch)
+    upgrades.main(args.action, fetch=args.fetch, tags=tuple(args.tags))
 
 
 def cmd_hl(args):
@@ -583,6 +583,7 @@ def main(argv=None):
     ugp = sub.add_parser("upgrades", help="P8 (decision CD1): the scheduled NETWORK UPGRADE / HARD FORK of a name, dated by the exchange to the minute, as a per-name EVENT — the source audit from Binance's CMS catalog 157 'Maintenance Updates': list (the catalog on disk; --fetch re-fetches it from the VM), details (the upgrade titles' bodies and the stated time parsed; --fetch fetches the missing bodies), events (every notice with its flags and the lists to freeze → output/upgrades/), bars (the event names' 5m bars over min(release, t0 − 2 d) → t0 + 8 d counted; --fetch fetches the F1+F2 events' missing months and re-ingests candles_5m_archive under a fingerprint), audit (counts, the lead, the stated-time rule, the hours, the ages, the bars, the 0o (i) cells, the cost rows → output/upgrades/audit.md). Nothing priced (see ft2/upgrades.py)")
     ugp.add_argument("action", choices=["list", "details", "events", "bars", "audit"])
     ugp.add_argument("--fetch", action="store_true", help="list / details: fetch from www.binance.com (the VM reaches it; the laptop does not); bars: fetch the F1+F2 events' missing monthly 5m klines and re-ingest candles_5m_archive under a fingerprint")
+    ugp.add_argument("--tags", nargs="*", default=["f12"], help="bars --fetch: the frozen lists whose events' missing months are fetched (f12 — decision CD1's audit; f34 — decision CE1's Data line)")
     spp = sub.add_parser("spot", help="P8 (decision BH1): Binance's own spot market per member as a source — the archive's spot monthly 1h klines for the twelve's and the screener's members' <BASE>USDT markets (the taker-buy columns) → data/raw/external/binance_spot/, data/spot_1h.parquet, output/spot_audit.md (see ft2/spot.py)")
     spp.add_argument("action", choices=["symbols", "fetch", "ingest", "audit"])
     spp.add_argument("--start", default="2023-04-01", help="fetch: the first month asked for")
@@ -646,7 +647,7 @@ def main(argv=None):
     ke.add_argument("--registration", default=None, help="confirm: R71 — a guarded read of F3+F4, made once and logged before the market is loaded; `recheck` reproduces R70's pricing through the confirmation's path first (validity (3))")
     ue = sub.add_parser("upgevent", help="P8, R80 (decision CD1): the scheduled network upgrade of a name SOLD at the first 5m bar closing after the exchange's stated hour, 1/3/7 days against the F1+F2 members, the gate on the 10 % trimmed mean — `fingerprint` saves the archive slice's per-name fingerprint before the run, `run` reads R80 on the frozen ft2/upgrades_f12.csv → output/listing/r80/, `check` compares the fingerprint after (see ft2/upgevent.py)")
     ue.add_argument("action", choices=["fingerprint", "run", "check"])
-    ue.add_argument("--name", default=None, help="the run's folder under output/listing/ (default r80)")
+    ue.add_argument("--name", default=None, help="the run's folder under output/listing/ (default r80 — R80 on the frozen F1+F2 list; `r81` — decision CE1's confirmation read on the frozen F3+F4 list, R80's path with upgevent.Spec swapped: one gate hold (1 day), the guard rows (R81, F3) / (R81, F4) in the ledger before the market, the money row through the harness hedged with the members)")
     fdp = sub.add_parser("fundep", help="P8 (decision BY1): the EXTREME trailing-day funding of a running perpetual WITHOUT the exchange's flag as a per-name event population — the source audit from funding_archive: events (the 24-hour rolling sum of the settled rate per name; an episode = the first settlement at |sum| ≥ 2 % a day after 14 quiet days, the name ≥ 30 d old; every episode with its flags and the lists per fold pair to freeze → output/fundep/), audit (the frozen lists' counts, the eligibility rule on the F1+F2 list in R75's frame with every dropped cell named, the F3+F4 / F5 bars a Data line would fetch → output/fundep/audit.md). Nothing after t0 read, nothing priced (see ft2/fundep.py)")
     fdp.add_argument("action", choices=["events", "audit"])
     fdp.add_argument("--threshold", type=float, default=0.02, help="events: |the 24-hour sum of the settled rate| at t0 as a fraction (default 0.02 = 2 %% a day; 0.01 and 0.03 are counted beside as described rows)")
