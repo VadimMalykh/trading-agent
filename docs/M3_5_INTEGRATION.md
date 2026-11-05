@@ -468,7 +468,7 @@ A failure prints the problems and no tables.
 gitignored):
 
 ```sh
-./scripts/gcp_forward_ledger.sh              # export today's ledger + policy_bars and run R0–R5
+./scripts/gcp_forward_ledger.sh              # export today's ledger + policy_bars (+ book_at_bars, X23's — not read by R0–R5) and run R0–R5
 ./scripts/m3.sh -m m3 forward --ledger output/forward/paper_trades_<YYYYMMDD>.csv \
     --bars output/forward/policy_bars_<YYYYMMDD>.csv                              # re-read
 ```

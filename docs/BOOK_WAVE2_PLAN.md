@@ -1029,7 +1029,10 @@ maker-path's own crossing legs show the same gap, the counterfactual understates
 by that much and S2 is conservative; the line is printed so the reader sees it.
 
 **Readings: at 100 and at 200 closed maker-path pilot trades** (≈ 3 and 6 weeks at the pilot's
-~4.7 a day). **EARNING** iff S2's 95 % lower bound > 0 at either reading (the first clear reading
+~4.7 a day — *measured 2026-11-05: 21 closed maker-path trades in the first 15 days, 1.4 a day (13
+`maker`, 8 `rejected_then_crossed`; the $200 slots on a $394 wallet and the one-position-per-pair
+rule, not the path), so the 100th lands ≈ late December 2026 and the 200th ≈ March 2027; the
+readings are unchanged, only their dates*). **EARNING** iff S2's 95 % lower bound > 0 at either reading (the first clear reading
 decides; a reading is one look). **NOT EARNING** iff ≤ 0 at both. **Power:** M1's per-trade spread
 on the quoted leg ≈ 16 bps (clustered) → se ≈ 1.6 at 100, 1.1 at 200; a +3 is ~2 se at 100 and
 clear at 200; +1.5 is not resolvable before 200. **Expectation, recorded now:** +2 … +3 bps (M1's
@@ -1204,10 +1207,55 @@ measures (`m3 makerpath live`), so nothing is read from two rows and nothing cha
 
 ---
 
-## S1 — X23: the pair's own book state at the decision as a filter on the policy's entries — 🔵 REGISTERED 2026-11-06 on Vadim's "Let's go with X23", before any real bar was read
+## S1 — X23: the pair's own book state at the decision as a filter on the policy's entries — 🟢 READ 2026-11-06, GATE NOT PASSED (registered the same day on Vadim's "Let's go with X23", before any real bar was read)
 
-*The registration as written on 2026-11-06, before the explore was run. The explore's result block
-follows it; the forward look's result is written at the 200th closed policy trade.*
+**RESULT, read 2026-11-06** (`logs/s1_bookfilter_explore_20261106.log`; harness checks PASS at both
+coverages: 1,240 of 1,241 trades booked at cov 0.05 and 556 of 556 at 0.02, the six arms partition
+the booked trades, `spread_pct` in [0, 1]). Population: the three X8″ seeds, 143,569 bars × 12
+pairs, 2026-07-18 21:15 → 09-09 20:05; 143,316 booked decision instants as the spread reference
+(7,648..14,491 a pair); cov 0.05 → 1,241 trades (389 / 445 / 406 a seed) on 52 entry days,
+incumbent net/notional at taker 14 **−19.29 [−55.28, +16.71]** (a losing era, as X7 found).
+
+**In plain language.** Nothing the pair's own book says at the decision separates the entries.
+Every split is inside ±9 bps per notional with intervals of ±40 to ±50, and the one key that leans
+anywhere leans the *opposite* way at the served cut and on the middle seed: `imb_against` is the
+best arm at cov 0.05 (+8.7) while `imb_with` is the best at cov 0.02 (+10.9), with s2 against s1
+and s3 at both coverages. That is the shape of noise, not of a filter the forward look could
+confirm.
+
+| arm (cov 0.05, PRIMARY) | IN n / OUT n | IN | OUT | IN − OUT | 95 % CI | s1 / s2 / s3 | median seed |
+|---|---|---:|---:|---:|---|---|---:|
+| `spread_lo` | 800 / 440 | −21.94 | −13.72 | −8.22 | [−58.71, +45.39] | +2.50 / +3.88 / −39.01 | +2.50 |
+| `spread_hi` | 440 / 800 | −13.72 | −21.94 | +8.22 | [−45.39, +58.71] | −2.50 / −3.88 / +39.01 | −2.50 |
+| `imb_with` | 556 / 684 | −24.03 | −15.33 | −8.70 | [−51.52, +38.21] | −12.02 / +18.95 / −38.32 | −12.02 |
+| **`imb_against`** (chosen) | 684 / 556 | −15.33 | −24.03 | **+8.70** | **[−38.21, +51.52]** | +12.02 / −18.95 / +38.32 | +12.02 |
+| `near_with` | 584 / 656 | −15.40 | −22.77 | +7.37 | [−31.72, +47.34] | +0.30 / +29.86 / −9.16 | +0.30 |
+| `near_against` | 656 / 584 | −22.77 | −15.40 | −7.37 | [−47.34, +31.72] | −0.30 / −29.86 / +9.16 | −0.30 |
+
+Gate: (i) interval clear of zero ✗ (lower edge −38.2) (ii) median seed > 0 ✓ → **NOT PASSED.**
+At cov 0.02 (556 trades, information only; incumbent +7.38 [−37.99, +52.75] on 50 days):
+`spread_lo` −0.22, `imb_with` +10.94 [−41.40, +61.91] (s1 −47 / s2 +47 / s3 +24), `near_with`
++1.27 [−38.89, +32.41]. Forecast for the forward deciding row from the served seed's own
+intervals: **±78 at 200 closed policy trades, ±55 at 400** — the registration's ±72 estimate held;
+moot now.
+
+**Disposition.** Own-pair book state at the decision — the spread's within-pair percentile, the
+signed top-20 imbalance, the signed 5-level near-depth imbalance, either orientation, at either
+coverage — is **closed as a 240m entry filter on these bars** (🔴 no other scalar, split,
+orientation or coverage). **The forward look is not taken**; the `book_at_bars` export stays in
+`scripts/gcp_forward_ledger.sh` (read-only, R0–R5 do not read it) and the confirm stage stays in
+the code behind its refusal, for a future registration with its own question. Nothing served
+changes. BACKLOG row X23 🟢.
+
+🟡 **Two descriptions, not results.** (1) The policy's entries sit in the *tighter* half of their
+pair's own spreads far more often than the bars do: 800 of 1,240 at cov 0.05 (65 %) and 409 of 556
+at cov 0.02 (74 %) against the median's 50 % — the model's confidence rises when the book is
+tight. Whatever that is, it did not separate the earnings. (2) The near-depth lean is the one key
+with the same sign on both coverages (+7.4, +1.3) and two seeds of three; it is inside its
+interval by a wide margin and is recorded here only so that a later session does not rediscover
+it as new.
+
+*The registration as written on 2026-11-06, before the explore was run:*
 
 ### In plain terms
 
