@@ -58,7 +58,7 @@ def _plant(tmp_path, monkeypatch):
     monkeypatch.setattr(data, "PROC", tmp_path / "data")
     monkeypatch.setattr(data, "RAW", tmp_path / "data" / "raw")
     monkeypatch.setattr(upgrades, "OUT", tmp_path / "output" / "upgrades")
-    monkeypatch.setattr(upgrades, "LISTS", {"f12": tmp_path / "upgrades_f12.csv", "f34": tmp_path / "upgrades_f34.csv"})
+    monkeypatch.setattr(upgrades, "LISTS", {"f12": tmp_path / "upgrades_f12.csv", "f34": tmp_path / "upgrades_f34.csv", "f5": tmp_path / "upgrades_f5.csv"})
     monkeypatch.setattr(upgrades, "CMS_DIR", tmp_path / "data" / "raw" / "external" / "binance_cms")
     monkeypatch.setattr(upgrades, "FIRST", tmp_path / "data" / "raw" / "um_first_month.csv")
     cms = tmp_path / "data" / "raw" / "external" / "binance_cms"
@@ -119,6 +119,8 @@ def test_events_flags_and_the_frozen_lists(tmp_path, monkeypatch):
     f12 = pd.read_csv(upgrades.OUT / "upgrades_f12.csv")
     f34 = pd.read_csv(upgrades.OUT / "upgrades_f34.csv")
     assert list(f12.columns) == upgrades.LIST_COLS and list(f12["code"]) == ["a1", "a3", "l1"] and list(f34["code"]) == ["b1"]
+    f5 = pd.read_csv(upgrades.OUT / "upgrades_f5.csv")                                                  # the F5 rows by the same rule, written beside (CF2: frozen for R82)
+    assert list(f5.columns) == upgrades.LIST_COLS and list(f5["code"]) == ["f1"] and list(f5["fold"]) == ["F5"]
     assert not any(c in ("open", "close", "high", "low", "volume") for c in f12.columns)                 # no price in the frozen table
 
 

@@ -1560,6 +1560,8 @@ counts first, the clears read against their mechanism rows, the voids caught bef
 registration's power row honest on the names it will read; CF2 costs a page now and answers the one number that travelled. Needed from Vadim: the word
 ("CF1", "CF1 + CF2", "CF2", or "CF3").
 
+**DECIDED 2026-11-06 on Vadim's "CF1 + CF2" (the two recommended, together): (a) the two rules written into decision BM's method (the paragraph "The method's rules, as amended" at the end of BM's block) BEFORE any registration; (b) CF2's registration — the 7-day sold row of the upgrade kind on F5 + F6, hindsight-generated — written in §8 as R82 with the F5 rows FROZEN first (`ft2 upgrades events` re-run on the work VM, the rule unchanged; the F6 rows frozen when F6 closes), its calendar line in §7's row, NO read now; (c) the brainstorm in BM's method the same session — the record first, the counts as one script on the work VM, decision CG written for Vadim; nothing registered in the brainstorm itself.**
+
 **Decision CE (2026-11-04) — R80 is IN: VALIDITY PASS, CLEARS at 1d on the trimmed gate (M_trim −107, se_trim 34, u −3.18, p_fw 0.006, MDE 94;
 F1 −86 / F2 −128; the plain −90; the median −72; 65 % of cells below zero; B 46.6), 3d clears at the MDE's edge (−207 against 203), 7d not
 detectable (−286, MDE 404); the candidate hold 1d. The validity-of-mechanism rows say the registered mechanism is NOT the carrier: the INTO row's

@@ -54,8 +54,10 @@ HOUR = pd.Timedelta("1h")
 DAY = pd.Timedelta(days=1)
 FROZEN_FOLDS = ("F1", "F2", "F3", "F4")
 TAGS = {"F1": "f12", "F2": "f12", "F3": "f34", "F4": "f34"}
+F5_LISTED = "outside F1 … F4 (F5: listed, not frozen)"       # the `why` of an F5 row that passed every other check — the rows R82's list freezes
 OUT = Path("output/upgrades")
-LISTS = {"f12": Path(__file__).with_name("upgrades_f12.csv"), "f34": Path(__file__).with_name("upgrades_f34.csv")}
+LISTS = {"f12": Path(__file__).with_name("upgrades_f12.csv"), "f34": Path(__file__).with_name("upgrades_f34.csv"),
+         "f5": Path(__file__).with_name("upgrades_f5.csv")}       # f5: the F5 rows listed by the same rule, frozen 2026-11-06 for R82 (decision CF2)
 CMS_DIR = data.RAW / "external" / "binance_cms"
 FIRST = data.RAW / "external" / "binance" / "um_first_month.csv"
 CMS_LIST = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&catalogId={c}&pageNo={p}&pageSize=50"
@@ -349,7 +351,7 @@ def events(write: bool = True) -> pd.DataFrame:
         elif r.perp_age_days < PERP_AGE.days:
             w = f"the perpetual younger than {PERP_AGE.days} days at t0 (a launch, R28's population)"
         elif r.fold not in FROZEN_FOLDS:
-            w = "outside F1 … F4" + (" (F5: listed, not frozen)" if r.fold == "F5" else "")
+            w = F5_LISTED if r.fold == "F5" else "outside F1 … F4"
         else:
             w = "eligible"
         if w == "eligible" or w.startswith("outside") or w.startswith("the perpetual younger"):
@@ -363,6 +365,7 @@ def events(write: bool = True) -> pd.DataFrame:
         el = E[E["why"] == "eligible"]
         for tag in ("f12", "f34"):
             el[el["fold"].map(TAGS) == tag][LIST_COLS].to_csv(OUT / f"upgrades_{tag}.csv", index=False)
+        E[E["why"] == F5_LISTED][LIST_COLS].to_csv(OUT / "upgrades_f5.csv", index=False)       # the F5 rows by the same rule (decision CF2: frozen for R82)
         print(summary(E))
     return E
 
