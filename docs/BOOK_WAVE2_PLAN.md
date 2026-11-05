@@ -1201,3 +1201,195 @@ mostly uncollected; that is exactly what the registered S2 look at 100 closed ma
 measures (`m3 makerpath live`), so nothing is read from two rows and nothing changes.
 `rejected_then_crossed` is one of the six leg types in the schema and in the built block above.
 
+
+---
+
+## S1 — X23: the pair's own book state at the decision as a filter on the policy's entries — 🔵 REGISTERED 2026-11-06 on Vadim's "Let's go with X23", before any real bar was read
+
+*The registration as written on 2026-11-06, before the explore was run. The explore's result block
+follows it; the forward look's result is written at the 200th closed policy trade.*
+
+### In plain terms
+
+The live rule decides at a 5-minute bar's close and crosses at once. At that instant the
+collector has a fresh top-20 snapshot of the pair's own book — a few seconds old — and three
+plain facts can be read from it: how tight the spread is compared with this pair's usual, whether
+the resting volume leans toward the side about to be taken, and whether the five levels nearest
+the touch lean that way. X23 asks one thing: **do those facts, at the decision, separate the
+policy's own cov-0.02 entries into a half worth taking and a half not?** No trade is added, moved
+or re-priced; every arm splits the same trades into IN and OUT and the contrast is IN − OUT.
+
+It is the question the backlog has carried since 2026-09-01 ("the tradeable horizon has never
+been tested with book features") in the one decidable form that section names — a filter on the
+incumbent's own 240m trades. The adjacent closures do not answer it: B1 screened the scalars as
+*predictors* of the 240m return (vol proxies riding drift), B2 and X7 used *market-wide*
+percentiles as a regime / size key, E1 used the 1m book to *time* the entry, D1 asked about
+dynamics at ≤ 60 min.
+
+### Why this shape — the power
+
+The forward policy arm's per-trade sd is ≈ 259 bps (M3_5 §4.1). A median split of 200 closed
+policy trades gives a contrast half-width of ≈ 1.96 × 259 × √(2/100) ≈ **±72 bps per notional**
+before day clustering, ±51 at 400. That is the honest resolution of the deciding row, and the
+reason the backlog's expectation is "inside the interval of zero at today's n": the first look is
+for the sign and the second for the size. The `explore_cov05` arm carries ≈ 3.5× the trades on the
+same calendar (311 closed to the policy's 87 on 2026-11-05) and is read beside the deciding row at
+±38 / ±27 — described, never deciding, because the served population is the cov-0.02 one and a
+served change would be written on it. The explore on the book era has three seeds × ≈ 400 trades
+at cov 0.05 and resolves at roughly ±25; it chooses the arm, it cannot establish it.
+
+### Population
+
+* **Explore (not clean evidence).** The three X8″ seeds, the served family — `20261001T155917Z`
+  (s1), `20261002T053534Z` (s2), `20261003T191545Z` (s3, **served**). The 12 pairs. Bars: the
+  book era 2026-07-18 → 2026-09-09 restricted as E1 restricts — rows where the incumbent's regime
+  key is present and the 5m book-era table has `has_book` (E1 read 143,569 bars × 12 pairs a
+  seed). Incumbent: `WINNER_SPEC` (signal/hold 240, the regime ladder ⅓..5⁄3 on
+  `btc_absret_1d`), **coverage 0.05 primary** (the trade count decides, X7's reason), 0.02
+  information — the served cut, and the forward deciding row's own.
+* **Confirm (clean).** The fifth forward start's ledger (`paper_trades`, from 2026-10-04 15:18:49
+  UTC), the **`policy` arm's closed trades — DECIDING**; the `explore_cov05` arm's closed trades
+  described beside. Both carry the trade's own measured `cost_bps`; `net_bps` is already net.
+  `forward.check` must pass first (one checkpoint, the served cut and ladder on every row).
+
+### Timing conventions, fixed now
+
+* **The decision instant D** is the scored 5m bar's close. On the dumps `entry_ts` is the bar's
+  open, so D = `entry_ts` + 5 min, and the scalar is the 5m book-era table's row **at** D — B0's
+  as-of join, the last snapshot at or before that row's open, zeroed and flagged past the
+  5-minute cap, exactly as training aligns (`sidetable.build_book_era`). A trade whose row at D
+  has no book is **unbooked**: excluded from IN and OUT, counted, capped at 10 %.
+* **On the ledger** the export `book_at_bars_<date>.csv` (added to
+  `scripts/gcp_forward_ledger.sh`) takes, for every `(pair, bar_ts)` of `policy_bars` at horizon
+  240, the **last `orderbook_snapshots` row at or before D**, with D under `forward.py`'s bar-key
+  convention: `bar_ts` + 5 min from the 2026-10-21 15:02:33 UTC clock fix (M3_5 §4.5, `bar_ts`
+  is the scored bar's open) and `bar_ts` − 5 min before it (`bar_ts` was the wall clock floored
+  to the grid, the scored bar's open + 10 min). It carries the snapshot's timestamp and its age
+  at D; the reader applies the same 5-minute cap. *Measured 2026-11-06 on the export's query
+  alone, no trade read:* 111,119 bars since 2026-10-04, median age 6.1 s, 7 bars past the cap.
+* **Known-at, enforced.** Every booked trade's snapshot timestamp must precede the ledger row's
+  `inserted_at` — the moment the engine wrote the trade, after its decision (measured: the
+  median `inserted_at` − `entry_ts` is 111 s before the clock fix and 442 s after it, so D
+  precedes the write on every row). A later snapshot anywhere **voids the look** (exit 3). The
+  rule is the same on both sides: nothing after D is ever read.
+
+### The arms — the list is the registration
+
+Three scalars from the stored top-20 snapshot, two orientations each:
+
+| arm | IN = the trades where … | scalar |
+|---|---|---|
+| `spread_lo` | the pair's spread at D is in the **tighter half** of its own spreads (`spread_pct` ≤ 0.5) | `spread_bps` = spread / mid × 10⁴, as a **within-pair percentile** over the window's own booked bars |
+| `spread_hi` | … the wider half (`spread_pct` > 0.5) | |
+| `imb_with` | the top-20 volume **leans the trade's way**: side × `imbalance` > 0 | `imbalance` = (bid − ask volume) / total, 20 levels |
+| `imb_against` | … does not (≤ 0; zero never agrees) | |
+| `near_with` | the five nearest levels lean the trade's way: side × `depth_near_imb` > 0 | `depth_near_imb` = (bid − ask near depth) / their sum, 5 levels (B0's derivation; an unreadable sum reads 0) |
+| `near_against` | … does not (≤ 0) | |
+
+The spread's reference bars are **the window's own**: on the dumps, the booked 5m rows at the
+decision instants of the population's bars, per pair; on the ledger, the export's rows within the
+5-minute cap between the arm's first and last entry, per pair. The percentile is the share of
+reference values ≤ the trade's. The split is at the median; no other threshold, scalar, level
+count or orientation — adding one is a new registration.
+
+### The statistic, fixed now
+
+**IN − OUT, net bps per unit of notional** (Σ net / Σ size on each side), exactly
+`forward.bootstrap_contrast`: a day-bootstrap on UTC **entry** days, 2,000 draws, seed
+**20261105**, days drawn from the union of both sides and both means recomputed on the same draw.
+On the dumps net = size × (signed return − 14 bps taker); on the ledger the row's own `net_bps`.
+Pooled over the three seeds with **one calendar day one cluster across seeds** (the seeds are not
+independent), then per seed, then the median seed. **Reported, not deciding:** each side's own
+day-clustered interval (`forward.clustered`), the n on each side, the whole arm's per-notional
+net, the cov-0.02 table, and the forecast half-width of the forward deciding row from the served
+seed's own cov-0.02 intervals scaled to 200 and 400 trades.
+
+### Harness checks, before any contrast is read (falsifiable)
+
+1. **A book at the decision:** unbooked trades ≤ 10 % of the arm's trades.
+2. **Partition:** for each scalar the two arms partition the booked trades exactly, and
+   `spread_pct` lies in [0, 1] on every trade.
+3. **Known-at (confirm only):** every booked trade's snapshot precedes its row's `inserted_at`.
+
+Any failure → return code 3, nothing below may be read; on the deciding arm the look is VOID and
+is re-run after the defect is fixed and recorded as one.
+
+### Exploration gate and choice rule, mechanical
+
+The arm with the **highest pooled IN − OUT** at cov 0.05 is chosen. The gate passes iff (i) its
+day-bootstrapped **95 % interval is clear of zero** (lower edge > 0) and (ii) it is **> 0 on the
+median seed**. The bar is deliberately higher than X7's / E1's "> 0": the six arms are three
+complement pairs, so the best of them is non-negative by construction and a "> 0" gate would pass
+on noise. `m3 bookfilter --stage explore` prints the verdict under this rule.
+
+### Confirmation, fixed now
+
+`m3 bookfilter --stage confirm --ledger … --book … --exploration-recorded --config <arm>` on
+the fifth start's ledger, **first look at the 200th closed policy trade** (≈ 2027-01 at 1.8 a
+day; the same export R0–R5's reading #4 uses), the chosen arm only. **CONFIRMED iff the 95 %
+lower bound of IN − OUT on the `policy` arm is > 0.** An interval including zero moves the question
+to **one second look at the 400th** closed policy trade (≈ 2027-05); two misses close it. NOT
+CONFIRMED is "not detectable" unless the interval also excludes the exploration estimate. The
+command refuses before 200 and says so beyond 400; no earlier look at the forward window is
+permitted, including at the `explore_cov05` arm. The other five arms are printed beside the chosen
+one as description and license nothing.
+
+### What each outcome licenses
+
+* **Gate not passed** → own-pair book state at the decision is **closed as a 240m entry filter
+  on these bars**: 🔴 no other scalar, split, orientation or coverage may be tried on them. The
+  forward look is not taken; the backlog row closes.
+* **Gate passed** → one BACKLOG calendar row at the ledger's 200th closed policy trade naming the
+  arm. Nothing served changes.
+* **CONFIRMED** → licenses *writing* a served-change registration for an entry filter in
+  `policy.ex` that reads the pair's latest `orderbook_snapshots` row at the decision (the
+  collector writes it into the same database every ≈ 10 s; the same 5-minute cap applies live,
+  and a stale book takes the trade — the filter can only refuse). It is a change to the rule's
+  entry condition, registered in its own section with its own gate; nothing is served on this
+  reading. A sixth start, if `persist05` (M3_5 §4.4) deploys first, restarts the count: the look
+  is then at the 200th closed policy trade of whichever start is running, the arm unchanged.
+* **NOT CONFIRMED at 400** → closed as above; the explore's estimate stands as the record.
+
+### Contamination, stated
+
+The book-era bars were read by B1 (own-pair `spread_bps`, `imbalance`, `depth_near_imb` among
+its predictors at 5–240 min), B2 and X7 (market-wide percentiles as regime / size keys at cov
+0.02 / 0.05), E1 (own-pair `imbalance` / `micro_mid` at 1m, as entry timing) and D1 (dynamics at
+≤ 60 min). The explore is therefore not clean; it chooses, it does not establish. The forward
+window from 2026-10-04 has been read only by R0–R5's reading #1 at 57 trades (no book quantity in
+it) and will be read by their #2–#4; the policy arm's trades at 200 are the same trades R0–R5's
+reading #4 uses — the same tape, different questions, stated here so the multiplicity is on the
+record.
+
+### Expectation, recorded before the run
+
+**Explore: gate NOT PASSED more likely than passed.** B1 classed the own-pair scalars at 240m as
+vol proxies with directional correlation an order of magnitude below their magnitude correlation,
+and the era's +62 bps drift makes any spread split look like a direction split. If it passes, the
+likelier arm is a **spread** orientation (a volatility regime riding the era's drift), not a
+signed imbalance; a signed-imbalance pass clear of zero would be the surprising reading and would
+still be a hypothesis for 2027-01. **Forward: inside the interval of zero at 200 and at 400**
+(±72 / ±51 against an effect that, if it exists, is a few tens of bps).
+
+### Commands
+
+```sh
+# explore (laptop, ml_analysis; the book-era export and the X8″ dumps on disk)
+M3_ERA=repaired M3_EXPORT_DIR=/workspace/train/output/book_era \
+  ./scripts/m3.sh -m m3 bookfilter --stage explore 2>&1 | tee logs/s1_bookfilter_explore_$(date -u +%Y%m%d).log
+# tests (planted data, no real bar)
+./scripts/m3.sh tests/test_bookfilter.py
+# at the 200th closed policy trade (≈ 2027-01), once, after the table above is transcribed here:
+./scripts/gcp_forward_ledger.sh --no-read            # paper_trades + policy_bars + book_at_bars exports
+./scripts/m3.sh -m m3 bookfilter --stage confirm --exploration-recorded --config <arm> \
+  --ledger output/forward/paper_trades_<date>.csv --book output/forward/book_at_bars_<date>.csv \
+  2>&1 | tee logs/s1_bookfilter_confirm_<date>.log
+```
+
+**Code:** `ml/train/m3/bookfilter.py` (both stages; the constants above are transcribed there),
+`ml/train/tests/test_bookfilter.py` (7 planted tests: the partition and signs, the within-pair
+percentile, the verdict rule, the refusal before 200, a planted filter CONFIRMED and its mirror
+NOT CONFIRMED, a null plant, a lookahead snapshot VOIDing the look, the decision-bar join),
+`scripts/gcp_forward_ledger.sh` (the third export), `m3/cli.py` (`bookfilter`).
+
+**Needed from Vadim: nothing** until the gate is read (Claude runs the explore now).

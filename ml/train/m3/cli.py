@@ -1172,6 +1172,13 @@ def cmd_bookladder(args) -> int:
                              exploration_recorded=args.exploration_recorded, config=args.config)
 
 
+def cmd_bookfilter(args) -> int:
+    """BOOK_WAVE2_PLAN §S1 — X23: own-pair book state at the decision as a filter on the policy's entries."""
+    from . import bookfilter
+    return bookfilter.report(WINNER_SPEC, stage=args.stage, ledger=args.ledger, book=args.book,
+                             exploration_recorded=args.exploration_recorded, config=args.config)
+
+
 def cmd_fidelity(args) -> int:
     """Does the SERVED implementation score like the one M3-2 selected?"""
     wide = args.universe == "12"
@@ -1784,6 +1791,19 @@ def main() -> int:
                     help="required by --stage confirm: the exploration table and arm are in §E1")
     be.add_argument("--config", default=None, help="--stage confirm only: the arm from §E1")
     be.set_defaults(fn=cmd_bookentry)
+
+    bf = sub.add_parser("bookfilter", help="BOOK_WAVE2_PLAN §S1 (X23): the pair's own book state at the "
+                        "decision (spread percentile, signed top-20 imbalance, signed near-depth imbalance) "
+                        "as a filter on the incumbent's own 240m entries, IN − OUT per notional; explore on "
+                        "the book era (M3_EXPORT_DIR=book_era, the X8″ dumps), confirm on the forward "
+                        "ledger's policy arm at the 200th closed policy trade")
+    bf.add_argument("--stage", choices=["explore", "confirm"], required=True)
+    bf.add_argument("--ledger", default=None, help="--stage confirm: paper_trades export (output/forward/paper_trades_<date>.csv)")
+    bf.add_argument("--book", default=None, help="--stage confirm: book_at_bars export (output/forward/book_at_bars_<date>.csv)")
+    bf.add_argument("--exploration-recorded", action="store_true",
+                    help="required by --stage confirm: the exploration table and arm are in §S1")
+    bf.add_argument("--config", default=None, help="--stage confirm only: the arm from §S1")
+    bf.set_defaults(fn=cmd_bookfilter)
 
     lh = sub.add_parser("longhead", help="WALKFORWARD_PROTOCOL §9.9 (X18): the 1440m head as its "
                         "own policy arm (cov 0.02, hold 1440, the incumbent's ladder) against the "
