@@ -30,9 +30,10 @@ def _prop(pid, space, created, start, end, votes, choices=("For", "Against"), sc
 RANKING = [
     {"id": AAVE, "name": "Aave DAO", "symbol": "AAA", "verified": True, "proposalsCount": 300, "followersCount": 1000},
     {"id": "aaa-sub.eth", "name": "Aave Grants", "symbol": "AAA", "verified": False, "proposalsCount": 20, "followersCount": 10},     # the smaller space of the same base → beside
-    {"id": "fabien.eth", "name": "Fabien", "symbol": "BBB", "verified": False, "proposalsCount": 400, "followersCount": 5},            # EXCLUDED by the hand check
+    {"id": "fabien.eth", "name": "Fabien", "symbol": "BBB", "verified": True, "proposalsCount": 400, "followersCount": 5},             # verified, EXCLUDED by the hand check
     {"id": "ccc.eth", "name": "Ccc", "symbol": "CCC", "verified": False, "proposalsCount": 3, "followersCount": 5},                   # under MIN_PROPOSALS
-    {"id": "yyy.eth", "name": "Yyy DAO", "symbol": "YYY", "verified": True, "proposalsCount": 10, "followersCount": 50},
+    {"id": "yyy.eth", "name": "Yyy DAO", "symbol": "YYY", "verified": False, "proposalsCount": 10, "followersCount": 50},                  # unverified, hand-KEPT
+    {"id": "junk-aaa.eth", "name": "Test Space", "symbol": "AAA", "verified": False, "proposalsCount": 900, "followersCount": 1},            # unverified, the busiest of AAA → out, not the pick
     {"id": "snapshot.dcl.eth", "name": "Decentraland MANA DAO", "symbol": "VP", "verified": True, "proposalsCount": 2800, "followersCount": 30000},  # a derived-token symbol: unreached, MANA in the name
     {"id": "curve.eth", "name": "Curve Finance", "symbol": "veCRV", "verified": True, "proposalsCount": 900, "followersCount": 3000},                 # a derived-token prefix: unreached, CRV
     {"id": "random.eth", "name": "Random", "symbol": "RND", "verified": False, "proposalsCount": 50, "followersCount": 5},
@@ -58,6 +59,7 @@ def _plant(tmp_path, monkeypatch):
     monkeypatch.setattr(govlist, "SNAP_DIR", tmp_path / "data" / "raw" / "external" / "snapshot")
     monkeypatch.setattr(govlist, "LISTS", {"f12": tmp_path / "govvotes_f12.csv", "f34": tmp_path / "govvotes_f34.csv", "f5": tmp_path / "govvotes_f5.csv"})
     monkeypatch.setattr(govlist, "EXCLUDED", {"fabien.eth": "not Ethereum's governance (a person's space)"})
+    monkeypatch.setattr(govlist, "KEPT_UNVERIFIED", {"yyy.eth": "Yyy DAO"})
     monkeypatch.setattr(upgrades, "FIRST", tmp_path / "data" / "raw" / "um_first_month.csv")
     monkeypatch.setattr(cost, "DAILY_WIDE", tmp_path / "data" / "cost_daily_wide.parquet")
     govlist.SNAP_DIR.mkdir(parents=True)
@@ -80,7 +82,8 @@ def test_spaces_join_one_a_base_the_excluded_out_and_the_unreached_counted(tmp_p
     S = govlist.spaces()
     assert list(S["id"]) == [AAVE, "yyy.eth"] and list(S["base"]) == ["AAA", "YYY"]
     other = pd.read_csv(govlist.OUT / "spaces_other.csv")
-    assert set(other["id"]) == {"aaa-sub.eth", "fabien.eth"} and other.set_index("id").loc["fabien.eth", "excluded"].startswith("not Ethereum")
+    assert set(other["id"]) == {"aaa-sub.eth", "fabien.eth", "junk-aaa.eth"} and other.set_index("id").loc["fabien.eth", "excluded"].startswith("not Ethereum")
+    assert other.set_index("id").loc["junk-aaa.eth", "excluded"] == "unverified, not hand-kept"      # the busiest of AAA is a test space: the verified one is the pick
     U = govlist.unreached()
     assert list(U["id"]) == ["snapshot.dcl.eth", "curve.eth"] and list(U["base_in_name"]) == ["MANA", "CRV"]
 

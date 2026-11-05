@@ -64,8 +64,26 @@ OUT = Path("output/govlist")
 LISTS = {"f12": Path(__file__).with_name("govvotes_f12.csv"), "f34": Path(__file__).with_name("govvotes_f34.csv"), "f5": Path(__file__).with_name("govvotes_f5.csv")}
 TAKER_BPS, NOTIONAL, BAR_MULT = 5.0, 10_000, 2.0     # krevent's B_i = BAR_MULT × 2 legs × (fee + taker_leg)
 UA = {"User-Agent": "Mozilla/5.0 (ft2-govlist/1)", "Accept": "application/json", "Content-Type": "application/json"}
-# the hand check of the symbol join (decision CG1's rule): a space whose symbol is a base of ours but whose DAO is not the base's protocol
-EXCLUDED: dict[str, str] = {}
+# the hand check of the symbol join (decision CG1's rule, applied 2026-11-06 on the 207 busiest-a-base spaces and the 90 verified ones among
+# them): a space is the base's protocol if Snapshot VERIFIED it and its name is the protocol's (the verified mismatches EXCLUDED by id below),
+# or if it is unverified and hand-KEPT by name; every other unverified space is out ("unverified, not hand-kept" — test spaces, personal
+# spaces and NFT clubs carry our tickers as symbols: "Commonwealth Test Space" for DYDX, "cocos" for MATIC, "dcl.governance.test" for MANA).
+EXCLUDED: dict[str, str] = {
+    "fabien.eth": "a person's space, not Ethereum's governance", "dehedge.eth": "deHedge, not Degen", "hyperlockfi.eth": "Hyperlock, not Hyperlane",
+    "g-dao.eth": "not the G token's protocol", "myirafund.eth": "myIRA.fund, not SelfKey", "monetadao.eth": "Moneta DAO, not Monad",
+    "goatsino.eth": "GOATsino, not Goatseus Maximus", "zechubdao.eth": "ZecHub (a community wiki), not Zcash's governance", "ffdao.eth": "forefront, not Falcon Finance",
+    "arbibots.eth": "BOTDAO (an NFT club), not the BOT token's protocol", "toshibase.eth": "a meme club, not shown to be Toshi's", "takefoundation.eth": "not shown to be the TAKE token's protocol",
+    "spacetokendao.eth": "Space Token, not Space and Time", "raving.eth": "Rave Names, not the RAVE perpetual's protocol",
+    "astardegens.eth": "Astar Degens, not Degen", "otterclam.eth": "OtterClam, not Polygon", "lightofhope.eth": "not SafeDAO", "thestandardio.eth": "The Standard, not the TST meme token",
+    "bitteprotocol.eth": "a test DAO, not USDC", "justaveryintelligentsystem.eth": "not USDC",
+}
+KEPT_UNVERIFIED: dict[str, str] = {
+    "agld-dao.eth": "Adventure Gold", "ainetwork.eth": "AI Network", "bzx.eth": "bZx", "celernetwork.eth": "Celer Network", "dego": "dego.finance",
+    "fantomecosystem.eth": "Fantom", "fraxfinancegovernance.eth": "Frax Finance", "iotex.eth": "IoTeX Network", "kernelgov.eth": "KernelDAO", "loopringdao.eth": "Loopring",
+    "mantra-dao": "MANTRA DAO", "orbs-network.eth": "Orbs", "rei-network.eth": "REI Network", "stormxio.eth": "StormX", "unfi.eth": "Unifi Protocol DAO",
+    "vidt-dao.eth": "VIDT DAO", "yearn": "yearn.finance (archive)", "dfi": "DFI.money", "tutellusdao.eth": "Tutellus DAO", "loka.eth": "LOKA DAO (League of Kingdoms)",
+    "myshell-dao.eth": "MyShell",
+}
 KIND_RE = [("gauge", re.compile(r"gauge|emission|incentive|bribe|weight|rewards? (program|distribution)|liquidity mining", re.I)),
            ("grant", re.compile(r"grant|fund(ing)? request|budget|sponsor|bounty|compensation|salary|contributor", re.I)),
            ("treasury", re.compile(r"treasury|buyback|buy ?back|burn|revenue|fee switch|fees? (to|for)|diversif|reserve", re.I)),
@@ -120,8 +138,9 @@ def _latest(pattern: str) -> Path:
 
 
 def spaces(fetch: bool = False, write: bool = True) -> pd.DataFrame:
-    """The spaces joined to our bases by symbol: one a base (the busiest), ≥ MIN_PROPOSALS, EXCLUDED out. The others with a symbol of ours
-    (the smaller spaces of a base) go beside as spaces_other.csv; the DAOs the join cannot reach are the audit's count."""
+    """The spaces joined to our bases by symbol: ≥ MIN_PROPOSALS, verified and not EXCLUDED or hand-KEPT, one a base (the busiest of those).
+    The others with a symbol of ours (the smaller spaces of a base, the excluded, the unverified) go beside as spaces_other.csv with their
+    reason; the DAOs the join cannot reach are the audit's count."""
     if fetch:
         print(f"saved {fetch_ranking()}", flush=True)
     R = pd.DataFrame(json.load(open(_latest("ranking_*.json"))))
@@ -132,7 +151,9 @@ def spaces(fetch: bool = False, write: bool = True) -> pd.DataFrame:
     fm = up.contracts()
     bases = set(fm["base"])
     S = R[R["symbol"].isin(bases) & (R["proposals"] >= MIN_PROPOSALS)].copy()
+    S["verified"] = S["verified"].fillna(False).astype(bool)
     S["excluded"] = S["id"].map(EXCLUDED)
+    S.loc[~S["verified"] & ~S["id"].isin(KEPT_UNVERIFIED) & S["excluded"].isna(), "excluded"] = "unverified, not hand-kept"
     S = S.sort_values(["symbol", "proposals"], ascending=[True, False])
     kept = S[S["excluded"].isna()].drop_duplicates("symbol", keep="first")
     other = S[~S["id"].isin(kept["id"])]
