@@ -133,6 +133,11 @@ def cmd_upgrades(args):
     upgrades.main(args.action, fetch=args.fetch, tags=tuple(args.tags))
 
 
+def cmd_govlist(args):
+    from . import govlist
+    govlist.main(args.action, fetch=args.fetch, tags=tuple(args.tags))
+
+
 def cmd_hl(args):
     from . import hl
     hl.main(args.action, args.start, args.end, args.symbols)
@@ -584,6 +589,10 @@ def main(argv=None):
     ugp.add_argument("action", choices=["list", "details", "events", "bars", "audit"])
     ugp.add_argument("--fetch", action="store_true", help="list / details: fetch from www.binance.com (the VM reaches it; the laptop does not); bars: fetch the F1+F2 events' missing monthly 5m klines and re-ingest candles_5m_archive under a fingerprint")
     ugp.add_argument("--tags", nargs="*", default=["f12"], help="bars --fetch: the frozen lists whose events' missing months are fetched (f12 — decision CD1's audit; f34 — decision CE1's Data line)")
+    gvp = sub.add_parser("govlist", help="P8 (decision CG1): a protocol's own GOVERNANCE VOTE (Snapshot) as a per-name EVENT — the source audit: spaces (the hub's ranking paged and saved; the symbol join to our bases, one space a base, the hand check's exclusions; --fetch from the VM), proposals (every proposal of the kept spaces; --fetch), events (every closed vote with its flags — t0 = the END, ts_known = created, the winner, the kind, the 7-day collapse as cell_all / cell_big flags — and the lists to freeze → output/govlist/), bars (the names' 5m bars over min(created, end − 2 d) → end + 8 d counted; --fetch fetches the F1+F2 events' missing months under a fingerprint), audit (counts, the kinds, the winners, the hours, the lead, the 0o (i) cells, rule (a)'s B_i from the names' own cost rows, the unreached DAOs → output/govlist/audit.md). Nothing priced (see ft2/govlist.py)")
+    gvp.add_argument("action", choices=["spaces", "proposals", "events", "bars", "audit"])
+    gvp.add_argument("--fetch", action="store_true", help="spaces / proposals: fetch from hub.snapshot.org (the VM); bars: fetch the F1+F2 events' missing monthly 5m klines and re-ingest candles_5m_archive under a fingerprint")
+    gvp.add_argument("--tags", nargs="*", default=["f12"], help="bars --fetch: the frozen lists whose events' missing months are fetched")
     spp = sub.add_parser("spot", help="P8 (decision BH1): Binance's own spot market per member as a source — the archive's spot monthly 1h klines for the twelve's and the screener's members' <BASE>USDT markets (the taker-buy columns) → data/raw/external/binance_spot/, data/spot_1h.parquet, output/spot_audit.md (see ft2/spot.py)")
     spp.add_argument("action", choices=["symbols", "fetch", "ingest", "audit"])
     spp.add_argument("--start", default="2023-04-01", help="fetch: the first month asked for")
@@ -666,7 +675,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
