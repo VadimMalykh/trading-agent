@@ -301,10 +301,7 @@ if len(S):
             say(f"with ≥ {thr} votes: {len(g)} on {g.symbol.nunique()} bases — {byfold(g.groupby('fold').size())}; members {int(g.member_at_end.sum())}")
         pm = el.groupby("symbol").size().sort_values(ascending=False)
         say("per base (the top 15): " + ", ".join(f"{k} {v}" for k, v in pm.head(15).items()))
-        pm2 = el.assign(month=el.end.dt.to_period("M")).groupby(["symbol", "month"]).size()
-        say(f"one cell a name per 7 days would keep ≈ {int(el.sort_values('end').groupby('symbol').apply(lambda g: (g.end.diff().dt.days.fillna(99) >= 7).sum()))} of {len(el)}; "
-            f"name-months with ≥ 2 votes: {int((pm2 >= 2).sum())} of {len(pm2)}")
-        say("the end's hour (UTC) mode: " + ", ".join(f"{h:02d}:00 {n}" for h, n in el.end.dt.hour.value_counts().head(5).items()) + f"; on the hour exactly {int((el.end.dt.minute == 0).sum())} of {len(el)}")
+        say("(the 7-day collapse, the name-months and the end's hour: `scripts/cg_count_tail.py` on the pulled CSV — the first run's last line raised on a pandas typing slip after every CSV was written)")
     else:
         say("<!-- no proposals fetched -->")
 else:
