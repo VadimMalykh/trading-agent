@@ -135,7 +135,7 @@ def cmd_upgrades(args):
 
 def cmd_govlist(args):
     from . import govlist
-    govlist.main(args.action, fetch=args.fetch, tags=tuple(args.tags))
+    govlist.main(args.action, fetch=args.fetch, tags=tuple(args.tags), flag=args.flag)
 
 
 def cmd_hl(args):
@@ -598,6 +598,7 @@ def main(argv=None):
     gvp.add_argument("action", choices=["spaces", "proposals", "events", "bars", "audit"])
     gvp.add_argument("--fetch", action="store_true", help="spaces / proposals: fetch from hub.snapshot.org (the VM); bars: fetch the F1+F2 events' missing monthly 5m klines and re-ingest candles_5m_archive under a fingerprint")
     gvp.add_argument("--tags", nargs="*", default=["f12"], help="bars --fetch: the frozen lists whose events' missing months are fetched")
+    gvp.add_argument("--flag", default=None, help="bars --fetch: only the rows carrying this flag (cell_big) are fetched for (decision CI2's Data line: the big cut's months, not the whole-vote rows')")
     spp = sub.add_parser("spot", help="P8 (decision BH1): Binance's own spot market per member as a source — the archive's spot monthly 1h klines for the twelve's and the screener's members' <BASE>USDT markets (the taker-buy columns) → data/raw/external/binance_spot/, data/spot_1h.parquet, output/spot_audit.md (see ft2/spot.py)")
     spp.add_argument("action", choices=["symbols", "fetch", "ingest", "audit"])
     spp.add_argument("--start", default="2023-04-01", help="fetch: the first month asked for")

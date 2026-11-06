@@ -329,15 +329,18 @@ def frozen(tags=("f12", "f34")) -> pd.DataFrame:
 
 
 # ---- the bars (counts) and the cost rows -----------------------------------------------------------------------------------------
-def bars(fetch: bool = False, fetch_tags: tuple[str, ...] = ("f12",)) -> dict:
+def bars(fetch: bool = False, fetch_tags: tuple[str, ...] = ("f12",), fetch_flag: str | None = None) -> dict:
     """The frozen events' bars counted (`upgrades.coverage`'s window from min(created, end − 2 d) to end + 8 d); with `fetch` the (name,
-    month) files missing for the events of `fetch_tags` come from the archive and the slice is re-ingested whole under krlist's fingerprint."""
+    month) files missing for the events of `fetch_tags` come from the archive and the slice is re-ingested whole under krlist's fingerprint.
+    `fetch_flag` (decision CI2's Data line): only the rows carrying that flag (`cell_big`) are fetched for — the whole-vote rows' months stay
+    out, as the handoff scoped it; the count covers every row either way."""
     from . import archive, krlist
     L = frozen()
     OUT.mkdir(parents=True, exist_ok=True)
     cov = up.coverage(L)
     cov["list"] = L["list"].to_numpy()
-    need = krlist.missing_months(cov[cov["list"].isin(fetch_tags)])
+    cov["flagged"] = L[fetch_flag].astype(bool).to_numpy() if fetch_flag else True
+    need = krlist.missing_months(cov[cov["list"].isin(fetch_tags) & cov["flagged"]])
     rep = {"events": int(len(cov)), "complete": int((cov["share"] >= 0.95).sum()),
            "by_fold": {str(k): {"events": int(len(g)), "complete": int((g["share"] >= 0.95).sum()), "median_share": float(g["share"].median())} for k, g in cov.groupby("fold")},
            "missing_symbols": sorted(set(cov[cov["share"] < 0.95]["symbol"])), "missing_months_in_fetch_tags": need,
@@ -357,8 +360,9 @@ def bars(fetch: bool = False, fetch_tags: tuple[str, ...] = ("f12",)) -> dict:
         cov["list"] = L["list"].to_numpy()
         rep["complete_after"] = int((cov["share"] >= 0.95).sum())
         rep["by_fold_after"] = {str(k): int((g["share"] >= 0.95).sum()) for k, g in cov.groupby("fold")}
-        rep["missing_after"] = krlist.missing_months(cov[cov["list"].isin(fetch_tags)])
-    cov.drop(columns=["months", "list"], errors="ignore").to_csv(OUT / "bars.csv", index=False)
+        cov["flagged"] = L[fetch_flag].astype(bool).to_numpy() if fetch_flag else True
+        rep["missing_after"] = krlist.missing_months(cov[cov["list"].isin(fetch_tags) & cov["flagged"]])
+    cov.drop(columns=["months", "list", "flagged"], errors="ignore").to_csv(OUT / "bars.csv", index=False)
     print(json.dumps(rep, indent=1, default=str))
     return rep
 
@@ -493,7 +497,7 @@ def audit(today: pd.Timestamp | None = None) -> str:
     return "\n".join(md)
 
 
-def main(action: str, fetch: bool = False, tags: tuple[str, ...] = ("f12",)) -> None:
+def main(action: str, fetch: bool = False, tags: tuple[str, ...] = ("f12",), flag: str | None = None) -> None:
     if action == "spaces":
         spaces(fetch=fetch)
     elif action == "proposals":
@@ -502,7 +506,7 @@ def main(action: str, fetch: bool = False, tags: tuple[str, ...] = ("f12",)) -> 
     elif action == "events":
         events()
     elif action == "bars":
-        bars(fetch=fetch, fetch_tags=tags)
+        bars(fetch=fetch, fetch_tags=tags, fetch_flag=flag)
     elif action == "audit":
         print(audit())
     else:

@@ -3,7 +3,10 @@ the grid) and the position enters one bar later; a planted drift after the end i
 while the `cell_all` cells are described with the same numbers; a cell before the first member block and one whose 1-day exit lies past the
 market's end are dropped and counted by the window's two ends; a creation row whose bar precedes the market's first bar is dropped from the
 row and not from the cell; a batch of votes ending at one second is one cell; a planted run-on in two cells moves the plain mean and not the
-trimmed one; the label identity with `horizon.labels` and the harness and the trimmed identity; the fingerprint's void on a changed name."""
+trimmed one; the label identity with `horizon.labels` and the harness and the trimmed identity; the fingerprint's void on a changed name.
+R84 (`spec_r84`, decision CI2): the guard rows (R84, F3) / (R84, F4) go into the ledger BEFORE the market is loaded; a planted 3-day drift is
+CONFIRMED on the one gate hold (864 bars) with the 1-day row described and the money row's identity with the label; an unregistered list
+voids the run with the guard rows standing; the two window ends drop the same two cells at the 3-day exit."""
 import hashlib
 import json
 
@@ -29,8 +32,8 @@ def _t0s(idx):
     return [idx[0].floor("D") + pd.Timedelta(days=d, hours=7, minutes=3 if k % 2 == 0 else 0, seconds=17 if k % 2 == 0 else 0) for k, d in enumerate(days)]
 
 
-def _market(weeks=WEEKS, seed=0, drift=-0.04, runon=None, names=EV):
-    """Sixteen weeks of 5m bars; the event names drift DOWN against their peers over the day after the entry (no run-up: the tally is public)."""
+def _market(weeks=WEEKS, seed=0, drift=-0.04, runon=None, names=EV, drift_bars=288):
+    """Sixteen weeks of 5m bars; the event names drift DOWN against their peers over the day (`drift_bars` bars) after the entry (no run-up: the tally is public)."""
     rng = np.random.default_rng(seed)
     n = weeks * 7 * 288
     idx = pd.date_range("2023-06-05 00:05", periods=n, freq="5min", tz="UTC", name="t")
@@ -38,11 +41,11 @@ def _market(weeks=WEEKS, seed=0, drift=-0.04, runon=None, names=EV):
     r = rng.normal(0, 0.0005, (n, len(cols)))
     t0s = _t0s(idx)
     for j, t0 in enumerate(t0s):
-        if t0 + pd.Timedelta(days=2) > idx[-1]:
+        if t0 + pd.Timedelta(minutes=5 * (drift_bars + 4)) > idx[-1]:
             continue
         i0 = idx.get_loc(upgevent.decision_close(t0))
         g = drift if runon is None or j not in runon else runon[j]
-        r[i0 + 2:i0 + 2 + 288, j] += g / 288
+        r[i0 + 2:i0 + 2 + drift_bars, j] += g / drift_bars
     close = pd.DataFrame(100 * np.exp(np.cumsum(r, axis=0)), index=idx, columns=cols)
     dv = pd.DataFrame(1e6, index=idx, columns=cols)
     return bt.Market(close, close * 1.001, close * 0.999, dv), t0s
@@ -57,13 +60,13 @@ def _costs(M):
     return bt.Costs(days, leg, one * 0, one, np.cumsum(rate, axis=0), np.cumsum(rate * M.close.to_numpy(), axis=0))
 
 
-def _events(t0s, path, names=EV, early_creation=None):
+def _events(t0s, path, names=EV, early_creation=None, folds=("F1",) * 5 + ("F2",) * 5):
     """One frozen row an end, plus a BATCH mate of EV1's vote (the same end to the second, not a cell); the first eight big, EV9 and EV10 big too
     (the window's two ends), the batch mate small. `early_creation`: EV2's proposal created before the market's first bar."""
     n = len(names)
     big = [True] * n
     rows = pd.DataFrame({"symbol": names, "base": [s[:-4] for s in names], "mult": 1.0, "t0": t0s, "ts_known": [t - LEAD for t in t0s], "release": [t - LEAD for t in t0s],
-                         "code": [f"p{k}" for k in range(n)], "fold": ["F1"] * 5 + ["F2"] * 5, "block": D("2023-06-07"), "perp_first": D("2022-01-01"), "perp_first_source": "archive 5m",
+                         "code": [f"p{k}" for k in range(n)], "fold": list(folds), "block": D("2023-06-07"), "perp_first": D("2022-01-01"), "perp_first_source": "archive 5m",
                          "perp_age_days": 500, "member_at_t0": [True, False] * 5, "lead_d": 5.0, "space": [f"{s[:-4].lower()}.eth" for s in names], "start": [t - LEAD + pd.Timedelta(hours=1) for t in t0s],
                          "duration_d": 4.96, "votes": [500, 50, 300, 900, 250, 400, 600, 210, 700, 800], "scores_total": 1000.0, "n_choices": 2, "winner": ["For", "Against"] * 5,
                          "passed": [True, False] * 5, "kind": ["grant", "gauge", "election", "listing", "parameter", "treasury", "other", "grant", "gauge", "other"], "flagged": False, "repeat_n": 0,
@@ -204,3 +207,86 @@ def test_a_moved_t0_a_changed_flag_an_unregistered_list_or_an_unexpected_drop_vo
     with pytest.raises(SystemExit) as ex:
         govevent.main("check", "t83")
     assert ex.value.code == 2
+
+
+# ---- R84: the confirmation on the frozen F3+F4 list (decision CI2) — R83's path with the Spec swapped ----------------------------------
+def _plant84(tmp_path, monkeypatch, M, t0s, C, name="t84"):
+    monkeypatch.chdir(tmp_path)
+    lst = tmp_path / "govvotes_f34.csv"
+    L = _events(t0s, lst, folds=("F3",) * 5 + ("F4",) * 5)
+    out = tmp_path / "output" / "listing"
+    monkeypatch.setattr(govevent, "OUT", out)
+    monkeypatch.setattr(krevent, "OUT", out)
+    monkeypatch.setattr(govevent, "LIST34", lst)
+    monkeypatch.setattr(govevent, "LIST34_MD5", hashlib.md5(lst.read_bytes()).hexdigest())
+    monkeypatch.setattr(govevent, "LIST34_ROWS", len(L))
+    monkeypatch.setattr(govevent, "GATE_ROWS34", int(L["cell_big"].sum()))
+    monkeypatch.setattr(govevent, "MIN_ELIGIBLE84", 7)
+    monkeypatch.setattr(govevent, "MIN_MEMBERS", 3)
+    monkeypatch.setattr(govevent, "DRAWS", 2000)
+    monkeypatch.setattr(govevent, "TOP5_34", ("EV1USDT", "EV2USDT", "EV3USDT", "EV4USDT", "EV5USDT"))
+    monkeypatch.setattr(govevent, "EXPECTED_DROPPED34", {("EV9USDT", str(t0s[8])), ("EV10USDT", str(t0s[9]))})
+    monkeypatch.setattr(govevent, "EXPECTED_OTHER_DROPPED34", set())
+    monkeypatch.setattr(listing, "window", lambda folds: (M.index[0], M.index[-1] + BAR))
+    first_block = M.index[0].floor("D") + pd.Timedelta(days=2)
+    mem = pd.DataFrame({"block": [first_block] * len(MEM), "symbol": MEM})
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: mem)
+    monkeypatch.setattr(universe, "screen_symbols", lambda path=None: MEM)
+    monkeypatch.setattr(bt, "READS", tmp_path / "confirmation_reads.csv")
+    guarded, ledger_at_market = [], []
+    monkeypatch.setattr(bt, "_guard", lambda folds, registration, reexecute=None: (guarded.append((tuple(folds), registration)), list(folds))[1])
+    starts = []
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): (starts.append(start), ledger_at_market.append(bt.READS.exists()), M)[2])
+    monkeypatch.setattr(bt, "load_costs", lambda index, cols, end, cost_mult=1.0, close=None: C)
+    today = L.assign(why="eligible")
+    monkeypatch.setattr(govlist, "events", lambda write=True: today)
+    out.mkdir(parents=True)
+    krevent.fp_paths(name)[0].write_text("symbol,rows\n")
+    return L, today, guarded, starts, ledger_at_market
+
+
+def test_r84_the_guard_rows_go_into_the_ledger_before_the_market_and_a_planted_3_day_drift_is_confirmed_on_the_one_hold(tmp_path, monkeypatch):
+    M, t0s = _market(drift_bars=864)
+    C = _costs(M)
+    L, today, guarded, starts, ledger_at_market = _plant84(tmp_path, monkeypatch, M, t0s, C)
+    spec = govevent.spec_r84()
+    assert spec.registration == "R84" and spec.gate_hold == 864 and spec.confirm and spec.strategy == "gov_sold_3d" and spec.folds == ("F3", "F4") and spec.pad_days == 24 and spec.seed == 84
+    text = govevent.run("t84", spec=spec)
+    out = tmp_path / "output" / "listing" / "t84"
+    V = json.loads((out / "validity.json").read_text())
+    assert guarded == [(("F3", "F4"), "R84")] and ledger_at_market == [True] and V["0_guard"]["folds"] == ["F3", "F4"] and V["0_guard"]["logged_as"] == "R84" and V["0_guard"]["strategy"] == "gov_sold_3d"
+    led = pd.read_csv(tmp_path / "confirmation_reads.csv")
+    assert led["registration"].tolist() == ["R84", "R84"] and led["fold"].tolist() == ["F3", "F4"] and led["strategy"].tolist() == ["gov_sold_3d"] * 2 and json.loads(led["params"][0])["holds"] == [864]
+    assert V["status"] == "PASS" and V["3_cells"] == 8 and V["2_flag_rows"] == 10
+    assert V["3_dropped_as_registered"] and set(V["3_dropped"].values()) == {"before the folds' first member block", "the 3d exit is not before the end"}
+    assert V["3_1d_dropped_as_registered"] and V["3_1d_label_dropped"] == [] and "3_3d_label_dropped" not in V
+    assert V["6_money_row_identity"]["sold_gross_funding_vs_minus_a"] <= 1e-9 and V["6_money_row_identity"]["hold_is_the_gate_hold"] and V["6_money_row_identity"]["no_stop"] and V["7_exits_at_or_after_end"] == 0
+    assert starts[-1] == M.index[0] - pd.Timedelta(days=24)
+    fam = pd.read_csv(out / "holds.csv").set_index("hold")
+    assert fam["gate"].to_dict() == {"1d": False, "3d": True} and fam.loc["3d", "M_trim"] < -300 and fam.loc["3d", "M_trim_F3"] < 0 and fam.loc["3d", "M_trim_F4"] < 0 and fam.loc["3d", "B"] == pytest.approx(2 * 2 * (5 + 6.5))
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["verdict"] == "CONFIRMED" and meta["gate_hold"] == 864 and meta["gate_hold_name"] == "3d" and meta["confirm"] and meta["seed"] == 84 and meta["pad_days"] == 24
+    assert "Verdict: CONFIRMED — the gate hold 3d" in text and "## The money row" in text and "three-day drift" in text and (out / "trades.csv").exists() and (out / "money_row.csv").exists()
+    T = pd.read_csv(out / "trades.csv")
+    assert len(T) == 8 and (T["x"] - T["e"]).eq(864).all() and T["H"].notna().all()
+    sp = pd.read_csv(out / "splits.csv")
+    assert set(sp[sp["split"] == "fold"]["group"]) == {"F3", "F4"} and (sp["split"] == "name").sum() == 16
+    oh = pd.read_csv(out / "cell_all" / "holds.csv").set_index("hold")
+    assert oh.loc["3d", "M_trim"] == pytest.approx(fam.loc["3d", "M_trim"]) and oh["verdict"].str.startswith("described").all()
+
+
+def test_r84_an_unregistered_list_voids_the_run_and_the_guard_rows_stand(tmp_path, monkeypatch):
+    M, t0s = _market(drift_bars=864)
+    C = _costs(M)
+    _plant84(tmp_path, monkeypatch, M, t0s, C)
+    monkeypatch.setattr(govevent, "LIST34_MD5", "0" * 32)
+    text = govevent.run("t84", spec=govevent.spec_r84())
+    V = json.loads((tmp_path / "output" / "listing" / "t84" / "validity.json").read_text())
+    assert "**VOID" in text and "The guard rows stand in the ledger" in text and V["status"] == "FAIL" and not V["2_list_md5_as_registered"]
+    assert len(pd.read_csv(tmp_path / "confirmation_reads.csv")) == 2
+    monkeypatch.setattr(govevent, "LIST34_MD5", hashlib.md5((tmp_path / "govvotes_f34.csv").read_bytes()).hexdigest())
+    monkeypatch.setattr(govevent, "EXPECTED_DROPPED34", set())                                                 # an unexpected drop at the 3-day end voids too
+    assert "**VOID" in govevent.run("t84", spec=govevent.spec_r84())
+    monkeypatch.setattr(govevent, "SPECS", {"t84": govevent.spec_r84, **govevent.SPECS})
+    with pytest.raises(SystemExit):
+        govevent.main("run", "t84")
