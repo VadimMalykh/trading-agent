@@ -138,6 +138,11 @@ def cmd_govlist(args):
     govlist.main(args.action, fetch=args.fetch, tags=tuple(args.tags), flag=args.flag)
 
 
+def cmd_cexflow(args):
+    from . import cexflow
+    cexflow.main(args.action, fetch_=args.fetch, tags=tuple(args.tags), flag=args.flag)
+
+
 def cmd_hl(args):
     from . import hl
     hl.main(args.action, args.start, args.end, args.symbols)
@@ -599,6 +604,11 @@ def main(argv=None):
     gvp.add_argument("--fetch", action="store_true", help="spaces / proposals: fetch from hub.snapshot.org (the VM); bars: fetch the F1+F2 events' missing monthly 5m klines and re-ingest candles_5m_archive under a fingerprint")
     gvp.add_argument("--tags", nargs="*", default=["f12"], help="bars --fetch: the frozen lists whose events' missing months are fetched")
     gvp.add_argument("--flag", default=None, help="bars --fetch: only the rows carrying this flag (cell_big) are fetched for (decision CI2's Data line: the big cut's months, not the whole-vote rows')")
+    cxp = sub.add_parser("cexflow", help="P8 (decision CK1): the exchange's OWN on-chain balance per token (DefiLlama's CEX adapter for Binance, free, keyless) as a per-name EVENT — the source audit: fetch (the whole file saved raw + the wallet list's commit days; the known-at probe's halves), ingest (→ data/cex_balance.parquet for our bases), events (every |change| ≥ 5 % between consecutive stamps with its flags, side, member_at_t0 and the lists to freeze → output/cexflow/), bars (the names' 5m bars over t0 − 2 d → t0 + 8 d counted; --fetch fetches the missing months under a fingerprint), knownat (the two newest raw files compared on every amount), audit (counts, the names, the sizes, the stamp's hour, the 0o (i) cells, rule (a)'s B_i, the revert share described → output/cexflow/audit.md). Nothing priced (see ft2/cexflow.py)")
+    cxp.add_argument("action", choices=["fetch", "ingest", "events", "bars", "knownat", "audit"])
+    cxp.add_argument("--fetch", action="store_true", help="bars: fetch the frozen events' missing monthly 5m klines and re-ingest candles_5m_archive under a fingerprint")
+    cxp.add_argument("--tags", nargs="*", default=["f12"], help="bars --fetch: the frozen lists whose events' missing months are fetched")
+    cxp.add_argument("--flag", default=None, help="bars --fetch: only the rows carrying this flag (member_at_t0) are fetched for — the registered population's months, not the non-members'")
     spp = sub.add_parser("spot", help="P8 (decision BH1): Binance's own spot market per member as a source — the archive's spot monthly 1h klines for the twelve's and the screener's members' <BASE>USDT markets (the taker-buy columns) → data/raw/external/binance_spot/, data/spot_1h.parquet, output/spot_audit.md (see ft2/spot.py)")
     spp.add_argument("action", choices=["symbols", "fetch", "ingest", "audit"])
     spp.add_argument("--start", default="2023-04-01", help="fetch: the first month asked for")
@@ -684,7 +694,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
