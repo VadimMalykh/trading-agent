@@ -420,7 +420,7 @@ def run(name: str = NAME, taker_bps: float = TAKER_BPS, spec: Spec | None = None
             other_md = [f"\n## The whole-vote cells (`{spec.other_flag}`): {len(Eo)} cells on {Eo['symbol'].nunique()} names, B {bar_o:.1f} (own rows {float((Eo['B_source'] != 'R28' + chr(39) + 's 46').mean()):.1%}); the same trimmed statistic, se, u and p — a DESCRIBED population, never the gate; rows out: {Po['E_all'][~Po['E_all']['eligible']]['why'].value_counts().to_dict()}\n",
                         famo.round(3).to_markdown(index=False), "\n", f"\nthe CREATION row's median {float(np.nanmedian(cro)):.1f} (n {int(np.isfinite(cro).sum())}); the money of the sold unit at 1d: mean {-vo.mean():.1f}, trimmed {-listing.trimmed(vo, fundevent.k_trim(len(vo))):.1f}, the largest single loss {float(vo.max()):.0f}\n",
                         "\nthe splits:\n", so.round(1).to_markdown(index=False), "\n"]
-    counts = {"frozen rows of govvotes_f34.csv (untouched here)": F34_ROWS, "of them cell_big": F34_BIG, "F5 listed, not frozen": F5_ROWS, "of them cell_big": F5_BIG}
+    counts = {"frozen rows of govvotes_f34.csv (untouched here)": F34_ROWS, "of them cell_big (F3+F4)": F34_BIG, "F5 listed, not frozen": F5_ROWS, "of them cell_big (F5)": F5_BIG}
     md += ["\n## Described — decides nothing\n",
            "\nThe splits (passed / failed; the five busiest names / the rest; members at t0; the end on the hour; voters ≥ the median; each kind against the rest; the folds; each name) — the trimmed mean, the plain, the median:\n", splits.round(1).to_markdown(index=False), "\n",
            "\nThe distribution of y, and a and b apart:\n", pd.DataFrame(desc).round(1).to_markdown(index=False), "\n",
