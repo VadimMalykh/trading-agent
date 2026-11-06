@@ -489,6 +489,7 @@ def eligible_cells(L: pd.DataFrame, cov: pd.DataFrame, hold: pd.Timedelta = pd.T
     out = {}
     ends = {"f12": folds.bounds("F2", embargoed=False)[1], "f34": folds.bounds("F4", embargoed=False)[1]}
     c = cov.set_index(["symbol", "t0"])["share"]
+    c = c[~c.index.duplicated()]                      # a batch of votes ending at one second (govlist: ARB 97 at 2023-10-13 02:00) shares one window
     for tag, g in L.groupby("list"):
         inside = g["t0"] + hold + BAR * 2 < ends[tag]
         full = pd.Series([c.get((s, t), 0.0) >= 0.95 for s, t in zip(g["symbol"], g["t0"])], index=g.index)

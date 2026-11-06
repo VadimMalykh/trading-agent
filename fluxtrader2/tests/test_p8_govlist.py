@@ -48,6 +48,7 @@ PROPS = [
     _prop("p7", AAVE, "2024-03-10 00:00", "2024-03-05 00:00", "2024-03-08 00:00", 20),                                                           # created after its end: malformed
     _prop("p8", "yyy.eth", "2023-10-29 00:00", "2023-10-29 01:00", "2023-11-01 12:00", 400),                                                     # the perpetual 12 days old → a launch
     _prop("p9", "fabien.eth", "2023-08-01 00:00", "2023-08-01 01:00", "2023-08-04 12:00", 900),                                                  # an excluded space → not loaded
+    _prop("p10", AAVE, "2023-06-07 11:00", "2023-06-08 10:00", "2023-06-11 10:00", 300, title="[ARFC] Grant request for another team"),          # a BATCH mate of p1: the same end to the second (the real list: ARB 97 at one stamp) — one cell, one window, one B_i
 ]
 
 
@@ -98,6 +99,7 @@ def test_events_flags_the_collapse_as_flags_and_the_frozen_lists(tmp_path, monke
     assert abs(by.loc["p1", "lead_d"] - 4.0) < 1e-9 and abs(by.loc["p1", "duration_d"] - 3.0) < 1e-9
     assert by.loc["p1", "winner"] == "For" and bool(by.loc["p1", "passed"]) and by.loc["p1", "kind"] == "grant" and by.loc["p1", "n_choices"] == 2
     assert bool(by.loc["p1", "cell_all"]) and bool(by.loc["p1", "cell_big"]) and by.loc["p1", "repeat_n"] == 0
+    assert not bool(by.loc["p10", "cell_all"]) and not bool(by.loc["p10", "cell_big"]) and by.loc["p10", "why"] == "eligible"   # the batch mate: a row, not a cell
     assert by.loc["p2", "why"] == "eligible" and not bool(by.loc["p2", "cell_all"]) and not bool(by.loc["p2", "cell_big"]) and by.loc["p2", "kind"] == "listing"   # a flag, not a drop
     assert bool(by.loc["p3", "cell_all"]) and bool(by.loc["p3", "cell_big"]) and by.loc["p3", "winner"] == "No" and not bool(by.loc["p3", "passed"]) and by.loc["p3", "kind"] == "treasury"
     assert by.loc["p4", "why"].startswith("not closed") and by.loc["p7", "why"].startswith("created after its end")
@@ -107,7 +109,7 @@ def test_events_flags_the_collapse_as_flags_and_the_frozen_lists(tmp_path, monke
     f12 = pd.read_csv(govlist.OUT / "govvotes_f12.csv")
     f34 = pd.read_csv(govlist.OUT / "govvotes_f34.csv")
     f5 = pd.read_csv(govlist.OUT / "govvotes_f5.csv")
-    assert list(f12.columns) == govlist.LIST_COLS and list(f12["code"]) == ["p1", "p2", "p3"] and list(f34["code"]) == ["p5"] and list(f5["code"]) == ["p6"]
+    assert list(f12.columns) == govlist.LIST_COLS and list(f12["code"]) == ["p1", "p10", "p2", "p3"] and list(f34["code"]) == ["p5"] and list(f5["code"]) == ["p6"]
     assert not any(c in ("open", "close", "high", "low", "volume", "scores") for c in f12.columns)       # no price, no tally beyond the winner, in the frozen table
 
 
@@ -117,12 +119,12 @@ def test_bars_cells_and_the_audits_bar_come_out_with_no_price_read(tmp_path, mon
     for tag in ("f12", "f34", "f5"):
         (govlist.OUT / f"govvotes_{tag}.csv").replace(govlist.LISTS[tag])
     rep = govlist.bars(fetch=False)
-    assert rep["events"] == 4 and rep["complete"] == 4 and rep["missing_files_in_fetch_tags"] == 0
+    assert rep["events"] == 5 and rep["complete"] == 5 and rep["missing_files_in_fetch_tags"] == 0
     cov = pd.read_csv(govlist.OUT / "bars.csv")
     assert cov["bars"].tolist()[0] == int((pd.Timestamp("2023-06-19 10:00", tz="UTC") - pd.Timestamp("2023-06-07 10:00", tz="UTC")) / pd.Timedelta("5min"))  # the window starts at the creation
     md = govlist.audit(today=pd.Timestamp("2026-11-06", tz="UTC"))
     J = json.loads((govlist.OUT / "audit.json").read_text())
-    assert J["events"] == 4 and J["cells_by_fold"]["F1"] == {"cell_all": 2, "cell_big": 2} and J["cells_by_fold"]["F3"] == {"cell_all": 1, "cell_big": 0}
+    assert J["events"] == 5 and J["cells_by_fold"]["F1"] == {"cell_all": 2, "cell_big": 2} and J["cells_by_fold"]["F3"] == {"cell_all": 1, "cell_big": 0}
     assert J["bar_rule_a"]["f12 cell_all"]["priced"] == 2 and abs(J["bar_rule_a"]["f12 cell_all"]["B"] - 46.0) < 1e-9     # 2 × 2 × (5 + 6.5)
     assert J["flagged"] == 1 and J["passed_share_all"] == {"passed": 2, "failed": 1, "unparsed": 0} and J["unreached_daos"]["n"] == 2
     assert J["cells_0o_all"]["1"]["f12"]["cells"] == 2 and J["candidates"]["F5_listed_not_frozen"] == 1

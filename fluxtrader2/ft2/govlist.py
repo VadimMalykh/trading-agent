@@ -443,6 +443,7 @@ def audit(today: pd.Timestamp | None = None) -> str:
     cells = {h: up.eligible_cells(L[L["cell_all"]], cov, hold=pd.Timedelta(days=h)) for h in (1, 3, 7)}
     cells_big = {h: up.eligible_cells(L[L["cell_big"]], cov, hold=pd.Timedelta(days=h)) for h in (1, 3, 7)}
     bi = cr.set_index(["symbol", "t0"])["B_i"] if len(cr) else pd.Series(dtype=float)
+    bi = bi[~bi.index.duplicated()]                   # a batch ending at one second has one end day and one B_i
     def bar_of(mask):
         if not len(cr):
             return {"priced": 0, "of": int(mask.sum())}
