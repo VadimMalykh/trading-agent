@@ -105,6 +105,10 @@ defmodule FluxTrader.Trading.RiskManager do
       take_profit_ratio: Keyword.get(config, :take_profit_ratio, 2.0),
       leverage: Keyword.get(config, :leverage, 5),
       max_leverage: Keyword.get(config, :max_leverage, 10),
+      # M3_5 §4.7 (registered 2026-11-09, NOT in force until its gate): `nil` switches the
+      # daily-loss clause off for the paper policy arm — `MAX_DAILY_LOSS_PCT=off`. Every
+      # other check stays, and the day's P&L is still booked and reported. The pilot's money
+      # has its own brakes (`LivePilot`), which this never touches.
       max_daily_loss_pct: Keyword.get(config, :max_daily_loss_pct, 0.05),
       # Not a risk limit: see the moduledoc. 0.0 means the policy owns coverage.
       min_confidence: Keyword.get(config, :min_confidence, 0.0),
@@ -143,7 +147,8 @@ defmodule FluxTrader.Trading.RiskManager do
 
       # Loss only. A day that is up 5% is not a reason to stop trading, and `abs/1` here
       # used to halt the system on a good day.
-      state.daily_pnl <= -state.total_capital * state.max_daily_loss_pct ->
+      is_number(state.max_daily_loss_pct) and
+          state.daily_pnl <= -state.total_capital * state.max_daily_loss_pct ->
         reject(state, :daily_loss_limit, "daily P&L #{Float.round(state.daily_pnl, 2)}")
 
       true ->
@@ -169,7 +174,12 @@ defmodule FluxTrader.Trading.RiskManager do
        open_positions: state.open_positions,
        max_positions: state.max_positions,
        daily_pnl: state.daily_pnl,
-       daily_loss_limit: -state.total_capital * state.max_daily_loss_pct,
+       # `nil` = the clause is off (§4.7 in force).
+       daily_loss_limit:
+         if(is_number(state.max_daily_loss_pct),
+           do: -state.total_capital * state.max_daily_loss_pct,
+           else: nil
+         ),
        leverage: state.leverage,
        max_notional_pct: state.max_notional_pct,
        min_confidence: state.min_confidence,

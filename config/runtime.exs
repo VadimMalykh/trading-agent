@@ -39,7 +39,13 @@ if config_env() == :prod do
     max_positions: String.to_integer(System.get_env("MAX_POSITIONS") || "12"),
     max_position_pct: String.to_float(System.get_env("MAX_POSITION_PCT") || "0.10"),
     max_notional_pct: String.to_float(System.get_env("MAX_NOTIONAL_PCT") || "0.20"),
-    max_daily_loss_pct: String.to_float(System.get_env("MAX_DAILY_LOSS_PCT") || "0.05"),
+    # "off" = M3_5 §4.7's served change (the paper policy arm no longer refused for a bad
+    # day); set only with the sixth start after its gate passes.
+    max_daily_loss_pct:
+      (case System.get_env("MAX_DAILY_LOSS_PCT") || "0.05" do
+         "off" -> nil
+         v -> String.to_float(v)
+       end),
     max_leverage: String.to_integer(System.get_env("MAX_LEVERAGE") || "10"),
     min_confidence: String.to_float(System.get_env("MIN_CONFIDENCE") || "0.0"),
     stop_loss_pct: String.to_float(System.get_env("STOP_LOSS_PCT") || "0.02"),
@@ -135,6 +141,11 @@ if config_env() != :test do
   config :fluxtrader,
          :policy_hold_extension,
          System.get_env("POLICY_HOLD_EXTENSION", "false") in ~w(true 1 yes)
+
+  # M3_5 §4.6's hour filter (`Policy.entry_hours/0`). false = the fifth start's rule.
+  config :fluxtrader,
+         :policy_hour_filter,
+         System.get_env("POLICY_HOUR_FILTER", "false") in ~w(true 1 yes)
 end
 
 # Magic-link sign-in for the web UI (`FluxTraderWeb.Auth`). On iff AUTH_ALLOWED_EMAILS is

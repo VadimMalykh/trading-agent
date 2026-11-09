@@ -984,4 +984,61 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
     assert PolicyEngine.status().hold_extension.enabled == false
     assert PolicyEngine.status().decisions[:hold_extended_1] == nil
   end
+
+  # ------------------------------------------------------------ M3_5 §4.6: the hour filter
+  #
+  # Built 2026-11-09 (BACKLOG E9), NOT in force: `hour_filter: true` is the sixth start's
+  # entry rule. The bar's hour is its own (`bar_ts`), so the test picks the most recent past
+  # bar whose hour is in / out of the set rather than depending on the wall clock.
+
+  defp recent_bar_with_hour(now, pred) do
+    Enum.find_value(1..48, fn k ->
+      ts = Policy.bar_ts(DateTime.add(now, -k * 3600, :second))
+      if pred.(ts.hour), do: ts
+    end)
+  end
+
+  test "§4.6 on: a top-2% bar at an excluded hour is skipped as :hour_excluded on the A/B pair and taken by the explore arm" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    bar = recent_bar_with_hour(now, &(&1 not in Policy.entry_hours()))
+
+    start_engine_seq([[signal(symbol: "BTCUSDT", confidence: 0.95, bar: bar)]], regime(0.05), hour_filter: true)
+    :ok = PolicyEngine.refresh()
+
+    assert Ledger.open_trades("policy") == []
+    assert Ledger.open_trades("flat_size") == []
+    assert [_explore] = Ledger.open_trades("explore_cov05")
+    assert PolicyEngine.status().skips[:hour_excluded] == 1
+    assert %{open_positions: 0} = RiskManager.get_stats()
+    assert PolicyEngine.status().rule == "cov0.02_hold240_rqnone_mcnone_SIZED_hours16"
+    assert PolicyEngine.status().hour_filter.enabled == true
+  end
+
+  test "§4.6 on: the same bar at an in-set hour trades on both arms as today" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    bar = recent_bar_with_hour(now, &(&1 in Policy.entry_hours()))
+
+    start_engine_seq([[signal(symbol: "BTCUSDT", confidence: 0.95, bar: bar)]], regime(0.05), hour_filter: true)
+    :ok = PolicyEngine.refresh()
+
+    assert [_] = Ledger.open_trades("policy")
+    assert [_] = Ledger.open_trades("flat_size")
+    assert PolicyEngine.status().skips[:hour_excluded] == nil
+  end
+
+  test "§4.6 off (the default): an excluded-hour bar trades, and the rule's name has no hours" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    bar = recent_bar_with_hour(now, &(&1 not in Policy.entry_hours()))
+
+    start_engine_seq([[signal(symbol: "BTCUSDT", confidence: 0.95, bar: bar)]], regime(0.05))
+    :ok = PolicyEngine.refresh()
+
+    assert [_] = Ledger.open_trades("policy")
+    assert PolicyEngine.status().skips[:hour_excluded] == nil
+    assert PolicyEngine.status().rule == "cov0.02_hold240_rqnone_mcnone_SIZED"
+    assert PolicyEngine.status().hour_filter.enabled == false
+  end
 end

@@ -122,4 +122,14 @@ defmodule FluxTrader.Trading.RiskManagerTest do
     assert {:reject, :max_positions} = RiskManager.check(order())
     assert %{rejections: %{max_positions: 2}} = RiskManager.get_stats()
   end
+
+  test "§4.7 (not in force): with the daily clause off, a bad day refuses nothing and every other check stands" do
+    start_risk(total_capital: 1000.0, max_daily_loss_pct: nil, max_positions: 1)
+
+    RiskManager.record_close(-900.0)
+    assert {:ok, _} = RiskManager.check(order())
+    assert %{daily_loss_limit: nil, daily_pnl: -900.0} = RiskManager.get_stats()
+    # The slot cap is untouched by the switch.
+    assert {:reject, :max_positions} = RiskManager.check(order(symbol: "ETHUSDT"))
+  end
 end

@@ -250,13 +250,30 @@ defmodule FluxTrader.Trading.Policy do
     taken < @hold_extension_max and bar_side == side and conf >= @explore_threshold
   end
 
+  # M3_5_INTEGRATION §4.6 — WALKFORWARD §9.2's UTC entry-hour set, chosen by its mechanical
+  # rule on F0+F1 on 2026-09-10 and never revised: 16 hours, excluded 6, 8, 15, 16, 17, 19,
+  # 20, 23. Registered as a served entry filter on 2026-11-09 after the forward ledger's R3
+  # read it clear of zero; built the same day; NOT IN FORCE until reading #3 passes its gate
+  # — `PolicyEngine` passes it as `ctx.entry_hours` only when `:policy_hour_filter` is set,
+  # and only for the `policy` and `flat_size` arms (`explore_cov05` stays unfiltered).
+  @entry_hours [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22]
+
+  @doc "§4.6's UTC entry-hour set (WALKFORWARD §9.2, fixed 2026-09-10). `config_test.exs` pins it."
+  def entry_hours, do: @entry_hours
+
   @doc """
   The served rule's name as `/api/health` reports it (M3_PROTOCOL §9.6): the M3-2 selection,
-  with `_ext2` after the hold when §4.4's extension is in force.
+  with `_ext2` after the hold when §4.4's extension is in force and `_hours16` at the end
+  when §4.6's hour filter is. A bare boolean means the extension alone (the first call shape).
   """
-  def rule_name(hold_extension? \\ false)
-  def rule_name(true), do: "cov0.02_hold240_ext#{@hold_extension_max}_rqnone_mcnone_SIZED"
-  def rule_name(_), do: "cov0.02_hold240_rqnone_mcnone_SIZED"
+  def rule_name(opts \\ [])
+  def rule_name(ext?) when is_boolean(ext?), do: rule_name(hold_extension: ext?)
+
+  def rule_name(opts) when is_list(opts) do
+    ext = if Keyword.get(opts, :hold_extension, false), do: "_ext#{@hold_extension_max}", else: ""
+    hours = if Keyword.get(opts, :hour_filter, false), do: "_hours#{length(@entry_hours)}", else: ""
+    "cov0.02_hold240#{ext}_rqnone_mcnone_SIZED#{hours}"
+  end
 
   @doc """
   The sizing ladder's quintile edges in force, from the same split as `frozen_threshold/0`.
@@ -384,6 +401,9 @@ defmodule FluxTrader.Trading.Policy do
     * `:regime` — the current `btc_absret_1d`, or `nil` if unavailable
     * `:open_pairs` — a MapSet of pairs already holding a position (invariant 2)
     * `:open_count` — how many positions are open across all pairs
+    * `:entry_hours` — §4.6's UTC hour set, or `nil` / absent = every hour (today's rule).
+      A bar outside the set is `:hour_excluded`, tested before serial-per-pair so a freed
+      pair may take a later in-set bar (§9.2's re-simulated arm, not a sub-sample).
 
   Returns `{:enter, decision}` or `{:skip, reason}`. Every skip names its reason, because
   "the system placed no trades today" and "the system is broken" have to be distinguishable
@@ -402,6 +422,9 @@ defmodule FluxTrader.Trading.Policy do
 
       bar.confidence < ctx.threshold ->
         {:skip, :below_coverage}
+
+      ctx[:entry_hours] != nil and bar.ts.hour not in ctx[:entry_hours] ->
+        {:skip, :hour_excluded}
 
       MapSet.member?(ctx[:open_pairs] || MapSet.new(), bar.pair) ->
         {:skip, :position_open}

@@ -119,6 +119,8 @@ defmodule FluxTrader.Trading.ConfigTest do
     # three readers; `test_forward.py` pins the Python side.
     assert Policy.explore_threshold() == 0.5500438213348389
     assert Policy.hold_extension_max() == 2
+    # §4.6's hour set — WALKFORWARD §9.2's, recorded 2026-09-10; a literal, as the cut is.
+    assert Policy.entry_hours() == [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22]
 
     assert Policy.frozen_regime_edges() == [
              0.003849115688353777,

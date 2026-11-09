@@ -42,6 +42,9 @@ services:
       LIVE_PILOT_MAKER_PATH: ${LIVE_PILOT_MAKER_PATH:-false}   # M2: the pilot rests at the touch 60 s, then crosses (BOOK_WAVE2_PLAN §M2)
       # M3_5 §4.4's hold extension — built, NOT in force; true only with the sixth start.
       POLICY_HOLD_EXTENSION: ${POLICY_HOLD_EXTENSION:-false}
+      # M3_5 §4.6's hour filter and §4.7's daily-loss switch — built, NOT in force; sixth start only.
+      POLICY_HOUR_FILTER: ${POLICY_HOUR_FILTER:-false}
+      MAX_DAILY_LOSS_PCT: ${MAX_DAILY_LOSS_PCT:-0.05}   # "off" = §4.7
       ML_INFERENCE_URL: http://ml_inference:8001
       # Serve/product gate. Eval (run 20260723) showed gate<=0.50 trades ~100% of
       # bars at ~coin-flip; edge only appears at gate>=0.55. 0.58 harvests it.

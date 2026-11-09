@@ -224,6 +224,8 @@ defmodule FluxTrader.Trading.PolicyTest do
       cases = [
         {%{bar | confidence: 0.55}, ctx, :below_coverage},
         {%{bar | side: 0}, ctx, :no_side},
+        # §4.6: 16:05 UTC is an excluded hour; the control declines for the same reason.
+        {%{bar | ts: ~U[2026-08-28 16:05:00Z]}, Map.put(ctx, :entry_hours, Policy.entry_hours()), :hour_excluded},
         {bar, %{ctx | open_pairs: MapSet.new(["ETHUSDT"])}, :position_open},
         # Kept even though a flat size needs no regime: dropping it would let the control
         # enter bars the policy refuses.
@@ -287,6 +289,53 @@ defmodule FluxTrader.Trading.PolicyTest do
       assert Policy.rule_name() == "cov0.02_hold240_rqnone_mcnone_SIZED"
       assert Policy.rule_name(false) == "cov0.02_hold240_rqnone_mcnone_SIZED"
       assert Policy.rule_name(true) == "cov0.02_hold240_ext2_rqnone_mcnone_SIZED"
+      assert Policy.rule_name(hour_filter: true) == "cov0.02_hold240_rqnone_mcnone_SIZED_hours16"
+      assert Policy.rule_name(hold_extension: true, hour_filter: true) ==
+               "cov0.02_hold240_ext2_rqnone_mcnone_SIZED_hours16"
+    end
+  end
+
+  describe "entry_hours — M3_5 §4.6's hour filter, built 2026-11-09, not in force" do
+    setup do
+      %{
+        bar: %{pair: "BTCUSDT", confidence: 0.80, side: 1, price: 100_000.0, ts: ~U[2026-08-28 10:05:00Z], gated: false},
+        ctx: %{threshold: 0.75, regime: 0.05, regime_edges: [0.01, 0.02, 0.03, 0.04], open_pairs: MapSet.new(), open_count: 0}
+      }
+    end
+
+    test "the set is §9.2's, fixed 2026-09-10: sixteen hours, eight excluded" do
+      assert Policy.entry_hours() == [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 18, 21, 22]
+      assert Enum.sort(Enum.to_list(0..23) -- Policy.entry_hours()) == [6, 8, 15, 16, 17, 19, 20, 23]
+    end
+
+    test "no set in the ctx (today's rule): every hour enters", %{bar: bar, ctx: ctx} do
+      for h <- 0..23 do
+        b = %{bar | ts: DateTime.new!(~D[2026-08-28], Time.new!(h, 5, 0))}
+        assert {:enter, _} = Policy.decide(Policy.spec(), b, ctx)
+        assert {:enter, _} = Policy.decide(Policy.spec(), b, Map.put(ctx, :entry_hours, nil))
+      end
+    end
+
+    test "with the set: in-set hours enter, excluded hours are :hour_excluded, on both arms", %{bar: bar, ctx: ctx} do
+      ctx = Map.put(ctx, :entry_hours, Policy.entry_hours())
+
+      for h <- 0..23 do
+        b = %{bar | ts: DateTime.new!(~D[2026-08-28], Time.new!(h, 5, 0))}
+        expected = if h in Policy.entry_hours(), do: :enter, else: :skip
+        assert {^expected, _} = Policy.decide(Policy.spec(), b, ctx)
+        assert {^expected, _} = Policy.decide_flat(Policy.spec(), b, ctx)
+        if expected == :skip, do: assert({:skip, :hour_excluded} = Policy.decide(Policy.spec(), b, ctx))
+      end
+    end
+
+    test "the hour test comes after the cut and before serial-per-pair: a freed pair may take a later in-set bar", %{bar: bar, ctx: ctx} do
+      ctx = Map.put(ctx, :entry_hours, Policy.entry_hours())
+      excluded = %{bar | ts: ~U[2026-08-28 16:05:00Z]}
+      # Below the cut names the cut, not the hour.
+      assert {:skip, :below_coverage} = Policy.decide(Policy.spec(), %{excluded | confidence: 0.5}, ctx)
+      # An excluded hour on a held pair names the hour: the bar is dropped before the pair test.
+      assert {:skip, :hour_excluded} =
+               Policy.decide(Policy.spec(), excluded, %{ctx | open_pairs: MapSet.new(["BTCUSDT"])})
     end
   end
 end

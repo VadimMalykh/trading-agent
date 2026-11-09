@@ -229,6 +229,10 @@ defmodule FluxTrader.Trading.PolicyEngine do
        # Vadim's word deploys the sixth start with POLICY_HOLD_EXTENSION=true.
        hold_extension:
          Keyword.get(opts, :hold_extension, Application.get_env(:fluxtrader, :policy_hold_extension, false)) == true,
+       # M3_5 §4.6's hour filter (`Policy.entry_hours/0` as `ctx.entry_hours` on the A/B pair).
+       # Off until its gate passes; `POLICY_HOUR_FILTER=true` only with the sixth start.
+       hour_filter:
+         Keyword.get(opts, :hour_filter, Application.get_env(:fluxtrader, :policy_hour_filter, false)) == true,
        checkpoint: nil,
        served_interval: nil,
        served_closed_bars: nil,
@@ -299,12 +303,17 @@ defmodule FluxTrader.Trading.PolicyEngine do
        hold_minutes: state.spec.hold_minutes,
        # The rule in force by name (M3_PROTOCOL §9.6), and §4.4's extension knob: a deployed
        # binary says which exit rule it runs without anyone reading its environment.
-       rule: Policy.rule_name(state.hold_extension),
+       rule: Policy.rule_name(hold_extension: state.hold_extension, hour_filter: state.hour_filter),
        hold_extension: %{
          enabled: state.hold_extension,
          max_extensions: Policy.hold_extension_max(),
          cut: Policy.explore_threshold(),
          arms: @extended_arms
+       },
+       hour_filter: %{
+         enabled: state.hour_filter,
+         hours: Policy.entry_hours(),
+         arms: [@policy_arm, @control_arm]
        },
        signal_horizon_m: state.spec.signal_horizon_m,
        # The cut in force, and the constant it must equal. Reported separately so a deployed
@@ -658,7 +667,8 @@ defmodule FluxTrader.Trading.PolicyEngine do
       regime: bar.regime,
       regime_edges: bar.regime_edges,
       open_pairs: open[@policy_arm],
-      open_count: MapSet.size(open[@policy_arm])
+      open_count: MapSet.size(open[@policy_arm]),
+      entry_hours: entry_hours(state)
     }
 
     case Policy.decide(state.spec, bar, ctx) do
@@ -715,7 +725,8 @@ defmodule FluxTrader.Trading.PolicyEngine do
       regime: bar.regime,
       regime_edges: bar.regime_edges,
       open_pairs: open[@control_arm],
-      open_count: MapSet.size(open[@control_arm])
+      open_count: MapSet.size(open[@control_arm]),
+      entry_hours: entry_hours(state)
     }
 
     case Policy.decide_flat(state.spec, bar, ctx) do
@@ -736,9 +747,16 @@ defmodule FluxTrader.Trading.PolicyEngine do
     end
   end
 
+  # M3_5 §4.6: the hour set the A/B pair is filtered on when the filter is in force; `nil`
+  # (every hour) otherwise and always for the explore arm, which stays unfiltered so one arm
+  # keeps recording the rule at every hour.
+  defp entry_hours(%{hour_filter: true}), do: Policy.entry_hours()
+  defp entry_hours(_state), do: nil
+
   # The exploratory arm: `Policy.decide/3` again with one field of the ctx changed — the cut.
   # Paper, never risk-checked, and its skips are not counted: `skips` on /api/health is the
-  # policy's, and a second arm's reasons in the same map would make it unreadable.
+  # policy's, and a second arm's reasons in the same map would make it unreadable. Never
+  # hour-filtered (§4.6).
   defp try_explore_arm(state, bar, open) do
     ctx = %{
       threshold: Policy.explore_threshold(),
