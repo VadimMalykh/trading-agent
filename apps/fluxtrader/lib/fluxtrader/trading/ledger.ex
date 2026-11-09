@@ -324,7 +324,9 @@ defmodule FluxTrader.Trading.Ledger do
   M3-4. The cost scales with size because a 5/3-size trade crosses 5/3 as much notional.
 
   `overrides` carries `exit_reason` and `exit_order_id` from the auto path; a paper close
-  books `exit_reason: "timer"`, which is the only exit the policy was scored with.
+  books `exit_reason: "timer"`, which is the only exit the policy was scored with — or
+  `ext1_timer` / `ext2_timer` on a row whose hold M3_5 §4.4's extension moved (never today:
+  the extension is not in force until its gate).
   """
   def close_trade(%PaperTrade{} = trade, exit_price, now \\ DateTime.utc_now(), overrides \\ %{}) do
     ret = exit_price / trade.entry_price - 1.0
@@ -341,7 +343,7 @@ defmodule FluxTrader.Trading.Ledger do
           gross_bps: gross_bps,
           cost_bps: cost_bps,
           net_bps: gross_bps - cost_bps * trade.size,
-          exit_reason: "timer",
+          exit_reason: timer_reason(trade),
           status: "closed"
         },
         Map.new(overrides)
@@ -349,6 +351,9 @@ defmodule FluxTrader.Trading.Ledger do
     )
     |> Repo.update()
   end
+
+  defp timer_reason(%PaperTrade{extensions: n}) when is_integer(n) and n > 0, do: "ext#{n}_timer"
+  defp timer_reason(_trade), do: "timer"
 
   @doc """
   Score one arm on the metrics M3_PROTOCOL §4 uses, so the live numbers sit next to the

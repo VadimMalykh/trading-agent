@@ -115,6 +115,10 @@ defmodule FluxTrader.Trading.ConfigTest do
     # eval run 20261003T191545Z's sized policy: 818 trades, mean size 1.308, entry confidence
     # 0.5861 .. 0.8349. U12 seed 2's values were 0.6708709597587585 / sha 30e6ac1e….
     assert Policy.frozen_threshold() == 0.5860595703125
+    # The explore cut is forward.py's EXT_CUT and M3_5 §4.4's extension cut — one constant,
+    # three readers; `test_forward.py` pins the Python side.
+    assert Policy.explore_threshold() == 0.5500438213348389
+    assert Policy.hold_extension_max() == 2
 
     assert Policy.frozen_regime_edges() == [
              0.003849115688353777,

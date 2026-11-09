@@ -260,4 +260,33 @@ defmodule FluxTrader.Trading.PolicyTest do
       assert length(Enum.uniq(policy_sizes)) == Policy.size_buckets()
     end
   end
+
+  describe "extend_hold?/3 — M3_5 §4.4's hold extension, built 2026-11-09, not in force" do
+    # The same rule `ml/train/m3/forward.py:reading_extension` reconstructs as R5: same side,
+    # confidence >= the explore cut (forward.py's EXT_CUT), at most two extensions.
+    test "the same side at or above the explore cut extends" do
+      bar = %{side: 1, confidence: Policy.explore_threshold()}
+      assert Policy.extend_hold?(1, bar, 0)
+      assert Policy.extend_hold?(1, %{bar | confidence: 0.99}, 1)
+    end
+
+    test "below the explore cut, the opposite side, a flat call, or no bar: a close" do
+      refute Policy.extend_hold?(1, %{side: 1, confidence: Policy.explore_threshold() - 1.0e-9}, 0)
+      refute Policy.extend_hold?(1, %{side: -1, confidence: 0.99}, 0)
+      refute Policy.extend_hold?(-1, %{side: 1, confidence: 0.99}, 0)
+      refute Policy.extend_hold?(1, %{side: 0, confidence: 0.99}, 0)
+      refute Policy.extend_hold?(1, nil, 0)
+    end
+
+    test "the third due is a close: at most hold_extension_max extensions" do
+      assert Policy.hold_extension_max() == 2
+      refute Policy.extend_hold?(1, %{side: 1, confidence: 0.99}, Policy.hold_extension_max())
+    end
+
+    test "the rule's name carries the extension only when it is in force" do
+      assert Policy.rule_name() == "cov0.02_hold240_rqnone_mcnone_SIZED"
+      assert Policy.rule_name(false) == "cov0.02_hold240_rqnone_mcnone_SIZED"
+      assert Policy.rule_name(true) == "cov0.02_hold240_ext2_rqnone_mcnone_SIZED"
+    end
+  end
 end

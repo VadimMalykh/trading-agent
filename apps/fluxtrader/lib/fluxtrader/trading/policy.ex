@@ -224,6 +224,40 @@ defmodule FluxTrader.Trading.Policy do
   """
   def explore_threshold, do: @explore_threshold
 
+  # M3_5_INTEGRATION §4.4 — hold extension while the signal persists (`persist05`): at a
+  # trade's exit bar, if the served model takes the SAME side with confidence at or above
+  # the explore cut, the exit moves forward by one hold; at most this many times (12 h in
+  # all). Registered 2026-10-19, built 2026-11-09, NOT IN FORCE until reading #3 passes its
+  # gate — `PolicyEngine` applies it only when `:policy_hold_extension` is set. The cut is
+  # `explore_threshold/0`, the same constant `ml/train/m3/forward.py` reads as `EXT_CUT`, so
+  # R5's counterfactual and the served rule are one rule (the parity §4.4 asks for).
+  @hold_extension_max 2
+
+  @doc "How many times one hold may be extended (M3_5 §4.4). The third due is a close."
+  def hold_extension_max, do: @hold_extension_max
+
+  @doc """
+  M3_5 §4.4's extension test at a trade's exit bar: the bar's side equals the trade's side,
+  its confidence is at or above the explore cut, and fewer than `hold_extension_max/0`
+  extensions have been taken. Pure; `nil` bar (none served at the due tick) is a close.
+  """
+  def extend_hold?(trade_side, bar, extensions_taken)
+
+  def extend_hold?(_side, nil, _taken), do: false
+
+  def extend_hold?(side, %{side: bar_side, confidence: conf}, taken)
+      when is_integer(side) and is_number(conf) and is_integer(taken) do
+    taken < @hold_extension_max and bar_side == side and conf >= @explore_threshold
+  end
+
+  @doc """
+  The served rule's name as `/api/health` reports it (M3_PROTOCOL §9.6): the M3-2 selection,
+  with `_ext2` after the hold when §4.4's extension is in force.
+  """
+  def rule_name(hold_extension? \\ false)
+  def rule_name(true), do: "cov0.02_hold240_ext#{@hold_extension_max}_rqnone_mcnone_SIZED"
+  def rule_name(_), do: "cov0.02_hold240_rqnone_mcnone_SIZED"
+
   @doc """
   The sizing ladder's quintile edges in force, from the same split as `frozen_threshold/0`.
 

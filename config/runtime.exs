@@ -129,6 +129,12 @@ if config_env() != :test do
 
   # No policy entries for the first minutes of an app start — see `PolicyEngine` init.
   config :fluxtrader, :policy_boot_grace_s, pilot_int.("POLICY_BOOT_GRACE_S", 300)
+
+  # M3_5 §4.4's hold extension (`Policy.extend_hold?/3`). false = the fifth start's rule.
+  # Set true only with the sixth start, on Vadim's word after the gate passes.
+  config :fluxtrader,
+         :policy_hold_extension,
+         System.get_env("POLICY_HOLD_EXTENSION", "false") in ~w(true 1 yes)
 end
 
 # Magic-link sign-in for the web UI (`FluxTraderWeb.Auth`). On iff AUTH_ALLOWED_EMAILS is

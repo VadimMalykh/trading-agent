@@ -107,11 +107,12 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
   # Serve one list of signals per tick, in order, then nothing — for tests about what the
   # SECOND tick does with a bar the first one already saw.
-  defp start_engine_seq(per_tick, regime) do
+  defp start_engine_seq(per_tick, regime, opts \\ []) do
     {:ok, box} = Agent.start_link(fn -> per_tick end)
 
     start_supervised!(
       {PolicyEngine,
+       opts ++
        [
          autotick: false,
          signals_fun: fn ->
@@ -818,5 +819,169 @@ defmodule FluxTrader.Trading.PolicyEngineTest do
 
     assert PolicyEngine.status().skips[:no_regime] == 1
     assert Ledger.open_trades("policy") == []
+  end
+
+  # ------------------------------------------------------------ M3_5 §4.4: the hold extension
+  #
+  # Built 2026-11-09 (BACKLOG E8 (c)), NOT in force: `hold_extension: true` here is what the
+  # sixth start would run; the default is the fifth start's timer. The rule is the one
+  # `forward.py:reading_extension` reconstructs as R5 — same side, confidence >= the explore
+  # cut at the exit bar, at most two extensions — so the two are one rule (§4.4's parity).
+  #
+  # Entry 250 min ago, exit bar 5 min later, so an extended exit (exit bar + 240 min) is
+  # already due at the third tick without touching the clock.
+
+  defp extension_bars(now) do
+    entry_bar = Policy.bar_ts(DateTime.add(now, -250 * 60, :second))
+    exit_bar = DateTime.add(entry_bar, 300, :second)
+    {entry_bar, exit_bar, DateTime.add(exit_bar, Policy.hold_minutes() * 60, :second)}
+  end
+
+  defp persisting_conf, do: Policy.explore_threshold() + 0.01
+
+  test "§4.4 on: the exit bar persisting on the side above the explore cut extends the hold by one hold, on the A/B pair and not the explore arm" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    {entry_bar, exit_bar, ext_exit} = extension_bars(now)
+
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar)],
+        [signal(symbol: "BTCUSDT", confidence: persisting_conf(), bar: exit_bar, price: 100_300.0)]
+      ],
+      regime(0.05),
+      hold_extension: true
+    )
+
+    trade = open_then_bring_the_hold_forward(exit_bar)
+    [flat] = Ledger.open_trades("flat_size")
+    [explore] = Ledger.open_trades("explore_cov05")
+    for t <- [flat, explore], do: t |> Ecto.Changeset.change(exit_after_ts: exit_bar) |> Repo.update!()
+
+    :ok = PolicyEngine.refresh()
+
+    # The policy and flat rows are still open, due one hold later, one extension each.
+    for id <- [trade.id, flat.id] do
+      row = Repo.get!(PaperTrade, id)
+      assert row.status == "open"
+      assert row.extensions == 1
+      assert DateTime.compare(row.exit_after_ts, ext_exit) == :eq
+    end
+
+    # The explore arm closed on its timer at the exit bar's close, as today.
+    assert Repo.get!(PaperTrade, explore.id).status == "closed"
+    assert Repo.get!(PaperTrade, explore.id).exit_price == 100_300.0
+    assert Repo.get!(PaperTrade, explore.id).extensions == 0
+
+    # The slot is still held; the extension is counted by name.
+    assert %{open_positions: 1} = RiskManager.get_stats()
+    assert PolicyEngine.status().decisions[:hold_extended_1] == 2
+    assert PolicyEngine.status().decisions[:closed] == 1
+    assert PolicyEngine.status().rule == "cov0.02_hold240_ext2_rqnone_mcnone_SIZED"
+    assert PolicyEngine.status().hold_extension.enabled == true
+  end
+
+  test "§4.4 on: the extended hold closes at ITS exit bar's close when the signal is gone, named ext1_timer" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    {entry_bar, exit_bar, ext_exit} = extension_bars(now)
+
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar)],
+        [signal(symbol: "BTCUSDT", confidence: persisting_conf(), bar: exit_bar, price: 100_300.0)],
+        [signal(symbol: "BTCUSDT", confidence: 0.50, bar: ext_exit, price: 100_500.0)]
+      ],
+      regime(0.05),
+      hold_extension: true
+    )
+
+    trade = open_then_bring_the_hold_forward(exit_bar)
+    :ok = PolicyEngine.refresh()
+    assert Repo.get!(PaperTrade, trade.id).status == "open"
+
+    :ok = PolicyEngine.refresh()
+    closed = Repo.get!(PaperTrade, trade.id)
+    assert closed.status == "closed"
+    assert closed.exit_reason == "ext1_timer"
+    assert closed.extensions == 1
+    # Priced at the extended exit bar, booked as every timer close is: size x (raw - cost).
+    assert closed.exit_price == 100_500.0
+    assert_in_delta closed.gross_bps, 50.0 * 5 / 3, 1.0e-3
+    assert_in_delta closed.net_bps, (50.0 - 10.017) * 5 / 3, 1.0e-3
+    assert %{open_positions: 0} = RiskManager.get_stats()
+  end
+
+  test "§4.4 on: the third due is a close even when the signal persists — at most two extensions" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    {entry_bar, exit_bar, _} = extension_bars(now)
+
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar)],
+        [signal(symbol: "BTCUSDT", confidence: 0.99, bar: exit_bar, price: 100_300.0)]
+      ],
+      regime(0.05),
+      hold_extension: true
+    )
+
+    trade = open_then_bring_the_hold_forward(exit_bar)
+    trade |> Ecto.Changeset.change(extensions: Policy.hold_extension_max()) |> Repo.update!()
+
+    :ok = PolicyEngine.refresh()
+    closed = Repo.get!(PaperTrade, trade.id)
+    assert closed.status == "closed"
+    assert closed.exit_reason == "ext2_timer"
+    assert closed.exit_price == 100_300.0
+    assert PolicyEngine.status().decisions[:hold_extended_3] == nil
+  end
+
+  test "§4.4 on: a later bar than the exit bar closes — a missing exit bar is never a wait or an extension" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    {entry_bar, exit_bar, _} = extension_bars(now)
+    later_bar = DateTime.add(exit_bar, 300, :second)
+
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar)],
+        [signal(symbol: "BTCUSDT", confidence: 0.99, bar: later_bar, price: 100_300.0)]
+      ],
+      regime(0.05),
+      hold_extension: true
+    )
+
+    trade = open_then_bring_the_hold_forward(exit_bar)
+    :ok = PolicyEngine.refresh()
+    closed = Repo.get!(PaperTrade, trade.id)
+    assert closed.status == "closed"
+    assert closed.extensions == 0
+    assert closed.exit_reason == "timer"
+    assert closed.exit_price == 100_300.0
+  end
+
+  test "§4.4 off (the default, the fifth start): a persisting exit bar closes on the timer and the rule's name says so" do
+    now = DateTime.utc_now()
+    fill_the_diagnostic_window(now)
+    {entry_bar, exit_bar, _} = extension_bars(now)
+
+    start_engine_seq(
+      [
+        [signal(symbol: "BTCUSDT", confidence: 0.95, bar: entry_bar)],
+        [signal(symbol: "BTCUSDT", confidence: 0.99, bar: exit_bar, price: 100_300.0)]
+      ],
+      regime(0.05)
+    )
+
+    trade = open_then_bring_the_hold_forward(exit_bar)
+    :ok = PolicyEngine.refresh()
+    closed = Repo.get!(PaperTrade, trade.id)
+    assert closed.status == "closed"
+    assert closed.extensions == 0
+    assert closed.exit_reason == "timer"
+    assert PolicyEngine.status().rule == "cov0.02_hold240_rqnone_mcnone_SIZED"
+    assert PolicyEngine.status().hold_extension.enabled == false
+    assert PolicyEngine.status().decisions[:hold_extended_1] == nil
   end
 end

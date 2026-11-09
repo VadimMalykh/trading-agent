@@ -178,6 +178,11 @@ defmodule FluxTrader.Trading.PolicyEngine do
   # scored before falling back to the mark: the bar closes at +300 s, settles at
   # +CANDLE_SETTLE_S, and is served within one inference cycle (~90 s) and one tick (30 s).
   @exit_bar_grace_s 900
+  # M3_5 §4.4: the arms whose timed exit the hold extension may move — the registered A/B
+  # pair (so the two ledgers keep differing in size alone) and the pilot, which mirrors the
+  # policy's exit as it mirrors its entry. `explore_cov05` is never extended: it is the arm
+  # at the cut the extension itself uses.
+  @extended_arms [@policy_arm, @control_arm, @live_arm]
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -220,6 +225,10 @@ defmodule FluxTrader.Trading.PolicyEngine do
        boot_grace_s:
          Keyword.get(opts, :boot_grace_s, Application.get_env(:fluxtrader, :policy_boot_grace_s, 0)),
        started_at: DateTime.utc_now(),
+       # M3_5 §4.4's hold extension. Off (the fifth start's rule) until its gate passes and
+       # Vadim's word deploys the sixth start with POLICY_HOLD_EXTENSION=true.
+       hold_extension:
+         Keyword.get(opts, :hold_extension, Application.get_env(:fluxtrader, :policy_hold_extension, false)) == true,
        checkpoint: nil,
        served_interval: nil,
        served_closed_bars: nil,
@@ -288,6 +297,15 @@ defmodule FluxTrader.Trading.PolicyEngine do
        coverage: state.spec.coverage,
        served_pairs: served_pairs() |> Enum.sort(),
        hold_minutes: state.spec.hold_minutes,
+       # The rule in force by name (M3_PROTOCOL §9.6), and §4.4's extension knob: a deployed
+       # binary says which exit rule it runs without anyone reading its environment.
+       rule: Policy.rule_name(state.hold_extension),
+       hold_extension: %{
+         enabled: state.hold_extension,
+         max_extensions: Policy.hold_extension_max(),
+         cut: Policy.explore_threshold(),
+         arms: @extended_arms
+       },
        signal_horizon_m: state.spec.signal_horizon_m,
        # The cut in force, and the constant it must equal. Reported separately so a deployed
        # binary can be checked without reading its source.
@@ -779,6 +797,9 @@ defmodule FluxTrader.Trading.PolicyEngine do
     |> Ledger.due_trades()
     |> Enum.reduce(state, fn trade, acc ->
       case exit_for(acc, trade, Map.get(by_pair, trade.pair), now) do
+        {:extend, _bar} ->
+          extend_hold(acc, trade)
+
         {:ok, price, how} ->
           case Executor.close(trade, price) do
             {:ok, closed} ->
@@ -810,6 +831,16 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
   defp exit_for(state, trade, bar, now) do
     cond do
+      # M3_5 §4.4, only when in force: the exit bar itself is the bar served now (a later
+      # bar means the exit bar was missed — a close, never a wait), the arm is one the
+      # extension applies to, and the served model still takes the trade's side above the
+      # explore cut with an extension left. Checked before the mark fallback on purpose: a
+      # bar that is here decides, whatever the wall clock says.
+      state.hold_extension and bar != nil and trade.arm in @extended_arms and
+        DateTime.compare(bar.ts, trade.exit_after_ts) == :eq and
+          Policy.extend_hold?(trade.side, bar, trade.extensions || 0) ->
+        {:extend, bar}
+
       bar != nil and DateTime.compare(bar.ts, trade.exit_after_ts) != :lt ->
         {:ok, bar.price, :closed}
 
@@ -821,6 +852,24 @@ defmodule FluxTrader.Trading.PolicyEngine do
 
       true ->
         {:defer, :close_deferred_bar_pending}
+    end
+  end
+
+  # M3_5 §4.4: push the row's timed exit forward by one hold and count the extension. The row
+  # stays open, holds its slot, and is due again at the new bar; `Ledger.close_trade/4` names
+  # the eventual timer close `ext<n>_timer`. The pilot's row is a row like any other here —
+  # its brakes stay on the exchange, only its timed close moves.
+  defp extend_hold(state, trade) do
+    n = (trade.extensions || 0) + 1
+    new_exit = DateTime.add(trade.exit_after_ts, state.spec.hold_minutes * 60, :second)
+
+    case Ledger.update_trade(trade, %{exit_after_ts: new_exit, extensions: n}) do
+      {:ok, _} ->
+        Logger.info("hold extended on #{trade.pair} (#{trade.arm}): exit -> #{new_exit}, extension #{n}")
+        count_decision(state, :"hold_extended_#{n}")
+
+      {:error, _} ->
+        count_decision(state, :hold_extend_failed)
     end
   end
 

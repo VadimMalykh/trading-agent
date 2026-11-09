@@ -86,6 +86,20 @@ def test_swallowed_trade_leaves_the_arm():
     assert abs(cf["net_bps"].iloc[0] - (300.0 - COST)) < 1e-9
 
 
+def test_extended_ledger_rows_reconstruct_as_themselves():
+    # M3_5 §4.4's parity: a row the ENGINE already extended twice (served rule in force) and
+    # closed at its extended exit is not extended again by R5, even though the bar at that
+    # exit still persists — the counterfactual arm equals the recorded arm.
+    t = _trade(1, "AUSDT", 5 / 3, 100.0, 103.0)
+    t["exit_after_ts"] = T0 + 3 * H
+    t["exit_ts"] = T0 + 3 * H
+    t["extensions"] = 2
+    bars = [_bar("AUSDT", T0 + 3 * H, 1, 0.99, 103.0), _bar("AUSDT", T0 + 4 * H, 1, 0.99, 110.0)]
+    p, cf = _run([t], bars)
+    assert len(cf) == 1 and int(cf["extensions"].iloc[0]) == 2
+    assert abs(cf["net_bps"].sum() - p["net_bps"].sum()) < 1e-9
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

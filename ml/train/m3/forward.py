@@ -400,7 +400,11 @@ def reading_extension(led: Ledger, bars: pd.DataFrame) -> pd.DataFrame | None:
     for r in p.itertuples():
         if r.Index in swallowed_ids:
             continue
-        exit_ts, price, n = r.exit_after_ts, r.exit_price, 0
+        # On a ledger the served extension has already acted on (M3_5 §4.4 in force — the
+        # sixth start), the row's `extensions` count is where the counterfactual resumes,
+        # so a row the engine extended and closed is reconstructed as itself: the parity
+        # test §4.4 asks for is this contrast reading zero. Absent column = 0 (today).
+        exit_ts, price, n = r.exit_after_ts, r.exit_price, int(getattr(r, "extensions", 0) or 0)
         while n < EXT_MAX:
             key = (r.pair, exit_ts)
             if key not in bars.index:
@@ -412,7 +416,7 @@ def reading_extension(led: Ledger, bars: pd.DataFrame) -> pd.DataFrame | None:
             if nxt not in bars.index:
                 break
             exit_ts, price, n = exit_ts + EXT_HOLD, float(bars.loc[nxt, "price"]), n + 1
-        if n:
+        if n > int(getattr(r, "extensions", 0) or 0):
             n_ext[n] += 1
             later = by_pair[r.pair]
             eaten = later[(later["entry_ts"] > r.entry_ts) & (later["entry_ts"] < exit_ts)]
@@ -422,13 +426,14 @@ def reading_extension(led: Ledger, bars: pd.DataFrame) -> pd.DataFrame | None:
         # trade keeps its booked net; an extended one is re-priced from the raw return and
         # booked the same way. Until 2026-11-09 this multiplied the booked gross by size a
         # second time on unextended trades (M3_5 §4.3, reading #2 — the defective run is kept).
-        if n:
+        if n > int(getattr(r, "extensions", 0) or 0):
             raw = r.side * (price / r.entry_price - 1.0) * 1e4
             net = r.size * (raw - r.cost_bps)
         else:
             net = r.net_bps
         rows.append({"pair": r.pair, "entry_ts": r.entry_ts, "exit_ts": exit_ts, "size": r.size,
-                     "net_bps": net, "day": r.day, "extensions": n})
+                     "net_bps": net, "day": r.day, "extensions": n,
+                     "recorded_extensions": int(getattr(r, "extensions", 0) or 0)})
     # swallowed trades were skipped inside the loop (their swallower, an earlier trade of
     # the same pair, is always processed first under the (pair, entry_ts) order)
     cf = pd.DataFrame(rows)
