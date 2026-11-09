@@ -204,6 +204,11 @@ def cmd_govevent(args):
     govevent.main(args.action, args.name)
 
 
+def cmd_cexevent(args):
+    from . import cexevent
+    cexevent.main(args.action, args.name)
+
+
 def cmd_fundep(args):
     from . import fundep
     fundep.main(args.action, threshold=args.threshold)
@@ -677,6 +682,9 @@ def main(argv=None):
     ge = sub.add_parser("govevent", help="P8, R83 (decision CH1): the END of a name's governance vote on Snapshot — the name SOLD at the first 5m bar closing after the vote closes, 1 day against the F1+F2 members (3 days described), the gate on the 10 % trimmed mean of the 1-day hold alone on the frozen ft2/govvotes_f12.csv's cell_big rows; the cell_all rows described — `fingerprint` saves the archive slice's per-name fingerprint before the run, `run` reads R83 → output/listing/r83/, `check` compares the fingerprint after (see ft2/govevent.py)")
     ge.add_argument("action", choices=["fingerprint", "run", "check"])
     ge.add_argument("--name", default=None, help="the run's folder under output/listing/ (default r83)")
+    ce = sub.add_parser("cexevent", help="P8, R85 (decision CL1): the exchange's OWN on-chain balance jump — a member SOLD at the first 5m bar closing after the day's point is known (t0 + the lag, 8 h; 6 h by the 06:00 UTC probe), 1 day against the F1+F2 members (3 days described), the gate on the 10 %% trimmed mean of the 1-day hold alone on the frozen ft2/cexflow_f12.csv's members' inflow cells; the outflow mirror and the non-members' cells described; gate (a) = output/cexflow/knownat.json IDENTICAL from the 2026-11-13 fetch — `fingerprint` saves the archive slice's per-name fingerprint before the run, `run` reads R85 → output/listing/r85/, `check` compares the fingerprint after (see ft2/cexevent.py)")
+    ce.add_argument("action", choices=["fingerprint", "run", "check"])
+    ce.add_argument("--name", default=None, help="the run's folder under output/listing/ (default r85)")
     fdp = sub.add_parser("fundep", help="P8 (decision BY1): the EXTREME trailing-day funding of a running perpetual WITHOUT the exchange's flag as a per-name event population — the source audit from funding_archive: events (the 24-hour rolling sum of the settled rate per name; an episode = the first settlement at |sum| ≥ 2 % a day after 14 quiet days, the name ≥ 30 d old; every episode with its flags and the lists per fold pair to freeze → output/fundep/), audit (the frozen lists' counts, the eligibility rule on the F1+F2 list in R75's frame with every dropped cell named, the F3+F4 / F5 bars a Data line would fetch → output/fundep/audit.md). Nothing after t0 read, nothing priced (see ft2/fundep.py)")
     fdp.add_argument("action", choices=["events", "audit"])
     fdp.add_argument("--threshold", type=float, default=0.02, help="events: |the 24-hour sum of the settled rate| at t0 as a fraction (default 0.02 = 2 %% a day; 0.01 and 0.03 are counted beside as described rows)")
@@ -694,7 +702,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
