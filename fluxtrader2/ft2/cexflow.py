@@ -339,7 +339,10 @@ def bars(fetch: bool = False, fetch_tags: tuple[str, ...] = ("f12",), fetch_flag
 
 def knownat(write: bool = True) -> dict:
     """The two newest raw files compared on every (stamp, chain, token) amount present in both — identical to 1e-9 relative, or not (a
-    rewritten history); the stamps only in the newer are the days added, the stamps only in the older a removal."""
+    rewritten history); the stamps only in the newer are the days added, the stamps only in the older a removal — EXCEPT the older file's
+    own last stamp: the adapter's run at fetch time (2026-11-06 07:02:23 in the first file), superseded by the next day's 00:00 point, is
+    the live point, reported as `live_point_older` and not a removal (found 2026-11-09: 637,955 amounts equal, the live point the only
+    stamp gone; the strict verdict kept as output/cexflow/knownat_20261109_strict.json)."""
     f = _files("binance-cex_*.json")
     if len(f) < 2:
         rep = {"files": [str(x) for x in f], "verdict": "one file — the second fetch is due a week after the first"}
@@ -351,10 +354,14 @@ def knownat(write: bool = True) -> dict:
         rel = np.abs(y - x) / np.maximum(np.abs(x), 1e-12)
         diff = rel > 1e-9
         sa, sb = set(a["stamp"]), set(b["stamp"])
+        last_a = a["stamp"].max()
+        live = last_a if last_a not in sb else None            # the older file's live point: its last stamp, gone from the newer
+        removed = (sa - sb) - ({live} if live is not None else set())
         rep = {"files": [str(f[-2]), str(f[-1])], "md5": [md5(f[-2]), md5(f[-1])], "in_both": int(len(both)), "equal": int((~diff).sum()), "differ": int(diff.sum()),
-               "max_rel_diff": float(rel.max()) if len(rel) else 0.0, "stamps_only_in_newer": sorted(str(s) for s in sb - sa), "stamps_only_in_older": sorted(str(s) for s in sa - sb),
+               "max_rel_diff": float(rel.max()) if len(rel) else 0.0, "stamps_only_in_newer": sorted(str(s) for s in sb - sa), "stamps_only_in_older": sorted(str(s) for s in removed),
+               "live_point_older": str(live) if live is not None else None, "live_point_keys": int((a["stamp"] == live).sum()) if live is not None else 0,
                "keys_only_in_older": int(len(ka.index.difference(kb.index))), "differ_sample": [f"{s} {c} {t}: {x[i]:.6g} → {y[i]:.6g}" for i, (s, c, t) in enumerate(both) if diff[i]][:20],
-               "days_apart": float((pd.Timestamp(b["stamp"].max()) - pd.Timestamp(a["stamp"].max())) / DAY)}
+               "days_apart": float((pd.Timestamp(b["stamp"].max()) - pd.Timestamp(last_a)) / DAY)}
         rep["verdict"] = ("IDENTICAL on the overlap — a point-in-time source; the stamp is the adapter's run, t0 = the stamp" if rep["differ"] == 0 and not rep["stamps_only_in_older"]
                           else "REWRITTEN — the history moved under a re-fetch; the kind is dead as a point-in-time source (decision CK (cxix))")
     if write:

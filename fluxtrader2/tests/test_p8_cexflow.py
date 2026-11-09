@@ -130,6 +130,29 @@ def test_knownat_reads_identical_and_rewritten(tmp_path, monkeypatch):
     assert rep["differ"] == 1 and rep["verdict"].startswith("REWRITTEN") and len(rep["differ_sample"]) == 1
 
 
+def test_knownat_the_older_files_live_point_is_not_a_removal(tmp_path, monkeypatch):
+    """The first fetch carries the adapter's run at fetch time as its last stamp (07:02:23 on 2026-11-06); the next fetch holds the day's
+    00:00 point instead — IDENTICAL, the live point reported; a day's point gone from the middle of the history is still a removal."""
+    _plant(tmp_path, monkeypatch)
+    def live(d):
+        for ch in ("Ethereum", "Binance"):
+            for key in ("tokens", "tokensInUsd"):
+                last = d["chainTvls"][ch][key][-1]
+                d["chainTvls"][ch][key].append({"date": _s("2026-03-01 07:02:23"), "tokens": dict(last["tokens"])})
+    _raw(cexflow.RAW_DIR / "binance-cex_20261106.json", tweak=live)      # the older, re-planted with a live point
+    _raw(cexflow.RAW_DIR / "binance-cex_20261113.json", extra_day=True)  # the newer: the day's point, no live point
+    rep = cexflow.knownat()
+    assert rep["verdict"].startswith("IDENTICAL") and rep["differ"] == 0 and rep["stamps_only_in_older"] == []
+    assert rep["live_point_older"] == "2026-03-01 07:02:23+00:00" and rep["live_point_keys"] == 4 and rep["keys_only_in_older"] == 4
+    def gone(d):
+        for ch in ("Ethereum", "Binance"):
+            for key in ("tokens", "tokensInUsd"):
+                d["chainTvls"][ch][key] = [r for r in d["chainTvls"][ch][key] if r["date"] != _s("2023-05-10 00:07")]
+    _raw(cexflow.RAW_DIR / "binance-cex_20261120.json", tweak=gone, extra_day=True)
+    rep = cexflow.knownat()
+    assert rep["verdict"].startswith("REWRITTEN") and rep["stamps_only_in_older"] == ["2023-05-10 00:07:00+00:00"] and rep["live_point_older"] is None
+
+
 def test_bars_cells_and_the_audits_bar_come_out_with_no_price_read(tmp_path, monkeypatch):
     _plant(tmp_path, monkeypatch)
     cexflow.ingest()
