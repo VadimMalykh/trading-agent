@@ -18,7 +18,8 @@ WHAT IT READS. A CSV export of `paper_trades` (both arms, all columns):
 Only `status = 'closed'` rows enter any statistic. Open rows are counted and ignored.
 
 THE UNIT. `net_bps` in the ledger is size-weighted (the policy arm's rows carry
-size × (gross − cost)), so per-trade means on that arm are flattered by exactly the thing
+`gross_bps` = side · return · size and `net_bps` = `gross_bps` − cost · size, i.e.
+size × (raw return − cost); ledger.ex `close_trade`), so per-trade means on that arm are flattered by exactly the thing
 the A/B tests. Every reading here is therefore stated in net bps **per unit of notional**:
 for a set of trades that is Σ net_bps / Σ size, which on the flat arm is the plain mean and
 on the policy arm is the size-weighted mean. §4.1 already says this; this module enforces it.
@@ -375,7 +376,7 @@ def reading_counterfactual(led: Ledger) -> None:
     print(f"  the suppressed rows alone {_fmt(clustered(missing))}")
 
 
-def reading_extension(led: Ledger, bars: pd.DataFrame) -> None:
+def reading_extension(led: Ledger, bars: pd.DataFrame) -> pd.DataFrame | None:
     """R5 — WALKFORWARD §9.7's `persist05`, reconstructed on the forward ledger.
 
     For each closed policy trade: at its timer exit bar, if the served model's row for the
@@ -416,8 +417,16 @@ def reading_extension(led: Ledger, bars: pd.DataFrame) -> None:
             later = by_pair[r.pair]
             eaten = later[(later["entry_ts"] > r.entry_ts) & (later["entry_ts"] < exit_ts)]
             swallowed_ids.update(eaten.index.tolist())
-        gross = r.side * (price / r.entry_price - 1.0) * 1e4 if n else r.gross_bps
-        net = r.size * (gross - r.cost_bps)
+        # The ledger's `gross_bps` and `net_bps` already carry the size factor (ledger.ex
+        # `close_trade`: gross = side · ret · size, net = gross − cost · size). An unextended
+        # trade keeps its booked net; an extended one is re-priced from the raw return and
+        # booked the same way. Until 2026-11-09 this multiplied the booked gross by size a
+        # second time on unextended trades (M3_5 §4.3, reading #2 — the defective run is kept).
+        if n:
+            raw = r.side * (price / r.entry_price - 1.0) * 1e4
+            net = r.size * (raw - r.cost_bps)
+        else:
+            net = r.net_bps
         rows.append({"pair": r.pair, "entry_ts": r.entry_ts, "exit_ts": exit_ts, "size": r.size,
                      "net_bps": net, "day": r.day, "extensions": n})
     # swallowed trades were skipped inside the loop (their swallower, an earlier trade of
@@ -431,6 +440,7 @@ def reading_extension(led: Ledger, bars: pd.DataFrame) -> None:
     print(f"  counterfactual (persist05) {_fmt(clustered(cf))}   Σ net {cf['net_bps'].sum():+.0f}")
     print(_contrast_line("counterfactual − recorded", cf, p))
     print(f"  Σ net difference: {cf['net_bps'].sum() - p['net_bps'].sum():+.1f} bps × size over the ledger")
+    return cf
 
 
 # ---------------------------------------------------------------------------------------

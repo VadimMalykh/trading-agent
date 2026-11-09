@@ -495,9 +495,66 @@ expectation, noted the same day (NEXT_TRAINING_PLAN §2 X8″-6):* wherever this
 against the served checkpoint's val numbers, X8″'s six-seed family — plateau LB 0.5323
 (0.5242 all-epoch), cov-0.02 gross +17.5 bps — replaces the three-seed 0.5349 / +21.4.
 
+**R5's executable corrected 2026-11-09, before reading #2's verdict was written.** The ledger
+books `gross_bps` = side · return · size and `net_bps` = `gross_bps` − cost · size
+(ledger.ex `close_trade`; checked on all 110 policy rows against the raw return and the
+flat-arm twins). `forward.py:reading_extension` read `gross_bps` as the raw return and booked
+every **unextended** trade in the counterfactual arm as size × (`gross_bps` − cost) — the size
+factor applied twice, so a sized winner was inflated and a sized loser deflated on that arm
+while the recorded arm kept the booked net. Extended trades (re-priced from the raw return)
+and R0–R4 were booked correctly; R0–R4's tables are identical before and after the fix. Fixed
+(an unextended trade keeps its booked `net_bps`), three planted tests in
+`tests/test_forward.py` (unextended sized trades → zero contrast; an extended 5/3 trade
+re-priced as size × (raw − cost); a swallowed trade leaves the arm). The defective run of
+reading #2 is kept as `logs/forward_ledger_20261109_defective_r5.log` (R5 +87.5 [+9.6, +185.6]
+there). **Reading #1's R5 restated on its own files** (`logs/forward_ledger_20261019_corrected_r5.log`):
+counterfactual +57.6 vs recorded +36.5, **contrast +21.0 [+0.2, +40.7]**, Σ net +1,082 — was
++52.3 [+0.4, +117.3] / +2,980. Still clear of zero by its lower edge, so the licence to write
+§4.4 stands; the number it quotes is the corrected one from here.
+
+**Run 2026-11-09 — reading #2 of the schedule, at 110 closed policy trades**
+(`logs/forward_ledger_20261109.log`; the 100th closed 2026-11-09 02:01:57 UTC in a cluster of
+exits — the 101st in the same second — and the command ran at ≈ 06:30 UTC on the ledger as
+exported, the same way reading #1 ran at 57 for the 50 mark; entries 10-07 → 11-09, 25 entry
+days; consistency ok; one checkpoint, the served cut and the frozen ladder on every row;
+§4.5's parity line: 50 exits since 2026-10-21 15:02 UTC at the exit bar's close, 0 elsewhere,
+0 with no bar at `exit_after_ts`). Per unit of notional, day-clustered: **R0** policy
+**−26.4** [−145.0, +92.2] (n 110, win 0.51) vs flat_size **+19.9** [−94.2, +133.9] (128),
+contrast **−46.2 [−125.7, +15.8]** — the ladder's sign is now against it, interval including
+zero. **R1** tight − marginal: cov 0.015 +9.3 [−73, +79] (n 31 / 79); 0.01288 +2.1 [−98, +84]
+(16 / 94); 0.01 +24.9 [−96, +144] (12 / 98) — every subset negative, every contrast inside its
+interval. **R2** top quintile **−55.6** (n 28, 8 days) vs below −10.2 (82), contrast −45.4
+[−193, +161] — reading #1's +167 reversed in sign. **R3** in-set **+55.0** (71, 21 days) vs
+excluded **−143.7** (39, 11 days), contrast **+198.7 [+22.7, +406.1]** — clear of zero; as
+registered that licenses *writing* a served-change registration for §9.2's hour set (nothing
+served changes; Vadim's decision, BACKLOG E9). **R4** 18 suppressed policy trades (the
+−50/day limit, 4 entry days) reconstructed at **+283.7 [+140.3, +427.0]**, win 0.89;
+counterfactual arm **+28.2** [−108.8, +165.2] (128) vs recorded −26.4 — the limit's bias on this
+ledger is ≈ 55 bps per notional against the recorded arm, and R4's counterfactual arm is the
+number to quote for the unconditional edge (`risk_rejections` was non-empty over the span). **R5**
+counterfactual **+41.8** [−23.9, +107.4] (98 trades, 36 extensions — ext1 28, ext2 8 — 12 later
+trades swallowed, mean hold 348 m) vs recorded −26.4, **contrast +68.1 [−0.4, +168.9]**, Σ net
++8,425 bps × size. **§4.4's gate: the sign is the same, the interval is NOT clear of zero — by
+0.4 bps on its lower edge. NOT PASSED by the letter; the question moves to reading #3 at 150.**
+Described beside, none of it a reading and none of it the verdict: (i) on the ledger as it stood
+when the 100th/101st trade closed (closed rows with `exit_ts` ≤ 02:01:57, bars to that instant;
+`logs/forward_ledger_20261109_at100_diag.log`) the same statistic reads +73.6 [+3.0, +176.6] —
+the letter's "at 100" would pass and the run four hours later does not, which says the edge is
+unresolved at this count, not which way it points; (ii) the bootstrap's own noise: with the
+registered seed and 20,000 draws the lower edge is −0.6, and over 20 other seeds at 2,000 draws
+it is −1.7 … +1.2, under zero in 17 of 20 (`output/probe/r5_mc.py`, untracked); (iii) the
+Σ difference is one evening's: the eleven long entries of 2026-10-29 20:30–21:40 UTC (every pair,
+−290 … −1,370 bps gross at the timer) persisted above the explore cut at their exit bars and
+the extension carried them into the bounce — that day is +7,223 of the +8,425 (86 %); without
+it the point estimate is +10.6 per notional (`output/probe/r5_decomp.py`, untracked; 36 extended
+trades: booked −9,726 → extended −770, 27 of 36 improved; the 12 swallowed trades were +530);
+(iv) the recorded policy arm turned negative since reading #1 (+36.5 → −26.4): the 10-29
+evening is −7,800 bps × size of it. *Against the registration's recorded expectation* ("includes
+zero"): it does, by less than one bps, on a contrast whose half-width is ≈ 85.
+
 ---
 
-### 4.4 Pre-registration of a served change: hold extension while the signal persists (`persist05`) — WRITTEN 2026-10-19 on Vadim's "E3 - ok", after reading #1 and before reading #2; NOT IN FORCE until its gate
+### 4.4 Pre-registration of a served change: hold extension while the signal persists (`persist05`) — WRITTEN 2026-10-19 on Vadim's "E3 - ok", after reading #1 and before reading #2; NOT IN FORCE until its gate — **READING #2 2026-11-09: GATE NOT PASSED (the interval includes zero by 0.4 bps); one look left, reading #3 at 150**
 
 **Why now, and what this is.** WALKFORWARD §9.7 tested `persist05` on the folds (positive on every fold and seed, NOT CONFIRMED at the bar) and named the forward ledger as its revival at zero cost; §4.3's R5 reconstructs it as a counterfactual on every reading. Reading #1 (57 trades, 2026-10-19) read R5 at **+52.3 [+0.4, +117.3] bps per unit of notional** — the interval clear of zero by its lower edge on twelve entry days — which, as §4.3 registered, licenses *writing* this section. It is written now so the served rule, the gate and what the gate licenses are fixed before reading #2 can suggest them. **Nothing changes on the VM until the gate below passes and Vadim says so.**
 
@@ -508,6 +565,8 @@ against the served checkpoint's val numbers, X8″'s six-seed family — plateau
 **What deploying it means for the forward clock.** A served exit-rule change is a new registered start (the sixth): the fifth start's ledger is backed up and cleared with nothing open, `Policy.hold_minutes/0` stays 240 (the base hold), the constants restated in `policy.ex` / `config_test.exs` / `forward.py`, parity tests added for the extension (same side above the cut → extended; below the cut, opposite side, or a missing bar → closed; the third due → closed), `/api/health` shows the rule name with `_ext2`, and the acceptance replay is run as for the fifth start. R0–R5's readings restart their schedule on the sixth start's ledger; the fifth start's 100+ trades remain the record that licensed the change. **The cost of this is stated:** the fifth start's accumulation ends at the deploy; that is why the gate is at 100, not now.
 
 **Recorded expectation.** Reading #2 at 100 **includes zero** (the first reading's lower edge is +0.4 on twelve days; the next ~43 trades are more days than trades, and the contrast's half-width at 57 is ~58). The section is written so that if it does clear, the change is not designed after the fact.
+
+**Reading #2 — READ 2026-11-09 at 110 closed policy trades (§4.3's run block): R5 +68.1 [−0.4, +168.9] per unit of notional, the same sign, the interval including zero by 0.4 bps on its lower edge. GATE NOT PASSED by the letter.** As written above: the section stays, the question moves to **reading #3 at 150 closed policy trades** (≈ 22 days at the 17-day pace of 1.8 a day, sooner at this week's), the last look under this registration; a second miss closes it as NOT CONFIRMED FORWARD. Nothing served changes. The expectation held in letter and not in spirit — the contrast grew (+21 corrected → +68) and its interval with it, because one evening (2026-10-29) carries 86 % of the Σ difference and the day-clustered bootstrap prices exactly that (§4.3 (iii)). Two things noted beside, neither a licence: R5's executable had booked unextended sized trades wrongly since 09-15 and was corrected before this verdict was written (§4.3; reading #1's R5 is +21.0 [+0.2, +40.7] corrected, still clear); and on the ledger as it stood at the 100th close the same statistic clears zero by +3.0 — recorded as a description because choosing that cut after reading both would be the hindsight this section exists to prevent. The rule, the cut, the two-extension cap and the gate are unchanged for reading #3.
 
 ### 4.5 Served change: the row and the exit keyed on the served bar, and a 40 s settle — BUILT 2026-10-21 on Vadim's "Ok, go A plus B"; DEPLOYED 2026-10-21 15:02:33 UTC on his "push and deploy" (deploy record at the end of the section)
 
