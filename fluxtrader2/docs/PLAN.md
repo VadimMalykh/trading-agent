@@ -1523,7 +1523,7 @@ names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common att
 - **CL1 — R85 REGISTERED now on the audit's counts (CK1 (ii)'s text, recommended), with two VALIDITY gates before any bar is read:** (a) the 2026-11-13 fetch's `knownat` IDENTICAL (REWRITTEN voids the registration before the chain, the §7 row written, the lists stay as the record); (b) `ts_known` = t0 + 8 h — the first 5m bar closing after 08:00 UTC of the stamp's day — or t0 + 6 h if one fetch at 06:00 UTC shows that day's point (R72's two-valued rule, the value fixed before the code). The registration: the MEMBERS' inflow cells (121 on F1+F2 from the frozen `ft2/cexflow_f12.csv`, md5 21789095…), the name SOLD at the first 5m bar closing after ts_known, held 1d the gate (3d described), the 10 % trimmed mean, SEED 85, sign NEGATIVE, the moving-block bootstrap over weeks, |M_trim| ≥ B = 31.3 from the names' own rows, both folds the same sign, p ≤ 0.05; described beside: the OUTFLOW row bought (96 cells), the size flags (10 % 45 / 20 % 25), the revert split (post-t0), the non-members' cells (211, B 40.6), the F5 cells (11); rule (b)'s reading of a clear WITHOUT its mechanism written before the read; both window ends counted on the frozen list (121 / 120 / 119 at 1d / 3d / 7d, none dropped at 1d); the expectation CK1's (CLEARS one in eight, NOT DETECTABLE one in two, the opposite sign one in ten, CLOSED unreachable — MDE ≈ 100 … 125 against B 31); a clear licenses ONE confirmation on F3+F4's 184 cells (181 with bars, B 35.0). The frame after the registration: `govevent`'s `Spec` with the event table swapped, the planted tests first, `scripts/cl1_chain.sh` with the poweroff wrapper; the chain runs on or after 2026-11-13 after gate (a). Cost: the registration an hour, the frame half a day, the chain ≈ 10 min on the VM. What it buys over CL2: the four days are spent on the frame instead of the calendar, and nothing is read before the week's gate.
 - **CL2 — the letter: nothing written until the 2026-11-13 fetch, then CL1's text.** Buys nothing gate (a) does not; costs four days.
 - **CL3 — the kind recorded (DATA.md, §9 #18), nothing registered; the session to P7's calendar.** CK2's honest case: six kinds, 0 of 5 confirmations, a clear at stage 1 one in eight.
-Needed from Vadim: the word on CL. WRITTEN 2026-11-09 — OPEN.
+Needed from Vadim: the word on CL. WRITTEN 2026-11-09 — **DECIDED 2026-11-09 on Vadim's "CL1" (the recommendation): R85 REGISTERED in §8 the same hour, before any code — the block as CL1 says it, with gate (a) (the 11-13 fetch IDENTICAL) and gate (b) (the lag 8 h, or 6 h by one 06:00 UTC probe before `run`) as validity (0); the code, the planted tests and `scripts/cl1_chain.sh` follow the commit of the registration; the chain runs on or after 2026-11-13; the read → decision CM.**
 
 **Decision CK (2026-11-06) — the brainstorm CJ1 asked for, in BM's method as amended by decision CF, with rule (a) as STEP 0: every candidate kind's F3+F4 names costed from `cg_costbar_by_fold.csv` BEFORE its population is counted (a members-only population the only passable one — the members' median name 39 / 47 a position on F3 / F4 against the non-members' 78 / 136, q75 131 / 260); the record first (§7's six per-name event rows and their described rows, decisions CD's, CG's and BY's not-proposed lists, (lxxiii)'s exhausted rule-event table, §9's 17 sources, DATA.md); every candidate grepped in the record (the hits named) and then COUNTED in ONE script on the laptop (`scripts/ck_count.py`, the standard library alone — BM (l)'s precedent: the frozen lists and the pulled audits in git plus keyless probes of `api.llama.fi` and `api.github.com`, ≈ 2 min; `output/by_probe/ck_count.md`, the per-item CSVs beside); no bar after a t0 joined to a label, nothing priced, no fold read, no VM, nothing registered. WRITTEN 2026-11-06 — OPEN, Vadim's word.**
 The question in plain words: six per-name event kinds have been read at stage 1 and five confirmations on F3+F4 have failed, and rule (a) now says why most of them could not have passed — the names that have those events on F3+F4 are the dear kind. Is there a per-name KIND the record has never read whose population is the MEMBERS' by construction (the bar 40, not 120), with a mechanism not in the record, a stamp honest enough to trade, and enough cells on both fold pairs — or is the line spent on F1 … F4? **Known:** the prior for a per-name event kind is five of five NOT CONFIRMED (R71, R76, R78, R81, R84); every member-cell quantity the record read at 1d is a crowd's lean, a book's trades or attention (BJ (xli)); the exchange's rule events are all counted (BY (lxxiii)). **Unknown:** whether a kind exists off every venue's price and book — a holder's own hand, before the trade. The facts (cxvii)–(cxxi):
@@ -15173,6 +15173,164 @@ Result:        **READ 2026-11-06 07:47 → 07:55 UTC on the work VM (`scripts/r8
                that carried R83's hindsight (the busiest DAOs, the members) REVERSED and two held (off the hour, the larger votes, the parameter
                changes) — a description surviving two fold pairs is still a description with its multiplicity (0j (v)); the members' cells, the
                one population whose bar a drift could clear (29), drift the OTHER way (+17). Decision CJ.**
+
+
+### R85 — the exchange's OWN on-chain balance jump as a per-name event: the name SOLD at the first 5m bar closing after the day's balance point is KNOWN (t0 + the lag), held ONE DAY against the screener's members (three days described), on the FROZEN members' INFLOW cells of F1+F2, the GATE ON THE 10 % TRIMMED MEAN, the sign fixed NEGATIVE in advance; the members' OUTFLOW cells bought and the non-members' inflow cells DESCRIBED beside (WRITTEN 2026-11-09 as decision CL's option CL1 on the audit's counts (DATA.md `cex_balance`), AFTER the lists were frozen (b2e7671) and BEFORE any bar after a t0 + lag was joined to a label; REGISTERED 2026-11-09 on Vadim's "CL1" — the block as written, nothing changed after the word; TWO VALIDITY GATES stand before the chain: (a) the 2026-11-13 re-fetch IDENTICAL, (b) the lag fixed by the 06:00 UTC probe)
+Question:      Decision CK's brainstorm (2026-11-06) found the one kind the record had never read that is members-only by construction:
+               the exchange's own labelled wallets' holding of a name, per day, from DefiLlama's Binance adapter — a jump of ≥ 5 % of the
+               holding in a day is a holder's deposit (or the exchange's own rotation: 38 % revert within three stamps, described). The
+               known-at probe READ 2026-11-09 (decision CL): the history is a point-in-time source (637,955 amounts identical over 2.9 days;
+               the 2026-11-13 fetch confirms the week), the day's point KNOWN by ≤ 7 h after its 00:00 stamp. The question is R83's with
+               the event table swapped: a member sold at the first 5-minute bar after its balance jump is knowable and held, does it fall
+               behind the members over the next day? The sign is FIXED NEGATIVE (a sold position earns −y; the gate reads M_trim ≤ −B).
+               Rule (b), written now: a clear here is READ as "a one-day drift of a member against its peers after a day its exchange
+               balance jumped — not a sale observed"; the outflow mirror, the size flags and the revert split say what carried it and
+               decide nothing. A ceiling audit (Principle 2): no model, no book, no signal.
+Events:        `ft2/cexflow_f12.csv` as FROZEN 2026-11-06 (b2e7671, md5 21789095c70d8f927d6fe5aa36981721, 1,159 rows; the audit's rule in
+               DATA.md `cex_balance`: |change| ≥ 5 % between consecutive stamps ≤ 1.5 d apart, the series' first 30 d out, the perpetual
+               ≥ 30 d old, BNB excluded by name, t0 = ts_known = the 00:00 UTC stamp, the 7-day collapse per (name, side) as the `cell`
+               flag). **The gate's population: the rows with `member_at_t0`, `cell` and `side = in` — 121 rows, F1 65 / F2 56, 23 names
+               (AXS 24, TRX 12, MKR 9, 1000FLOKI 9, APE 7, LDO 7 … the top five 61 of 121: AXS's 24 are the exchange's own staking
+               rotations as much as deposits — the per-name split and the revert split show it, the trimmed gate reads the typical
+               cell), t0 from 2023-05-06 to 2024-08-29, every stamp 00:00 UTC, `ts_known` = t0 on all 121.** EVERY such row is the gate's
+               cell except those named now from the list against the window's two ends: none ends before the first member block
+               (2023-05-03 00:00 UTC; the first t0 2023-05-06); none is dropped at 1d; MATICUSDT 2024-08-29's 3-day exit lies past F2's end
+               — dropped at 3d, counted. **121 cells at 1d, 120 at 3d.** None of the twelve is a member row (ETH and the stables are
+               non-members by the screen; BNB excluded): no described row of that kind. The list is the event: nothing is added, dropped or
+               re-dated here. DESCRIBED beside, never the gate: the members' OUTFLOW cells (`side = out`, 96 rows, F1 58 / F2 38) as a
+               BOUGHT position — the mirror, read with the opposite sign; the non-members' inflow cells (211 rows on 33 names, B 40.6 on
+               113 priced) on the cells whose bars are in the slice (the audit's fetch was scoped to the members' rows: few expected,
+               counted by `entries`' "no bars"); F3+F4's 184 and F5's 11 counted, not priced.
+Entry:         `ts_known` = t0 + THE LAG — the hour the day's point is in the adapter's file. **Gate (b): the lag is 8 h (the decision bar
+               closes 08:05 UTC) unless ONE fetch at 06:00 UTC (± 10 min) on any day BEFORE the code is run shows that day's 00:00 point
+               already present (`scripts/cexflow_hourprobe.sh`, `output/cexflow/hourprobe.csv`), in which case it is 6 h (06:05 UTC) —
+               R72's two-valued rule, the value written into the "Gate (b)" line below and into the module's constant before `run`.** The
+               evidence in hand: the point present at 07:02 (11-06) and by 04:17 (11-09). The decision bar is the FIRST 5m bar that CLOSES
+               strictly after t0 + lag; the position is entered at the close one bar later (the harness's latency). One entry in the
+               family. The probe's two fetches of the registered day are its own validity: a fetch outside 05:50 … 06:10 UTC sets nothing.
+Eligible:      a cell whose decision bar exists in the market (a finite close at the decision row and the entry row), t ≥ F1's first
+               member block (2023-05-03 00:00 UTC) and whose exit bar at the hold is before 2024-09-01 00:00 UTC. The market is loaded
+               from F1's first block minus 7 days (the run-up row needs the day before t0; there is no creation row — `ts_known` = t0) with
+               its end at 2024-09-01: nothing of F3 can be read. Dropped cells counted by reason.
+Holds:         1 day (288 bars) THE GATE; 3 days (864 bars) a DESCRIBED hold, read with every number and no verdict (R83's rule).
+Label:         R80's, unchanged: per cell and hold, bps of the position's size at entry, by `horizon.labels` (the unit of §3): a = what a
+               long earns before trading costs — exit ÷ entry − 1, minus the funding it pays, each payment on the position's value;
+               b = the mean of the same number, same two bars, over the members of the screener's block that holds t
+               (`ft2/screen_members.csv`, R18's point-in-time 60) with both prices, the name itself left out; y = a − b. A sold position
+               earns −y.
+Statistic:     THE GATE ON THE 10 % TRIMMED MEAN (R77's statistic, `fundevent.bootstrap_trimmed`): M_trim,1d = the mean of y over the
+               cells with the k largest and the k smallest left out, k = round(0.05 × n) = 6 on 121 (6 on 120 at 3d). Its noise: R28's
+               moving-block bootstrap over calendar weeks (Monday 00:00 UTC, by t; a week with no cell stays in the sequence — 69 weeks),
+               blocks of 6 consecutive weeks, circular, 10,000 draws, seed 85 — each draw's statistic the TRIMMED mean of the y of the
+               cells in its weeks (k from that draw's n). se_trim = the sd of the draws; u_trim = M_trim ÷ se_trim; p two-sided from the
+               draws, ONE gate hold — no family correction. Beside, deciding nothing: the plain mean M, its bootstrap se and u, se_plain,
+               se_week, the median, the share below zero, M without the six largest y, M without the six smallest. AXS's 24 cells share a
+               column and different weeks; the block bootstrap carries that dependence, and the per-name split shows whether one name
+               carries the mean.
+Bar:           rule (a): B = the mean over the cells of B_i, the NAME'S OWN doubled taker round trip on its t0 day — B_i = 2 × 2 × (5 bps
+               fee + `taker_leg`[t0 day, name]) from `backtest.load_costs` (`cost_daily_wide.parquet`); a name without a row on its t0 day
+               takes its last row within 7 days before; none: R28's 46 for that cell, counted. **The audit's count on the frozen members'
+               inflow cells of F1+F2: own rows on 121 of 121, B_i median 28.7, q90 42.4, B = 31.3; the outflow cells' B 31.0 (96 of 96);
+               the non-members' 40.6 (113 of 211); F3+F4's members' inflow cells' own B 35.0 on 180 of 184 — a confirmation's bar, not this
+               read's.** The gate uses B at 1d; B_i's distribution reported.
+Run-up and     the VALIDITY-OF-MECHANISM rows, read FIRST and before the gate, no verdict: (a) the RUN-UP — y over t0 − 24 h → the decision
+the lag row:   bar (a long entered at the bar closing at t0 − 24 h, exited at the decision bar; the same label, no latency): the day the
+               balance jumped plus the lag hours — what the name did against its peers WHILE the deposit landed; (b) the LAG row — y from
+               the first bar closing after t0 (00:05 UTC) to the decision bar (the lag hours): what the market did between the stamp and
+               the hour anyone could know it. Their medians, means, quantiles, the share above zero, by the size flags and the sides. If
+               the median run-up is inside ±100 bps there was nothing to give back and a clear is read by rule (b)'s sentence; the gate is
+               unchanged by either row. There is NO creation row (`ts_known` = t0).
+Validity:      read first, or the run is void:
+               (0) gate (a): `output/cexflow/knownat.json` from the 2026-11-13 fetch (the 09 → 13 pair) reads IDENTICAL with `differ` 0 and
+               no stamp removed — REWRITTEN voids the registration before the chain (the §7 row written, the lists stay as the record);
+               gate (b): the lag constant equals the value written into this block before `run` (the chain's log prints it);
+               (1) no fetch is made for this read (the audit's fetch under the fingerprint is done: the members' windows 121 of 121
+               complete; the slice 93,527,441 rows / 608 names, fingerprint PASS): the archive slice's fingerprint per name
+               (`krlist.fingerprint`, 608 names as the audit left them) saved before the run and identical after (rows exact, sums to 1e-12
+               relative); the md5 of the three frozen lists, the member list and `cost_daily_wide.parquet` equal before and after in the
+               chain's log;
+               (2) the frozen list's md5 is as registered and holds 1,159 rows, 121 of them the gate's (member, cell, in); `cexflow.events()`'
+               rule re-derives every frozen row's t0, symbol, side and `cell` flag from `data/cex_balance.parquet` on disk (the ingest of the
+               2026-11-06 file; the list is the event; a frozen row the rule no longer gives is a void);
+               (3) exactly NO row dropped at 1d and MATICUSDT 2024-08-29 alone at 3d — 121 cells at 1d, 120 at 3d (≥ 115 at 1d; any other
+               drop a void); at least 90 % of the cells have their own cost row on the t0 day or within the 7 days before (the audit: 100 %);
+               (4) every cell has a close on ≥ 95 % of the 5m bars from t to its 3-day exit, and y exists for ≥ 95 % of the cells at both
+               holds;
+               (5) b is the mean of ≥ 40 members for every cell at both holds and on the run-up and lag rows;
+               (6) the module's a equals `horizon.labels` at the same cells to 1e-9 on the real market, every cell, both holds; a cell's a
+               equals `backtest.price`'s gross + funding of a long taken at the same t; the bootstrap's M_trim equals `listing.trimmed`
+               (k = 6) on the run's own y to 1e-9;
+               (7) known-at: every cell's decision bar closes strictly after its frozen t0 + the lag, and the decision bar is within 5 min
+               of t0 + lag; the lag row's entry bar closes after t0; the run-up row ends at the decision bar and is read as a description.
+Described:     decides nothing. At both holds: the size flags (`flag_10`, 45 cells; `flag_20`, 25) against the rest; `list_commit` (18: a
+               jump on a day the wallet list changed — a label change as much as a flow) against the rest; `revert_3d` (post-t0: the
+               balance back within three stamps; joined from `output/cexflow/events.csv` by `code` — if the file is absent the split is
+               skipped and said) against the rest; the five busiest names (AXS, TRX, MKR, 1000FLOKI, APE — 61 of 121) against the other
+               eighteen, and each name's own M and n; `usd_before` ≥ its median (52.8 M) against below; `chains_n` > 1 (5 cells) against
+               one chain; `repeat_n` > 0 (103) against a first jump; F1 against F2, and per calendar quarter (2023Q2 8, Q3 24, Q4 33,
+               2024Q1 27, Q2 18, Q3 11); the median of y, the share below zero, the quantiles; a and b apart, funding's part of a; the
+               money of a SOLD position at 1d — the mean of −y, the same with each loss capped at the position's size, the largest single
+               loss, the share of cells with y > +5,000 (a stop is NOT written in); each position through the harness as a taker, bought
+               and sold, with the proxy and with it doubled (net, the name's own legs only); the five best and the five worst cells at 1d;
+               B_i's distribution with R28's 46 beside; the cells per week; the correlation of the run-up with y_1d. **The members' OUTFLOW
+               cells (96, BOUGHT — the mirror): the same trimmed statistic, se, u and p on +y, the same splits, the same money row — a
+               described population, never the gate; the non-members' inflow cells on the cells with bars likewise.** Reference rows, no
+               verdict: the 1d hold with the entry a day later (t + 288); y against BTCUSDT instead of the members; a alone; the SCREEN row
+               — per member block of F1+F2, the day's cross-section: the members whose balance jumped that day against the block's rest at
+               1d, the mean and the count of blocks with a flagged member. Counts recorded, not priced: F3+F4's 184 members' inflow cells
+               (181 with bars) and F5's 11 — untouched.
+Code:          `ft2/cexevent.py`, written AFTER this block — R83's `govevent.py` with the event table swapped (0r (vi)'s `Spec` pattern:
+               the list path, the gate's rows by the three columns, the lag constant `LAG_H`, the outflow and non-member rows as described
+               populations through the same functions, the lag row in place of the creation row, the pad 7 days, seed 85); `govevent`'s
+               `hold_rows`, `_split_rows`, `_group_rows`, `gate_verdict`; `upgevent`'s `entries` (on the rows with t0 and `ts_known` shifted by the
+               lag — the frozen t0 kept beside for validity (7)), `label_pair`, `decision_close`; `krevent`'s `bars_per_event`, `fp_paths` /
+               `fingerprint` / `check` (name "r85"), `md5`; `fundevent.bootstrap_trimmed`, `k_trim`; `listing.label_at`, `member_mask`, `excess`,
+               `weeks`, `bootstrap`, `trimmed`, `_priced` unchanged; `govevent.py` and `upgevent.py` are not edited. CLI: `ft2 cexevent
+               fingerprint|run|check`. Tests on planted bars (`tests/test_p8_cexevent.py`): the decision bar is the first bar closing after
+               t0 + the lag (08:05 for a 00:00 stamp) and the position enters one bar later; a planted drift after the lag is found NEGATIVE
+               by the trimmed gate on the members' inflow cells while the outflow cells, bought, are described with the mirrored numbers;
+               a cell whose 3-day exit lies past the market's end is dropped at 3d and kept at 1d; a planted run-on in two cells moves
+               the plain mean and not the trimmed one; the label identity with `horizon.labels` and the harness and the trimmed identity;
+               an unregistered list, a moved t0 or an unexpected drop voids the run; the fingerprint's void on a changed name; gate (a)'s
+               REWRITTEN file voids the run before the market is loaded.
+Commands:      on the work VM, `scripts/cl1_chain.sh` (the steps named cexevent85_<action>, the poweroff trap; launched with `bgsh cl1` in the
+               background): the md5 of the frozen lists, `ft2/screen_members.csv` and `data/cost_daily_wide.parquet` → `python -m ft2 cexevent
+               fingerprint` → `python -m ft2 cexevent run` → `python -m ft2 cexevent check` → the md5 after. Before it, on the laptop: the 11-13
+               fetch and `knownat` (gate (a)), the raw files scp'd beside the VM's first. Then `vm.sh pull`, the read into this block,
+               decision CM, the VM stopped. ≈ 10 minutes (R83's 7 on 982 cells; 121 + 96 + the non-members' few over the same market).
+Folds read:    F1+F2, exploration: the event windows of 23 members' names (a balance jump, read for no earlier question — new cells; the
+               outflow and non-member descriptions price the same names' other days and up to 33 non-members' days) and the members' bars
+               beside them. F3+F4's 2,955 frozen rows UNTOUCHED (the market ends at 2024-09-01); F5 holds no frozen row.
+Gate:          validity PASS, then at 1d, the sign NEGATIVE, ON THE TRIMMED STATISTIC:
+               CLEARS if M_trim,1d ≤ −B AND |u_trim,1d| ≥ 2 AND p ≤ 0.05 AND the trimmed mean of F1's cells < 0 AND of F2's < 0 (k from
+               each fold's n). A candidate on the folds that showed it: it licenses no trade.
+               CLEARS WITH THE OPPOSITE SIGN if M_trim,1d ≥ +B with the same conditions mirrored: recorded as such, licensing nothing.
+               CLOSED if |M_trim,1d| + 1.96·se_trim,1d < B — unreachable here (B 31, se_trim ≈ 28 … 40); written for the form.
+               NOT DETECTABLE otherwise, with its MDE (2.8·se_trim,1d).
+               What a clear licenses: ONE confirmation read on F3+F4's 184 members' inflow cells (181 with bars) in R81's / R84's form —
+               sold at the same entry, 1d, the gate the trimmed mean at 1d against rule (a)'s B from THOSE names' own rows (35.0 on the
+               audit's count), priced through the harness at the t0 day's doubled proxy, hedged with the block's members, once, the guard
+               rows — its registration written before any bar of an F3+F4 row is read: decision CM. Whatever the verdict: no variant on
+               F1+F2's rows — no other hold as the gate, no outflow or non-member population as the gate, no flag, name, USD-size or
+               revert subset as a gate, no other lag, entry bar, benchmark, weighting or side-specific re-read; a USD floor on
+               `usd_before` was NOT named (CL (iv)): the population is the frozen rule's whole.
+Power:         stated before the read. 121 cells in 69 weeks is some eleven to twelve independent 6-week blocks. The names are the members
+               (AXS, TRX, MKR, LDO, APE): a member's move against its peers has sd ≈ 350 … 450 bps over a day → the plain se ≈ 32 … 41; the
+               trimmed statistic's se about 0.8 … 0.9 of the plain: se_trim ≈ 28 … 40, MDE_trim ≈ 80 … 110. B 31 — the bar sits well under
+               the MDE: the audit can find a drift of ≥ 80 … 110 bps a day, nothing smaller; a 1-day drift of 100 bps clears about one time
+               in two, 50 one in eight. CLOSED needs se_trim ≤ 15: out of reach. The verdict space is CLEARS / NOT DETECTABLE / the
+               opposite sign — R70's and R80's. On the outflow mirror's 96 cells se_trim ≈ 32 … 45 (a description).
+Expectation:   validity PASS; 121 cells at 1d (no drop), 120 at 3d (MATIC 2024-08-29); b from 55 … 60 members; B 31.3, B_i's q10 … q90
+               25 … 42. The run-up (the deposit's day): median inside ±100 bps, 45 … 55 % above zero — a deposit is as often after a rise
+               (profit-taking) as after a fall; the lag row inside ±30 at the median. The gate: M_trim,1d −60 … +40 (the median near it,
+               45 … 55 % of cells below zero), 3d of the same sign and not larger in u. Verdict at 1d: NOT DETECTABLE one in two, CLEARS
+               (sold) one in eight, CLEARS with the opposite sign one in ten, CLOSED never (CK1's prior, unchanged by the probe). AXS's 24
+               within ±100 of the other 97; the flag_20 cells within ±100 of the rest; the revert cells within ±100 of the rest; the
+               outflow mirror's M_trim within ±50 of zero (no mirror: the exchange's own rotations are symmetric and carry nothing);
+               F1 and F2 within ±80 of each other; funding's part of a within ±10 bps at a day. The record's count after this read: seven
+               kinds at stage 1, 0 of 5 confirmations before it.
+Result:        —
+Gate (b) line: the lag is **8 h** until a 06:00 UTC probe row is written here with its `hourprobe.csv` row and date; the code's `LAG_H` must equal this line at `run`.
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
