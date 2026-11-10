@@ -118,6 +118,9 @@ defmodule FluxTraderWeb.Layouts do
       <.link navigate={~p"/"} style="color:#ccc;text-decoration:none;">
         Dashboard
       </.link>
+      <.link navigate={~p"/account"} style="color:#ccc;text-decoration:none;">
+        Account
+      </.link>
       <.link navigate={~p"/settings"} style="color:#ccc;text-decoration:none;">
         Settings
       </.link>

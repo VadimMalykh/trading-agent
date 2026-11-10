@@ -649,3 +649,26 @@ stream connected, `ab[].open [0, 0]`; boot log `MICRO-PILOT IS ON … at $200.0 
 open — MAKER PATH`. The forward clock is untouched (same start, same checkpoint; the pilot is not
 the registered test). `live` rows from the next entry on are $200 rows; the arm's per-notional
 figures stay comparable across the change, its dollar figures do not.
+
+### §7.1 — The account page and the notional deposit (built 2026-11-10)
+
+The account is shared with Vadim's manual trades (no sub-accounts on this account). `/account`
+shows closed deals per month, one row bot, one row manual, as % of the **notional deposit**
+(set on that page; not the wallet balance — $1000 against a ~$557 wallet on 11-10).
+
+- **Data:** `Account.Sync` copies `/fapi/v1/income` and `/fapi/v1/userTrades` into
+  `account_income` / `account_fills` every 10 min (read-only GETs, history from 2026-05-15 —
+  the manual ADA long dates from 06-05). `Account.Deals` rebuilds flat-to-flat deals per symbol;
+  a deal is the bot's when a fill's `orderId` is a `live` row's entry/exit order id (verified on
+  the 11 November rows). Net = realized PnL − fees + funding, booked whole in the closing month.
+  A Binance position the rebuilt deals don't match shows as a red banner.
+- **Start:** bot from 2026-11-01; manual from deals closed on/after 2026-11-10 (the ADA and SOL
+  longs open that day, counted whole; ETH/XRP/BTC closed 11-05…11-09 ignored) — `Account.Stats`.
+- **Deposit:** history in `app_settings.notional_deposit`; a change applies to its whole month
+  and later months, earlier months keep theirs. Unset = `LIVE_PILOT_CAPITAL_USD`.
+- **Pilot sizing:** `LivePilot.scaled_config/1` reads `LIVE_PILOT_NOTIONAL_USD`,
+  `_DAILY_LOSS_USD`, `_MAX_TOTAL_LOSS_USD` as fractions of `LIVE_PILOT_CAPITAL_USD` (VM: 20 %,
+  2 %, 20 % of 1000) and applies them to the deposit. Deposit unset or 1000 = today's values.
+- **Gap not guarded:** the pilot refuses a symbol with a foreign position at its open
+  (`Executor.foreign_position?/2`), but a manual order on a symbol the pilot already holds nets
+  into its position and the pilot's close/brakes act on the sum. Don't trade a symbol the bot holds.

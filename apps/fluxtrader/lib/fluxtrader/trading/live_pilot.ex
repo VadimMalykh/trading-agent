@@ -90,7 +90,7 @@ defmodule FluxTrader.Trading.LivePilot do
   `RiskManager.check/1`'s (quantity, notional, leverage, stop, target) or `{:reject, reason}`.
   """
   def check(decision, now \\ DateTime.utc_now()) do
-    cfg = config()
+    cfg = scaled_config(now)
 
     cond do
       refusal() != nil ->
@@ -119,13 +119,14 @@ defmodule FluxTrader.Trading.LivePilot do
 
   @doc "Everything `/api/health` reports about the pilot."
   def status(now \\ DateTime.utc_now()) do
-    cfg = config()
+    cfg = scaled_config(now)
 
     %{
       arm: @arm,
       enabled: enabled?(),
       refusal: refusal(),
-      capital_usd: cfg[:capital_usd],
+      capital_usd: config()[:capital_usd],
+      notional_deposit_usd: cfg[:deposit_usd],
       notional_usd: cfg[:notional_usd],
       leverage: cfg[:leverage],
       max_positions: cfg[:max_positions],
@@ -139,6 +140,26 @@ defmodule FluxTrader.Trading.LivePilot do
       realised_usd_today: Ledger.realised_usd(@arm, start_of_day(now)),
       realised_usd_total: Ledger.realised_usd(@arm)
     }
+  end
+
+  @doc """
+  `config/0` with the money limits scaled to the notional deposit (`Account.NotionalDeposit`,
+  set on the account page). The env values are read as fractions of `capital_usd`:
+  `LIVE_PILOT_NOTIONAL_USD=200` at `LIVE_PILOT_CAPITAL_USD=1000` means 20 % of the deposit per
+  trade, the daily brake 2 %, the total kill 20 %. With no deposit set the deposit IS
+  `capital_usd`, so every value is the env value unchanged.
+  """
+  def scaled_config(now \\ DateTime.utc_now()) do
+    cfg = config()
+    deposit = FluxTrader.Account.NotionalDeposit.current(now)
+    k = deposit / cfg[:capital_usd]
+
+    Keyword.merge(cfg,
+      deposit_usd: deposit,
+      notional_usd: cfg[:notional_usd] * k,
+      daily_loss_usd: cfg[:daily_loss_usd] * k,
+      max_total_loss_usd: cfg[:max_total_loss_usd] * k
+    )
   end
 
   # The stop is the pilot's own `stop_pct` when set (LIVE_PILOT_STOP_PCT), else the 2 % stop

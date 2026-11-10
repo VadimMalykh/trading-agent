@@ -145,7 +145,7 @@ defmodule FluxTrader.Trading.Executor do
     end
 
     if LivePilot.enabled?() do
-      cfg = LivePilot.config()
+      cfg = LivePilot.scaled_config()
 
       Logger.warning(
         "[LIVE] MICRO-PILOT IS ON: arm `live` places real orders against #{Client.trade_url()}" <>

@@ -41,6 +41,7 @@ defmodule FluxTraderWeb.Router do
     live_session :authenticated, on_mount: {FluxTraderWeb.Auth, :require_auth} do
       live "/", DashboardLive, :index
       live "/settings", SettingsLive, :index
+      live "/account", AccountLive, :index
     end
   end
 

@@ -38,6 +38,8 @@ defmodule FluxTrader.Application do
         FluxTrader.Trading.RiskManager,
         # After the executor, which it reports brake fills to. Idle unless the mode is auto.
         FluxTrader.Binance.UserStream,
+        # The account page's fills/income copy (read-only GETs; idle without credentials).
+        FluxTrader.Account.Sync,
         FluxTrader.Trading.Regime,
         FluxTrader.Notifications.Telegram.RateLimiter,
         FluxTrader.ML.SignalEngine,
