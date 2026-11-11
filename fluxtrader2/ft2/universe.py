@@ -173,7 +173,9 @@ OUT_PRE_CSV = Path("output/universe_screen_pre_members.csv")
 
 
 F34_MEMBERS_CSV = Path(__file__).with_name("screen_members_f34.csv")     # R25: the members of F3+F4's blocks (`screen_select(("F3", "F4"))`), frozen once
-F5_MEMBERS_CSV = Path(__file__).with_name("screen_members_f5.csv")       # decision CO1 (2026-11-11): the members of F5's blocks (`screen_select(("F5",))`), frozen once
+F5_TYPES_CSV = Path(__file__).with_name("f5_contract_types.csv")           # the exchange's own contract type of each F5 name (fapi exchangeInfo, 2026-11-11 14:58 UTC, from the work VM)
+F5_COINS_CSV = Path(__file__).with_name("screen_members_f5_coins.csv")     # F5's member rows whose contract type is PERPETUAL (137 names, 430 rows) — the 36 TRADIFI_PERPETUAL names (stocks, ETFs, commodities) out; Vadim's "coins only", 2026-11-11
+F5_MEMBERS_CSV = Path(__file__).with_name("screen_members_f5.csv")      # decision CO1 (2026-11-11): the members of F5's blocks (`screen_select(("F5",))`), frozen once
 
 
 def pre_starts() -> list[pd.Timestamp]:

@@ -285,9 +285,10 @@ def cmd_allgbm(args):
         from . import folds
         from .universe import F34_MEMBERS_CSV
         if args.folds == ["F5"]:                              # decision CO1: the features-only cover of F5's members, before R89 is written
-            from .universe import F5_MEMBERS_CSV
-            allgbm.cover(args.name or "cover_f5", F5_MEMBERS_CSV, ("F5",), folds.bounds("F5")[1], allgbm.F5_START, allgbm.F5_GRIDS)
-            return print(f"wrote {allgbm.OUT / (args.name or 'cover_f5')}/")
+            from .universe import F5_COINS_CSV, F5_MEMBERS_CSV
+            name = args.name or ("cover_f5_coins" if args.coins else "cover_f5")
+            allgbm.cover(name, F5_COINS_CSV if args.coins else F5_MEMBERS_CSV, ("F5",), folds.bounds("F5")[1], allgbm.F5_START, allgbm.F5_GRIDS)
+            return print(f"wrote {allgbm.OUT / name}/")
         if args.folds not in (None, ["F3", "F4"]):
             raise SystemExit("allgbm cover: --folds F3 F4 (default) or F5")
         allgbm.cover(args.name or "cover_f34", F34_MEMBERS_CSV, ("F3", "F4"), folds.bounds("F4")[1], pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-06-01", tz="UTC"))
@@ -597,6 +598,7 @@ def main(argv=None):
     ag.add_argument("action", choices=["run", "cover", "confirm"])
     ag.add_argument("--name", help="output directory under output/allgbm/ (default r87)")
     ag.add_argument("--folds", nargs="*", default=None, help="cover: F3 F4 (default) or F5 — features only, no forecast, no IC")
+    ag.add_argument("--coins", action="store_true", help="cover --folds F5: the coins-only member list (ft2/screen_members_f5_coins.csv)")
     fd = sub.add_parser("f5data", help="decision CO1: the Data line for F5's members (ft2/screen_members_f5.csv) — 5m klines, funding, metrics, the hourly trade "
                                        "mix; every old row checked; no label, no forecast → output/f5data/ (see ft2/f5data.py)")
     fd.add_argument("action", choices=["klines", "funding", "metrics", "mix"])
