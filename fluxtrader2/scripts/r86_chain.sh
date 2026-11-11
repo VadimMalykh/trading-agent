@@ -16,6 +16,6 @@ step() {
 }
 ft2() { python -m ft2 "$@"; }
 
-echo "$(date -u +%H:%M:%S) git $(git rev-parse --short HEAD)"
+echo "$(date -u +%H:%M:%S) git $(git rev-parse --short HEAD 2>/dev/null || echo n/a)"
 FT2_JOBS=4 step r86_read ft2 horizon --vol
 echo "$(date -u +%H:%M:%S) R86_CHAIN_DONE"
