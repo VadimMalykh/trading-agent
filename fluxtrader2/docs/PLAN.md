@@ -1519,6 +1519,13 @@ D+1 19:45 UTC (two probes; the hour unmeasured — a UTC-morning probe owed). Th
 names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common attention factor. The median article has 122 views a day; 12 under
 20. Nothing joined to a price. VM TERMINATED 21:39 UTC.**
 
+**Decision CQ (2026-11-11) — R90 NOT DETECTABLE: the confirmed forecast, traded hourly as a taker with one position a name, nets −15.3 bps a trade (t −1.1). The plain question: the model knows something about tomorrow's losers and it does not pay at this rule — what is done with it?** Known: the forecast's IC is confirmed (R89); the money is on the SHORT side (gross +82 a trade) and is eaten by costs (30) and by the funding a short pays on those coins (−32); the long side earns nothing gross; the long-listed coins lose; a resting-order estimate reads +11 (t 0.8) because its cost side is 6 against 38. Unknown: the maker's true cost on these names (the estimate is a bar simulation, never measured at the trade level outside the twelve); whether a slower rule (hold while the coin stays in the tenth — a fifth of the turnover) nets anything: that cannot be asked of F5's cells (the registration forbids another rule there) — only of F6, the bars from 2026-09-15, two months in hand and growing, untouched. The options:
+- **CQ1 — a FORWARD registration on F6, written now, read when F6 is long enough (recommended).** The model frozen (model.txt md5 816b994c…); the rule written before any F6 bar is fetched, from what R90 showed in the open: SHORT ONLY the bottom tenth, entered when a coin enters it and HELD while it stays in the bottom fifth (no daily re-entry), skipped when the coin's last funding is below a floor written in the registration (the short would pay), hedged with the coins' basket; priced as a taker with the names' own rows. Hindsight-generated and said so; F6 is its only test. Read at ≥ 180 days (2027-03-15) or earlier by a power line written in the registration. Cost now: the registration and its code, one session; no VM until the read.
+- **CQ2 — the maker's cost at the trade level on F5's coins (the one question R90's gate licenses):** R39's method needs the aggregate-trade files of ≈ 60 coins over 2026 (tens of GB, a day of VM time) to replace the bar simulation; even a true +11 a trade is one se on F5 — it can show the maker estimate is wrong, it cannot show the book pays.
+- **CQ3 — record and park:** the first confirmed all-inputs forecast, no book; PLAN §7's row with F6 as the revival.
+
+Needed from Vadim: the word on CQ. WRITTEN 2026-11-11 — OPEN. CQ1 and CQ2 are independent; CQ1 blocks nothing else.
+
 **Decision CP (2026-11-11) — R89 CONFIRMED AT THE TAKER BAR on F5's coins (IC +0.0411, t 3.57). The plain question: the frozen tree model ranks tomorrow's winners on two samples it never saw — does that ranking survive the cost of trading it, and how do we find out?** Known: the forecast is real by its registered gate; before costs the top tenth beats the bottom by 78 bps a leg a day on F5; the lean leans on young, violent coins (the 53 coins new in 2026: +0.090 against the old coins' +0.020) and on few names (without the ten largest contributors +0.020, t 1.8); the one-day forecast is persistent (a name's forecast a day later correlates 0.40), so turnover is well under a full book a day. Unknown: the cost of those names at the trade level (`cost_daily_wide` holds no 2026 row for most of them), the net of a book, and whether it holds forward — F1–F5 are spent for this forecast; the bars from 2026-09-15 (≈ 2 months, growing) are F6, untouched. The options:
 - **CP1 — the priced book on F5, registered, then the forward design (recommended).** (i) A Data line: `costwide --symbols` for the 137 coins over 2025-12 → 2026-09, merged (never overwritten). (ii) R90, registered before any priced number: the frozen model's saved forecast (`output/allgbm/r89/forecast.parquet`, nothing refitted) traded as a daily long-top / short-bottom book of the coins by a rule written from R14's serving frame (the tenth's size, the hold, the turnover band, the notional), priced with the names' own taker rows and, beside it, the maker estimate; the gate the net per trade against zero with the block bootstrap, the result without the five largest names and the old coins alone as registered robustness rows. Cost: one session. (iii) Only on a clear: the forward paper design on F6 (the model frozen, the sources' live feeds counted first — positioning and candles are live on the serve host's exchange API; spot flow, Hyperliquid, Coinbase, Korea and Wikipedia need live fetchers or are dropped by a registered rule).
 - **CP2 — straight to the forward paper test,** no priced backtest: honest by construction, but months of calendar before the first number and the live fetchers built before knowing whether costs leave anything.
@@ -15741,6 +15748,32 @@ Void:          **the first run (17:45 VM clock, code 008af79) was VOID AT VALIDI
                the sides equal at every bar, 0 overlapping positions, cost rows and priced share 99.7 %). The check now reads the
                positions with the exit inside the market — the ones that are priced; nothing else changed. The void's folder kept
                (`output/allbook/r90_void_1745/`). No number of the book was seen before the second run.**
+Result:        **READ 2026-11-11 (the work VM, `r90_chain.sh`, 17:54 → 17:56 VM clock; the registration 5cfcfcf, the code 008af79 +
+               the check's fix 4a65bc3; `output/allbook/r90/`; (R90, F5) logged 17:56 UTC). VALIDITY PASS: the forecast's md5 as
+               registered; 6,120 bars with decisions, k 2 … 6, the sides equal at every bar; 53,280 decisions, 5,018 accepted (91 %
+               skipped — the coin already held a position: a forecast that stays in the tenth trades once a day), 5,009 with the
+               exit inside the market, 99.7 % with cost rows and priced; every entry after its decision; 0 overlapping positions.**
+               **THE GATE — NOT DETECTABLE: net −15.3 bps a trade (se 14.1, t −1.08; [−42.9, +12.4]) on 4,995 positions, 19.6 a day —
+               gross +34.1, fee 10.0, spread and impact 27.5, funding −11.8; −299 USDT a day at 10,000 a position.** Not FAILS (the
+               interval holds zero), far from CLEARS.
+               **Described, deciding nothing:** the SHORT side carries the gross (+82.1) and pays for it — funding −32.1 (the coins
+               the model sells are the squeezed ones, whose shorts pay), cost 30.5 — net +9.5 (t 0.3); the LONG side grosses −7.5,
+               net −36.7 (t −1.6). The coins of F1–F4 gross +7.9, net −26.6 (t −2.2: a loss); the coins new in 2026 gross +117.7,
+               cost 58.8, funding −28.1, net +20.8 (se 49, t 0.4). Without the five named coins −18.9 (the five were not what held
+               it up). Before 2026-07-02 −23.1, from it +17.6; 5 of 9 months positive (January −44, April −80; June +36, September
+               +59). Costs × 1.5: −29.0 (t −2.1). The bar-simulated MAKER (an estimate): +11.4 (se 14.1, t 0.8) — its cost side 5.6
+               against the taker's 37.5. Per name: LAB +28,900 bps summed, SIREN −33,100 — one of R89's "largest IC contributors"
+               is the book's largest loser; the top and bottom ten names sum to ± 10,000 … 30,000 each.
+               Against the expectation: validity PASS (yes, on the second run); gross +40 … +90 — NO, +34 (one position a name
+               takes the first hour a coin enters the tenth, not the tenth's average); costs 35 … 60 (37.5, yes); funding within
+               ±10 — NO, −11.8, and −32 on the short side, which the expectation missed; net −15 … +45 (at its floor); NOT
+               DETECTABLE (the likeliest); the short above the long (yes); the new coins' net "no better" — NO, better and
+               unresolved; without the five lower by 10 … 30 — by 3.6; the maker above the taker by 5 … 15 — by 26.7.
+               **In plain words: the forecast is real and a taker cannot live on it at this rule. Buying the model's favourites
+               earned nothing even before costs; selling its least-liked coins earned 82 bps a trade before costs, and the costs,
+               and above all the funding a short pays on exactly those coins, took nearly all of it. On the long-listed coins the
+               book lost money. By the gate: nothing licensed but ONE cost-side question (the maker at the trade level on these
+               names); no other tenth, hold, threshold or size on F5's cells. Decision CQ (Vadim's).**
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
