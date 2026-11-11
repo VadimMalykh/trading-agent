@@ -15333,6 +15333,52 @@ Result:        —
 Gate (b) line: the lag is **6 h** — the 06:00 UTC probe RUN 2026-11-11 06:00:05 UTC (`hourprobe.csv` row `20261111T0600Z,2026-11-11 00:00:00,2026-11-11 03:42:11,binance-cex_20261111T0600Z.json`): that day's 00:00 point was in the adapter's file at 06:00, so by R72's two-valued rule the lag is 6 h (the decision bar closes 06:05 UTC); `LAG_H = 6` in `ft2/cexevent.py`, set before any bar after a t0 was read; the code's `LAG_H` must equal this line at `run`.
 
 
+### R86 — the volatility sort at a month: do the members that moved MOST over the last four weeks lag their peers over the next two and four weeks? (registered 2026-11-11 on Vadim's "Yes, start 1 and 2" — item 1 of the day's shortlist, the record's Y3 / AA7 / AH3 — before the code was written and before any volatility-sorted label was computed on the members; run in parallel with R85's wait, by Vadim's rule of the same day: no idle days between reads)
+Question:      The one strong forecast in hand is the SIZE of a name's next move; unread is whether the size of its LAST moves says anything
+               about its direction against its peers. In plain words: among the sixty most-traded names outside the twelve, do the six
+               wildest of the last four weeks earn less over the next two to four weeks than the six calmest — the lottery-demand
+               mechanism (the violent names are overbought by buyers who want a small chance of a large win, and pay for it after)? A
+               ceiling screen in R43's frame: no model, no book, no confirmation fold spent, no download.
+Cells:         R43's, unchanged: the 188 members (`ft2/screen_members.csv`) on the HOURLY grid of F1+F2, point-in-time blocks
+               (`audit.member_mask`), every source cut at 2024-09-01, the market `backtest.market(members, END)`.
+Holds:         two, fixed: 4,032 bars (14 days) and 8,064 bars (28 days). Reference rows: 288 (one day; validity (2)) and 2,016 (the first week).
+Label:         R43's, unchanged (`horizon.labels`): actual returns from the close one bar after t, MINUS the funding a long pays, bps.
+Signals:       the FAMILY, two, known at t (closes at or before t): `vol_4w` = the standard deviation of the 5m log returns over the last
+               8,064 bars (present with ≥ 80 % of them); `maxd_4w` = the largest |close[s] / close[s − 288] − 1| over s in the last 8,064
+               bars (the largest one-day move in four weeks, ≥ 80 % present). Registered sign: NEGATIVE (the wild names lag). Described,
+               outside the family: `vol_1w` (the same over 2,016 bars). The sort is NOT separated from R43′'s 12-week momentum (a name
+               after a run-up is also a wild name; momentum cleared POSITIVE on these cells in 2023): a clear here that is momentum's
+               mirror is said so in the read, and separating them would be a new registration.
+Statistic:     R43's M by `horizon._tenths` (the top tenth by the signal minus the bottom, halved, bps a leg, per day, the mean over days).
+Null:          R43's circular day shifts, every admissible one; gap = 29 (the signal's window: 28 days + the one-day move's own day) + 28
+               + 1 = 58 days, the same shifts for both holds: nd − 2 × 58 + 1 (≈ 370 on 485 days). The family 2 × 2 = 4, family-wise p.
+Cost:          17.6 bps a leg, FIXED (R43's); the cells' own taker round trip on the extreme tenths beside.
+Tail:          R43's described rows unchanged (the clipped mean at ±3,000, the tenths' means and medians, each side apart, per fold, the
+               part after the first week, the funding's part, the rank IC).
+Validity:      R43′'s six lines unchanged (whole days and the shift count; the one-day label against the harness; the signals causal on
+               the market cut at the midpoint; the funding cover by EVENTS, > 10 % of members dropped voids; 18 blocks, 188 names; the
+               cell counts). A FAIL voids the read (exit 2, nothing of the family written).
+Commands:      on the work VM — `scripts/r86_chain.sh` (done-marker, poweroff armed on exit):
+                 `FT2_JOBS=4 ft2 horizon --vol`   → output/horizon/vol_screen/horizon.md, signals.csv, tenths.csv, shifts.parquet, validity.json
+Folds read:    F1+F2 (exploration) of the members — a quantity no read has sorted them by; a HYPOTHESIS whatever it says. No confirmation
+               fold; the guard is not involved; nothing fetched.
+Gate:          validity PASS, then per signal × hold, R43's gate with the sign NEGATIVE: CLEARS if −M_c > 17.6 AND |u| ≥ 2 AND family-wise
+               p ≤ 0.05 AND M negative in F1 and in F2 AND the part after the first week negative; the same with M_c positive is "CLEARS
+               WITH THE OPPOSITE SIGN" — recorded, nothing licensed. CLOSED if −M_c + 1.96 se < 17.6. NOT DETECTABLE otherwise (MDE 2.8 se).
+               CLEARS → licenses ONE registration: the confirmation of the clearing signal and hold, once, on later members' cells the
+               ledger shows unread for this quantity (F3+F4's members first; Vadim's decision). None clears → the volatility sort is
+               PARKED at these windows and holds on the members; no other window, hold, tenth or weighting under this registration.
+Power:         stated before the read, from R43′'s measured se on the same cells and holds: ≈ 90 bps a leg at 14 days and ≈ 170 at 28 —
+               an MDE of ≈ 250 and ≈ 470 against a cost of 17.6. Only a LARGE effect (2.5 % a leg in two weeks, 5 % in four) is
+               detectable; a spread of 100 is not, and CLOSED is out of reach. The published low-volatility spreads on large alts
+               (1–4 % a month) straddle that line.
+Expectation:   validity PASS, no name dropped (R43′'s cover). NOT DETECTABLE on all four the likeliest (two in three); a clear with the
+               registered sign one in six; with the opposite sign one in six (2023's alt market paid the names that ran, R43′). `vol_4w`
+               and `maxd_4w` of the same sign and within a se of each other; the bottom (calm) tenth near its peers and the top (wild)
+               tenth carrying whatever is there; the medians under the means; F1 and F2 apart by more than a se.
+Result:        —
+
+
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
 Ranked by what it unlocks. Indicators are *not* on this list: anything computed from candles is
