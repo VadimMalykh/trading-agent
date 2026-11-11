@@ -649,9 +649,27 @@ def mom_verdict(r: dict, cost: float = MOM_COST, sign: float = 1.0) -> str:
 REV_FAMILY, REV_HOLDS, REV_REFS, REV_WINDOW_DAYS, REV_SIGN, REV_REG = {"mom_1w": 2016}, (2016,), (288,), 7, -1.0, "R57"
 
 
+# R86 (2026-11-11): the volatility sort at a month on the members — the same frame, the signals the SIZE of the name's last moves: `vol_*` the
+# sd of the 5m log returns over the window, `maxd_*` the largest one-day move (|close[s] / close[s − 288] − 1|) inside it; ≥ 80 % of the
+# window present. The registered sign NEGATIVE (the wild names lag); the gap 28 + 1 (the one-day move's own day) + 28 + 1 = 58 days.
+VOL_FAMILY, VOL_DESCRIBED, VOL_WINDOW_DAYS, VOL_SIGN, VOL_REG, VOL_NAME = {"vol_4w": 8064, "maxd_4w": 8064}, {"vol_1w": 2016}, 29, -1.0, "R86", "vol_screen"
+VOL_MIN_SHARE = 0.8
+
+
+def vol_signals(close: pd.DataFrame, windows: dict[str, int]) -> dict[str, pd.DataFrame]:
+    """`vol_*`: the sd of the 5m log returns over the last `w` bars; `maxd_*`: the largest one-day move in them — closes at or before t only."""
+    r, d = np.log(close).diff(), (close / close.shift(288) - 1.0).abs()
+    out = {}
+    for k, w in windows.items():
+        x = d.rolling(w, min_periods=int(w * VOL_MIN_SHARE)).max() if k.startswith("maxd_") else r.rolling(w, min_periods=int(w * VOL_MIN_SHARE)).std()
+        out[k] = x
+    return out
+
+
 def run_mom(symbols: list[str], holds=MOM_HOLDS, refs=MOM_REFS, cost: float = MOM_COST, jobs: int = 4, name: str | None = None,
             members: str | None = None, end: pd.Timestamp | None = None, fold_names=None, family: dict | None = None, described: dict | None = None,
-            window_days: int | None = None, sign: float = 1.0, registration: str | None = None, strategy: str = "horizon --mom") -> str:
+            window_days: int | None = None, sign: float = 1.0, registration: str | None = None, strategy: str = "horizon --mom", signal_fn=None,
+            what: str = "trailing return") -> str:
     from joblib import Parallel, delayed
     from . import ceiling, universe
     from .ceiling import W
@@ -665,6 +683,7 @@ def run_mom(symbols: list[str], holds=MOM_HOLDS, refs=MOM_REFS, cost: float = MO
     window_days = MOM_WINDOW_DAYS if window_days is None else int(window_days)
     reg = registration or MOM_REG
     direction = "POSITIVE (momentum)" if sign > 0 else "NEGATIVE (reversal)"
+    signal_fn = mom_signals if signal_fn is None else signal_fn
     end = ceiling.END if end is None else end
     out = OUT / (name or MOM_NAME)
     out.mkdir(parents=True, exist_ok=True)
@@ -692,12 +711,12 @@ def run_mom(symbols: list[str], holds=MOM_HOLDS, refs=MOM_REFS, cost: float = MO
     sig = (np.log(M.close).diff() * 1e4).rolling(W["1w"], min_periods=int(W["1w"] * 0.8)).std()
     Zh = {h: (bt.labels(M, h, bt.LATENCY) / (sig * np.sqrt(h)).where(sig > 0)).clip(-Z_CLIP, Z_CLIP).loc[grid, names] for h in every}
     windows = {**family, **described}
-    S_full = mom_signals(M.close, windows)
+    S_full = signal_fn(M.close, windows)
     S = {k: x.loc[grid, names].where(pd.DataFrame(cell, index=grid, columns=names)) for k, x in S_full.items()}
 
     # validity (3): the signals are causal — recomputed on the market cut at the midpoint, every value at or before it identical
     mid = grid[n_rows // 2]
-    again = mom_signals(M.close.loc[M.close.index <= mid], windows)
+    again = signal_fn(M.close.loc[M.close.index <= mid], windows)
     d_causal = 0.0
     for k in windows:
         a, b = S_full[k].loc[grid[grid <= mid], names], again[k].loc[grid[grid <= mid], names]
@@ -744,7 +763,7 @@ def run_mom(symbols: list[str], holds=MOM_HOLDS, refs=MOM_REFS, cost: float = MO
     v["status"] = "PASS" if (whole and len(ks) == v["shifts_expected"] and len(ks) >= 20 and d_causal == 0.0 and np.isfinite(d_label) and d_label <= 1e-9
                              and v["dropped_share"] <= MOM_MAX_DROPPED and not without_bars) else "FAIL"
     (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
-    head = [f"# {reg} — the cross-section of the members' trailing return {list(windows.values())} bars, held {holds} bars (`ft2 {strategy}`)\n",
+    head = [f"# {reg} — the cross-section of the members' {what} {list(windows.values())} bars, held {holds} bars (`ft2 {strategy}`)\n",
             f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · folds {'+'.join(fold_names)} · {len(names)} names, {n_members} members · {nd} days · holds {holds} bars "
             f"(references {refs}) · {len(ks)} shifts (gap {gap} days) · cost {cost:g} bps a leg · the registered sign {direction}\n",
             f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n"]
@@ -819,7 +838,7 @@ def run_mom(symbols: list[str], holds=MOM_HOLDS, refs=MOM_REFS, cost: float = MO
     more = ["signal", "hold", *(f"m_{f}" for f in fold_names), "folds_same_sign", "m_after_first_week", "after_same_sign", "funding_part", "m_top_tenth", "m_bottom_tenth",
             "m_winsorised", "rt_extreme_tenths", "se_hac", "ic", "ic_t", "move", "ic_needed"]
     md = head + [
-        "\nWords: *m*: what one leg of a book earns before trading costs that buys the tenth of names with the highest trailing return and sells the tenth with the "
+        "\nWords: *m*: what one leg of a book earns before trading costs that buys the tenth of names with the highest " + what + " and sells the tenth with the "
         "lowest, in bps of the position, funding paid; " + ("POSITIVE is the registered direction (momentum)" if sign > 0 else "NEGATIVE is the registered direction (reversal)") + ". *centre*: the same book on moves taken from other months; "
         "*m_c* = m − centre; *se*: its spread over those months; *u* = m_c / se; *p (family)*: the share of shifts in which the best of the four did at least as well. "
         f"*m_after_first_week*: the part of m earned after the first {first_week} bars (the reference hold). *m_top_tenth*, *m_bottom_tenth*: each side's label against the bar's peers (which side "

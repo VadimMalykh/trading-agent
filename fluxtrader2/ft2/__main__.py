@@ -282,6 +282,13 @@ def cmd_horizon(args):
                               fold_names=fold_names, family=horizon.REV_FAMILY, described={}, window_days=horizon.REV_WINDOW_DAYS, sign=horizon.REV_SIGN,
                               registration=args.registration, strategy="horizon --rev1w", jobs=int(os.environ.get("FT2_JOBS", "4"))))
         return print(f"wrote {horizon.OUT / out_name}/")
+    if args.vol:                                              # R86: the volatility sort at a month on the members' own cells (R43's frame, the sign negative)
+        from .universe import screen_symbols
+        out_name = args.name or horizon.VOL_NAME
+        print(horizon.run_mom(screen_symbols(), args.holds or horizon.MOM_HOLDS, name=out_name, family=horizon.VOL_FAMILY, described=horizon.VOL_DESCRIBED,
+                              window_days=horizon.VOL_WINDOW_DAYS, sign=horizon.VOL_SIGN, registration=horizon.VOL_REG, strategy="horizon --vol",
+                              signal_fn=horizon.vol_signals, what="trailing volatility", jobs=int(os.environ.get("FT2_JOBS", "4"))))
+        return print(f"wrote {horizon.OUT / out_name}/")
     if args.mom:                                              # R43: the slow cross-section on the members' own cells
         from .universe import screen_symbols
         out_name = args.name or horizon.MOM_NAME
@@ -562,6 +569,7 @@ def main(argv=None):
     hz.add_argument("--holds", nargs="*", type=int, default=None, help="in 5m bars (default 864 2016; with --pre 2016)")
     hz.add_argument("--pre", action="store_true", help="R23: the open-interest score on the months before F1 (ft2/screen_members_pre.csv) → output/horizon/pre/horizon.md")
     hz.add_argument("--mom", action="store_true", help="R43: the 188 screener members' 4- and 12-week trailing return at 14- and 28-day holds, R22's frame → output/horizon/mom_screen/horizon.md")
+    hz.add_argument("--vol", action="store_true", help="R86: the 188 members' trailing 4-week volatility and largest one-day move at 14- and 28-day holds, R43's frame, the registered sign negative → output/horizon/vol_screen/horizon.md")
     hz.add_argument("--rev1w", action="store_true", help="R57: the week's move (mom_1w) at a one-week hold on F3+F4's 216 members, one shot, the registered sign negative, gap 15 days → output/horizon/rev1w_f34/ (with --folds F1 F2 the reference on the 188, rev1w_f12)")
     hz.add_argument("--folds", nargs="*", default=None, help="--rev1w: the folds (default F3 F4)")
     hz.add_argument("--registration", default=None, help="--rev1w: R<n> — required for confirmation folds (logged once the number exists)")
