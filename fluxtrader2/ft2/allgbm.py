@@ -390,3 +390,136 @@ def run(name: str = NAME, members: str | None = None, jobs: int = 4, sources: di
                                                    "train_cells_min": int(fit_tab["train_cells"].min()), "train_cells_max": int(fit_tab["train_cells"].max())}, indent=1, default=str))
     print(f"{REG}: {gate['verdict']} — IC {gate['ic']:+.4f} (t {gate['t']:+.2f}); wrote {out}/", flush=True)
     return "\n".join(md)
+
+
+# ---- R88: the confirmation read — one frozen ridge, fitted on F1+F2's members, scored once on F3+F4's -------------------------------
+REG88, NAME88 = "R88", "r88"
+DROP88 = ("premium_1h", "premium_1d", "depth_imb_1", "depth_imb_1_dm")           # no cell on F3+F4 by the cover check of 2026-11-11
+T_ONE_SIDED = 1.645
+CONF_FOLDS = ("F3", "F4")
+CONF_START, CONF_GRIDS = pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-06-01", tz="UTC")
+
+
+def verdict88(ic: float, se: float, t: float) -> str:
+    if np.isfinite(ic) and np.isfinite(t) and t >= T_ONE_SIDED and ic >= BAR_MAKER:
+        return "CONFIRMED AT THE TAKER BAR" if ic >= BAR_TAKER else "CONFIRMED"
+    return "NOT CONFIRMED — CLOSED" if np.isfinite(ic) and np.isfinite(se) and ic + 1.96 * se < BAR_MAKER else "NOT CONFIRMED"
+
+
+def frozen_fit(X: np.ndarray, zres: np.ndarray, train: np.ndarray, cols: list[int]) -> dict:
+    """The gate's model on the training cells: RidgeCV over `ceiling.ALPHAS`, no intercept, on (rank − 0.5) with an absent value at 0;
+    and R87's trees on the same cells and columns (described)."""
+    import lightgbm as lgb
+    from sklearn.linear_model import RidgeCV
+    Xt, yt = X[train][:, cols], zres[train]
+    r = RidgeCV(alphas=ceiling.ALPHAS, fit_intercept=False).fit(np.nan_to_num(Xt, nan=0.5) - 0.5, yt)
+    g = lgb.LGBMRegressor(**{**PARAMS, "n_jobs": 8}).fit(Xt, yt)
+    return {"coef": np.asarray(r.coef_, float), "alpha": float(r.alpha_), "gbm": g, "train_cells": int(train.sum())}
+
+
+def frozen_score(X: np.ndarray, scorable: np.ndarray, cols: list[int], fit: dict) -> dict[str, np.ndarray]:
+    """The two forecasts on the scorable cells of another build (NaN elsewhere)."""
+    out = {}
+    Xs = X[scorable][:, cols]
+    for k, p in (("ridge (the gate)", (np.nan_to_num(Xs, nan=0.5) - 0.5) @ fit["coef"]), ("gbm, R87's parameters", fit["gbm"].predict(Xs))):
+        f = np.full(scorable.shape, np.nan)
+        f[scorable] = p
+        out[k] = f
+    return out
+
+
+def _causal(B: dict, sources: dict) -> float | None:
+    if "candles" not in sources:
+        return None
+    M, grid, names = B["M"], B["grid"], B["names"]
+    mid = grid[len(grid) // 2]
+    again, full = sources["candles"](M, grid, names, M.close.loc[M.close.index <= mid]), sources["candles"](M, grid, names)
+    d = 0.0
+    for k in again:
+        a, b = full[k].reindex(index=grid[grid <= mid], columns=names), again[k].reindex(index=grid[grid <= mid], columns=names)
+        both = a.notna() & b.notna()
+        d = max(d, float((a - b).abs().where(both).max().max() or 0.0), float((a.isna() != b.isna()).sum().sum()))
+    return d
+
+
+def confirm(name: str = NAME88, sources: dict | None = None, members_fit: str | None = None, members_conf: str | None = None, registration: str = REG88) -> str:
+    import hashlib
+    from .horizon import _tenths
+    from .universe import F34_MEMBERS_CSV
+    sources = SOURCES if sources is None else sources
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    conf = bt._guard(list(CONF_FOLDS), registration)                       # F3+F4: only under the registration, once; logged when the number exists
+    f3_start = folds.bounds(CONF_FOLDS[0])[0]
+
+    print("F1+F2: the cells the model is fitted on…", flush=True)
+    B1 = build(members_fit, folds.EXPLORATION, sources)
+    names1 = [k for _, k in B1["src_of"]]
+    cols = [i for i, k in enumerate(names1) if k not in DROP88]
+    used = [names1[i] for i in cols]
+    train = B1["usable"] & (B1["t_end"].asi8 < f3_start.value)[:, None]
+    late = int((B1["usable"] & ~train).sum())
+    fit = frozen_fit(B1["X"], B1["zres"], train, cols)
+    coef = pd.DataFrame({"source": [B1["src_of"][i][0] for i in cols], "feature": used, "coef": fit["coef"]})
+    coef.to_csv(out / "coef.csv", index=False)
+    coef_md5 = hashlib.md5((out / "coef.csv").read_bytes()).hexdigest()
+    print(f"frozen: {len(used)} features, {fit['train_cells']:,} cells, alpha {fit['alpha']:g}, coef.csv md5 {coef_md5}", flush=True)
+    del B1["X"], B1["M"]
+
+    print("F3+F4: the cells it is scored on…", flush=True)
+    B2 = build(members_conf or F34_MEMBERS_CSV, CONF_FOLDS, sources, folds.bounds(CONF_FOLDS[-1])[1], CONF_START, CONF_GRIDS)
+    names2 = [k for _, k in B2["src_of"]]
+    cov = B2["cover"].set_index("feature")
+    d_causal = _causal(B2, sources)
+    v = {"registration": registration, "folds_fit": list(folds.EXPLORATION), "folds_scored": list(CONF_FOLDS), "features": len(used), "feature_names": used, "dropped": list(DROP88),
+         "same_feature_names": names1 == names2, "dropped_in_use": [k for k in used if k in DROP88], "train_cells": fit["train_cells"], "train_cells_with_label_ending_in_or_after_F3": int((train & (B1["t_end"].asi8 >= f3_start.value)[:, None]).sum()),
+         "usable_cells_left_out_by_the_embargo": late, "alpha": fit["alpha"], "coef_md5": coef_md5, "features_without_a_cell_on_the_scored_folds": [k for k in used if int(cov.loc[k, "cells"]) == 0],
+         "max_abs_d_causal": d_causal, "names_scored": len(B2["names"]), "scorable_cells": int(B2["scorable"].sum()), "rows": int(len(B2["grid"])), "first": str(B2["grid"][0]), "last": str(B2["grid"][-1]),
+         "bars": {"taker": BAR_TAKER, "maker": BAR_MAKER, "t_one_sided": T_ONE_SIDED}}
+    v["status"] = "PASS" if (v["same_feature_names"] and not v["dropped_in_use"] and v["train_cells_with_label_ending_in_or_after_F3"] == 0 and not v["features_without_a_cell_on_the_scored_folds"]
+                             and d_causal in (None, 0.0) and len(used) == len(names1) - sum(k in names1 for k in DROP88)) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
+    B2["cover"].to_csv(out / "cover.csv", index=False)
+    head = [f"# {registration} — the frozen all-inputs model, fitted on F1+F2's members, scored once on F3+F4's (`ft2 allgbm confirm`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {len(used)} features · fitted on {fit['train_cells']:,} cells (alpha {fit['alpha']:g}) · scored on {len(B2['names'])} names · "
+            f"bars: maker {BAR_MAKER}, taker {BAR_TAKER}, one-sided t ≥ {T_ONE_SIDED}\n",
+            f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps({k: x for k, x in v.items() if k != "feature_names"}, indent=1, default=str), "\n```\n"]
+    if v["status"] != "PASS":
+        (out / "read.md").write_text("\n".join(head + ["\n**The read is VOID: no IC was computed.**\n"]))
+        print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
+        raise SystemExit(2)
+
+    grid, day, z, y = B2["grid"], B2["day"], B2["z"], B2["y"]
+    F = frozen_score(B2["X"], B2["scorable"], cols, fit)
+    fold_of = np.full(len(grid), "", dtype=object)
+    for f_ in CONF_FOLDS:
+        fold_of[folds.mask(pd.Series(grid, index=grid), f_, embargoed=False).to_numpy()] = f_
+    rows = []
+    for label, f in F.items():
+        r = ic_row(f, z, day)
+        zr = centre(z, ~np.isnan(f) & ~np.isnan(z))
+        m_xs, se_xs, _ = hac(_ic_xs(pd.DataFrame(f), pd.DataFrame(zr), day), day_lags(HOLD))
+        tenths = float(np.nanmean(_tenths(f, np.where(~np.isnan(f), y, np.nan)))) if len(grid) % PER_DAY == 0 else np.nan
+        rows.append({"model": label, **r, "mde": MDE_K * r["se"] if np.isfinite(r["se"]) else np.nan, **{f"ic_{k}": ic_row(f, z, day, fold_of == k)["ic"] for k in CONF_FOLDS},
+                     "ic_rank_per_bar": m_xs, "t_rank": m_xs / se_xs if se_xs else np.nan, "tenths_bps_a_leg": tenths,
+                     "verdict": verdict88(r["ic"], r["se"], r["t"]) if label.startswith("ridge") else "described"})
+    tab = pd.DataFrame(rows)
+    gate = tab.iloc[0]
+    f = F["ridge (the gate)"]
+    month = pd.Series(grid.strftime("%Y-%m"))
+    by_month = pd.DataFrame([{"month": mth, **ic_row(f, z, day, (month == mth).to_numpy())} for mth in sorted(month.unique())])
+    show = lambda d, k=4: d.round(k).to_markdown(index=False)                    # noqa: E731
+    md = head + [
+        f"\n## The gate — **{gate['verdict']}**: the frozen ridge's IC on F3+F4 {gate['ic']:+.4f} (se {gate['se']:.4f}, t {gate['t']:+.2f}, MDE {gate['mde']:.4f}) on {int(gate['cells']):,} cells, "
+        f"{int(gate['days'])} days; " + ", ".join(f"{k} {gate[f'ic_{k}']:+.4f}" for k in CONF_FOLDS) + "\n", show(tab), "\n",
+        "\n## Described (decides nothing)\n", "\n### By month (the gate's model)\n", show(by_month), "\n", "\n### The frozen coefficients (on rank − 0.5)\n", show(coef.sort_values("coef", key=np.abs, ascending=False)), "\n",
+        "\n### Cover of each feature on F3+F4's scorable member cells\n", B2["cover"].round(4).to_markdown(index=False), "\n"]
+    (out / "read.md").write_text("\n".join(md))
+    tab.to_csv(out / "models.csv", index=False)
+    (out / "validity.json").write_text(json.dumps({**v, "verdict": gate["verdict"], "ic": float(gate["ic"]), "se": float(gate["se"]), "t": float(gate["t"])}, indent=1, default=str))
+    if conf:
+        bt.READS.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": conf, "strategy": "allgbm confirm",
+                      "params": json.dumps({"features": len(used), "alpha": fit["alpha"], "coef_md5": coef_md5})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    print(f"{registration}: {gate['verdict']} — IC {gate['ic']:+.4f} (t {gate['t']:+.2f}); wrote {out}/", flush=True)
+    return "\n".join(md)

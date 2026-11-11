@@ -110,3 +110,31 @@ def test_a_planted_u_shaped_lean_is_found_held_out_by_the_trees_and_missed_by_th
         ag.run("t87_void", members=members, jobs=1, sources={**sources, "missing": src_empty})
     assert json.loads(Path("output/allgbm/t87_void/validity.json").read_text())["sources_without_a_cell"] == ["missing"]
     assert "VOID" in Path("output/allgbm/t87_void/read.md").read_text()
+
+
+def test_r88_the_frozen_ridge_scores_other_cells_with_the_dropped_features_out_and_the_verdict_is_one_sided():
+    assert ag.verdict88(0.011, 0.006, 1.83) == "CONFIRMED" and ag.verdict88(0.03, 0.006, 5.0) == "CONFIRMED AT THE TAKER BAR"
+    assert ag.verdict88(0.009, 0.006, 1.5) == "NOT CONFIRMED" and ag.verdict88(-0.008, 0.006, -1.3) == "NOT CONFIRMED — CLOSED"
+    assert ag.verdict88(0.005, 0.002, 2.5) == "NOT CONFIRMED" and ag.verdict88(float("nan"), 0.1, 0.0) == "NOT CONFIRMED"       # under the maker bar; no number
+    assert ag.DROP88 == ("premium_1h", "premium_1d", "depth_imb_1", "depth_imb_1_dm") and ag.T_ONE_SIDED == 1.645 and ag.CONF_FOLDS == ("F3", "F4")
+    rng = np.random.default_rng(1)
+    X1, X2 = rng.uniform(0, 1, (400, 30, 3)).astype(np.float32), rng.uniform(0, 1, (300, 30, 3)).astype(np.float32)
+    X1[:, ::4, 1] = np.nan                                                        # an absent value
+    X2[:, :, 2] = np.nan                                                          # the dropped column has no cell on the scored span
+    z1 = 0.5 * (X1[:, :, 0] - 0.5) + 9.0 * np.nan_to_num(X1[:, :, 2] - 0.5) + rng.normal(0, 0.1, X1.shape[:2])       # the dropped column carries most of it
+    train = np.ones(z1.shape, dtype=bool)
+    train[-50:] = False
+    monkey = dict(ag.PARAMS)
+    ag.PARAMS["min_child_samples"], ag.PARAMS["n_estimators"] = 50, 20
+    try:
+        fit = ag.frozen_fit(X1, z1, train, [0, 1])
+    finally:
+        ag.PARAMS.clear(); ag.PARAMS.update(monkey)
+    assert fit["train_cells"] == 350 * 30 and len(fit["coef"]) == 2 and 0.3 < fit["coef"][0] < 0.7 and abs(fit["coef"][1]) < 0.1
+    scorable = np.ones(X2.shape[:2], dtype=bool)
+    scorable[:, 0] = False
+    F = ag.frozen_score(X2, scorable, [0, 1], fit)
+    f = F["ridge (the gate)"]
+    assert np.isnan(f[:, 0]).all() and np.isfinite(f[:, 1:]).all() and set(F) == {"ridge (the gate)", "gbm, R87's parameters"}
+    assert np.allclose(f[:, 1:], (X2[:, 1:, 0] - 0.5) * fit["coef"][0] + (X2[:, 1:, 1] - 0.5) * fit["coef"][1], atol=1e-6)         # the frozen coefficients, nothing refitted
+    assert np.corrcoef(f[:, 1:].ravel(), X2[:, 1:, 0].ravel())[0, 1] > 0.9

@@ -278,6 +278,9 @@ def cmd_allgbm(args):
         from .universe import F34_MEMBERS_CSV
         allgbm.cover(args.name or "cover_f34", F34_MEMBERS_CSV, ("F3", "F4"), folds.bounds("F4")[1], pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-06-01", tz="UTC"))
         return print(f"wrote {allgbm.OUT / (args.name or 'cover_f34')}/")
+    if args.action == "confirm":                              # R88: the frozen ridge, fitted on F1+F2's members, scored once on F3+F4's (guarded)
+        allgbm.confirm(args.name or allgbm.NAME88)
+        return print(f"wrote {allgbm.OUT / (args.name or allgbm.NAME88)}/")
     allgbm.run(args.name or allgbm.NAME, jobs=int(os.environ.get("FT2_JOBS", "4")))
     print(f"wrote {allgbm.OUT / (args.name or allgbm.NAME)}/")
 
@@ -577,7 +580,7 @@ def main(argv=None):
     po.add_argument("--maker-bps", type=float, default=2.0)
     ag = sub.add_parser("allgbm", help="P8 (R87): one LightGBM model on every per-name input in hand, the members' next day against their peers, held out by name "
                                        "group and by time → output/allgbm/r87/read.md (see ft2/allgbm.py)")
-    ag.add_argument("action", choices=["run", "cover"])
+    ag.add_argument("action", choices=["run", "cover", "confirm"])
     ag.add_argument("--name", help="output directory under output/allgbm/ (default r87)")
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
                                         "`transferbook` run → output/horizon/<run>/horizon.md (see ft2/horizon.py)")
