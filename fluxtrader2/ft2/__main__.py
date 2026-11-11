@@ -273,6 +273,12 @@ def cmd_pool(args):
     print(pool.pool(args.runs, exec_=args.exec, draws=args.draws, seed=args.seed, name=args.name, split=args.split, taker_bps=args.taker_bps, maker_bps=args.maker_bps))
 
 
+def cmd_allbook(args):
+    from . import allbook
+    allbook.main(args.action, args.name)
+
+
+
 def cmd_f5data(args):
     from . import f5data
     f5data.main(args.action)
@@ -605,6 +611,9 @@ def main(argv=None):
     fd = sub.add_parser("f5data", help="decision CO1: the Data line for F5's members (ft2/screen_members_f5.csv) — 5m klines, funding, metrics, the hourly trade "
                                        "mix; every old row checked; no label, no forecast → output/f5data/ (see ft2/f5data.py)")
     fd.add_argument("action", choices=["klines", "funding", "metrics", "mix"])
+    ab = sub.add_parser("allbook", help="P8 (R90): R89's saved forecast as an hourly long-top-tenth / short-bottom-tenth book of F5's coins, priced with the names' own costs → output/allbook/r90/read.md (see ft2/allbook.py)")
+    ab.add_argument("action", choices=["run"])
+    ab.add_argument("--name", help="output directory under output/allbook/ (default r90)")
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
                                         "`transferbook` run → output/horizon/<run>/horizon.md (see ft2/horizon.py)")
     hz.add_argument("run", nargs="?", help="the run's directory name under output/backtest/")
@@ -752,7 +761,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "allgbm": cmd_allgbm, "f5data": cmd_f5data, "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "allgbm": cmd_allgbm, "f5data": cmd_f5data, "allbook": cmd_allbook, "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
