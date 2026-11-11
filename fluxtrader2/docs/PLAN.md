@@ -1524,7 +1524,7 @@ names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common att
 - **CQ2 — the maker's cost at the trade level on F5's coins (the one question R90's gate licenses):** R39's method needs the aggregate-trade files of ≈ 60 coins over 2026 (tens of GB, a day of VM time) to replace the bar simulation; even a true +11 a trade is one se on F5 — it can show the maker estimate is wrong, it cannot show the book pays.
 - **CQ3 — record and park:** the first confirmed all-inputs forecast, no book; PLAN §7's row with F6 as the revival.
 
-Needed from Vadim: the word on CQ. WRITTEN 2026-11-11 — OPEN. CQ1 and CQ2 are independent; CQ1 blocks nothing else.
+Needed from Vadim: the word on CQ. WRITTEN 2026-11-11 — **DECIDED 2026-11-11 on Vadim's "CQ1" (the recommendation): R91 REGISTERED in §8 the same evening, before any bar after 2026-09-15 is read by anything of this line — short only the bottom tenth, held while in the bottom fifth (7-day cap), a funding floor at entry (−10 bps a day) and at exit (−30), hedged, priced as a taker; ONE read on or after 2027-03-18 on F6 = 2026-09-17 → 2027-03-16; the rule's code and planted tests follow the registration's commit; never run on F5.** CQ2 (the maker's trade-level cost) stays open and independent; CQ1 blocks nothing else.
 
 **Decision CP (2026-11-11) — R89 CONFIRMED AT THE TAKER BAR on F5's coins (IC +0.0411, t 3.57). The plain question: the frozen tree model ranks tomorrow's winners on two samples it never saw — does that ranking survive the cost of trading it, and how do we find out?** Known: the forecast is real by its registered gate; before costs the top tenth beats the bottom by 78 bps a leg a day on F5; the lean leans on young, violent coins (the 53 coins new in 2026: +0.090 against the old coins' +0.020) and on few names (without the ten largest contributors +0.020, t 1.8); the one-day forecast is persistent (a name's forecast a day later correlates 0.40), so turnover is well under a full book a day. Unknown: the cost of those names at the trade level (`cost_daily_wide` holds no 2026 row for most of them), the net of a book, and whether it holds forward — F1–F5 are spent for this forecast; the bars from 2026-09-15 (≈ 2 months, growing) are F6, untouched. The options:
 - **CP1 — the priced book on F5, registered, then the forward design (recommended).** (i) A Data line: `costwide --symbols` for the 137 coins over 2025-12 → 2026-09, merged (never overwritten). (ii) R90, registered before any priced number: the frozen model's saved forecast (`output/allgbm/r89/forecast.parquet`, nothing refitted) traded as a daily long-top / short-bottom book of the coins by a rule written from R14's serving frame (the tenth's size, the hold, the turnover band, the notional), priced with the names' own taker rows and, beside it, the maker estimate; the gate the net per trade against zero with the block bootstrap, the result without the five largest names and the old coins alone as registered robustness rows. Cost: one session. (iii) Only on a clear: the forward paper design on F6 (the model frozen, the sources' live feeds counted first — positioning and candles are live on the serve host's exchange API; spot flow, Hyperliquid, Coinbase, Korea and Wikipedia need live fetchers or are dropped by a registered rule).
@@ -15774,6 +15774,81 @@ Result:        **READ 2026-11-11 (the work VM, `r90_chain.sh`, 17:54 → 17:56 V
                and above all the funding a short pays on exactly those coins, took nearly all of it. On the long-listed coins the
                book lost money. By the gate: nothing licensed but ONE cost-side question (the maker at the trade level on these
                names); no other tenth, hold, threshold or size on F5's cells. Decision CQ (Vadim's).**
+
+
+### R91 — the FORWARD test on F6, HINDSIGHT-GENERATED: the frozen trees' least-liked coins SOLD and HELD while they stay in the tail, funding-aware, hedged — read once when F6 holds 180 days (registered 2026-11-11 on Vadim's "CQ1", before any bar after 2026-09-15 is read by anything of this line)
+Question:      R89 confirmed the forecast; R90 showed where its money is and what eats it: the short side grossed +82 bps a trade,
+               and the daily re-entry's costs and the funding a short pays on squeezed coins took it. In plain words: if we only
+               sell the coins the model likes least, keep each short for as long as the model keeps disliking it instead of
+               paying to re-enter every day, and stay out when the short would be charged funding — is money left after costs on
+               months nobody has seen?
+Hindsight:     every element of the rule was chosen after R90's numbers on F5 and is said so: short only (the long side grossed
+               −7); held while in the tail (91 % of the hourly tenth's decisions were the same coin again); the funding floor (the
+               short side paid −32 a trade); the hedge (the gate is against the coins' basket). Nothing here was fitted or
+               searched — each number below is written once, untried: the rule has NOT been run on F5 or on any other bar, and it
+               will not be (R90's gate forbids another rule on F5's cells). F6 is its only test.
+Fold:          F6 for this question = 2026-09-17 00:00 → 2027-03-16 00:00 UTC (F5's end + the 2-day embargo, 180 days). Stated: the
+               F5 Data line of 2026-11-11 ingested the 5m klines and funding of F5's 173 names through 2026-09-30 and the trade
+               table through 2026-09-30 — bars inside F6's first two weeks sit in files; no statistic, forecast, label or price of
+               any bar at or after 2026-09-15 has been computed or looked at (R89's and R90's markets end at 2026-09-15). `folds.py`
+               is not touched (other frozen lists key on its table); the span is a constant of this registration's module and the
+               guard is the module's own: the `### R91 ` block must exist and (R91, F6) must not be in `confirmation_reads.csv`.
+Cells:         the screener's unchanged rule (`universe.characteristics`, top 60 by the trailing 30 days' median dollar volume, the
+               twelve out) on F6's six 30-day blocks from 2026-09-17, selected at the read from the archive's daily bars BEFORE any
+               other F6 file is fetched and frozen as `ft2/screen_members_f6.csv`; the COINS among them — every name whose contract
+               type is not TRADIFI_PERPETUAL in `ft2/f5_contract_types.csv` or in fapi exchangeInfo fetched at the read (a name in
+               neither — delisted before the read — is kept and counted) — frozen as `ft2/screen_members_f6_coins.csv`.
+Forecast:      `output/allgbm/r89/model.txt` (md5 816b994c136fda82eb36ceca88580d36), R89's 33 inputs in R88's order, built by
+               `allgbm.build` on F6's coin cells exactly as on F5 (the market from 2026-03-17, the hourly grids from 2026-06-17);
+               each hourly source extended in TIME by its own fetcher for the names its FROZEN list keeps (no list extended). The
+               candle and positioning inputs must be whole (≥ 99 % cover) or the read is void; an hourly source that cannot be
+               extended is left absent (the trees take an absent value), named in the read, and the read stands.
+Rule:          at every hourly bar t of F6 with a forecast on n ≥ 10 coin cells, in this order:
+               (1) EXIT a held coin if it is not among the ⌊n / 5⌋ lowest forecasts, or has no forecast at t, or its last funding
+                   rate known at t, scaled to a day (rate × 24 / interval hours), is below −30 bps, or it has been held 7 days;
+               (2) ENTER a SHORT in every coin among the ⌊n / 10⌋ lowest forecasts that holds no position, unless its last funding
+                   rate known at t scaled to a day is below −10 bps or it has no funding row yet.
+               A bar with n < 10 enters nothing and exits only by the no-forecast, funding and 7-day clauses. Every position is
+               10,000 USDT, entered and exited at the close of the next 5m bar (LATENCY 1); a position open at F6's last bar is
+               closed there. One position a coin by construction.
+Pricing:       `backtest.price`, TAKER both legs: 5 bps a side + the coin's own half-spread and impact at 10,000 USDT of the entry /
+               exit day (`ft2 costwide` for F6's coins at the read, merged), funding on the position's value over the hold. The
+               hedge: the equal-weight basket of the other coins of the market over the same bars (`backtest.basket`), and 4 bps a
+               trade charged for its two legs (a constant, written here: the twelve's taker round trip on a liquid future).
+Statistic:     the mean HEDGED NET per trade, bps = USDT at 10,000 (`hedged_net_bps` − 4), with the day-clustered HAC interval (lags
+               by the 7-day cap), one-sided, the sign POSITIVE.
+Gate:          validity PASS, then: CLEARS if the mean > 0 AND t ≥ 1.645 AND the mean over the first 90 days and over the last 90
+               are both > 0. FAILS if mean + 1.96 se < 0. NOT DETECTABLE otherwise.
+               CLEARS → the first rule of this project shown to pay after costs on bars registered before they existed in a file
+               read by anything: it licenses the paper book on the serve host (the live fetchers for the inputs the model leans
+               on, P7's frame) — Vadim's decision. NOT DETECTABLE / FAILS → the all-inputs book is PARKED; the forecast stays a
+               confirmed fact (R89); no second rule on F6's cells.
+Described:     deciding nothing: (a) R89's statistic on F6 — the frozen model's pooled IC on F6's coin cells, one-sided (does the
+               forecast itself persist a third time: the reading of a NOT DETECTABLE book differs if it does); (b) net unhedged;
+               gross, costs, funding per trade; the hold's length (median, share at the 7-day cap); trades a day; USDT a day; the
+               entries skipped by the funding floor and what their coins' next day did against the basket; (c) the coins of F1–F5's
+               lists against the coins new in F6; (d) by month; (e) the bar-simulated maker; (f) costs × 1.5; (g) R90's rule as
+               registered there, on F6 — the daily taker tenth beside this one.
+Validity:      read first, or the read is void (exit 2): (0) the module's guard; the model's md5; the two member lists frozen and
+               committed before the Data line, their md5 in the read; (1) the Data line's old-row checks PASS (klines, funding,
+               metrics, the trade table, the cost merge); (2) the F6 build's 33 feature names equal R88's in order; candle and
+               positioning cover ≥ 99 %; the candle features causal; (3) ≥ 95 % of the positions priced; no coin in two positions;
+               every entry after its decision (on the priced positions); (4) every exit explained by one of the rule's four
+               clauses or the span's end — counted by clause.
+Power:         weak, unknown in size, and said so: R90's short side had se 31 bps on 2,317 one-day trades in 254 days. Holding
+               while in the tail makes fewer, longer positions (expected 300–900 in 180 days, 2–5 days each), so the se per trade is
+               expected 60–120 bps: only a mean hedged net of ≈ +150 a trade or more can clear. If the short side's +82 gross a day
+               persists through a multi-day hold and one round trip (≈ 40–60) is paid once, the mean would be +100 … +250.
+Expectation:   validity PASS (the hourly sources' extension is the likeliest trouble: one or two left absent); the IC on F6
+               +0.01 … +0.04; the book's mean hedged net −50 … +200: CLEARS one in four, NOT DETECTABLE six in ten, FAILS one in
+               seven; the funding floor skipping 10–25 % of the entries; the median hold 1–3 days, 5–15 % at the cap.
+When:          ONE read, on or after 2027-03-18 (the archive's daily files for the last bars; `ingest_klines` reads daily and
+               monthly files alike), in a session that does, in this order: the member lists (frozen, committed), the Data line,
+               the cover check, the forecast, the book. No look before; a look is the read.
+Code:          written now, after this block's commit: the rule and its pricing (`allbook.positions`, `allbook.forward`, the guard,
+               the gate) with planted tests — so that the rule is fixed in code as well as in words. Named, written at the read:
+               the F6 member selection (`screen_select` with explicit block starts), the hourly sources' time extension, the Data
+               line's chain, `allgbm.build` on a span, `scripts/r91_chain.sh`.
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
