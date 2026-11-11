@@ -59,6 +59,9 @@ def _symbols(args) -> list[str]:
     if u == "f34":                                            # R25: the members of F3+F4's blocks
         from .universe import F34_MEMBERS_CSV, screen_symbols
         return screen_symbols(F34_MEMBERS_CSV)
+    if u == "f5":                                             # decision CO1: the members of F5's blocks
+        from .universe import F5_MEMBERS_CSV, screen_symbols
+        return screen_symbols(F5_MEMBERS_CSV)
     if u == "launch":                                         # R28: the contracts launched in F1+F2 (frozen from Binance's announcements)
         from .listing import launch_symbols
         return launch_symbols()
@@ -270,12 +273,23 @@ def cmd_pool(args):
     print(pool.pool(args.runs, exec_=args.exec, draws=args.draws, seed=args.seed, name=args.name, split=args.split, taker_bps=args.taker_bps, maker_bps=args.maker_bps))
 
 
+def cmd_f5data(args):
+    from . import f5data
+    f5data.main(args.action)
+
+
 def cmd_allgbm(args):
     from . import allgbm
     if args.action == "cover":                                # the features' cover on F3+F4's members — no forecast, no IC (before a registration on them)
         import pandas as pd
         from . import folds
         from .universe import F34_MEMBERS_CSV
+        if args.folds == ["F5"]:                              # decision CO1: the features-only cover of F5's members, before R89 is written
+            from .universe import F5_MEMBERS_CSV
+            allgbm.cover(args.name or "cover_f5", F5_MEMBERS_CSV, ("F5",), folds.bounds("F5")[1], allgbm.F5_START, allgbm.F5_GRIDS)
+            return print(f"wrote {allgbm.OUT / (args.name or 'cover_f5')}/")
+        if args.folds not in (None, ["F3", "F4"]):
+            raise SystemExit("allgbm cover: --folds F3 F4 (default) or F5")
         allgbm.cover(args.name or "cover_f34", F34_MEMBERS_CSV, ("F3", "F4"), folds.bounds("F4")[1], pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-06-01", tz="UTC"))
         return print(f"wrote {allgbm.OUT / (args.name or 'cover_f34')}/")
     if args.action == "confirm":                              # R88: the frozen ridge, fitted on F1+F2's members, scored once on F3+F4's (guarded)
@@ -472,7 +486,7 @@ def main(argv=None):
                                       "archive slices metrics/depth/funding_archive by name)")
     i.add_argument("slices", nargs="*")
     i.add_argument("--symbols", nargs="*", help="archive slices only: which pairs (default the twelve)")
-    i.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "launch", "launch34", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
+    i.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "f5", "launch", "launch34", "all"], help="archive slices only: ft2.universe.WIDE (R10), the screener's members (R18), or all = the twelve + both")
     sub.add_parser("inventory", help="integrity report over data/*.parquet -> output/inventory.md")
     a = sub.add_parser("archive", help="fetch Binance public-archive files into data/raw/external/binance/")
     a.add_argument("kinds", nargs="+", help="bookDepth metrics aggTrades fundingRate klines/1m …")
@@ -480,7 +494,7 @@ def main(argv=None):
     a.add_argument("--start", default="2023-01-01")
     a.add_argument("--end", default=None, help="inclusive; default: two days ago")
     a.add_argument("--monthly", action="store_true", help="klines/<interval>: the archive's monthly files for the months of [start, end] instead of daily ones")
-    a.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "launch", "launch34", "all"])
+    a.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "f5", "launch", "launch34", "all"])
     u = sub.add_parser("universe", help="R10: rank every USDT perpetual the archive lists by median daily quote volume over the four months before F0 → output/universe_wide.md; "
                                         "--screen (R18): the members per block and what a screener could rank them by → output/universe_screen.md")
     u.add_argument("--n", type=int, default=None, help="default 40; with --screen 60 a block")
@@ -490,7 +504,7 @@ def main(argv=None):
     u.add_argument("--folds", nargs="*", default=["F1", "F2"], help="--screen: the folds whose blocks get a membership")
     cw = sub.add_parser("costwide", help="R10: spread + impact for pairs without a tape (one pooled candle proxy fitted on the twelve) → data/cost_daily_wide.parquet, output/cost_wide.md")
     cw.add_argument("--symbols", nargs="*")
-    cw.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "launch", "launch34", "all"])
+    cw.add_argument("--universe", choices=["wide", "new", "screen", "pre", "f34", "f5", "launch", "launch34", "all"])
     cw.add_argument("--start", default="2023-01-01")
     mc = sub.add_parser("makercost", help="R39: the maker cost at the trade level — a resting order at the touch, last in its queue, filled FIFO by the archive's trades → output/makercost/<start>_<end>/ (see ft2/makercost.py)")
     mc.add_argument("--start", required=True, help="first day (UTC)")
@@ -547,7 +561,7 @@ def main(argv=None):
         if a_.dest in ("taker_bps", "maker_bps"):
             b.add_argument(*a_.option_strings, type=a_.type, default=a_.default)
     b.add_argument("--symbols", nargs="*")
-    b.add_argument("--universe", choices=["wide", "screen", "pre", "f34"], help="ft2.universe.WIDE, the forty of R10, or the screener's members (R18), instead of the twelve")
+    b.add_argument("--universe", choices=["wide", "screen", "pre", "f34", "f5"], help="ft2.universe.WIDE, the forty of R10, or the screener's members (R18), instead of the twelve")
     sc = sub.add_parser("screen", help="P8 (R18): the screener read of a `transferbook` run → output/screen/<run>/screen.md (see ft2/screen.py)")
     sc.add_argument("run", help="the run's directory name under output/backtest/")
     sc.add_argument("--reference", default=None, help="the run whose forecasts the training names must reproduce (default: R13 B's)")
@@ -582,6 +596,10 @@ def main(argv=None):
                                        "group and by time → output/allgbm/r87/read.md (see ft2/allgbm.py)")
     ag.add_argument("action", choices=["run", "cover", "confirm"])
     ag.add_argument("--name", help="output directory under output/allgbm/ (default r87)")
+    ag.add_argument("--folds", nargs="*", default=None, help="cover: F3 F4 (default) or F5 — features only, no forecast, no IC")
+    fd = sub.add_parser("f5data", help="decision CO1: the Data line for F5's members (ft2/screen_members_f5.csv) — 5m klines, funding, metrics, the hourly trade "
+                                       "mix; every old row checked; no label, no forecast → output/f5data/ (see ft2/f5data.py)")
+    fd.add_argument("action", choices=["klines", "funding", "metrics", "mix"])
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
                                         "`transferbook` run → output/horizon/<run>/horizon.md (see ft2/horizon.py)")
     hz.add_argument("run", nargs="?", help="the run's directory name under output/backtest/")
@@ -729,7 +747,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "allgbm": cmd_allgbm, "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "allgbm": cmd_allgbm, "f5data": cmd_f5data, "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":

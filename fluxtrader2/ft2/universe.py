@@ -173,6 +173,7 @@ OUT_PRE_CSV = Path("output/universe_screen_pre_members.csv")
 
 
 F34_MEMBERS_CSV = Path(__file__).with_name("screen_members_f34.csv")     # R25: the members of F3+F4's blocks (`screen_select(("F3", "F4"))`), frozen once
+F5_MEMBERS_CSV = Path(__file__).with_name("screen_members_f5.csv")       # decision CO1 (2026-11-11): the members of F5's blocks (`screen_select(("F5",))`), frozen once
 
 
 def pre_starts() -> list[pd.Timestamp]:

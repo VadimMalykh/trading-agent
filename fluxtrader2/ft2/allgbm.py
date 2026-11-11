@@ -400,6 +400,9 @@ CONF_FOLDS = ("F3", "F4")
 CONF_START, CONF_GRIDS = pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-06-01", tz="UTC")
 
 
+F5_START, F5_GRIDS = pd.Timestamp("2025-07-01", tz="UTC"), pd.Timestamp("2025-10-01", tz="UTC")     # decision CO1: F5's market and hourly grids, six / three months before the fold as F3+F4's were
+
+
 def verdict88(ic: float, se: float, t: float) -> str:
     if np.isfinite(ic) and np.isfinite(t) and t >= T_ONE_SIDED and ic >= BAR_MAKER:
         return "CONFIRMED AT THE TAKER BAR" if ic >= BAR_TAKER else "CONFIRMED"
