@@ -144,3 +144,155 @@ def run(name: str = NAME, forecast: Path | str = FORECAST, registration: str = R
 def main(action: str, name: str | None = None) -> None:
     if action == "run":
         run(name or NAME)
+
+
+# ====================================================================================================================================
+# R91 (docs/PLAN.md §8): the FORWARD test on F6 — the frozen trees' least-liked coins sold and HELD while they stay in the tail,
+# funding-aware, hedged. The rule and its pricing are written here on 2026-11-11, after the registration's commit, and tested on
+# planted bars only: the rule is NEVER run on F5's cells (R90's gate), and on F6 once, at the read (on or after 2027-03-18).
+# ====================================================================================================================================
+REG91, NAME91 = "R91", "r91"
+F6_START, F6_END = pd.Timestamp("2026-09-17", tz="UTC"), pd.Timestamp("2027-03-16", tz="UTC")
+FIFTH = 5
+FUND_ENTRY, FUND_EXIT = -10.0, -30.0                         # bps a day: the last funding rate known at t × 24 / its interval hours
+CAP_BARS = 7 * 288
+HEDGE_BPS = 4.0
+HALF = pd.Timedelta(days=90)
+MODEL_MD5 = "816b994c136fda82eb36ceca88580d36"
+
+
+def day_funding(fund: pd.DataFrame) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Per symbol: the funding events' stamps (ns, sorted) and each rate scaled to a day, bps."""
+    f = fund.assign(symbol=fund["symbol"].astype(str), ts=pd.to_datetime(fund["ts"], utc=True)).sort_values(["symbol", "ts"])
+    return {s: (pd.DatetimeIndex(g["ts"]).as_unit("ns").asi8, (g["rate"].to_numpy(float) * 1e4 * 24.0 / g["interval_h"].to_numpy(float)))
+            for s, g in f.groupby("symbol", sort=False)}
+
+
+def last_funding(F: dict, sym: str, t: pd.Timestamp) -> float:
+    """The last funding rate stamped at or before t, bps a day; NaN when the coin has no row yet."""
+    if sym not in F:
+        return np.nan
+    ts, r = F[sym]
+    p = np.searchsorted(ts, pd.Timestamp(t).as_unit("ns").value, "right") - 1
+    return float(r[p]) if p >= 0 else np.nan
+
+
+def positions(fc: pd.DataFrame, fund: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """R91's rule on a forecast table (t, symbol, f; hourly bars): the SHORT positions (one row each: the entry bar t, the hold in 5m
+    bars, the exit's clause in `why`) and the entries the funding floor skipped. Per bar, in the registration's order: (1) exits —
+    no forecast, funding below FUND_EXIT, held CAP_BARS, out of the lowest ⌊n / FIFTH⌋ (when n ≥ MIN_N); (2) entries — the lowest
+    ⌊n / TENTH⌋ without a position, unless the last funding is below FUND_ENTRY or absent. Positions open at the last bar close there."""
+    d = fc[["t", "symbol", "f"]].dropna().assign(symbol=lambda x: x["symbol"].astype(str)).sort_values(["t", "f", "symbol"], kind="mergesort")
+    F = day_funding(fund)
+    open_: dict[str, tuple[pd.Timestamp, float]] = {}
+    rows, skipped = [], []
+    cap = pd.Timedelta(minutes=5 * CAP_BARS)
+
+    def close(s, t, why):
+        t0, f0 = open_.pop(s)
+        rows.append({"t": t0, "symbol": s, "side": -1, "size": 1.0, "signal": f0, "why": why, "hold": int((t - t0) / pd.Timedelta(minutes=5)), "fold": "F6", "block": 0})
+    t = None
+    for t, g in d.groupby("t", sort=True):
+        syms, fs = g["symbol"].tolist(), g["f"].tolist()
+        n = len(syms)
+        have = set(syms)
+        fifth = set(syms[:n // FIFTH]) if n >= MIN_N else None
+        for s in sorted(open_):
+            fr = last_funding(F, s, t)
+            if s not in have:
+                close(s, t, "no_forecast")
+            elif np.isfinite(fr) and fr < FUND_EXIT:
+                close(s, t, "funding")
+            elif t - open_[s][0] >= cap:
+                close(s, t, "cap")
+            elif fifth is not None and s not in fifth:
+                close(s, t, "left_fifth")
+        if n >= MIN_N:
+            for s, f in zip(syms[:n // TENTH], fs[:n // TENTH]):
+                if s in open_:
+                    continue
+                fr = last_funding(F, s, t)
+                if not np.isfinite(fr) or fr < FUND_ENTRY:
+                    skipped.append({"t": t, "symbol": s, "f": f, "funding_bps_day": fr, "why": "funding_floor" if np.isfinite(fr) else "no_funding_row"})
+                    continue
+                open_[s] = (t, f)
+    for s in sorted(open_):
+        close(s, t, "span_end")
+    dec = pd.DataFrame(rows, columns=["t", "symbol", "side", "size", "signal", "why", "hold", "fold", "block"])
+    dec = dec[dec["hold"] > 0].sort_values(["t", "symbol"], kind="mergesort").reset_index(drop=True)
+    return dec.assign(accepted=True, skip=""), pd.DataFrame(skipped, columns=["t", "symbol", "f", "funding_bps_day", "why"])
+
+
+def verdict91(mean: float, se: float, first: float, last: float) -> str:
+    if not (np.isfinite(mean) and np.isfinite(se) and se > 0):
+        return "NOT DETECTABLE"
+    if mean > 0 and mean / se >= T_ONE_SIDED and first > 0 and last > 0:
+        return "CLEARS"
+    return "FAILS" if mean + 1.96 * se < 0 else "NOT DETECTABLE"
+
+
+def _guard91(registration: str) -> None:
+    import re
+    if not bt.PLAN.exists() or not re.search(rf"^### {registration} ", bt.PLAN.read_text(), flags=re.M):
+        raise SystemExit(f"no '### {registration} ' block in {bt.PLAN}: write the registration before the read")
+    if pd.Timestamp.now("UTC") < F6_END:
+        raise SystemExit(f"{registration} is read once, after F6's last bar ({F6_END:%Y-%m-%d}); a look is the read")
+    r = pd.read_csv(bt.READS) if bt.READS.exists() else pd.DataFrame(columns=["registration", "fold"])
+    if ((r["registration"] == registration) & (r["fold"] == "F6")).any():
+        raise SystemExit(f"{registration} has already read F6 ({bt.READS}): a fold is read once per question")
+
+
+def hedged_stats(fills: pd.DataFrame, days: pd.DatetimeIndex) -> dict:
+    """The gate's statistic: the mean of (hedged net − HEDGE_BPS) per trade, day-clustered HAC with the 7-day cap's lags."""
+    from .ceiling import day_lags
+    f = fills.dropna(subset=["net_bps"])
+    x = f["hedged_net_bps"].to_numpy() - HEDGE_BPS
+    s = bt.trade_stats(x, f["size"].to_numpy(), pd.DatetimeIndex(f["t"]).floor("D"), days, day_lags(CAP_BARS))
+    t = pd.DatetimeIndex(f["t"])
+    mid = days[0] + HALF
+    return {"trades": int(len(f)), "mean": s["mean"], "se": s["se"], "t": s["mean"] / s["se"] if s["se"] else np.nan, "lo": s["lo"], "hi": s["hi"],
+            "first_half": float(x[t < mid].mean()) if (t < mid).any() else np.nan, "last_half": float(x[t >= mid].mean()) if (t >= mid).any() else np.nan}
+
+
+def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91, guard: bool = True, start: pd.Timestamp = F6_START, end: pd.Timestamp = F6_END) -> dict:
+    """R91's read: the positions of the rule on the F6 forecast, priced as a taker with the names' own costs and funding, the hedged
+    gate. Returns the gate's row; writes fills, the skipped entries, validity (3)–(4) and the verdict. The Data line, the member
+    lists, the cover and the described rows are the read session's (PLAN §8 R91, Code)."""
+    from . import data
+    if guard:
+        _guard91(registration)
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    fc = pd.read_parquet(forecast)
+    fc["t"] = pd.to_datetime(fc["t"], utc=True)
+    fc = fc[(fc["t"] >= start) & (fc["t"] < end)]
+    names = sorted(fc["symbol"].astype(str).unique())
+    M = bt.market(names, end, start)
+    fund = data.load("funding_archive", columns=["symbol", "ts", "rate", "interval_h"], symbols=names)
+    dec, skipped = positions(fc, fund[pd.to_datetime(fund["ts"], utc=True) < end])
+    skipped.to_csv(out / "skipped.csv", index=False)
+    C = bt.load_costs(M.index, M.columns, end, 1.0, close=M.close)
+    fills = bt.price(dec, M, C, "taker", TAKER_BPS, MAKER_BPS).merge(dec[["why", "hold", "signal"]], left_on="id", right_index=True, how="left")
+    priced = fills["net_bps"].notna()
+    v = {"registration": registration, "span": [str(start), str(end)], "names": len(names), "positions": int(len(dec)), "priced_share": float(priced.mean()) if len(fills) else 0.0,
+         "overlapping_positions": overlaps(fills[priced]), "entry_after_decision": bool((fills.loc[priced, "entry_t"] > fills.loc[priced, "t"]).all()),
+         "exits_by_clause": dec["why"].value_counts().to_dict(), "exits_unexplained": int((~dec["why"].isin(["no_forecast", "funding", "cap", "left_fifth", "span_end"])).sum()),
+         "entries_skipped": skipped["why"].value_counts().to_dict(), "hold_bars_median": float(dec["hold"].median()) if len(dec) else np.nan,
+         "share_at_the_cap": float((dec["why"] == "cap").mean()) if len(dec) else np.nan}
+    v["status"] = "PASS" if (v["priced_share"] >= 0.95 and v["overlapping_positions"] == 0 and v["entry_after_decision"] and v["exits_unexplained"] == 0) else "FAIL"
+    (out / "validity_book.json").write_text(json.dumps(v, indent=1, default=str))
+    if v["status"] != "PASS":
+        print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
+        raise SystemExit(2)
+    days = pd.date_range(start, end - pd.Timedelta(1, "ns"), freq="D")
+    fills.to_parquet(out / "fills.parquet", index=False)
+    g = hedged_stats(fills, days)
+    g["verdict"] = verdict91(g["mean"], g["se"], g["first_half"], g["last_half"])
+    (out / "gate.json").write_text(json.dumps({**g, "validity": v}, indent=1, default=str))
+    if guard:
+        bt.READS.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": ["F6"], "strategy": "allbook short_held",
+                      "params": json.dumps({"fifth": FIFTH, "tenth": TENTH, "fund_entry": FUND_ENTRY, "fund_exit": FUND_EXIT, "cap_bars": CAP_BARS, "hedge_bps": HEDGE_BPS})}).to_csv(
+            bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    print(f"{registration}: {g['verdict']} — hedged net {g['mean']:+.1f} bps a trade (t {g['t']:+.2f}) on {g['trades']} positions; wrote {out}/", flush=True)
+    return g
