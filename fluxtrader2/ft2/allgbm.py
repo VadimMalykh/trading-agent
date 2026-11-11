@@ -526,3 +526,141 @@ def confirm(name: str = NAME88, sources: dict | None = None, members_fit: str | 
                       "params": json.dumps({"features": len(used), "alpha": fit["alpha"], "coef_md5": coef_md5})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
     print(f"{registration}: {gate['verdict']} — IC {gate['ic']:+.4f} (t {gate['t']:+.2f}); wrote {out}/", flush=True)
     return "\n".join(md)
+
+
+# ---- R89: the frozen trees (R88's described fit) scored once on F5's coin members ------------------------------------------------------
+REG89, NAME89 = "R89", "r89"
+R88_TRAIN_CELLS = 695_140                                    # R88's fit: the same cells, or the model is not the one F3+F4 described
+R89_SCORABLE = 298_291                                       # the cover check's count on F5's coin cells (output/allgbm/cover_f5_coins)
+R89_MD5 = {"screen_members_f5.csv": "778ca0a5498cc1fc103d16361d456392", "screen_members_f5_coins.csv": "816f8ab9f53b54ca3070e1937fee14ef",
+           "f5_contract_types.csv": "ba761b2090f4844a6f607ed0142c37d7"}
+LATE_FROM = pd.Timestamp("2026-07-02", tz="UTC")              # the three last blocks (38 … 29 coins a bar), described apart
+
+
+def ic_cells(f: np.ndarray, z: np.ndarray, day: np.ndarray, cells: np.ndarray | None = None) -> dict:
+    """`ic_row` on a SUBSET of cells: the label is re-centred on every cell that has a forecast at the bar (the peers stay the whole
+    set), then only `cells` (bar × name) enter the pooled IC."""
+    have = ~np.isnan(f) & ~np.isnan(z)
+    zr = centre(z, have)
+    if cells is not None:
+        zr = np.where(cells, zr, np.nan)
+    d = np.repeat(day[:, None], f.shape[1], 1)
+    ok = ~np.isnan(zr)
+    if ok.sum() < 200:
+        return {"cells": int(ok.sum()), "days": 0, "ic": np.nan, "se": np.nan, "t": np.nan}
+    m, se, n = hac(_ic_pooled(f[ok], zr[ok], d[ok], min_cells=1), day_lags(HOLD))
+    return {"cells": int(ok.sum()), "days": n, "ic": m, "se": se, "t": m / se if se else np.nan}
+
+
+def trees_score(model, X: np.ndarray, scorable: np.ndarray, cols: list[int]) -> np.ndarray:
+    """The frozen trees' forecast on the scorable cells of a build (NaN elsewhere); `model` is anything with `.predict`."""
+    f = np.full(scorable.shape, np.nan)
+    f[scorable] = model.predict(X[scorable][:, cols])
+    return f
+
+
+def confirm5(name: str = NAME89, sources: dict | None = None, members_fit: str | None = None, members_conf: str | None = None, members_all: str | None = None,
+             registration: str = REG89, expect: bool = True) -> str:
+    import hashlib
+    import lightgbm as lgb
+    from .horizon import _tenths
+    from .universe import F5_COINS_CSV, F5_MEMBERS_CSV, F5_TYPES_CSV
+    sources = SOURCES if sources is None else sources
+    members_conf, members_all = members_conf or F5_COINS_CSV, members_all or F5_MEMBERS_CSV
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    conf = bt._guard(["F5"], registration)                                 # F5: only under the registration, once; logged when the number exists
+    md5 = lambda p: hashlib.md5(Path(p).read_bytes()).hexdigest()         # noqa: E731
+    lists = {Path(p).name: md5(p) for p in (F5_MEMBERS_CSV, F5_COINS_CSV, F5_TYPES_CSV)} if expect else {}
+    f3_start = folds.bounds("F3")[0]
+
+    print("F1+F2: the cells the model is fitted on…", flush=True)
+    B1 = build(members_fit, folds.EXPLORATION, sources)
+    names1 = [k for _, k in B1["src_of"]]
+    cols = [i for i, k in enumerate(names1) if k not in DROP88]
+    used = [names1[i] for i in cols]
+    train = B1["usable"] & (B1["t_end"].asi8 < f3_start.value)[:, None]
+    late_train = int((train & (B1["t_end"].asi8 >= f3_start.value)[:, None]).sum())
+    r88_names = list(pd.read_csv(OUT / NAME88 / "coef.csv")["feature"]) if expect else used
+    gbm = lgb.LGBMRegressor(**{**PARAMS, "n_jobs": 8}).fit(B1["X"][train][:, cols], B1["zres"][train])
+    gbm.booster_.save_model(str(out / "model.txt"))
+    model_md5 = md5(out / "model.txt")
+    model = lgb.Booster(model_file=str(out / "model.txt"))                 # the FILE is the model from here on
+    train_cells = int(train.sum())
+    print(f"frozen: {len(used)} features, {train_cells:,} cells, model.txt md5 {model_md5}", flush=True)
+    del B1
+
+    print("F5: the coin cells it is scored on…", flush=True)
+    end = folds.bounds("F5")[1]
+    B2 = build(members_conf, ("F5",), sources, end, F5_START, F5_GRIDS)
+    names2 = [k for _, k in B2["src_of"]]
+    cov = B2["cover"].set_index("feature")
+    d_causal = _causal(B2, sources)
+    v = {"registration": registration, "folds_fit": list(folds.EXPLORATION), "folds_scored": ["F5"], "lists_md5": lists, "lists_as_registered": lists == R89_MD5 if expect else None,
+         "features": len(used), "feature_names": used, "same_names_as_r88": used == r88_names, "dropped_in_use": [k for k in used if k in DROP88], "train_cells": train_cells,
+         "train_cells_as_r88": train_cells == R88_TRAIN_CELLS if expect else None, "train_cells_with_label_ending_in_or_after_F3": late_train, "model_md5": model_md5,
+         "same_feature_names": names1 == names2, "features_without_a_cell_on_F5": [k for k in used if int(cov.loc[k, "cells"]) == 0], "max_abs_d_causal": d_causal,
+         "names_scored": len(B2["names"]), "blocks": int(B2["block"].max()) + 1, "scorable_cells": int(B2["scorable"].sum()), "scorable_as_the_cover_check": int(B2["scorable"].sum()) == R89_SCORABLE if expect else None,
+         "rows": int(len(B2["grid"])), "first": str(B2["grid"][0]), "last": str(B2["grid"][-1]), "bars": {"taker": BAR_TAKER, "maker": BAR_MAKER, "t_one_sided": T_ONE_SIDED}}
+    v["status"] = "PASS" if (v["same_names_as_r88"] and not v["dropped_in_use"] and late_train == 0 and v["same_feature_names"] and not v["features_without_a_cell_on_F5"]
+                             and d_causal in (None, 0.0) and v["lists_as_registered"] in (None, True) and v["train_cells_as_r88"] in (None, True)
+                             and v["scorable_as_the_cover_check"] in (None, True)) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
+    B2["cover"].to_csv(out / "cover.csv", index=False)
+    head = [f"# {registration} — the frozen trees (R87's LightGBM as R88 fitted it on F1+F2's members), scored once on F5's coin members (`ft2 allgbm confirm5`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {len(used)} features · fitted on {train_cells:,} cells · scored on {len(B2['names'])} names · "
+            f"bars: maker {BAR_MAKER}, taker {BAR_TAKER}, one-sided t ≥ {T_ONE_SIDED}\n",
+            f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps({k: x for k, x in v.items() if k != "feature_names"}, indent=1, default=str), "\n```\n"]
+    if v["status"] != "PASS":
+        (out / "read.md").write_text("\n".join(head + ["\n**The read is VOID: no IC was computed.**\n"]))
+        print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
+        raise SystemExit(2)
+
+    grid, day, z, y, names = B2["grid"], B2["day"], B2["z"], B2["y"], B2["names"]
+    f = trees_score(model, B2["X"], B2["scorable"], cols)
+    r = ic_row(f, z, day)
+    zr = centre(z, ~np.isnan(f) & ~np.isnan(z))
+    m_xs, se_xs, _ = hac(_ic_xs(pd.DataFrame(f), pd.DataFrame(zr), day), day_lags(HOLD))
+    tenths = float(np.nanmean(_tenths(f, np.where(~np.isnan(f), y, np.nan)))) if len(grid) % PER_DAY == 0 else np.nan
+    gate = {"model": "the frozen trees on F5's coins (the gate)", **r, "mde": MDE_K * r["se"] if np.isfinite(r["se"]) else np.nan, "ic_rank_per_bar": m_xs, "t_rank": m_xs / se_xs if se_xs else np.nan,
+            "tenths_bps_a_leg": tenths, "verdict": verdict88(r["ic"], r["se"], r["t"])}
+    old = set(universe.screen_symbols()) | set(universe.screen_symbols(universe.F34_MEMBERS_CSV)) if expect else set(names[::2])
+    is_old = np.array([c in old for c in names])
+    late = np.asarray(grid >= LATE_FROM)
+    rows = [gate,
+            {"model": f"described: coins that were members in F1–F4 ({int(is_old.sum())})", **ic_cells(f, z, day, np.broadcast_to(is_old[None, :], f.shape)), "verdict": "described"},
+            {"model": f"described: coins new in 2026 ({int((~is_old).sum())})", **ic_cells(f, z, day, np.broadcast_to(~is_old[None, :], f.shape)), "verdict": "described"},
+            {"model": "described: the blocks before 2026-07-02", **ic_row(f, z, day, ~late), "verdict": "described"},
+            {"model": "described: the blocks from 2026-07-02", **ic_row(f, z, day, late), "verdict": "described"}]
+    month = pd.Series(grid.strftime("%Y-%m"))
+    by_month = pd.DataFrame([{"month": mth, **ic_row(f, z, day, (month == mth).to_numpy())} for mth in sorted(month.unique())])
+    o = pd.DataFrame({"t": np.repeat(grid.to_numpy(), len(names)), "symbol": np.tile(np.asarray(names), len(grid)), "f": f.ravel(), "z": z.ravel()})
+    o[~np.isnan(o["f"])].to_parquet(out / "forecast.parquet", index=False)
+    pd.DataFrame(rows).to_csv(out / "models.csv", index=False)                    # the gate's row is on disk before the described second build
+    (out / "validity.json").write_text(json.dumps({**v, "verdict": gate["verdict"], "ic": float(gate["ic"]), "se": float(gate["se"]), "t": float(gate["t"])}, indent=1, default=str))
+    if conf:
+        bt.READS.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": conf, "strategy": "allgbm confirm5",
+                      "params": json.dumps({"features": len(used), "model_md5": model_md5})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    print(f"{registration}: {gate['verdict']} — IC {gate['ic']:+.4f} (t {gate['t']:+.2f})", flush=True)
+    cover2 = B2["cover"]
+    del B2
+
+    print("F5: all the members (described)…", flush=True)
+    B3 = build(members_all, ("F5",), sources, end, F5_START, F5_GRIDS)
+    f3 = trees_score(model, B3["X"], B3["scorable"], cols)
+    coin = np.array([c in set(names) for c in B3["names"]])
+    for label, cells in ((f"described: ALL {len(B3['names'])} members (peers: all)", None), ("described: the coin cells among all members", np.broadcast_to(coin[None, :], f3.shape)),
+                         (f"described: the {int((~coin).sum())} stock / ETF / commodity names' cells", np.broadcast_to(~coin[None, :], f3.shape))):
+        rows.append({"model": label, **ic_cells(f3, B3["z"], B3["day"], cells), "verdict": "described"})
+    tab = pd.DataFrame(rows)
+    tab.to_csv(out / "models.csv", index=False)
+    show = lambda d, k=4: d.round(k).to_markdown(index=False)                    # noqa: E731
+    md = head + [
+        f"\n## The gate — **{gate['verdict']}**: the frozen trees' IC on F5's coins {gate['ic']:+.4f} (se {gate['se']:.4f}, t {gate['t']:+.2f}, MDE {gate['mde']:.4f}) on {int(gate['cells']):,} cells, "
+        f"{int(gate['days'])} days; per-bar rank IC {gate['ic_rank_per_bar']:+.4f} (t {gate['t_rank']:+.2f}); tenths {gate['tenths_bps_a_leg']:+.1f} bps a leg a day before costs\n", show(tab), "\n",
+        "\n## Described (decides nothing)\n", "\n### By month (the gate's cells)\n", show(by_month), "\n",
+        "\n### Cover of each feature on F5's scorable coin cells\n", cover2.round(4).to_markdown(index=False), "\n"]
+    (out / "read.md").write_text("\n".join(md))
+    print(f"wrote {out}/", flush=True)
+    return "\n".join(md)

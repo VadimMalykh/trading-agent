@@ -138,3 +138,29 @@ def test_r88_the_frozen_ridge_scores_other_cells_with_the_dropped_features_out_a
     assert np.isnan(f[:, 0]).all() and np.isfinite(f[:, 1:]).all() and set(F) == {"ridge (the gate)", "gbm, R87's parameters"}
     assert np.allclose(f[:, 1:], (X2[:, 1:, 0] - 0.5) * fit["coef"][0] + (X2[:, 1:, 1] - 0.5) * fit["coef"][1], atol=1e-6)         # the frozen coefficients, nothing refitted
     assert np.corrcoef(f[:, 1:].ravel(), X2[:, 1:, 0].ravel())[0, 1] > 0.9
+
+
+def test_r89_the_frozen_trees_score_from_the_file_and_a_subset_keeps_the_whole_sets_peers(tmp_path):
+    import lightgbm as lgb
+    rng = np.random.default_rng(89)
+    X = rng.uniform(0, 1, (400, 12, 3)).astype(np.float32)
+    X[:, ::4, 2] = np.nan                                                         # a thin feature
+    z = (np.abs(X[:, :, 0] - 0.5) - 0.25) * 4 + rng.normal(0, 1, (400, 12))
+    ok = np.ones((400, 12), dtype=bool)
+    ok[:, 11] = False                                                             # a name that is never a cell
+    m = lgb.LGBMRegressor(**{**ag.PARAMS, "min_child_samples": 50}).fit(X[:200][ok[:200]][:, [0, 2]], z[:200][ok[:200]])
+    m.booster_.save_model(str(tmp_path / "model.txt"))
+    frozen = lgb.Booster(model_file=str(tmp_path / "model.txt"))
+    f = ag.trees_score(frozen, X[200:], ok[200:], [0, 2])
+    assert np.isnan(f[:, 11]).all() and np.allclose(f[:, :11], m.predict(X[200:][ok[200:]][:, [0, 2]]).reshape(200, 11))        # the file IS the model; nothing off the cells
+    day = np.arange(200) // 4                                                     # fifty made-up days
+    zz = np.where(ok[200:], z[200:], np.nan)
+    whole, row = ag.ic_cells(f, zz, day), ag.ic_row(f, zz, day)
+    assert whole["cells"] == row["cells"] == 200 * 11 and np.isclose(whole["ic"], row["ic"]) and whole["ic"] > 0.1                # the planted U comes back; no subset = ic_row
+    half = np.zeros((200, 12), dtype=bool)
+    half[:, :6] = True
+    a, b = ag.ic_cells(f, zz, day, half), ag.ic_cells(f, zz, day, ~half)
+    assert a["cells"] == 200 * 6 and b["cells"] == 200 * 5                                                                        # the subset's cells only …
+    zr = ag.centre(zz, ~np.isnan(f) & ~np.isnan(zz))
+    assert np.isclose(a["ic"], np.mean([np.corrcoef(f[day == d][:, :6].ravel(), zr[day == d][:, :6].ravel())[0, 1] for d in np.unique(day)]), atol=0.05)   # … against the label centred on ALL the cells
+    assert ag.R89_MD5["screen_members_f5_coins.csv"] == "816f8ab9f53b54ca3070e1937fee14ef" and ag.R88_TRAIN_CELLS == 695_140 and ag.R89_SCORABLE == 298_291
