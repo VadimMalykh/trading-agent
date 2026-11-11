@@ -63,8 +63,20 @@ def src_positioning(M, grid, names):
 
 def src_book(M, grid, names):
     from . import book_ext
-    F = book_ext.features_depth(M.index, list(M.columns), CTX["end"])
-    return {k: F[k].reindex(index=grid, columns=names) for k in (book_ext.RAW, book_ext.DM)}
+    cols = list(M.columns)
+    try:
+        F = book_ext.features_depth(M.index, cols, CTX["end"])
+        return {k: F[k].reindex(index=grid, columns=names) for k in (book_ext.RAW, book_ext.DM)}
+    except ValueError:                                         # a name without a depth file (F3+F4's members: the book was fetched for F1+F2's): name by name, absent stays absent
+        out = {k: pd.DataFrame(np.nan, index=grid, columns=names) for k in (book_ext.RAW, book_ext.DM)}
+        for c in cols:
+            try:
+                F = book_ext.features_depth(M.index, [c], CTX["end"])
+            except ValueError:
+                continue
+            for k in out:
+                out[k][c] = F[k][c].reindex(grid)
+        return out
 
 
 def src_coinbase(M, grid, names):
