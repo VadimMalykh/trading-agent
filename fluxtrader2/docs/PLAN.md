@@ -1524,7 +1524,7 @@ names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common att
 - **CP2 — straight to the forward paper test,** no priced backtest: honest by construction, but months of calendar before the first number and the live fetchers built before knowing whether costs leave anything.
 - **CP3 — record and park;** the forecast stays a confirmed fact without a book.
 
-Needed from Vadim: the word on CP. WRITTEN 2026-11-11 — OPEN.
+Needed from Vadim: the word on CP. WRITTEN 2026-11-11 — **DECIDED 2026-11-11 on Vadim's "CP1" (the recommendation): the Data line DONE the same hour (`scripts/cp1_cost.sh` on the work VM: `costwide` for the 137 coins from 2025-07-01, merged — 54,114 new rows, the 33,516 overlapping old rows identical to 0.0, 322,545 rows / 602 names, PASS; every coin priced on every member day); the names' own taker round trip at 10,000 USDT on their member days: median 21 bps, mean 35 (the coins of F1–F4 19 / 26, the coins new in 2026 61 / 78); R90 REGISTERED in §8 before any fill is priced.**
 
 **Decision CO (2026-11-11) — R88's gate NOT CONFIRMED, the trees' described row at the taker bar. The plain question: spend F5 (2026-01-01 → 2026-09-15, the last fold nothing of this kind has read) on ONE test of the frozen tree model, or leave the all-inputs forecast parked?** Known: R88's registered gate (the frozen ridge) read IC +0.0027 (t 0.44) on F3+F4; R87's own LightGBM, fitted on the same F1+F2 cells and frozen the same way, read +0.0217 (t 2.63, F3 +0.0226 / F4 +0.0209) beside it — described, licensing nothing, one-sided p ≈ 0.009 for the two models read. Unknown: whether that row is real — F3+F4 are spent for any all-inputs model, only F5's members can say. The options:
 - **CO1 — the F5 Data line, the features-only cover check, then R89: the frozen trees scored ONCE on F5's members (recommended).** F5 is ≈ 256 days: the se ≈ 0.008–0.011, so only an IC near the taker bar is detectable; a NOT CONFIRMED leaves a smaller lean unproven. F5 is then spent for the all-inputs forecast.
@@ -15684,6 +15684,56 @@ Result:        **READ 2026-11-11 (the work VM, `r89_chain.sh`, 17:00 → 17:20 V
                the tenths' +78 bps a leg a day is before any cost and rests on few names. By the gate it licenses ONE registration:
                the coins' cost at the trade level on the model's own top and bottom tenths, and only if that clears a priced book
                and a forward design — decision CP (Vadim's). F5 is SPENT for the all-inputs forecast.**
+
+
+### R90 — R89's forecast as MONEY: the saved forecast of the frozen trees traded as an hourly long-top / short-bottom book of F5's coins, one day a position, priced with the names' own costs (registered 2026-11-11 on Vadim's "CP1", after the cost Data line and before any fill is priced; licensed by R89's gate)
+Question:      R89 confirmed that the frozen model ranks tomorrow's winners among F5's coins (IC +0.0411). In plain words: if every
+               hour we had bought the tenth of the coins the model liked most and sold the tenth it liked least, held each a day and
+               paid what those coins cost to trade, would money have been left?
+Hindsight:     stated: the forecast, the cells and the fold are R89's, read; its gross is known in outline (the top tenth over the
+               bottom +78 bps a leg a day before costs, hourly overlapping; concentrated in few names and in the coins new in 2026).
+               What is NOT known and is the question: the cost-side and the net of a book that can hold one position a name. The
+               rule below is written from R14's serving frame, not searched: no threshold, tenth, hold or size was tried.
+Forecast:      `output/allgbm/r89/forecast.parquet` (md5 0473adf9eabf1747b576c849fe484f98; 297,595 cells with a label, the model
+               `model.txt` md5 816b994c…) — read as saved, nothing refitted or re-scored.
+Rule:          at every hourly bar t of F5 with a forecast on n ≥ 10 coin cells: k = ⌊n / 10⌋; BUY the k coins with the highest
+               forecast, SELL the k with the lowest (ties by symbol). Each decision is one position of 10,000 USDT, entered at the
+               close of the next 5m bar (LATENCY 1), held 288 bars; a coin with an open position is skipped (`backtest.accept`, one
+               position a name, no side cap). The cells are the forecast's own (members at t with every input rule of R89).
+Pricing:       `backtest.price`, exec TAKER (the gate): 5 bps a side + the coin's own half-spread and impact at 10,000 USDT of the
+               entry / exit day (`cost_daily_wide`, the candle proxy — P1's caveat: an extrapolation below the twelve's volumes),
+               funding on the position's value. Unit: net bps per trade (10,000 USDT → 1 bps = 1 USDT).
+Statistic:     the mean net per trade with the day-clustered HAC interval (`backtest.summarize`), one-sided, the sign POSITIVE.
+Gate:          validity PASS, then: CLEARS if net > 0 AND t = net / se ≥ 1.645. NOT DETECTABLE if the interval holds zero. FAILS if
+               net + 1.96 se < 0.
+               CLEARS → the book earned after costs on F5 as traded by a taker: it licenses the FORWARD paper design on F6 (the bars
+               from 2026-09-15, untouched) with the model frozen — and the robustness rows below say what the design must respect
+               (if the book without the five named coins nets ≤ 0, a clear is five coins' and the design says so; if only the new
+               coins earn, the design's universe and its cost rows are theirs). NOT DETECTABLE / FAILS → the forecast is real and
+               not shown to pay a taker at this rule; ONE cost-side question may then be registered (the maker at the trade level
+               on these names, R39's method), nothing else on F5's cells; no other tenth, hold, threshold or size here.
+Described:     deciding nothing: (a) the long side and the short side apart; (b) hedged net (against the coins' basket); (c) the
+               coins of F1–F4 against the coins new in 2026; (d) WITHOUT LABUSDT, SIRENUSDT, HOMEUSDT, SLXUSDT, TRXUSDT (R89's five
+               largest IC contributors, named now); (e) by month, and the blocks before / from 2026-07-02; (f) exec `maker` (the
+               bar-simulated resting order, 2 bps filled, the taker's cost when it crosses) — an estimate, not a measurement; (g)
+               the costs × 1.5; (h) gross, fee, other cost, funding per trade; trades a day; the share of decisions skipped because
+               a position was open; USDT a day.
+Validity:      read first, or the read is void (exit 2): (0) `backtest._guard(["F5"], "R90")`; the forecast's md5 as above; (1) the
+               cost file holds a row for ≥ 99 % of the accepted positions' entry and exit days and ≥ 95 % of them are priced; (2)
+               every decision's bar carries a forecast and the entry bar is after it (causal by construction — counted); (3) k per
+               bar between 1 and 6 and the two sides' decisions equal in count at every bar; (4) no coin holds two positions at
+               once (counted from the fills). Logged in `confirmation_reads.csv` under (R90, F5) once the number exists.
+Power:         unknown before the read and said so: ≈ 2,000–3,000 positions over 254 days; a violent coin's day moves 8–10 %, so
+               the se of the mean is expected 20–35 bps a trade — a net under ≈ 40–55 cannot clear. Costs in hand: the taker round
+               trip on these names' member days, median 21 bps, mean 35 (the new coins 61 / 78), and the forecast's tails lean to
+               the new coins (36 % of the bottom tenth).
+Expectation:   validity PASS; gross +40 … +90 a trade; fee + other cost 35 … 60; funding within ±10; net −15 … +45: CLEARS three in
+               ten, NOT DETECTABLE six in ten, FAILS one in ten; the short side above the long; the new coins' gross larger and
+               their net no better than the old coins'; without the five named coins the net lower by 10 … 30; the maker row above
+               the taker by 5 … 15.
+Folds read:    F5, a second time, for the cost side of R89's confirmed forecast — licensed by R89's gate, logged under R90. F6 untouched.
+Commands:      on the work VM — `scripts/r90_chain.sh`: `ft2 allbook run` → output/allbook/r90/read.md, fills.parquet, validity.json,
+               rows.csv. Code named, not written: `ft2/allbook.py`, the CLI, the chain, the planted test.
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
