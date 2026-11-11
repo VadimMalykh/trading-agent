@@ -15556,7 +15556,31 @@ Power:         stated before the read, and it is WEAK: F3+F4 hold about as many 
 Expectation:   validity PASS; the frozen ridge's IC on F3+F4 in −0.004 … +0.012; CONFIRMED four in ten, NOT CONFIRMED six in ten (CLOSED
                one in ten of those); the trees within 0.004 of the ridge; the tenths +3 … +12 bps a leg a day.
 Commands:      on the work VM — `scripts/r88_chain.sh`: `FT2_JOBS=8 ft2 allgbm confirm` → output/allgbm/r88/read.md, coef.csv, validity.json
-Result:        —
+Result:        **READ 2026-11-11 (the work VM, `r88_chain.sh`, 10:33 → 10:54 UTC; the registration ee7e42f, the code after it;
+               `output/allgbm/r88/`; F3 and F4 logged under R88). VALIDITY PASS: the same 33 feature names in both builds, none of the
+               four dropped in use; 695,140 training cells, 0 with a label ending at or after F3; coef.csv md5 a2c33115… written before
+               F3+F4's market was loaded (alpha 1.0); every feature with cells on F3+F4; the candle features causal (0.0); 216 names,
+               692,711 scorable cells, 2024-09-03 → 2025-12-31.**
+               **THE GATE — NOT CONFIRMED: the frozen ridge's IC on F3+F4 +0.0027, se 0.0061, t +0.44 (the bar 1.645), MDE 0.0171, on
+               691,191 cells over 482 days; F3 +0.0022, F4 +0.0031.** Not CLOSED (the upper bound 0.0146 is above the maker bar).
+               **Described, deciding nothing — and it must be said plainly: the trees, R87's own registered model with R87's
+               parameters, fitted on the same cells and frozen the same way, read +0.0217 on F3+F4 (se 0.0083, t +2.63; F3 +0.0226,
+               F4 +0.0209; the per-bar rank IC +0.0179, t 3.6; the tenths +26.6 bps a leg a day before costs) — at the taker bar
+               (0.0214), on cells no fit had seen.** The ridge's rank IC +0.0064 (t 1.1), its tenths +22.1. By month the gate's model
+               9 positive of 16, none at t 2.
+               What happened to the gate's model, as far as the files show: RidgeCV chose its smallest penalty (alpha 1.0 — an OLS in
+               effect), and the three largest coefficients are the collinear long/short trio pulling against each other
+               (top_vs_global +0.155, top_ls −0.099, global_ls +0.088; the next is vol_4w −0.051) — a fit of that kind does not travel.
+               On F1+F2 (R87) the ridge and the trees were equal held out (0.0120 / 0.0110) because each of the 68 fits was scored
+               next to its own training months; a year later they part.
+               Against the expectation: the ridge inside −0.004 … +0.012 (yes); NOT CONFIRMED, the likelier row; "the trees within
+               0.004 of the ridge" — NO, 0.019 above; the tenths +3 … +12 — NO, +22 / +27.
+               **The choice of the linear model as the gate was this registration's own hindsight choice (stated in its Hindsight
+               line), and it was the wrong one of the two. By the letter: the all-inputs forecast is NOT CONFIRMED and PARKED on the
+               members for F1–F4; F3+F4 are SPENT for it; the trees' row licenses nothing and cannot be promoted to a verdict after
+               the fact. What it is: a second, independent sample on which R87's registered model ranks the next day better than a
+               coin flip (two models were read, so its one-sided p ≈ 0.004 is ≈ 0.009 for a family of two) — a HYPOTHESIS that only
+               F5's members (2026-01 → 2026-09-15, their bars and sources not yet fetched) can test: decision CO (Vadim's).**
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
