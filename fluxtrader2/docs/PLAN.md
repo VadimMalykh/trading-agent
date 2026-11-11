@@ -1519,6 +1519,13 @@ D+1 19:45 UTC (two probes; the hour unmeasured — a UTC-morning probe owed). Th
 names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common attention factor. The median article has 122 views a day; 12 under
 20. Nothing joined to a price. VM TERMINATED 21:39 UTC.**
 
+**Decision CP (2026-11-11) — R89 CONFIRMED AT THE TAKER BAR on F5's coins (IC +0.0411, t 3.57). The plain question: the frozen tree model ranks tomorrow's winners on two samples it never saw — does that ranking survive the cost of trading it, and how do we find out?** Known: the forecast is real by its registered gate; before costs the top tenth beats the bottom by 78 bps a leg a day on F5; the lean leans on young, violent coins (the 53 coins new in 2026: +0.090 against the old coins' +0.020) and on few names (without the ten largest contributors +0.020, t 1.8); the one-day forecast is persistent (a name's forecast a day later correlates 0.40), so turnover is well under a full book a day. Unknown: the cost of those names at the trade level (`cost_daily_wide` holds no 2026 row for most of them), the net of a book, and whether it holds forward — F1–F5 are spent for this forecast; the bars from 2026-09-15 (≈ 2 months, growing) are F6, untouched. The options:
+- **CP1 — the priced book on F5, registered, then the forward design (recommended).** (i) A Data line: `costwide --symbols` for the 137 coins over 2025-12 → 2026-09, merged (never overwritten). (ii) R90, registered before any priced number: the frozen model's saved forecast (`output/allgbm/r89/forecast.parquet`, nothing refitted) traded as a daily long-top / short-bottom book of the coins by a rule written from R14's serving frame (the tenth's size, the hold, the turnover band, the notional), priced with the names' own taker rows and, beside it, the maker estimate; the gate the net per trade against zero with the block bootstrap, the result without the five largest names and the old coins alone as registered robustness rows. Cost: one session. (iii) Only on a clear: the forward paper design on F6 (the model frozen, the sources' live feeds counted first — positioning and candles are live on the serve host's exchange API; spot flow, Hyperliquid, Coinbase, Korea and Wikipedia need live fetchers or are dropped by a registered rule).
+- **CP2 — straight to the forward paper test,** no priced backtest: honest by construction, but months of calendar before the first number and the live fetchers built before knowing whether costs leave anything.
+- **CP3 — record and park;** the forecast stays a confirmed fact without a book.
+
+Needed from Vadim: the word on CP. WRITTEN 2026-11-11 — OPEN.
+
 **Decision CO (2026-11-11) — R88's gate NOT CONFIRMED, the trees' described row at the taker bar. The plain question: spend F5 (2026-01-01 → 2026-09-15, the last fold nothing of this kind has read) on ONE test of the frozen tree model, or leave the all-inputs forecast parked?** Known: R88's registered gate (the frozen ridge) read IC +0.0027 (t 0.44) on F3+F4; R87's own LightGBM, fitted on the same F1+F2 cells and frozen the same way, read +0.0217 (t 2.63, F3 +0.0226 / F4 +0.0209) beside it — described, licensing nothing, one-sided p ≈ 0.009 for the two models read. Unknown: whether that row is real — F3+F4 are spent for any all-inputs model, only F5's members can say. The options:
 - **CO1 — the F5 Data line, the features-only cover check, then R89: the frozen trees scored ONCE on F5's members (recommended).** F5 is ≈ 256 days: the se ≈ 0.008–0.011, so only an IC near the taker bar is detectable; a NOT CONFIRMED leaves a smaller lean unproven. F5 is then spent for the all-inputs forecast.
 - **CO2 — leave it parked;** F5 kept for another question.
@@ -15648,6 +15655,35 @@ Folds read:    F5, ONCE, for this question — the guard row says so. F5's earli
                row back unchanged) and the two cover checks read no label.
 Commands:      on the work VM — `scripts/r89_chain.sh`: `ft2 allgbm confirm5` → output/allgbm/r89/read.md, model.txt, validity.json,
                models.csv, forecast.parquet. Code named, not written: `allgbm.confirm5`, the CLI action, the chain, the planted test.
+Result:        **READ 2026-11-11 (the work VM, `r89_chain.sh`, 17:00 → 17:20 VM clock; the registration f69b02d, the code 4d8e3b2 after
+               it; `output/allgbm/r89/`; (R89, F5) logged 17:15 UTC). VALIDITY PASS: the three lists' md5 as registered; the 33 names
+               equal R88's in order, none of the four dropped in use; 695,140 training cells (R88's), 0 with a label ending at or
+               after F3; model.txt md5 816b994c… written before F5's market was loaded and the forecast made from the file; the same
+               names on F5, every feature with cells; the candle features causal (0.0); 137 names, 9 blocks, 298,291 scorable cells
+               (the cover check's), 2026-01-03 → 2026-09-14.** (The Validity line's "the guard row stands" on a void was loose: the
+               row is written once the number exists, R88's form; no void occurred.)
+               **THE GATE — CONFIRMED AT THE TAKER BAR: the frozen trees' pooled IC on F5's coins +0.0411, se 0.0115, t +3.57 (the bar
+               1.645; IC ≥ 0.0214), on 297,595 cells over 254 days; the per-bar rank IC +0.0320 (t 3.58); the top tenth over the
+               bottom +78.1 bps a leg a day BEFORE costs.**
+               **Described, deciding nothing:** the 84 coins that were members in F1–F4 +0.0195 (t 1.50; among themselves as peers
+               +0.0289, t 2.5) — F3+F4's size; the 53 coins new in 2026 (17 % of the cells) +0.0899 (t 3.67) — the excess over
+               F3+F4 is theirs; the blocks before 2026-07-02 +0.0311 (t 2.38), from it +0.0766 (t 3.19, 38 … 29 coins a bar); 7 of
+               8 whole months positive (January −0.030; March, June, July at t > 2). All 173 members +0.0249 (t 2.49); the 36 stock /
+               ETF / commodity names' cells −0.0134 (t −0.6) — nothing there, as the cells' choice assumed. On the saved forecast
+               (laptop, after the read): both sides carry it (the top tenth's next day +0.058 sigma against its peers, the bottom
+               −0.035); the new coins are 36 % of the bottom tenth and 21 % of the top against 17 % of the cells; the lean is
+               CONCENTRATED — a handful of names carry much of it (LAB, SIREN, HOME, SLX, TRX the first five): without the five
+               largest contributors +0.029 (t 2.8), without ten +0.020 (t 1.8), without twenty +0.004 — a hindsight removal that
+               must shrink any IC, said as the measure of how few names the money would have come from.
+               Against the expectation: validity PASS (yes); the IC inside −0.006 … +0.026 — NO, above it; CONFIRMED (four in ten);
+               all 173 below the coins (yes); "the old coins above the new" — NO, the reverse; the tenths +5 … +30 — NO, +78.
+               **In plain words: the tree model fitted on 2023-05 → 2024-08 and never touched again ranked the next day's winners
+               among the screener's coins better than a coin flip on 2024-09 → 2025-12 (described) and again on 2026-01 → 2026-09
+               (registered, t 3.6) — the first all-inputs forecast confirmed on cells no fit saw, at the size a taker needs. What it
+               is NOT yet: money. The largest part of F5's number comes from young, violent coins, which are the dearest to trade;
+               the tenths' +78 bps a leg a day is before any cost and rests on few names. By the gate it licenses ONE registration:
+               the coins' cost at the trade level on the model's own top and bottom tenths, and only if that clears a priced book
+               and a forward design — decision CP (Vadim's). F5 is SPENT for the all-inputs forecast.**
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
