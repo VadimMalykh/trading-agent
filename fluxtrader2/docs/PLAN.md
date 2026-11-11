@@ -1523,7 +1523,7 @@ names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common att
 - **CO1 — the F5 Data line, the features-only cover check, then R89: the frozen trees scored ONCE on F5's members (recommended).** F5 is ≈ 256 days: the se ≈ 0.008–0.011, so only an IC near the taker bar is detectable; a NOT CONFIRMED leaves a smaller lean unproven. F5 is then spent for the all-inputs forecast.
 - **CO2 — leave it parked;** F5 kept for another question.
 
-Needed from Vadim: the word on CO. WRITTEN 2026-11-11 (README's handoff) — **DECIDED 2026-11-11 on Vadim's "CO1" (the recommendation). Done the same day, nothing of F5's outcomes read: the full suite green (399 passed); F5's members SELECTED by the screener's unchanged rule (`ft2 universe --screen --folds F5` on the work VM) and FROZEN as `ft2/screen_members_f5.csv` (md5 778ca0a5498cc1fc103d16361d456392; 9 blocks 2026-01-03 → 2026-08-31, 540 rows, 173 names: 84 were members in F1–F4 (355 rows), 89 are new (185 rows) — and of the new, ≈ 35 names (105 rows, 1 of 60 in February → 29 of 60 in the last block) are the exchange's STOCK, ETF and COMMODITY perpetuals (NVDA, TSLA, SPY, XAU, NATGAS …), a kind of name no fit has seen); the frozen source lists (R62 / R64 / R68 / R69, made on F1–F4's 310 names) keep 46 … 64 of the 173 (46 … 58 % of the rows) — the hourly sources enter on those names, absent on the rest; the Data line `ft2 f5data klines|funding|metrics|mix` (`scripts/f5_data.sh`: the 5m klines 2025-07 → 2026-09 and the funding of the 173, the metrics from 2025-12-01, the hourly trade table rebuilt with its 2026 months; every old row checked) and `ft2 allgbm cover --folds F5` (features only). R89 is written after the cover check and before any F5 forecast or IC.**
+Needed from Vadim: the word on CO. WRITTEN 2026-11-11 (README's handoff) — **DECIDED 2026-11-11 on Vadim's "CO1" (the recommendation). Done the same day, nothing of F5's outcomes read: the full suite green (399 passed); F5's members SELECTED by the screener's unchanged rule (`ft2 universe --screen --folds F5` on the work VM) and FROZEN as `ft2/screen_members_f5.csv` (md5 778ca0a5498cc1fc103d16361d456392; 9 blocks 2026-01-03 → 2026-08-31, 540 rows, 173 names: 84 were members in F1–F4 (355 rows), 89 are new (185 rows) — and of the new, 36 names (110 rows, 1 of 60 in February → 31 of 60 in the last block; the exchange's own contract type TRADIFI_PERPETUAL, `ft2/f5_contract_types.csv`) are STOCK, ETF and COMMODITY perpetuals (NVDA, TSLA, SPY, XAU, NATGAS …), a kind of name no fit has seen); the frozen source lists (R62 / R64 / R68 / R69, made on F1–F4's 310 names) keep 46 … 64 of the 173 (46 … 58 % of the rows) — the hourly sources enter on those names, absent on the rest; the Data line `ft2 f5data klines|funding|metrics|mix` (`scripts/f5_data.sh`: the 5m klines 2025-07 → 2026-09 and the funding of the 173, the metrics from 2025-12-01, the hourly trade table rebuilt with its 2026 months; every old row checked) and `ft2 allgbm cover --folds F5` (features only). R89 is written after the cover check and before any F5 forecast or IC.**
 
 **Decision CL (2026-11-09) — the known-at probe READ EARLY, the verdict IDENTICAL: DefiLlama's Binance balance history is a point-in-time source on 2.9 days. The plain question: register R85 now on the audit's counts, or wait the registered week?** Known: a second fetch on the laptop 2026-11-09 08:00 UTC (`binance-cex_2026-11-09.json`, md5 8f867db6…, 46,719,208 bytes), 2.9 days after the first (09:05 UTC 2026-11-06, md5 45439f98…): **637,955 (stamp, chain, token) amounts present in both, 637,955 equal, the largest relative difference 0.0**; three days added (11-07, 11-08, 11-09 at 00:00) and the adapter's new live point (11-09 04:17:35); the ONE stamp gone is the first file's own last stamp — 2026-11-06 07:02:23, 1,109 keys, the adapter's run at fetch time, superseded by the next day's 00:00 point. `knownat`'s strict rule read that stamp as a removal and said REWRITTEN; the rule was corrected BEFORE the verdict was written (the older file's last stamp is `live_point_older`, never a removal; a day's point gone from the middle of the history is still one; `tests/test_p8_cexflow.py` plants both; the strict output kept as `output/cexflow/knownat_20261109_strict.json`, the read `knownat_20261109.json`). The hour (CK1 (iii)'s second half, `scripts/cexflow_hourprobe.sh`, `output/cexflow/hourprobe.csv`): the day's 00:00 point was present at 07:02 UTC on 11-06 (the live run's stamp) and by 04:17 UTC on 11-09 (the live run behind an 08:00 fetch) — **the lag ≤ 7 h on two days**; whether it is there by 06:00 is one fetch at 06:00 UTC on any day. Unknown: whether a full WEEK moves anything (3 days read, the registered 7 not — the 2026-11-13 fetch answers it, the module's two-newest rule chaining 06 → 09 → 13 over the same overlap); the 06:00 bound. The options:
 - **CL1 — R85 REGISTERED now on the audit's counts (CK1 (ii)'s text, recommended), with two VALIDITY gates before any bar is read:** (a) the 2026-11-13 fetch's `knownat` IDENTICAL (REWRITTEN voids the registration before the chain, the §7 row written, the lists stay as the record); (b) `ts_known` = t0 + 8 h — the first 5m bar closing after 08:00 UTC of the stamp's day — or t0 + 6 h if one fetch at 06:00 UTC shows that day's point (R72's two-valued rule, the value fixed before the code). The registration: the MEMBERS' inflow cells (121 on F1+F2 from the frozen `ft2/cexflow_f12.csv`, md5 21789095…), the name SOLD at the first 5m bar closing after ts_known, held 1d the gate (3d described), the 10 % trimmed mean, SEED 85, sign NEGATIVE, the moving-block bootstrap over weeks, |M_trim| ≥ B = 31.3 from the names' own rows, both folds the same sign, p ≤ 0.05; described beside: the OUTFLOW row bought (96 cells), the size flags (10 % 45 / 20 % 25), the revert split (post-t0), the non-members' cells (211, B 40.6), the F5 cells (11); rule (b)'s reading of a clear WITHOUT its mechanism written before the read; both window ends counted on the frozen list (121 / 120 / 119 at 1d / 3d / 7d, none dropped at 1d); the expectation CK1's (CLEARS one in eight, NOT DETECTABLE one in two, the opposite sign one in ten, CLOSED unreachable — MDE ≈ 100 … 125 against B 31); a clear licenses ONE confirmation on F3+F4's 184 cells (181 with bars, B 35.0). The frame after the registration: `govevent`'s `Spec` with the event table swapped, the planted tests first, `scripts/cl1_chain.sh` with the poweroff wrapper; the chain runs on or after 2026-11-13 after gate (a). Cost: the registration an hour, the frame half a day, the chain ≈ 10 min on the VM. What it buys over CL2: the four days are spent on the frame instead of the calendar, and nothing is read before the week's gate.
@@ -15587,6 +15587,67 @@ Result:        **READ 2026-11-11 (the work VM, `r88_chain.sh`, 10:33 → 10:54 U
                the fact. What it is: a second, independent sample on which R87's registered model ranks the next day better than a
                coin flip (two models were read, so its one-sided p ≈ 0.004 is ≈ 0.009 for a family of two) — a HYPOTHESIS that only
                F5's members (2026-01 → 2026-09-15, their bars and sources not yet fetched) can test: decision CO (Vadim's).**
+
+
+### R89 — the frozen TREES on F5's coin members, HINDSIGHT-GENERATED: R87's LightGBM as R88 fitted it (F1+F2's members, the 33 inputs), scored once on F5 (registered 2026-11-11 on Vadim's "CO1" and "coins only", after the F5 Data line and a features-only cover check — no forecast, no IC, no label statistic of F5 computed before this block was committed)
+Question:      R88's registered gate (a frozen ridge) failed on F3+F4; the trees, fitted on the same cells and frozen the same way, read
+               +0.0217 there (t 2.63, F3 +0.0226 / F4 +0.0209) as a described row. In plain words: is that row real? Take the same
+               tree model — nothing refitted, nothing tuned — and ask whether its ranking of tomorrow's winners among the screener's
+               coins of 2026-01 → 2026-09 is better than a coin flip. F5 is the last fold no all-inputs model has read.
+Hindsight:     chosen after R88's numbers were seen, stated: (i) the TREES are the gate because they read well on F3+F4 where the
+               ridge did not — F3+F4 can therefore never confirm them, only F5 can; (ii) the gate's form is R88's unchanged (one-sided,
+               the sign POSITIVE, the maker bar); (iii) the cells are the COINS — chosen on the list's composition (Vadim's word,
+               2026-11-11), before any F5 outcome: 36 of F5's 173 screener members are the exchange's stock, ETF and commodity
+               contracts (contract type TRADIFI_PERPETUAL; 1 of 60 names in February → 31 of 60 in the last block), a kind of name
+               no fit has seen and without spot, Coinbase, Korean or Hyperliquid inputs.
+Cells:         `ft2/screen_members_f5_coins.csv` (md5 816f8ab9f53b54ca3070e1937fee14ef): the rows of `ft2/screen_members_f5.csv` (md5
+               778ca0a5…, the screener's unchanged rule on F5's 9 blocks 2026-01-03 → 2026-08-31, frozen in d639f5f before any F5
+               bar was fetched) whose contract type in `ft2/f5_contract_types.csv` (md5 ba761b20…, fapi exchangeInfo 2026-11-11) is
+               PERPETUAL — 137 names, 430 rows, 60 → 29 a block; on the hourly grid while a member: 298,291 scorable cells over 6,120
+               hours (255 days) by the cover check. The market `backtest.market(names, 2026-09-15, 2025-07-01)`, the hourly sources'
+               grids from 2025-10-01. Peers, ranks and the label's centre are taken among the coin cells present at the bar.
+Label:         R87's, unchanged (1d against the member cells present, in the name's own sigmas, clipped ±5).
+Features:      R88's 33, the same names in the same order (R87's 37 minus premium_1h / 1d and the two book features; no cell on F5
+               either). Their cover on F5's coin cells (`output/allgbm/cover_f5_coins/cover.csv`, 2026-11-11 16:54 VM clock): candles
+               and positioning ≥ 99.9 % (mom_12w 95 %), Hyperliquid 71 %, spot flow and the trade mix 70 %, Coinbase 63 %, Korea
+               59 %, Wikipedia 40 %. The hourly sources enter on the names their FROZEN lists keep (R62 / R64 / R68 / R69 and the
+               strict articles — lists made on F1–F4's 310 names; their audits' windows run to 2026-09-15 and read bases and row
+               counts, never a label); a coin first screened in 2026 (53 of the 137) has those features absent, as a coin off
+               Coinbase always had. No list is extended.
+Model:         R87's LightGBM (`allgbm.PARAMS`, seed 87) fitted ONCE by `allgbm.frozen_fit` on every usable member cell of F1+F2 whose
+               label ended before F3's first bar, on the 33 — the fit R88 described (695,140 training cells). FROZEN: the booster's
+               text written to `model.txt` and its md5 printed before F5's market is loaded. One model; the ridge is not scored.
+Statistic:     R87's: the pooled IC of the forecast with the label re-centred on the cells that have a forecast at the bar, HAC by day.
+Gate:          validity PASS, then: CONFIRMED if t ≥ 1.645 AND IC ≥ 0.0059 (the maker bar); CONFIRMED AT THE TAKER BAR if also IC ≥
+               0.0214; otherwise NOT CONFIRMED (CLOSED beside it if IC + 1.96 se < 0.0059).
+               CONFIRMED → the trees' lean has held on two samples no fit saw (F3+F4 described, F5 registered): it licenses ONE
+               registration — the coins' MAKER and taker cost at the trade level on the model's own top and bottom tenths and, only
+               if that clears, a priced book and a forward (paper) design — decision CP (Vadim's). NOT CONFIRMED → the all-inputs
+               forecast is PARKED on F1–F5; F5 is spent for it; no other model, feature set, label, horizon, cell set or statistic
+               on these cells; its revival is F6 (forward data), by a new registration.
+Validity:      read first, or the read is void (exit 2, no IC written; the guard row stands): (0) `backtest._guard(["F5"], "R89")`
+               and the md5 of the three lists above; (1) the F1+F2 build's 33 feature names equal R88's `coef.csv` column in order,
+               none of the four dropped in use, and the training cells number 695,140 (R88's); (2) zero training cells whose label
+               ends at or after F3's first bar; (3) `model.txt` exists and its md5 is printed before F5's market is loaded; (4) the
+               F5 build carries the same feature names and every one of the 33 has cells; (5) the candle features causal on F5's
+               market (the midpoint check); (6) 137 names with bars, 9 blocks, 298,291 scorable cells (the cover check's count). The
+               read is logged in `confirmation_reads.csv` under (R89, F5) once the number exists.
+Described:     deciding nothing: (a) the same frozen model on ALL 173 members (a second build on `screen_members_f5.csv`: the IC on
+               every cell, on the coin cells and on the 36 stock / commodity names' cells); (b) the coins seen in F1–F4's lists (84)
+               against the coins new in 2026 (53); (c) the per-bar rank IC; (d) the top-minus-bottom tenth in bps a leg a day before
+               costs; (e) by month; (f) the three blocks from 2026-07 (38 … 29 coins a bar) apart from the first six.
+Power:         stated before the read, and it is WEAK: 255 days against R88's 482 and fewer names a bar, so the se is expected
+               ≈ 0.011–0.012 (the trees' on F3+F4 was 0.0083) — t ≥ 1.645 needs an IC ≈ 0.019. If the true IC is F3+F4's 0.0217:
+               CONFIRMED about six times in ten; if it is R87's 0.011: one in four; if there is nothing: one in twenty. A NOT
+               CONFIRMED does not show the lean is absent; by the gate it parks it.
+Expectation:   validity PASS; the IC in −0.006 … +0.026; CONFIRMED four in ten, NOT CONFIRMED six in ten (CLOSED one in ten of
+               those); the all-173 row below the coins' (the stock cells near zero); the old coins above the new ones; the tenths
+               +5 … +30 bps a leg a day.
+Folds read:    F5, ONCE, for this question — the guard row says so. F5's earlier rows in the ledger are other questions (R42 the
+               twelve's candle ridge; R76 the funding-interval flag). The Data line (decision CO's block; `ft2 f5data`, every old
+               row back unchanged) and the two cover checks read no label.
+Commands:      on the work VM — `scripts/r89_chain.sh`: `ft2 allgbm confirm5` → output/allgbm/r89/read.md, model.txt, validity.json,
+               models.csv, forecast.parquet. Code named, not written: `allgbm.confirm5`, the CLI action, the chain, the planted test.
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")

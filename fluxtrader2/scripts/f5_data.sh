@@ -25,4 +25,5 @@ step f5_metrics python -u -m ft2 f5data metrics
 step f5_mix     python -u -m ft2 f5data mix
 echo "$(date -u +%H:%M:%S) md5 after:  $(md5sum $FILES | cut -c1-32 | tr '\n' ' ')"
 step f5_cover   python -u -m ft2 allgbm cover --folds F5
+step f5_cover_coins python -u -m ft2 allgbm cover --folds F5 --coins
 echo "$(date -u +%H:%M:%S) F5_DATA_DONE"
