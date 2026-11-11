@@ -40,6 +40,7 @@ CANDLE = ["ret_15m", "ret_1h", "ret_4h", "ret_1d", "ret_1w", "relret_1h", "relre
           "mom_4w", "mom_12w", "vol_4w", "maxd_4w"]
 EXPECTED_FEATURES = 37
 PER_DAY = 24
+CTX = {"end": ceiling.END, "start": None, "members": None}     # set by `build`: the market's end, the hourly grids' start, the members' csv (None = F1+F2's)
 
 
 # ---- the sources: each builder returns {feature: frame on the hourly grid × names} -----------------------------------------------
@@ -56,13 +57,13 @@ def src_candles(M: bt.Market, grid: pd.DatetimeIndex, names: list[str], close: p
 
 
 def src_positioning(M, grid, names):
-    F, _ = audit.features(M.index, list(M.columns), M.dv, ceiling.END)
+    F, _ = audit.features(M.index, list(M.columns), M.dv, CTX["end"])
     return {k: F[k].reindex(index=grid, columns=names) for k in audit.FEATURES}
 
 
 def src_book(M, grid, names):
     from . import book_ext
-    F = book_ext.features_depth(M.index, list(M.columns), ceiling.END)
+    F = book_ext.features_depth(M.index, list(M.columns), CTX["end"])
     return {k: F[k].reindex(index=grid, columns=names) for k in (book_ext.RAW, book_ext.DM)}
 
 
@@ -83,28 +84,28 @@ def src_korea(M, grid, names):
 def src_spot(M, grid, names):
     from . import cb_ext as cx, spot, spot_ext as sx
     kept = [s for s in sx.r68_list()["kept"] if s in names]
-    G, _ = sx.grids_spot(kept, spot.PARQUET, cx.MEMBERS_SLICES, cx.MEMBERS_START, ceiling.END)
+    G, _ = sx.grids_spot(kept, spot.PARQUET, cx.MEMBERS_SLICES, CTX["start"] or cx.MEMBERS_START, CTX["end"])
     return {k: cx.to_panel(G[sx.GRID_OF[k]], grid, names) for k in (sx.TB24, sx.SR24)}
 
 
 def src_mix(M, grid, names):
     from . import cb_ext as cx, mix, mix_ext as mx, spot, spot_ext as sx
     kept = [s for s in sx.r68_list()["kept"] if s in names]
-    G, _ = mx.grids_mix(kept, mix.PARQUET, spot.PARQUET, cx.MEMBERS_START, ceiling.END)
+    G, _ = mx.grids_mix(kept, mix.PARQUET, spot.PARQUET, CTX["start"] or cx.MEMBERS_START, CTX["end"])
     return {k: cx.to_panel(G[k], grid, names) for k in (mx.CNT, mx.SIZE)}
 
 
 def src_hl(M, grid, names):
     from . import cb_ext as cx, hl, hl_ext as hx
     kept = [s for s in hx.r69_list()["kept"] if s in names]
-    G, _, _ = hx.grids_hl(kept, hl.PARQUET, hl.BN_PARQUET, cx.MEMBERS_START, ceiling.END)
+    G, _, _ = hx.grids_hl(kept, hl.PARQUET, hl.BN_PARQUET, CTX["start"] or cx.MEMBERS_START, CTX["end"])
     F = cx.to_panel(G[hx.GRID_OF[hx.GAP]], grid, names)
     return {hx.GAP: F.where(np.broadcast_to(np.asarray(grid >= hx.SCORED_FROM)[:, None], F.shape))}        # nothing before the audit's cover (2023-08)
 
 
 def src_wiki(M, grid, names):
     from . import wiki, wiki_ext as wx
-    kept = [s for s in wx.names_r72()["names"] if s in names]
+    kept = [s for s in (wx.names_r72(CTX["members"])["names"] if CTX["members"] else wx.names_r72()["names"]) if s in names]
     Dd = wx.daily(wiki.load(), kept)
     return {wx.DEV: wx.to_panel(wx.to_hourly(Dd[wx.DEV], Dd["ts_known"]), grid, names)}
 
@@ -206,15 +207,17 @@ def verdict(ic: float, se: float, t: float, folds_pos: bool) -> str:
 
 
 # ---- the run -------------------------------------------------------------------------------------------------------------------------
-def run(name: str = NAME, members: str | None = None, jobs: int = 4, sources: dict | None = None, fold_names=None) -> str:
-    sources = SOURCES if sources is None else sources
-    fold_names = list(fold_names or folds.EXPLORATION)
-    out = OUT / name
-    out.mkdir(parents=True, exist_ok=True)
+def build(members: str | None, fold_names, sources: dict, end: pd.Timestamp | None = None, start: pd.Timestamp | None = None, grids_start: pd.Timestamp | None = None) -> dict:
+    """The cells of `fold_names` for the members of `members`: the market, the hourly grid, the member mask, the blocks, the label (z, its
+    re-centred form), the ranked feature matrix (bar × name × feature) and each feature's cover. `end` / `start`: the market's span
+    (F1+F2's by default); `grids_start`: where the hourly sources' grids begin. No outcome is read by the features."""
+    from . import forecast
+    end = ceiling.END if end is None else end
+    CTX.update(end=end, start=grids_start, members=members)
     mem = universe.members(members)
     names = universe.screen_symbols(members)
     print("market…", flush=True)
-    M = bt.market(names, ceiling.END)
+    M = bt.market(names, end) if start is None else bt.market(names, end, start)
     names = [c for c in names if c in M.columns]
     idx = M.index
     t5 = pd.Series(idx, index=idx)
@@ -230,7 +233,6 @@ def run(name: str = NAME, members: str | None = None, jobs: int = 4, sources: di
     grp = np.array([i % GROUPS for i in range(len(names))])                       # R53's: the sorted member names, every fourth
 
     print("the label…", flush=True)
-    from . import forecast
     sig = forecast._derive(M.close)["sig"]["1w"].reindex(index=grid, columns=names).to_numpy()
     y = bt.labels(M, HOLD, bt.LATENCY).reindex(index=grid, columns=names).to_numpy()
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -254,7 +256,31 @@ def run(name: str = NAME, members: str | None = None, jobs: int = 4, sources: di
         del F
     X = np.stack(feats, axis=-1)
     del feats
-    cov = pd.DataFrame(cover)
+    return {"M": M, "mem": mem, "names": names, "grid": grid, "day": day, "cell": cell, "starts": starts, "block": block, "t_end": t_end, "grp": grp, "y": y, "z": z, "zres": zres,
+            "scorable": scorable, "usable": usable, "X": X, "src_of": src_of, "cover": pd.DataFrame(cover), "fold_names": list(fold_names)}
+
+
+def cover(name: str, members: str | None, fold_names, end: pd.Timestamp, start: pd.Timestamp, grids_start: pd.Timestamp, sources: dict | None = None) -> pd.DataFrame:
+    """The features' cover on the members' cells of `fold_names` — no forecast, no IC, no label statistic: the check made BEFORE a
+    registration on those folds is written."""
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    B = build(members, fold_names, SOURCES if sources is None else sources, end, start, grids_start)
+    B["cover"].to_csv(out / "cover.csv", index=False)
+    (out / "cover.json").write_text(json.dumps({"folds": list(fold_names), "names": len(B["names"]), "rows": int(len(B["grid"])), "scorable_cells": int(B["scorable"].sum()),
+                                                "first": str(B["grid"][0]), "last": str(B["grid"][-1]), "blocks": int(B["block"].max()) + 1}, indent=1))
+    print(B["cover"].round(4).to_string(index=False), flush=True)
+    return B["cover"]
+
+
+def run(name: str = NAME, members: str | None = None, jobs: int = 4, sources: dict | None = None, fold_names=None) -> str:
+    sources = SOURCES if sources is None else sources
+    fold_names = list(fold_names or folds.EXPLORATION)
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    B = build(members, fold_names, sources)
+    M, mem, names, grid, day, cell, starts, block, t_end, grp = (B[k] for k in ("M", "mem", "names", "grid", "day", "cell", "starts", "block", "t_end", "grp"))
+    y, z, zres, scorable, usable, X, src_of, cov = (B[k] for k in ("y", "z", "zres", "scorable", "usable", "X", "src_of", "cover"))
     cov.to_csv(out / "cover.csv", index=False)
     fnames = [k for _, k in src_of]
 
