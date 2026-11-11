@@ -7748,7 +7748,8 @@ Result:        **Stage 1, read 2026-10-09 (the run 05:0x → 05:13 UTC on the wo
                numbers (L = 3, θ = 1, hold = 48, US100) — `backtest ixhour4h --folds F3 F4 --registration R31 --execs taker maker
                maker_ev`; the gate is stage 2's as written above (CONFIRMED: the maker interval's lower bound > 0 AND the larger p ≤
                0.05; REFUTED: the upper bound < 0; else NOT DETECTABLE with its MDE — parked, F3+F4 spent for the market factor). No
-               variant. Expectation (the registration's, unchanged): NOT DETECTABLE the likeliest by far; maker net inside −10 … +12.**
+               variant. `maker_trade` (R40's unit, the maker execution on the twelve since 2026-10-13; stage 1 under it +1.18) is priced in the
+               SAME run beside the three registered execs, described, deciding nothing — the gate is on `maker` by the letter. Expectation (the registration's, unchanged): NOT DETECTABLE the likeliest by far; maker net inside −10 … +12.**
 
 ### R32 — trend1d: the basket's 30-day trend, traded at its sign on every pair for a day — does R6's one-day row pay a round trip? (registered 2026-10-12 on Vadim's "let's go as recommended" (P8 decision H: H1 + H2), before the rule was written and before it saw any real bar; stage 1 read 2026-10-12: GATE FAILED on its per-year condition — taker net +10.67 bps a trade [−10.97, +32.30], both nulls p ≤ 0.025, but 2020 −7.1, 2022 −14.5 and 2024 −21.4 against a bar of −5; every bit of the money is the long side (+35.5 [+4.9, +66.1]), the short side −15.8; PARKED, no variant, decision I not opened, F3+F4 never read)
 Question:      R6's screen (2026-09-21, `output/market.md`) carries a one-day row that was reported and never gated or acted on:
