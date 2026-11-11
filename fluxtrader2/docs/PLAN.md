@@ -7741,6 +7741,15 @@ Result:        **Stage 1, read 2026-10-09 (the run 05:0x → 05:13 UTC on the wo
                +2.27 / +2.69 — the gate as written would pass again; the correction against maker_ev −0.88 a trade on the common rows,
                against maker −0.87. Verdict unchanged: PARKED under G1, F3+F4 unspent.
 
+               **Stage 2 — decision G REVERSED 2026-11-11 on Vadim's word, the Power paragraph in front of him ("Let's go with idea 2
+               anyway", after being shown: stage 1's maker net +2.05 a trade is about zero; F3+F4's measured se ≈ 7.6, MDE ≈ 21, so a
+               true effect of this size reads NOT DETECTABLE almost surely; his G1 of 2026-10-09 not to run it; the read spends F3+F4
+               for the market factor whatever it says). Written BEFORE the run: stage 2 is run ONCE, as registered, with the same four
+               numbers (L = 3, θ = 1, hold = 48, US100) — `backtest ixhour4h --folds F3 F4 --registration R31 --execs taker maker
+               maker_ev`; the gate is stage 2's as written above (CONFIRMED: the maker interval's lower bound > 0 AND the larger p ≤
+               0.05; REFUTED: the upper bound < 0; else NOT DETECTABLE with its MDE — parked, F3+F4 spent for the market factor). No
+               variant. Expectation (the registration's, unchanged): NOT DETECTABLE the likeliest by far; maker net inside −10 … +12.**
+
 ### R32 — trend1d: the basket's 30-day trend, traded at its sign on every pair for a day — does R6's one-day row pay a round trip? (registered 2026-10-12 on Vadim's "let's go as recommended" (P8 decision H: H1 + H2), before the rule was written and before it saw any real bar; stage 1 read 2026-10-12: GATE FAILED on its per-year condition — taker net +10.67 bps a trade [−10.97, +32.30], both nulls p ≤ 0.025, but 2020 −7.1, 2022 −14.5 and 2024 −21.4 against a bar of −5; every bit of the money is the long side (+35.5 [+4.9, +66.1]), the short side −15.8; PARKED, no variant, decision I not opened, F3+F4 never read)
 Question:      R6's screen (2026-09-21, `output/market.md`) carries a one-day row that was reported and never gated or acted on:
                the basket's trailing 30-day return (`mret_30d`) against the basket's NEXT DAY — IC +0.0705 (t 2.9), positive in
