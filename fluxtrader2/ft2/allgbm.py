@@ -99,7 +99,7 @@ def src_hl(M, grid, names):
     kept = [s for s in hx.r69_list()["kept"] if s in names]
     G, _, _ = hx.grids_hl(kept, hl.PARQUET, hl.BN_PARQUET, cx.MEMBERS_START, ceiling.END)
     F = cx.to_panel(G[hx.GRID_OF[hx.GAP]], grid, names)
-    return {hx.GAP: F.where(np.asarray(grid >= hx.SCORED_FROM)[:, None])}
+    return {hx.GAP: F.where(np.broadcast_to(np.asarray(grid >= hx.SCORED_FROM)[:, None], F.shape))}        # nothing before the audit's cover (2023-08)
 
 
 def src_wiki(M, grid, names):
