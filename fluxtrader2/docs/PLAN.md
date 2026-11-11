@@ -15487,7 +15487,33 @@ Expectation:   validity PASS; cover ≥ 95 % for the candle, positioning and boo
                ten, CLEARS one in ten, CLOSED one in ten. The ridge row within 0.004 of the trees (no interaction found); the gain led
                by the candle and positioning features (the dense ones), the sparse sources under 5 % each; F1 above F2; the tenths'
                spread 5–20 bps a leg a day.
-Result:        —
+Result:        **READ 2026-11-11 (the work VM, `r87_chain.sh`, 09:21 → 09:47 UTC; the registration 708b01a, the code after it; a first run
+               stopped in the Hyperliquid builder on a mask's shape BEFORE any fit or IC, fixed (the line only) and run again;
+               `output/allgbm/r87/`). VALIDITY PASS: 68 fits, 0 training cells of a scored group, 0 with a label ending in the block;
+               the candle features causal (max |Δ| 0.0); every source with cells; 18 blocks, 188 names, groups 47 × 4; 696,580 scorable
+               cells, training 29,928 … 553,386 a fit. Cover: candles, positioning, the book ≥ 99 % (mom_12w 93 %), spot flow and the mix
+               97 %, Coinbase 58 % (78 names), Hyperliquid 56 % (98), Korea 44 % (72), Wikipedia 25 % (31).**
+               **THE GATE — NOT DETECTABLE, by a hair: the held-out pooled IC +0.0110, se 0.0057, t +1.95 (the bar 2.0), MDE 0.0158, on
+               651,954 cells over 454 days; F1 +0.0104, F2 +0.0124 (both positive); above the maker bar (0.0059), half the taker bar
+               (0.0214).** By the letter the t misses by 0.05 and the verdict is NOT DETECTABLE — not rounded up.
+               **Described, deciding nothing:** the ridge on the same matrix +0.0120 (t 1.96; F1 +0.0161 / F2 +0.0059) — the trees add
+               NOTHING over a linear model; the candles alone +0.0003 (R53 again); without the candles +0.0075 (t 1.4) — what is there
+               is in the non-price inputs and their mix with the slow price ones. The per-bar rank IC +0.0201 (t 3.9; the ridge 0.0205,
+               t 3.4). The top tenth by the forecast over the bottom +12.0 bps a leg a day before costs (the members' taker round trip
+               17.6). The four name groups all positive (+0.005 … +0.015, none alone at t 2); 11 of 15 months positive (2023-07, 2024-05,
+               2024-06 at t > 2; 2023-08, 2024-02 negative). Gain: positioning 42 %, candles 37 % (mom_12w, maxd_4w, vol_4w the first
+               three features — the slow ones, the short returns ≈ 0), the trade mix 8 %, spot flow 5 %, Hyperliquid 3 %, Coinbase 2 %,
+               Wikipedia 2 %, Korea 1 %, the book 0.3 %.
+               Against the expectation: the IC inside −0.003 … +0.012 (at its top); NOT DETECTABLE, the likeliest row, but at the edge of
+               REAL; the ridge within 0.004 of the trees (as written); the gain led by the dense sources (as written), the sparse ones
+               under 5 % each (as written); F1 above F2 (NOT so: F2 a little above); the tenths 5–20 (12).
+               **In plain words: with every number we hold about a coin, a model ranks tomorrow's winners among the members a little
+               better than a coin flip on coins and days it never saw — the same in both years, in all four groups of coins — but the
+               lean is about half of what a taker needs to pay its costs, a linear model does as well as the trees, and by the test's
+               own bar (t 2.0) it falls 0.05 short of being called real. By the gate: PARKED under this registration — no other
+               parameter, feature set, label, horizon, rank form or hold-out on these cells. What it is, for the record: the first
+               members' read whose lean has the same sign in every fold and group; a hypothesis that only cells it has not seen can
+               test — decision CN (Vadim's).**
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
