@@ -91,7 +91,7 @@ def run(name: str = NAME, forecast: Path | str = FORECAST, registration: str = R
          "decisions": int(len(dec)), "decisions_on_the_market_index": in_index, "accepted": acc, "skipped_position_open": int((dec["skip"] == "position_open").sum()),
          "share_skipped": float(1 - acc / max(len(dec), 1)), "accepted_with_the_exit_inside_the_market": int(in_span.sum()),
          "cost_rows_share": float(fills.loc[in_span, "other_cost_bps"].notna().mean()), "priced_share": float(fills.loc[in_span, "net_bps"].notna().mean()),
-         "entry_after_decision": bool((fills["entry_t"] > fills["t"]).all()), "overlapping_positions": overlaps(fills[in_span]),
+         "entry_after_decision": bool((fills.loc[in_span, "entry_t"] > fills.loc[in_span, "t"]).all()), "overlapping_positions": overlaps(fills[in_span]),
          "hold": HOLD, "taker_bps": TAKER_BPS, "maker_bps": MAKER_BPS, "t_one_sided": T_ONE_SIDED}
     v["status"] = "PASS" if (v["forecast_as_registered"] in (None, True) and in_index and v["cost_rows_share"] >= 0.99 and v["priced_share"] >= 0.95 and v["entry_after_decision"]
                              and 1 <= v["k_min"] and v["k_max"] <= 6 and v["sides_equal_at_every_bar"] and v["overlapping_positions"] == 0) else "FAIL"

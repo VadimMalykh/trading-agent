@@ -15734,6 +15734,13 @@ Expectation:   validity PASS; gross +40 … +90 a trade; fee + other cost 35 …
 Folds read:    F5, a second time, for the cost side of R89's confirmed forecast — licensed by R89's gate, logged under R90. F6 untouched.
 Commands:      on the work VM — `scripts/r90_chain.sh`: `ft2 allbook run` → output/allbook/r90/read.md, fills.parquet, validity.json,
                rows.csv. Code named, not written: `ft2/allbook.py`, the CLI, the chain, the planted test.
+Void:          **the first run (17:45 VM clock, code 008af79) was VOID AT VALIDITY, before any fill was summarised and with no ledger
+               row: validity (2)'s "the entry bar is after the decision" was computed on every accepted position, and the 9 of 5,018
+               whose exit falls after the market's end (unpriced by `backtest.price`, which gives them a placeholder entry row)
+               failed it. A defect of the check, not of the data or the rule: every other line passed (the forecast's md5, k 2 … 6,
+               the sides equal at every bar, 0 overlapping positions, cost rows and priced share 99.7 %). The check now reads the
+               positions with the exit inside the market — the ones that are priced; nothing else changed. The void's folder kept
+               (`output/allbook/r90_void_1745/`). No number of the book was seen before the second run.**
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
