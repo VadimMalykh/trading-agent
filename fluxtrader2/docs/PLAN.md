@@ -15516,6 +15516,49 @@ Result:        **READ 2026-11-11 (the work VM, `r87_chain.sh`, 09:21 → 09:47 U
                test — decision CN (Vadim's).**
 
 
+### R88 — the confirmation read of R87's lean, HINDSIGHT-GENERATED: ONE linear model on the per-name inputs, fitted once on F1+F2's members and FROZEN, scored once on F3+F4's members (registered 2026-11-11 on Vadim's "A" to decision CN, after R87's read and after a features-only cover check of F3+F4 — no forecast, no IC, no label statistic of F3+F4 computed before this block was committed)
+Question:      R87 read a held-out IC of +0.0110 (t 1.95, both folds, all four name groups) for one model on every per-name input —
+               NOT DETECTABLE by its own bar, by 0.05 of a t. Only cells no fit has seen can say whether that lean is real. In plain
+               words: freeze the model as fitted on 2023-05 → 2024-08, and ask whether its ranking of tomorrow's winners among the
+               members of 2024-09 → 2025-12 — other months, half of them other coins — is better than a coin flip.
+Hindsight:     what was chosen after R87's numbers were seen, stated: (i) the LINEAR model (R87's described ridge row, +0.0120, equal to
+               the trees) is the gate — the simpler one, chosen because the trees added nothing; the trees are scored beside it,
+               described; (ii) the gate's t is ONE-SIDED (the sign is fixed by R87: POSITIVE), 1.645 at 5 % for a family of one. Both
+               are choices of form made on F1+F2; F3+F4 have not been read for any forecast of this kind.
+Cells:         F3+F4's 216 members (`ft2/screen_members_f34.csv`, R25's frozen list, 17 blocks 2024-09-03 → 2025-12-29) on the hourly grid
+               while a member — 692,711 scorable cells by the cover check; the market `backtest.market(names, F4's end, 2024-03-01)`.
+Label:         R87's, unchanged (1d against the member cells present, in the name's own sigmas, clipped ±5).
+Features:      R87's 37 MINUS the four with no cell on F3+F4 (the cover check, `output/allgbm/cover_f34/cover.csv`, 2026-11-11 10:28
+               UTC): premium_1h, premium_1d (the `premium` slice was never fetched for F3+F4's members) and the two book features (the
+               depth files are F1+F2's). 33 remain, ranked as in R87; their cover on F3+F4: candles and positioning ≥ 99.8 % (mom_12w
+               90 %), spot flow and the trade mix 87 %, Hyperliquid 88 %, Coinbase 60 %, Korea 58 %, Wikipedia 29 %. The model is FITTED
+               WITHOUT the four (it never leans on a number it will not have), on the same 33.
+Model:         the gate: RidgeCV over `ceiling.ALPHAS`, no intercept, on (rank − 0.5) with an absent value at 0 — fitted ONCE on every
+               usable member cell of F1+F2 whose label ended before F3's first bar (no hold-out: the hold-out is F3+F4), frozen: the
+               coefficients written to `coef.csv` before F3+F4's market is loaded. Described beside: R87's LightGBM (the same
+               parameters, seed 87) fitted on the same cells and features.
+Statistic:     R87's: the pooled IC of the forecast with the label re-centred on the cells that have a forecast at the bar, HAC by day.
+Gate:          validity PASS, then: CONFIRMED if t ≥ 1.645 AND IC ≥ 0.0059 (the maker bar); CONFIRMED AT THE TAKER BAR if also IC ≥
+               0.0214; otherwise NOT CONFIRMED (CLOSED beside it if IC + 1.96 se < 0.0059). F3 and F4 apart, the per-bar rank IC, the
+               tenths in bps a leg a day, the months and the trees' row are described and decide nothing.
+               CONFIRMED → the lean is real on two disjoint samples and still under the taker's cost: it licenses ONE registration,
+               the members' MAKER cost measured at the trade level (R39's method on the members) and, only if that clears, a priced
+               book — decision CO (Vadim's). NOT CONFIRMED → the all-inputs forecast is PARKED on the members for F1–F4; F3+F4 are
+               spent for it; no other model, feature set, label, horizon or statistic on these cells.
+Validity:      read first, or the read is void (exit 2): (1) the two builds carry the same 33 feature names in the same order and none
+               of the four dropped; (2) zero training cells whose label ends at or after F3's first bar; (3) every one of the 33 has
+               cells on F3+F4; (4) the candle features causal on F3+F4's market (the midpoint check); (5) the coefficients' file exists
+               and its md5 is written before F3+F4's market is loaded; the read is logged in `confirmation_reads.csv` under R88 once.
+Power:         stated before the read, and it is WEAK: F3+F4 hold about as many days as F1+F2's scored ones (≈ 480 against 454), so
+               the se is expected ≈ 0.006. If the true IC is R87's 0.011, t ≥ 1.645 is reached about six times in ten; if it is the
+               maker bar's 0.006, about one time in four; if there is nothing, one in twenty. A NOT CONFIRMED therefore does not show
+               the lean is absent — it leaves it unproven, and by the gate parked.
+Expectation:   validity PASS; the frozen ridge's IC on F3+F4 in −0.004 … +0.012; CONFIRMED four in ten, NOT CONFIRMED six in ten (CLOSED
+               one in ten of those); the trees within 0.004 of the ridge; the tenths +3 … +12 bps a leg a day.
+Commands:      on the work VM — `scripts/r88_chain.sh`: `FT2_JOBS=8 ft2 allgbm confirm` → output/allgbm/r88/read.md, coef.csv, validity.json
+Result:        —
+
+
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
 Ranked by what it unlocks. Indicators are *not* on this list: anything computed from candles is
