@@ -15330,7 +15330,7 @@ Expectation:   validity PASS; 121 cells at 1d (no drop), 120 at 3d (MATIC 2024-0
                F1 and F2 within ±80 of each other; funding's part of a within ±10 bps at a day. The record's count after this read: seven
                kinds at stage 1, 0 of 5 confirmations before it.
 Result:        —
-Gate (b) line: the lag is **8 h** until a 06:00 UTC probe row is written here with its `hourprobe.csv` row and date; the code's `LAG_H` must equal this line at `run`.
+Gate (b) line: the lag is **6 h** — the 06:00 UTC probe RUN 2026-11-11 06:00:05 UTC (`hourprobe.csv` row `20261111T0600Z,2026-11-11 00:00:00,2026-11-11 03:42:11,binance-cex_20261111T0600Z.json`): that day's 00:00 point was in the adapter's file at 06:00, so by R72's two-valued rule the lag is 6 h (the decision bar closes 06:05 UTC); `LAG_H = 6` in `ft2/cexevent.py`, set before any bar after a t0 was read; the code's `LAG_H` must equal this line at `run`.
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")

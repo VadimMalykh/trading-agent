@@ -91,6 +91,7 @@ def _knownat(path, verdict="IDENTICAL on the overlap — a point-in-time source"
 
 def _plant(tmp_path, monkeypatch, M, t0s, C, name="t85"):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cexevent, "LAG_H", 8)                         # the planted market drifts after t0 + 8 h; the registered constant is 6 since the 2026-11-11 probe
     lst = tmp_path / "cexflow_f12.csv"
     L = _events(t0s, lst)
     out = tmp_path / "output" / "listing"
