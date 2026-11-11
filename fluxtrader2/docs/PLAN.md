@@ -15416,6 +15416,80 @@ Result:        **READ 2026-11-11 (the work VM, `r86_chain.sh`, 06:08 → 06:18 U
                the members (§7); no other window, hold, tenth or weighting under this registration; nothing licensed; no fold spent.**
 
 
+### R87 — one non-linear model on EVERY per-name input in hand: does a boosted-tree forecast of a member's next day against its peers, fitted on all the sources together and scored only on names and days it never saw, carry information? (registered 2026-11-11 on Vadim's "A" — the day's decision after R86 and R31's stage 2: the single-signal reads keep returning NOT DETECTABLE at an MDE several times any plausible effect; before any code was written and before any combined forecast was computed)
+Question:      Eleven sources have each been read ALONE on the screener's members at one day, each against its own bar, and none stands
+               (R20 positioning 0 of 12; R53 the candle ridge −0.002; R62 Coinbase, R64 Korea, R68 spot flow, R69 Hyperliquid, R72
+               Wikipedia NOT DETECTABLE or CLOSED; R73 the trade count CLEARS on F1+F2 and R74 NOT CONFIRMED; R33–R36 the book). Unread is
+               whether they carry something TOGETHER — small leans that add up, or a lean that shows only in combination (a crowded
+               name that is also bid on Coinbase), which a linear single-signal screen cannot see. In plain words: give one model every
+               number we have about a coin at an hour, and ask whether its ranking of tomorrow's winners and losers among the sixty
+               members beats a coin flip by more than trading costs — on coins and days it was not fitted on.
+               The record's rule against this (decision AI's AI6, AJ2: "a non-linear learner on the members only if a row of R53 is at
+               least REAL — not before"; §7 "learned layer: capacity not yet earned") is a rule of search order, overridden here by
+               Vadim's word with it in front of him. What it protected against is answered in the design, not waved away: one model, one
+               horizon, fixed parameters, no tuning, a hold-out by name AND by time, and no money row.
+Cells:         R53's: the 188 members (`ft2/screen_members.csv`) on the HOURLY grid of F1+F2 while a member of the block the bar falls in
+               (`audit.member_mask`); the market `backtest.market(screen_symbols(), END)`, every source cut at 2024-09-01. The twelve are
+               not in it.
+Label:         R53's, at 1d only: `backtest.labels(M, 288, LATENCY)` (the log move from one bar after t over 288 bars, bps) ÷ (σ_1w · √288),
+               clipped ±5, MINUS its mean over the member cells present at the bar (≥ 5) — the name against its peers, in its own sigmas.
+Features:      37, each known at t by its own module's rule (the stamp + margin of R62 / R68 / R69 / R72 / R73; closes at or before t),
+               each entered as its PERCENTILE RANK among the member cells that have it at the bar (≥ 5 of them, else absent); an absent
+               value stays absent (the trees route it) — no imputation, no source dropped for thin cover:
+                 candles (14)      `ceiling.dir_features` (ret_15m … ret_1w, relret_1h / 4h / 1d, volratio_1h / 1d); mom_4w, mom_12w (R43);
+                                   vol_4w, maxd_4w (R86)
+                 positioning (12)  `audit.FEATURES` — funding_last / 7d, premium_1h / 1d, oi_chg_1d / 1w, oi_turn, global_ls, its 1d change,
+                                   top_ls, top_vs_global, taker_1d (R20)
+                 the book (2)      the ±1 % depth imbalance, raw and against its month (`book_ext.features_depth`)
+                 Coinbase (2)      cbprem_dev, cbprem_chg_1d on R62's kept names (92);   Korea (1)  krprem_dev on R64's kept names (87)
+                 spot flow (2)     spot_tb24_dev, spot_sr24_dev (R68's 181);             the trade mix (2)  mix_cnt24_dev, mix_size24_dev (R73)
+                 Hyperliquid (1)   hl_gap24_dev (R69's 109, from 2023-08);               Wikipedia (1)  wiki_dev (R72's 38, the 36-h stamp)
+Model:         LightGBM regression (L2) on the label, FIXED, nothing tuned, nothing searched: 300 trees, learning rate 0.03, 15 leaves,
+               ≥ 2,000 cells a leaf, feature fraction 0.7, row fraction 0.7 every tree, L2 10, seed 87, deterministic. One parameter set,
+               written here; no early stopping, no validation split inside the training rows.
+Hold-out:      by NAME and by TIME at once. Names: R53's four static groups (the sorted member names, every fourth). Time: the members'
+               own 30-day blocks; for block b and group g the model is fitted on the cells of the OTHER three groups whose label ENDED
+               before the block's first bar (t + LATENCY + 288 bars < the block's start), and scores group g's cells inside block b. The
+               first block has no model. 17 blocks × 4 groups = 68 fits; every scored cell is a name the model never saw on days it never saw.
+Statistic:     R53's (A): the pooled IC of the forecast with the realised label re-centred on the member cells that have a forecast at
+               the bar (≥ 5) — `ceiling._ic_pooled` per day, the mean and its HAC se clustered by day (lags by the hold); pooled, per fold,
+               per name group. Family of ONE (one model, one horizon).
+Bars:          R53's measured on these cells at one day, fixed here: the taker bar 0.0214 (the money bar: the members' traded cells'
+               taker round trip against their mean move), the maker bar 0.0059 (an estimate — the members' maker cost was never measured
+               at the trade level).
+Validity:      read first, or the read is void (exit 2, no IC written): (1) zero training cells of a scored name's group and zero training
+               cells whose label ends at or after the scored block's first bar, counted per fit; (2) the candle, momentum and volatility
+               features recomputed on the market cut at the midpoint identical at every cell at or before it; (3) the cover of every
+               feature on the member cells written — a SOURCE with no cell at all voids (a file missing on the host), thin cover does
+               not; (4) the label equals `backtest.labels` on every scored cell (R53's check); (5) 18 blocks, 188 names, four groups of
+               47, no name in two; (6) the cell counts: scored cells, training cells per fit (min / max).
+Described:     deciding nothing: (a) a RIDGE on the same ranked matrix (an absent value at the bar's middle rank, RidgeCV over
+               `ceiling.ALPHAS`), the same hold-out — what the non-linearity adds; (b) the model without the 14 candle features and with
+               ONLY them; (c) the gain share by source; (d) the per-bar rank IC (R62's statistic) beside the pooled one; (e) the IC by
+               month; (f) the top-minus-bottom tenth of the forecast in bps a leg a day, before costs (`horizon._tenths`).
+Commands:      on the work VM — `scripts/r87_chain.sh` (done-marker, poweroff armed on exit):
+                 `FT2_JOBS=8 ft2 allgbm run`   → output/allgbm/r87/read.md, forecast.parquet, validity.json, cover.csv, importance.csv
+Folds read:    F1+F2 (exploration) of the members. Every INPUT has been read alone on these cells, and one of them (the trade count)
+               cleared there and failed its confirmation: an in-sample lean of that kind is inside this model too, which is why the
+               scoring is held out by name and time and why a pass here is a HYPOTHESIS. No confirmation fold; nothing fetched.
+Gate:          validity PASS, then on the pooled held-out IC: CLEARS if IC ≥ 0.0214 AND t ≥ 2 AND IC > 0 in F1 and in F2. REAL UNDER THE
+               TAKER BAR if t ≥ 2 AND both folds > 0 AND 0.0059 ≤ IC < 0.0214. CLOSED if IC + 1.96 se < 0.0059. NOT DETECTABLE otherwise,
+               with its MDE (2.8 se). CLEARS or REAL → licenses ONE registration: the model fitted ONCE on all of F1+F2's cells with
+               these parameters, frozen, scored ONCE on F3+F4's members' cells (Vadim's decision; the sources' cover on F3+F4 checked
+               before it is written). Otherwise → PARKED: no other parameter, feature set, label, horizon, rank form or hold-out on
+               these cells under this registration.
+Power:         from R53's read on the same cells and statistic: se 0.0048 (651,482 cells, 182 names) → MDE ≈ 0.0135. The taker bar
+               (0.0214) is 4.5 se and the maker bar (0.0059) 1.2 se: a forecast worth trading as a taker is detectable here, one worth
+               only a maker is not, and CLOSED needs IC ≤ −0.0035. This is the first members' read of the day whose money bar sits
+               inside its power.
+Expectation:   validity PASS; cover ≥ 95 % for the candle, positioning and book features, 30–60 % for Coinbase / Korea / Hyperliquid,
+               ≈ 20 % for Wikipedia. The pooled IC in −0.003 … +0.012: NOT DETECTABLE one in two, REAL under the taker bar three in
+               ten, CLEARS one in ten, CLOSED one in ten. The ridge row within 0.004 of the trees (no interaction found); the gain led
+               by the candle and positioning features (the dense ones), the sparse sources under 5 % each; F1 above F2; the tenths'
+               spread 5–20 bps a leg a day.
+Result:        —
+
+
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
 Ranked by what it unlocks. Indicators are *not* on this list: anything computed from candles is
