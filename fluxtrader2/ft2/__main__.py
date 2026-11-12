@@ -612,7 +612,7 @@ def main(argv=None):
                                        "mix; every old row checked; no label, no forecast → output/f5data/ (see ft2/f5data.py)")
     fd.add_argument("action", choices=["klines", "funding", "metrics", "mix"])
     ab = sub.add_parser("allbook", help="P8 (R90): R89's saved forecast as an hourly long-top-tenth / short-bottom-tenth book of F5's coins, priced with the names' own costs → output/allbook/r90/read.md (see ft2/allbook.py)")
-    ab.add_argument("action", choices=["run"])
+    ab.add_argument("action", choices=["run", "tapefetch", "tape"], help="run: R90; tapefetch / tape: R92 — the maker at the trade level on R90's positions (the VM's fetch-and-simulate, then the read)")
     ab.add_argument("--name", help="output directory under output/allbook/ (default r90)")
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
                                         "`transferbook` run → output/horizon/<run>/horizon.md (see ft2/horizon.py)")

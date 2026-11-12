@@ -144,6 +144,10 @@ def run(name: str = NAME, forecast: Path | str = FORECAST, registration: str = R
 def main(action: str, name: str | None = None) -> None:
     if action == "run":
         run(name or NAME)
+    elif action == "tapefetch":
+        tapefetch()
+    elif action == "tape":
+        tape_run(name or NAME92)
 
 
 # ====================================================================================================================================
@@ -296,3 +300,274 @@ def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91,
             bt.READS, mode="a", header=not bt.READS.exists(), index=False)
     print(f"{registration}: {g['verdict']} — hedged net {g['mean']:+.1f} bps a trade (t {g['t']:+.2f}) on {g['trades']} positions; wrote {out}/", flush=True)
     return g
+
+
+# ====================================================================================================================================
+# R92 (docs/PLAN.md §8): the MAKER at the TRADE level on R90's book — every leg of the saved positions as a resting order at a price
+# inferred from the archive's prints (no order book exists for these names), filled by THROUGH (a print strictly beyond the price: the
+# headline, a lower bound on fills) or AT-TOUCH (THROUGH, or the prints at the price reach the order's own quantity: an empty queue).
+# Nothing of the book is re-decided: the positions, sides, instants, funding and market move are R90's.
+# ====================================================================================================================================
+REG92, NAME92 = "R92", "r92"
+FILLS90 = OUT / "r90" / "fills.parquet"
+FILLS90_MD5 = "fa69150b0d2761b9360a26f4082fcbe4"
+WAIT_NS = 15 * 60 * 10**9                                    # the harness's MAKER_WAIT of 3 bars
+NOTIONAL = 10_000.0
+TAPE = Path("data/r92_tape")
+D_STANDS, D_KIND = -5.0, -15.0                               # the gate's cuts on THROUGH minus the bar-simulated maker, bps a trade
+RULES = {"thr": "THROUGH", "at": "AT-TOUCH"}
+
+
+def tape_legs(fills: pd.DataFrame) -> pd.DataFrame:
+    """The two legs of every priced position: id, leg (e / x), symbol, s (the instant R90 priced), buy, bar_px (the close it priced), day."""
+    p = fills.dropna(subset=["net_bps"])
+    sym, side = p["symbol"].astype(str).to_numpy(), p["side"].to_numpy()
+    L = pd.concat([pd.DataFrame({"id": p["id"].to_numpy(), "leg": "e", "symbol": sym, "s": pd.DatetimeIndex(p["entry_t"]), "buy": side > 0, "bar_px": p["entry_px"].to_numpy()}),
+                   pd.DataFrame({"id": p["id"].to_numpy(), "leg": "x", "symbol": sym, "s": pd.DatetimeIndex(p["exit_t"]), "buy": side < 0, "bar_px": p["exit_px"].to_numpy()})], ignore_index=True)
+    L["day"] = L["s"].dt.floor("D")
+    if not ((L["s"] + pd.Timedelta(WAIT_NS, "ns")).dt.floor("D") == L["day"]).all():
+        raise ValueError("tape_legs: a leg's 15-minute window crosses midnight — one daily file a leg is the registration's reading")
+    return L
+
+
+def tape_touch(px: np.ndarray, sell: np.ndarray, a: int, buy: bool, tick: float) -> tuple[float, int]:
+    """(the resting price, the index of the print it came from) from the first `a` prints (those before s). A buy: the last print whose
+    aggressor sold, unless a buying print came after it at or below it (→ that price − a tick); no selling print → the last buying
+    print − a tick. A sell is the mirror. (nan, −1) with no print."""
+    if a <= 0:
+        return np.nan, -1
+    iS = np.flatnonzero(sell[:a])
+    iB = np.flatnonzero(~sell[:a])
+    iS, iB = (int(iS[-1]) if len(iS) else -1), (int(iB[-1]) if len(iB) else -1)
+    if buy:
+        if iS < 0 or (iB > iS and px[iB] <= px[iS]):
+            return float(px[iB] - tick), iB
+        return float(px[iS]), iS
+    if iB < 0 or (iS > iB and px[iS] >= px[iB]):
+        return float(px[iS] + tick), iS
+    return float(px[iB]), iB
+
+
+def tape_day(t: np.ndarray, px: np.ndarray, qty: np.ndarray, sell: np.ndarray, legs: pd.DataFrame) -> pd.DataFrame:
+    """The fates of one name-day's legs. `t` the prints' stamps (ns, sorted), `sell` the aggressor sold; `legs` rows of `tape_legs`."""
+    gaps = np.diff(np.unique(px))
+    tick = float(gaps.min()) if len(gaps) else np.nan
+    rows = []
+    for g in legs.itertuples(index=False):
+        s = pd.Timestamp(g.s).value
+        a, b = int(np.searchsorted(t, s, "left")), int(np.searchsorted(t, s + WAIT_NS, "left"))
+        P, src = tape_touch(px, sell, a, bool(g.buy), tick)
+        row = {"id": g.id, "leg": g.leg, "symbol": g.symbol, "s": g.s, "buy": bool(g.buy), "prints_before": a, "prints_in_window": b - a, "tick": tick,
+               "pre_px": float(px[a - 1]) if a > 0 else np.nan}
+        if not (np.isfinite(P) and P > 0):
+            rows.append({**row, "sim": False})
+            continue
+        wp, wq, ws = px[a:b], qty[a:b], sell[a:b]
+        eps = 1e-9 * P
+        beyond = np.flatnonzero(wp < P - eps) if g.buy else np.flatnonzero(wp > P + eps)
+        at = (np.abs(wp - P) <= eps) & (ws if g.buy else ~ws)
+        done = np.flatnonzero(np.cumsum(np.where(at, wq, 0.0)) >= NOTIONAL / P * (1 - 1e-12))
+        i_thr = int(beyond[0]) if len(beyond) else -1
+        cands = [i for i in (i_thr, int(done[0]) if len(done) else -1) if i >= 0]
+        i_at = min(cands) if cands else -1
+        rows.append({**row, "sim": True, "P": P, "src_age_s": (s - int(t[src])) / 1e9, "cross_px": float(px[b - 1]),
+                     "thr": i_thr >= 0, "thr_s": (int(t[a + i_thr]) - s) / 1e9 if i_thr >= 0 else np.nan,
+                     "at": i_at >= 0, "at_s": (int(t[a + i_at]) - s) / 1e9 if i_at >= 0 else np.nan})
+    return pd.DataFrame(rows)
+
+
+def _tape_load(zp: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """One aggTrades zip → (t ns sorted, price, qty, the aggressor sold). Files with and without a header line are read alike."""
+    import zipfile
+    cols = ["agg_trade_id", "price", "quantity", "first_trade_id", "last_trade_id", "transact_time", "is_buyer_maker"]
+    with zipfile.ZipFile(zp) as z:
+        name = z.namelist()[0]
+        with z.open(name) as f:
+            head = f.readline().decode()
+        with z.open(name) as f:
+            d = pd.read_csv(f, header=0 if not head[:1].isdigit() else None, names=cols, usecols=["price", "quantity", "transact_time", "is_buyer_maker"],
+                            dtype={"price": float, "quantity": float, "transact_time": "int64"})
+    t = d["transact_time"].to_numpy() * 1_000_000
+    o = np.argsort(t, kind="stable")
+    sell = d["is_buyer_maker"].astype(str).str.lower().isin(["true", "1"]).to_numpy()
+    return t[o], d["price"].to_numpy()[o], d["quantity"].to_numpy()[o], sell[o]
+
+
+def tapefetch(workers: int = 6) -> dict:
+    """The VM's fetch-and-simulate, resumable: per name-day holding a leg, the archive's aggTrades zip (checksum verified), the legs'
+    fates → data/r92_tape/<SYM>/<day>.parquet, the zip deleted (its sha256 in the rows). A name-day without a file stays absent."""
+    from concurrent.futures import ThreadPoolExecutor
+    from . import archive
+    if hashlib.md5(FILLS90.read_bytes()).hexdigest() != FILLS90_MD5:
+        raise SystemExit(f"{FILLS90}: not the fills R92 registered")
+    L = tape_legs(pd.read_parquet(FILLS90))
+    jobs = [(s, d, g) for (s, d), g in L.groupby(["symbol", "day"], sort=True)]
+
+    def one(job) -> str:
+        sym, day, g = job
+        dest = TAPE / sym / f"{day:%Y-%m-%d}.parquet"
+        if dest.exists():
+            return "skip"
+        name = f"{sym}-aggTrades-{day:%Y-%m-%d}.zip"
+        zp = archive.ROOT / "aggTrades" / sym / name
+        st = archive._fetch(f"data/futures/um/daily/aggTrades/{sym}/{name}", zp)
+        if st in ("err", "bad"):
+            return st
+        try:
+            out = tape_day(*_tape_load(zp), g)
+        except Exception as e:  # noqa: BLE001
+            print(f"  parse {name}: {e!r}", flush=True)
+            return "parse"
+        out["sha256"] = archive._sha256(zp)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".part")
+        out.to_parquet(tmp, index=False)
+        tmp.replace(dest)
+        zp.unlink(missing_ok=True)
+        zp.with_suffix(".zip.ok").unlink(missing_ok=True)
+        return "ok"
+
+    counts = {"ok": 0, "skip": 0, "err": 0, "bad": 0, "parse": 0}
+    print(f"tapefetch: {len(jobs)} name-days, {len(L)} legs…", flush=True)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for n, st in enumerate(ex.map(one, jobs), 1):
+            counts[st] += 1
+            if n % 250 == 0:
+                print(f"  {n}/{len(jobs)} {counts}", flush=True)
+    print(f"tapefetch: {counts}", flush=True)
+    return counts
+
+
+def reprice(f: pd.DataFrame, pe: np.ndarray, px: np.ndarray, fee_e: np.ndarray, fee_x: np.ndarray, oth_e: np.ndarray, oth_x: np.ndarray) -> pd.DataFrame:
+    """`backtest.price`'s arithmetic on given leg prices, fees and other costs; the funding and the market move stay the fills' own."""
+    s, mkt = f["side"].to_numpy(float), f["mkt_bps"].to_numpy()
+    r = px / pe
+    out = f.copy()
+    out["entry_px"], out["exit_px"] = pe, px
+    out["gross_bps"] = s * (r - 1.0) * 1e4
+    out["fee_bps"], out["other_cost_bps"] = fee_e + fee_x * r, oth_e + oth_x * r
+    out["hedged_bps"] = out["gross_bps"] - s * mkt
+    out["net_bps"] = out["gross_bps"] - out["fee_bps"] - out["other_cost_bps"] + out["funding_bps"]
+    out["hedged_net_bps"] = out["net_bps"] - s * mkt
+    return out
+
+
+def verdict92(n: float, d: float) -> str:
+    if not (np.isfinite(n) and np.isfinite(d)):
+        return "NOT READ"
+    if d < D_KIND or n < 0:
+        return "THE MAKER PATH IS CLOSED AT THIS RULE"
+    return "TOO KIND" if d < D_STANDS else "THE ESTIMATE STANDS"
+
+
+def tape_run(name: str = NAME92, registration: str = REG92) -> str:
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    conf = bt._guard(["F5"], registration)
+    md5 = hashlib.md5(FILLS90.read_bytes()).hexdigest()
+    saved = pd.read_parquet(FILLS90)
+    fc = pd.read_parquet(FORECAST)
+    fc["t"] = pd.to_datetime(fc["t"], utc=True)
+    end = folds.bounds("F5")[1]
+    M = bt.market(sorted(fc["symbol"].astype(str).unique()), end, START)
+    dec = decisions(fc)
+    dec = bt.accept(dec[dec["t"].isin(M.index)].reset_index(drop=True), M.index, None)
+    C = bt.load_costs(M.index, M.columns, end, 1.0, close=M.close)
+    tk = bt.price(dec, M, C, "taker", TAKER_BPS, MAKER_BPS)
+    same = bool(len(tk) == len(saved) and (tk["id"].to_numpy() == saved["id"].to_numpy()).all() and (tk["side"].to_numpy() == saved["side"].to_numpy()).all()
+                and (pd.DatetimeIndex(tk["entry_t"]) == pd.DatetimeIndex(saved["entry_t"])).all() and (pd.DatetimeIndex(tk["exit_t"]) == pd.DatetimeIndex(saved["exit_t"])).all()
+                and np.allclose(tk["net_bps"].to_numpy(), saved["net_bps"].to_numpy(), rtol=0, atol=1e-6, equal_nan=True))
+    f = saved.dropna(subset=["net_bps"]).reset_index(drop=True)
+    L = tape_legs(saved)
+    files = sorted(TAPE.glob("*/*.parquet"))
+    R = pd.concat([pd.read_parquet(p) for p in files], ignore_index=True) if files else pd.DataFrame(columns=["id", "leg", "sim"])
+    for c in ("P", "cross_px", "src_age_s", "thr", "at", "thr_s", "at_s"):
+        if c not in R:
+            R[c] = np.nan
+    L = L.merge(R.drop(columns=[c for c in ("symbol", "s", "buy") if c in R]), on=["id", "leg"], how="left")
+    has = L["sim"].notna()
+    L["sim"] = L["sim"].fillna(False).astype(bool)
+    nd = L.drop_duplicates(["symbol", "day"])
+    clock = (L.loc[has, "pre_px"] - L.loc[has, "bar_px"]).abs() <= 1e-9 * L.loc[has, "bar_px"].abs()
+    # the taker legs' other cost, as backtest.price picks it: the day of the leg's instant
+    j = M.columns.get_indexer(f["symbol"])
+    def oth(ts):
+        dpos = C.days.get_indexer(pd.DatetimeIndex(ts).floor("D"))
+        return np.where(dpos >= 0, C.taker_leg[np.maximum(dpos, 0), j], np.nan)
+    oe, ox = oth(f["entry_t"]), oth(f["exit_t"])
+    five = np.full(len(f), TAKER_BPS)
+    arith = reprice(f, f["entry_px"].to_numpy(), f["exit_px"].to_numpy(), five, five, oe, ox)
+    d_arith = float(np.abs(arith["net_bps"].to_numpy() - f["net_bps"].to_numpy()).max())
+    E, X = (L[L["leg"] == k].set_index("id").reindex(f["id"]) for k in ("e", "x"))
+    both = (E["sim"].to_numpy(bool)) & (X["sim"].to_numpy(bool))
+    v = {"registration": registration, "fills_md5": md5, "fills_as_registered": md5 == FILLS90_MD5, "decisions_rebuilt_identical": same, "positions": int(len(f)), "legs": int(len(L)),
+         "name_days": int(len(nd)), "name_days_with_a_file": int(has[nd.index].sum()), "files_share": float(has[nd.index].mean()),
+         "legs_with_a_file": int(has.sum()), "clock_share": float(clock.mean()) if has.any() else 0.0, "arithmetic_max_abs_diff": d_arith,
+         "both_legs_simulated": int(both.sum()), "both_share": float(both.mean()), "wait_min": 15, "notional": NOTIONAL}
+    v["status"] = "PASS" if (v["fills_as_registered"] and same and v["files_share"] >= 0.99 and v["clock_share"] >= 0.99 and d_arith <= 1e-6 and v["both_share"] >= 0.98) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
+    head = [f"# {registration} — the maker at the trade level on R90's book (`ft2 allbook tape`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · R90's {len(f):,} priced positions · each leg a resting order at a price inferred from the prints, 15 minutes, then crossing · net in bps per trade (= USDT)\n",
+            f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n"]
+    if v["status"] != "PASS":
+        (out / "read.md").write_text("\n".join(head + ["\n**The read is VOID: no leg was summarised.**\n"]))
+        print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
+        raise SystemExit(2)
+
+    days = bt.scored_days(["F5"], M.index[-1])
+    fb, oe, ox, E, X = f[both].reset_index(drop=True), oe[both], ox[both], E[both], X[both]
+    mk = bt.price(dec, M, C, "maker", TAKER_BPS, MAKER_BPS).set_index("id").reindex(fb["id"]).reset_index()
+    books = {"taker (R90's gate, the same positions)": fb, "maker, bar-simulated (R90's estimate, the same positions)": mk}
+    for k, lab in RULES.items():
+        fe, fx = E[k].to_numpy(bool), X[k].to_numpy(bool)
+        books[f"maker at the trade level, {lab}"] = reprice(fb, np.where(fe, E["P"].to_numpy(), E["cross_px"].to_numpy()), np.where(fx, X["P"].to_numpy(), X["cross_px"].to_numpy()),
+                                                           np.where(fe, MAKER_BPS, TAKER_BPS), np.where(fx, MAKER_BPS, TAKER_BPS), np.where(fe, 0.0, oe), np.where(fx, 0.0, ox))
+    labs = list(books)
+    tab = pd.DataFrame([row(k, b, days) for k, b in books.items()])
+    thr, bar = books[labs[2]], books[labs[1]]
+    from .ceiling import day_lags
+    ds = bt.trade_stats(thr["net_bps"].to_numpy() - bar["net_bps"].to_numpy(), fb["size"].to_numpy(), pd.DatetimeIndex(fb["t"]).floor("D"), days, day_lags(HOLD))
+    n_thr = float(tab.loc[2, "net"])
+    gate = {"N": n_thr, "se": float(tab.loc[2, "se"]), "t": float(tab.loc[2, "t"]), "D": ds["mean"], "D_se": ds["se"], "bar_maker": float(tab.loc[1, "net"]), "taker": float(tab.loc[0, "net"]),
+            "at_touch": float(tab.loc[3, "net"]), "sentence": verdict92(n_thr, ds["mean"]), "r90_words": verdict(n_thr, float(tab.loc[2, "se"]))}
+    # described
+    Lb = L[L["id"].isin(fb["id"])].copy()
+    Lb["kind"] = np.where(Lb["leg"] == "e", "entry", "exit") + np.where(Lb["buy"], " buy", " sell")
+    sgn = np.where(Lb["buy"], 1.0, -1.0)
+    Lb["better_than_close_bps"] = sgn * (Lb["bar_px"] - Lb["P"]) / Lb["bar_px"] * 1e4       # positive: the resting price is better than the bar's close
+    Lb["drift15_bps"] = sgn * (Lb["cross_px"] - Lb["P"]) / Lb["P"] * 1e4                    # negative: the price 15 minutes on is against the filled order
+    def legrow(lab, g):
+        r = {"legs": lab, "n": int(len(g))}
+        for k in RULES:
+            fl = g[k].astype(bool)
+            r |= {f"{k}_fill": float(fl.mean()), f"{k}_better": float(g.loc[fl, "better_than_close_bps"].mean()), f"{k}_drift15": float(g.loc[fl, "drift15_bps"].mean()),
+                  f"{k}_fill_s_median": float(g.loc[fl, f"{k}_s"].median())}
+        return r | {"unfilled_thr_drift15": float(g.loc[~g["thr"].astype(bool), "drift15_bps"].mean()), "src_age_s_median": float(g["src_age_s"].median()), "src_age_s_p90": float(g["src_age_s"].quantile(0.9))}
+    legs_tab = pd.DataFrame([legrow("all", Lb)] + [legrow(k, g) for k, g in Lb.groupby("kind")])
+    old = set(universe.screen_symbols()) | set(universe.screen_symbols(universe.F34_MEMBERS_CSV))
+    is_old, mth = thr["symbol"].isin(old), pd.DatetimeIndex(thr["t"]).strftime("%Y-%m")
+    at_ = books[labs[3]]
+    splits = pd.DataFrame([row("THROUGH: long side", thr[thr["side"] > 0], days), row("THROUGH: short side", thr[thr["side"] < 0], days),
+                           row("THROUGH: coins that were members in F1–F4", thr[is_old], days), row("THROUGH: coins new in 2026", thr[~is_old], days),
+                           row("AT-TOUCH: long side", at_[at_["side"] > 0], days), row("AT-TOUCH: short side", at_[at_["side"] < 0], days),
+                           row("bar-simulated: short side", bar[bar["side"] < 0], days)])
+    by_month = pd.DataFrame([row(m, thr[mth == m], days) for m in sorted(set(mth))]).drop(columns=["a_day", "usdt_a_day"])
+    tab.to_csv(out / "rows.csv", index=False)
+    splits.to_csv(out / "splits.csv", index=False)
+    legs_tab.to_csv(out / "legs.csv", index=False)
+    L.to_parquet(out / "legs.parquet", index=False)
+    thr.to_parquet(out / "fills_through.parquet", index=False)
+    (out / "validity.json").write_text(json.dumps({**v, "gate": gate}, indent=1, default=str))
+    if conf:
+        bt.READS.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": conf, "strategy": "allbook tenth maker_tape",
+                      "params": json.dumps({"wait_min": 15, "fills_md5": md5})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    show = lambda d, k=2: d.round(k).to_markdown(index=False)                    # noqa: E731
+    md = head + [
+        f"\n## The gate — **{gate['sentence']}**: THROUGH nets {gate['N']:+.1f} bps a trade (se {gate['se']:.1f}, t {gate['t']:+.2f}; R90's words: {gate['r90_words']}) against the bar-simulated maker's "
+        f"{gate['bar_maker']:+.1f} on the same {len(fb):,} positions: D = {gate['D']:+.1f} (paired se {gate['D_se']:.1f}); AT-TOUCH {gate['at_touch']:+.1f}; the taker {gate['taker']:+.1f}\n",
+        show(tab), "\n", "\n## Described (decides nothing)\n", "\n### The legs: fill share, the filled price against the bar's close (bps, + = better), the price 15 minutes on against a filled order (− = adverse)\n",
+        show(legs_tab), "\n", "\n### Splits\n", show(splits), "\n", "\n### THROUGH by month\n", show(by_month), "\n"]
+    (out / "read.md").write_text("\n".join(md))
+    print(f"{registration}: {gate['sentence']} — THROUGH {gate['N']:+.1f} (t {gate['t']:+.2f}), D {gate['D']:+.1f}, AT-TOUCH {gate['at_touch']:+.1f}; wrote {out}/", flush=True)
+    return "\n".join(md)

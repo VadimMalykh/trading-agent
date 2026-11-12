@@ -101,3 +101,55 @@ def test_r91_a_coin_closed_at_the_cap_is_re_entered_at_the_same_bar_if_still_in_
     dec, _ = ab.positions(pd.concat([fc, stay], ignore_index=True), fund)
     c0 = dec[dec["symbol"] == "C00USDT"].sort_values("t")
     assert [(r.t, r.hold, r.why) for r in c0.itertuples()] == [(t[0], 2016, "cap"), (t[168], 32 * 12, "span_end")]
+
+
+# ---- R92: the maker at the trade level ------------------------------------------------------------------------------------------------
+def _prints(rows):
+    """rows of (seconds after 00:00, price, qty, the aggressor sold) → the arrays `tape_day` takes."""
+    t0 = pd.Timestamp("2026-03-01", tz="UTC").value
+    t = np.array([t0 + int(r[0] * 1e9) for r in rows], dtype="int64")
+    return t, np.array([r[1] for r in rows], float), np.array([r[2] for r in rows], float), np.array([r[3] for r in rows], bool)
+
+
+def _leg(i, buy, s="2026-03-01 00:05"):
+    return {"id": i, "leg": "e", "symbol": "AUSDT", "s": pd.Timestamp(s, tz="UTC"), "buy": buy, "bar_px": 100.0}
+
+
+def test_r92_the_resting_price_and_the_two_fill_rules():
+    # before 00:05: the bid printed 100.0 (a sell), the ask 100.1 (a buy); the tick is 0.1; 10,000 / 100 = 100 units
+    pre = [(10, 100.0, 5, True), (20, 100.1, 5, False)]
+    win_touch = [(310, 100.0, 60, True), (320, 100.0, 30, False), (330, 100.0, 39, True), (340, 100.1, 500, False)]      # 99 sold at the bid: one unit short
+    r = ab.tape_day(*_prints(pre + win_touch), pd.DataFrame([_leg(1, True), _leg(2, False)])).set_index("id")
+    assert r.loc[1, "P"] == 100.0 and r.loc[2, "P"] == 100.1 and r.loc[1, "tick"] == pytest.approx(0.1)
+    assert not r.loc[1, "thr"] and not r.loc[1, "at"]                               # the buy at 100.0: nothing below, 99 < 100 at the price (a buyer's print at 100.0 is not the bid's)
+    assert not r.loc[2, "thr"] and r.loc[2, "at"] and r.loc[2, "at_s"] == 40.0      # the sell at 100.1: 500 bought at the price
+    assert r.loc[1, "cross_px"] == 100.1 and r.loc[1, "pre_px"] == 100.1 and r.loc[1, "src_age_s"] == 290.0
+    r = ab.tape_day(*_prints(pre + win_touch + [(350, 100.0, 1, True), (400, 99.9, 1, True), (2000, 99.0, 1, True)]), pd.DataFrame([_leg(1, True)])).set_index("id")
+    assert r.loc[1, "at"] and r.loc[1, "at_s"] == 50.0 and r.loc[1, "thr"] and r.loc[1, "thr_s"] == 100.0     # the 100th unit fills AT-TOUCH; the print below fills THROUGH; the one past 15 minutes is not seen
+    assert r.loc[1, "cross_px"] == 99.9
+    # the ask came down to the old bid: a post-only buy sits a tick under it; the mirror for a sell
+    r = ab.tape_day(*_prints([(10, 100.0, 5, True), (20, 99.8, 5, False), (30, 99.9, 1, False)]), pd.DataFrame([_leg(1, True)])).set_index("id")
+    assert r.loc[1, "P"] == pytest.approx(99.8)                                    # the last buying print (99.9) ≤ 100.0 → 99.9 − a tick
+    r = ab.tape_day(*_prints([(10, 100.0, 5, False), (20, 100.3, 5, True), (25, 100.2, 5, True)]), pd.DataFrame([_leg(1, False)])).set_index("id")
+    assert r.loc[1, "P"] == pytest.approx(100.3)                                   # the last selling print 100.2 ≥ the ask's 100.0 → 100.2 + a tick
+    # one side never printed: a tick inside the other; no print before s: not simulated
+    r = ab.tape_day(*_prints([(10, 100.0, 5, False), (20, 100.1, 5, False), (400, 100.0, 1, True)]), pd.DataFrame([_leg(1, True), _leg(2, True, "2026-03-01 00:00")])).set_index("id")
+    assert r.loc[1, "P"] == pytest.approx(100.0) and bool(r.loc[1, "sim"]) and not r.loc[2, "sim"]
+    with pytest.raises(ValueError, match="midnight"):
+        ab.tape_legs(pd.DataFrame({"id": [0], "symbol": ["AUSDT"], "side": [1], "entry_t": [pd.Timestamp("2026-03-01 23:50", tz="UTC")], "exit_t": [pd.Timestamp("2026-03-02 23:50", tz="UTC")],
+                                   "entry_px": [1.0], "exit_px": [1.0], "net_bps": [0.0]}))
+
+
+def test_r92_the_repricer_and_the_sentence():
+    f = pd.DataFrame({"id": [0, 1], "side": [1, -1], "mkt_bps": [10.0, 10.0], "funding_bps": [1.0, -3.0], "size": [1.0, 1.0]})
+    pe, px = np.array([100.0, 100.0]), np.array([101.0, 98.0])
+    out = ab.reprice(f, pe, px, np.array([2.0, 5.0]), np.array([2.0, 2.0]), np.array([0.0, 7.0]), np.array([0.0, 0.0]))
+    assert out["gross_bps"].tolist() == pytest.approx([100.0, 200.0])
+    assert out["fee_bps"].tolist() == pytest.approx([2 + 2 * 1.01, 5 + 2 * 0.98]) and out["other_cost_bps"].tolist() == pytest.approx([0.0, 7.0])
+    assert out["net_bps"].tolist() == pytest.approx([100 - 4.02 + 1.0, 200 - 6.96 - 7.0 - 3.0])
+    assert out["hedged_net_bps"].tolist() == pytest.approx([out["net_bps"][0] - 10.0, out["net_bps"][1] + 10.0])
+    L = ab.tape_legs(pd.DataFrame({"id": [7], "symbol": ["AUSDT"], "side": [-1], "entry_t": [pd.Timestamp("2026-03-01 00:05", tz="UTC")], "exit_t": [pd.Timestamp("2026-03-02 00:05", tz="UTC")],
+                                   "entry_px": [2.0], "exit_px": [3.0], "net_bps": [0.0]})).set_index("leg")
+    assert not L.loc["e", "buy"] and L.loc["x", "buy"] and L.loc["x", "bar_px"] == 3.0          # a short sells in and buys out
+    assert ab.verdict92(8.0, -4.9) == "THE ESTIMATE STANDS" and ab.verdict92(3.0, -8.0) == "TOO KIND"
+    assert ab.verdict92(-0.1, -2.0) == ab.verdict92(5.0, -15.1) == "THE MAKER PATH IS CLOSED AT THIS RULE" and ab.verdict92(np.nan, 0.0) == "NOT READ"
