@@ -1524,7 +1524,7 @@ names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common att
 - **CQ2 — the maker's cost at the trade level on F5's coins (the one question R90's gate licenses):** R39's method needs the aggregate-trade files of ≈ 60 coins over 2026 (tens of GB, a day of VM time) to replace the bar simulation; even a true +11 a trade is one se on F5 — it can show the maker estimate is wrong, it cannot show the book pays.
 - **CQ3 — record and park:** the first confirmed all-inputs forecast, no book; PLAN §7's row with F6 as the revival.
 
-Needed from Vadim: the word on CQ. WRITTEN 2026-11-11 — **DECIDED 2026-11-11 on Vadim's "CQ1" (the recommendation): R91 REGISTERED in §8 the same evening, before any bar after 2026-09-15 is read by anything of this line — short only the bottom tenth, held while in the bottom fifth (7-day cap), a funding floor at entry (−10 bps a day) and at exit (−30), hedged, priced as a taker; ONE read on or after 2027-03-18 on F6 = 2026-09-17 → 2027-03-16; the rule's code and planted tests follow the registration's commit; never run on F5.** CQ2 (the maker's trade-level cost) stays open and independent; CQ1 blocks nothing else.
+Needed from Vadim: the word on CQ. WRITTEN 2026-11-11 — **DECIDED 2026-11-11 on Vadim's "CQ1" (the recommendation): R91 REGISTERED in §8 the same evening, before any bar after 2026-09-15 is read by anything of this line — short only the bottom tenth, held while in the bottom fifth (7-day cap), a funding floor at entry (−10 bps a day) and at exit (−30), hedged, priced as a taker; ONE read on or after 2027-03-18 on F6 = 2026-09-17 → 2027-03-16; the rule's code and planted tests follow the registration's commit; never run on F5.** CQ2 (the maker's trade-level cost) stays open and independent; CQ1 blocks nothing else. **CQ2 CALLED 2026-11-12 (Vadim's "CQ2 then handoff"): REGISTERED as R92 (§8) before any trade file is fetched — all 4,995 of R90's positions, not a subset; no order book exists for these names, so the resting price is inferred from the prints and the fill is bracketed (THROUGH / AT-TOUCH).**
 
 **Decision CP (2026-11-11) — R89 CONFIRMED AT THE TAKER BAR on F5's coins (IC +0.0411, t 3.57). The plain question: the frozen tree model ranks tomorrow's winners on two samples it never saw — does that ranking survive the cost of trading it, and how do we find out?** Known: the forecast is real by its registered gate; before costs the top tenth beats the bottom by 78 bps a leg a day on F5; the lean leans on young, violent coins (the 53 coins new in 2026: +0.090 against the old coins' +0.020) and on few names (without the ten largest contributors +0.020, t 1.8); the one-day forecast is persistent (a name's forecast a day later correlates 0.40), so turnover is well under a full book a day. Unknown: the cost of those names at the trade level (`cost_daily_wide` holds no 2026 row for most of them), the net of a book, and whether it holds forward — F1–F5 are spent for this forecast; the bars from 2026-09-15 (≈ 2 months, growing) are F6, untouched. The options:
 - **CP1 — the priced book on F5, registered, then the forward design (recommended).** (i) A Data line: `costwide --symbols` for the 137 coins over 2025-12 → 2026-09, merged (never overwritten). (ii) R90, registered before any priced number: the frozen model's saved forecast (`output/allgbm/r89/forecast.parquet`, nothing refitted) traded as a daily long-top / short-bottom book of the coins by a rule written from R14's serving frame (the tenth's size, the hold, the turnover band, the notional), priced with the names' own taker rows and, beside it, the maker estimate; the gate the net per trade against zero with the block bootstrap, the result without the five largest names and the old coins alone as registered robustness rows. Cost: one session. (iii) Only on a clear: the forward paper design on F6 (the model frozen, the sources' live feeds counted first — positioning and candles are live on the serve host's exchange API; spot flow, Hyperliquid, Coinbase, Korea and Wikipedia need live fetchers or are dropped by a registered rule).
@@ -15849,6 +15849,78 @@ Code:          written now, after this block's commit: the rule and its pricing 
                the gate) with planted tests — so that the rule is fixed in code as well as in words. Named, written at the read:
                the F6 member selection (`screen_select` with explicit block starts), the hourly sources' time extension, the Data
                line's chain, `allgbm.build` on a span, `scripts/r91_chain.sh`.
+
+
+### R92 — the MAKER at the TRADE level on R90's book: every leg of the 4,995 positions as a resting order filled (or not) by the archive's own trades — is the bar simulation's +11 a trade real, kinder than the truth, or closed? (registered 2026-11-12 on Vadim's "CQ2", before any trade file of these names is fetched and before the code is written; licensed by R90's gate — its one cost-side question)
+Question:      R90's book loses as a taker (−15.3 bps a trade) and reads +11.4 (t 0.8) when its legs are resting orders
+               SIMULATED ON 5-MINUTE BARS (rest at the bar's close, filled if a later bar trades through). On the twelve the
+               bar simulation was 1.7 bps a round trip too kind (R39); on these coins — thin, fast, wide — nobody has measured
+               it. In plain words: if each leg of the SAME positions had been a real resting order, placed where a resting
+               order can sit and filled only by trades that actually printed, what does the book net?
+Not a signal:  no rule, tenth, hold, threshold or size is changed, chosen or compared: the positions are R90's accepted
+               positions as saved (`output/allbook/r90/fills.parquet`, md5 fa69150b0d2761b9360a26f4082fcbe4; 5,018 rows, 4,995
+               priced), their sides, their entry and exit instants, their funding. Only the execution of the two legs is
+               re-measured. F5's cells are read a third time by this line, for the one question R90's Result licensed; the
+               guard logs (R92, F5).
+Data:          the archive's daily aggregate-trade files (`data/futures/um/daily/aggTrades/<SYM>/<SYM>-aggTrades-<day>.zip`,
+               checksum verified) for every name-day holding a leg: 7,184 name-days of 136 coins, 9,990 legs, each at hh:05 UTC.
+               NO order book exists for these names (the collector's ladder is the twelve's): R39's queue from the ladder cannot
+               be used, and the method below says what replaces it. Each file is read once, the legs' fates written, the zip
+               deleted (its sha256 kept in the leg rows).
+Method:        a leg at instant s (R90's entry_t or exit_t — the close of the bar the harness priced), buying for a long's
+               entry and a short's exit, selling otherwise. Trades are split at s: BEFORE = transact_time < s, the WINDOW =
+               s ≤ transact_time < s + 15 min (the harness's MAKER_WAIT of 3 bars).
+               (a) the tick: the smallest positive gap between distinct prices in the day's file.
+               (b) the resting price P — where a post-only order can sit, from the prints alone: for a BUY, B = the last
+               print BEFORE s whose aggressor SOLD (it hit the bid); if a print whose aggressor BOUGHT came after it at a price
+               ≤ B (the ask has come down to it), P = that price − one tick, else P = B; with no selling print that day, P =
+               the last buying print − one tick. A SELL is the mirror (the last buying print; a later selling print at or above
+               it → that price + one tick). No print before s on the day: the leg is not simulated and its position is dropped
+               and counted.
+               (c) the fill, two rules, both reported: THROUGH (the headline, a lower bound on fills) — the first print in the
+               window strictly beyond P (a buy: below P): the order was certainly filled whatever queue stood ahead of it;
+               AT-TOUCH (the other end) — THROUGH, or the window's prints at P by the opposite aggressor reach the order's own
+               quantity 10,000 / P (a queue of zero ahead).
+               (d) the leg's price: filled → P, fee 2 bps, nothing else; not filled → the last print before s + 15 min, fee 5
+               bps and the name's own taker leg of that day (half the spread + impact at 10,000, `cost_daily_wide` as R90
+               loaded it) — the harness's own treatment of an unfilled maker leg.
+               (e) the position: gross = side × (exit / entry − 1), the exit leg's fee and cost on the value then, R90's own
+               funding and market move — `backtest.price`'s arithmetic, nothing else. The statistic: the mean net per trade
+               with R90's day-clustered interval (`backtest.summarize`, the same scored days), on the positions with both legs
+               simulated; the bar-simulated maker and the taker recomputed on the SAME positions beside.
+Validity:      read first; any failure voids the read (exit 2, no leg summarised, the folder kept):
+               (0) the saved fills' md5 as above, and R90's decisions rebuilt from the saved forecast reproduce them (ids, sides,
+               entry and exit instants identical);
+               (1) files: a checksum-verified file for ≥ 99 % of the legs' name-days;
+               (2) the clock: for ≥ 99 % of the legs with a file, the last print BEFORE s is the 5-minute candle's close at s
+               (the price R90 priced), to 1e-9 — the trade file and the bars are the same market on the same clock;
+               (3) the arithmetic: the re-pricer given every leg "taker at s" returns R90's net per position to 1e-6;
+               (4) both legs simulated on ≥ 98 % of the 4,995.
+Gate:          the THROUGH row's mean net per trade N and its difference D from the bar-simulated maker's on the same positions:
+               **THE ESTIMATE STANDS** if D ≥ −5; **TOO KIND** if −15 ≤ D < −5; **THE MAKER PATH IS CLOSED AT THIS RULE** if
+               D < −15 or N < 0. Beside it R90's own verdict words on N (CLEARS needs N > 0 with t ≥ 1.645, about +23).
+Described:     the AT-TOUCH row; the fill share per rule and per leg kind (entry / exit, buy / sell); what a filled leg's
+               price is against the bar's close and where the price stands 15 minutes on (the drift after the fill); the age of
+               the print the resting price came from; the sides; the coins of F1–F4 against the coins new in 2026; the months.
+Licenses:      NOTHING on F5's cells in any outcome, and nothing of R91 changes. STANDS or TOO KIND with N > 0: the maker
+               path stays an open cost-side fact — a decision block may propose a maker-execution row for F6, registered before
+               2027-03-18. CLOSED: the resting order does not rescue this book; the line's only live item is R91. Even N =
+               +11 is one se on F5: this read can show the estimate wrong, it cannot show the book pays (decision CQ said so).
+Limits:        said beforehand. No queue is observed: THROUGH counts only fills no queue could have stopped (too few — and
+               the most adverse ones), AT-TOUCH assumes an empty queue (too many); the truth lies between and the bracket is
+               the answer. The resting price is inferred from prints, not quotes: on a quiet coin the last print can be minutes
+               old (the age is described); a stale buy price sits at or below the true bid → fewer fills, the conservative
+               side. An order of 10,000 USDT is assumed not to move the market it rests in.
+Power:         paired on the same positions, D's noise is the legs' (a few bps), not the book's 14: the three sentences are
+               separable. N itself carries R90's se (≈ 14).
+Expectation:   validity PASS (the likeliest trouble: a handful of missing name-days, or the clock check on names with a
+               symbol change); THROUGH fills 55–70 % of legs, AT-TOUCH 75–90 %; a filled leg's price 3–10 bps better than the
+               close and the price 15 minutes on 5–15 bps against it; N −10 … +8, D −8 … −20: TOO KIND one in two, CLOSED four
+               in ten, STANDS one in ten; AT-TOUCH's N +0 … +15.
+Code:          named, written after this block's commit: `ft2/allbook.py` — `tape_legs`, `tape_touch`, `tape_day` (the fates
+               of one file's legs), `tapefetch` (the VM's fetch-and-simulate, resumable), `reprice`, `tape_run` (the guard, the
+               validity, the rows); CLI `ft2 allbook tapefetch|tape`; `scripts/r92_chain.sh`; planted tests in
+               `tests/test_p8_allbook.py`.
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
