@@ -1519,6 +1519,13 @@ D+1 19:45 UTC (two probes; the hour unmeasured — a UTC-morning probe owed). Th
 names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common attention factor. The median article has 122 views a day; 12 under
 20. Nothing joined to a price. VM TERMINATED 21:39 UTC.**
 
+**Decision CR (2026-11-12) — R92 read: THE ESTIMATE STANDS — R90's book with every leg a resting order simulated on the archive's own trades nets +10.6 bps a trade (t +0.75) against the bar simulation's +11.4 and the taker's −15.3. The plain question: the forward test on F6 [R91] is registered as a TAKER; a resting order costs 7 bps a round trip where the taker pays 37 — is a maker execution of the same forward rule registered beside it, before F6 is read?** Known: the maker's cost on these coins is measured at the trade level on 9,990 legs (fills 91 %, the fill 2 bps better than the close, 3.4 bps of drift after it); R91's block cannot change (its gate is the taker's hedged net); a second registration on F6 read in the same session is allowed if written before any F6 bar of this line is read; the F6 trade files exist in the archive. Unknown: whether the fills hold on the coins F6's screener picks; whether R91's held shorts (fewer, longer positions — one round trip per several days) gain much from a cheaper leg at all: the maker saves ≈ 30 bps a round trip, R91's se per trade is expected 60–120; the THROUGH rule's bias on fine-tick coins (R92's Result: not a strict lower bound). The options:
+- **CR1 — register the maker execution of R91's rule on F6 now (recommended):** R93, written this month: R91's positions unchanged, each leg by R92's method with the fill rule tightened to volume (the aggressor's quantity at or beyond the price reaching the order's own), its own gate (the same hedged-net form), read in R91's session on or after 2027-03-18. Cost: an hour of writing now, an hour of VM time at the read. It can only be written before the read; afterwards the question is spent.
+- **CR2 — leave R91 alone:** the maker stays a described fact of F5; if R91 clears as a taker the maker is an improvement to measure live, if it fails by less than 30 bps a trade the question "would a maker have cleared" is unanswerable on F6.
+- **CR3 — the volume fill rule on F5's legs first:** re-fetch the 7,184 files (an hour) and compute the strict lower bound R92 could not; it sharpens a number that already cannot decide anything on F5 (se 14). Not recommended by itself; CR1's tightened rule covers the same weakness forward.
+
+Needed from Vadim: the word on CR. WRITTEN 2026-11-12.
+
 **Decision CQ (2026-11-11) — R90 NOT DETECTABLE: the confirmed forecast, traded hourly as a taker with one position a name, nets −15.3 bps a trade (t −1.1). The plain question: the model knows something about tomorrow's losers and it does not pay at this rule — what is done with it?** Known: the forecast's IC is confirmed (R89); the money is on the SHORT side (gross +82 a trade) and is eaten by costs (30) and by the funding a short pays on those coins (−32); the long side earns nothing gross; the long-listed coins lose; a resting-order estimate reads +11 (t 0.8) because its cost side is 6 against 38. Unknown: the maker's true cost on these names (the estimate is a bar simulation, never measured at the trade level outside the twelve); whether a slower rule (hold while the coin stays in the tenth — a fifth of the turnover) nets anything: that cannot be asked of F5's cells (the registration forbids another rule there) — only of F6, the bars from 2026-09-15, two months in hand and growing, untouched. The options:
 - **CQ1 — a FORWARD registration on F6, written now, read when F6 is long enough (recommended).** The model frozen (model.txt md5 816b994c…); the rule written before any F6 bar is fetched, from what R90 showed in the open: SHORT ONLY the bottom tenth, entered when a coin enters it and HELD while it stays in the bottom fifth (no daily re-entry), skipped when the coin's last funding is below a floor written in the registration (the short would pay), hedged with the coins' basket; priced as a taker with the names' own rows. Hindsight-generated and said so; F6 is its only test. Read at ≥ 180 days (2027-03-15) or earlier by a power line written in the registration. Cost now: the registration and its code, one session; no VM until the read.
 - **CQ2 — the maker's cost at the trade level on F5's coins (the one question R90's gate licenses):** R39's method needs the aggregate-trade files of ≈ 60 coins over 2026 (tens of GB, a day of VM time) to replace the bar simulation; even a true +11 a trade is one se on F5 — it can show the maker estimate is wrong, it cannot show the book pays.
@@ -15851,7 +15858,7 @@ Code:          written now, after this block's commit: the rule and its pricing 
                line's chain, `allgbm.build` on a span, `scripts/r91_chain.sh`.
 
 
-### R92 — the MAKER at the TRADE level on R90's book: every leg of the 4,995 positions as a resting order filled (or not) by the archive's own trades — is the bar simulation's +11 a trade real, kinder than the truth, or closed? (registered 2026-11-12 on Vadim's "CQ2", before any trade file of these names is fetched and before the code is written; licensed by R90's gate — its one cost-side question)
+### R92 — the MAKER at the TRADE level on R90's book: every leg of the 4,995 positions as a resting order filled (or not) by the archive's own trades — is the bar simulation's +11 a trade real, kinder than the truth, or closed? (registered 2026-11-12 on Vadim's "CQ2", before any trade file of these names is fetched and before the code is written; licensed by R90's gate — its one cost-side question; read 2026-11-12: VALIDITY PASS — THE ESTIMATE STANDS: THROUGH +10.6 bps a trade (t +0.75) against the bar-simulated +11.4, D −0.8; AT-TOUCH +11.2; the taker −15.3; fills 91 %; the book still not detectable; decision CR)
 Question:      R90's book loses as a taker (−15.3 bps a trade) and reads +11.4 (t 0.8) when its legs are resting orders
                SIMULATED ON 5-MINUTE BARS (rest at the bar's close, filled if a later bar trades through). On the twelve the
                bar simulation was 1.7 bps a round trip too kind (R39); on these coins — thin, fast, wide — nobody has measured
@@ -15921,6 +15928,37 @@ Code:          named, written after this block's commit: `ft2/allbook.py` — `t
                of one file's legs), `tapefetch` (the VM's fetch-and-simulate, resumable), `reprice`, `tape_run` (the guard, the
                validity, the rows); CLI `ft2 allbook tapefetch|tape`; `scripts/r92_chain.sh`; planted tests in
                `tests/test_p8_allbook.py`.
+Result:        **READ 2026-11-12 03:19 UTC (`output/allbook/r92/read.md`; chain 02:17 → 03:19 on the work VM; ledger (R92, F5)).
+               VALIDITY PASS: the fills' md5 as registered and R90's decisions rebuilt identical; 7,184 of 7,184 name-days fetched
+               with their checksums (no error, no retry); the clock 99.99 % (one leg of 9,990 off the candle's close); the
+               arithmetic reproduces R90's net exactly; both legs simulated on 4,995 of 4,995.
+               THE GATE — THE ESTIMATE STANDS: THROUGH nets N = +10.6 bps a trade (se 14.1, t +0.75; R90's words: NOT DETECTABLE)
+               against the bar-simulated maker's +11.4 on the same positions, D = −0.8 (paired se 0.4); AT-TOUCH +11.2; the taker
+               −15.3. The cost side: fee 4.5 and other cost 2.4 a round trip (the bar's 4.3 and 1.3) against the taker's 10.0 and
+               27.5.
+               Described: THROUGH fills 91 % of legs (AT-TOUCH 92 %), the median fill 7 s after placement; a filled leg's price
+               is 2.0 bps better than the bar's close and the price 15 minutes on stands 3.4 bps against it (entries −5.0, exits
+               −1.7); the 9 % unfilled are the legs the price ran from (+53 bps in 15 minutes) and they cross. The print the
+               resting price came from is 1.6 s old at the median, 10 s at the 90th percentile. Sides (THROUGH): short +38.4
+               (se 30.9, t 1.24; gross +77.3, funding −32.1), long −13.5 (t −0.6). Coins of F1–F4 −9.9 (t −0.8); coins new in
+               2026 +76.0 (se 49.5, t 1.5). Months: five positive, four negative; 2026-06 … 09 all positive.
+               Against the Expectation: validity as expected; the fills WRONG (91 % against 55–70 — these coins trade through a
+               one-tick-better price within seconds); the filled price's edge on the close smaller than expected (2.0 against
+               3–10), the drift milder (−3.4 against −5 … −15); N above the range (+10.6 against −10 … +8), D far above
+               (−0.8 against −8 … −20): the sentence given one chance in ten.
+               A limit found at the read, not registered: on these coins the tick is under a basis point, so a THROUGH print
+               can be a small trade one tick lower; had a 10,000-USDT order really stood at P, that trade might have been
+               absorbed by it and never printed through. THROUGH is therefore NOT a strict lower bound here as the Method
+               claimed; a volume rule (the aggressor's quantity at or beyond P reaching the order's own) would be, and was not
+               computed (the zips are deleted; the leg rows do not hold it). With thousands of prints in most windows the fill
+               share is unlikely to move much, but that is a judgment, not a measurement.
+               **In plain words: on these coins the 5-minute-bar simulation of a resting order was not too kind — orders placed
+               where a resting order can sit were filled nine times in ten, within seconds, at a price slightly better than the
+               bar's close, and what the price did afterwards cost about 3 bps a leg. The maker's cost is 7 bps a round trip
+               where the taker's is 37. That moves the book from −15 to +11 a trade — still less than one standard error from
+               zero: the cost estimate is confirmed, the book is not shown to pay. By the Licenses line: nothing on F5's cells;
+               R91 unchanged; a maker-execution row for F6 may be proposed and must be registered before 2027-03-18 — decision
+               CR (Vadim's).**
 
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
