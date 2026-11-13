@@ -153,3 +153,59 @@ def test_r92_the_repricer_and_the_sentence():
     assert not L.loc["e", "buy"] and L.loc["x", "buy"] and L.loc["x", "bar_px"] == 3.0          # a short sells in and buys out
     assert ab.verdict92(8.0, -4.9) == "THE ESTIMATE STANDS" and ab.verdict92(3.0, -8.0) == "TOO KIND"
     assert ab.verdict92(-0.1, -2.0) == ab.verdict92(5.0, -15.1) == "THE MAKER PATH IS CLOSED AT THIS RULE" and ab.verdict92(np.nan, 0.0) == "NOT READ"
+
+
+# ---- R93: the maker execution of R91's positions, the strict volume rule ----------------------------------------------------------------
+def test_r93_the_volume_rules_count_only_the_opposite_aggressor_and_the_gate_only_strictly_beyond():
+    pre = [(10, 100.0, 5, True), (20, 100.1, 5, False)]                             # bid 100.0, ask 100.1, tick 0.1; the order's own quantity 100 units
+    win = [(310, 99.9, 1, True),                                                    # one unit sold a tick below: THROUGH fills, the volume rules do not
+           (320, 100.0, 200, True),                                                 # 200 sold AT the price: VOLUME-AT fills (1 + 200 ≥ 100), VOLUME-BEYOND does not (the queue at P may have taken it)
+           (330, 99.9, 500, False),                                                 # a BUYER's print below P: not the opposite aggressor, counted by neither
+           (340, 99.8, 98, True), (350, 99.9, 1, True)]                             # 1 + 98 + 1 = 100 sold strictly below: VOLUME-BEYOND fills here
+    r = ab.tape_day(*_prints(pre + win), pd.DataFrame([_leg(1, True)])).set_index("id")
+    assert r.loc[1, "P"] == 100.0 and r.loc[1, "thr"] and r.loc[1, "thr_s"] == 10.0
+    assert r.loc[1, "vola"] and r.loc[1, "vola_s"] == 20.0 and r.loc[1, "vol"] and r.loc[1, "vol_s"] == 50.0
+    r = ab.tape_day(*_prints(pre + win[:4]), pd.DataFrame([_leg(1, True)])).set_index("id")
+    assert r.loc[1, "thr"] and r.loc[1, "vola"] and not r.loc[1, "vol"] and np.isnan(r.loc[1, "vol_s"])     # 99 units strictly beyond: one short
+    # the mirror for a sell at 100.1: the buyers' quantity strictly above
+    r = ab.tape_day(*_prints(pre + [(310, 100.2, 60, False), (320, 100.3, 40, True), (330, 100.3, 40, False)]), pd.DataFrame([_leg(2, False)])).set_index("id")
+    assert r.loc[2, "P"] == 100.1 and r.loc[2, "vol"] and r.loc[2, "vol_s"] == 30.0
+
+
+def test_r93_a_leg_across_midnight_stays_a_taker_leg_and_the_books_reprice_by_rule():
+    e = pd.Timestamp("2026-10-01 00:05", tz="UTC")
+    f = pd.DataFrame({"id": [0, 1], "symbol": ["AUSDT", "BUSDT"], "side": [-1, -1], "size": [1.0, 1.0], "t": [e, e], "entry_t": [e, e], "exit_t": [e + pd.Timedelta(days=1), pd.Timestamp("2026-10-02 23:55", tz="UTC")],
+                      "entry_px": [100.0, 100.0], "exit_px": [99.0, 99.0], "mkt_bps": [0.0, 0.0], "funding_bps": [0.0, 0.0], "net_bps": [0.0, 0.0]})
+    L = ab.tape_legs(f, strict=False)
+    assert L["ok"].tolist() == [True, True, True, False]                             # position 1's exit at 23:55: its window crosses midnight
+    fates = pd.DataFrame({"id": [0, 0, 1], "leg": ["e", "x", "e"], "sim": True, "P": [100.1, 98.9, 100.1], "cross_px": [99.5, 99.4, 99.5],
+                          "vol": [True, False, False], "vola": [True, True, False], "thr": [True, True, True], "at": [True, True, True]})
+    Lm = L.merge(fates, on=["id", "leg"], how="left")
+    Lm["sim"] = Lm["sim"].eq(True) & Lm["ok"]
+    B = ab.maker_books(f, Lm, np.array([7.0, 7.0]), np.array([9.0, 9.0]))
+    v = B["vol"]
+    # position 0: the entry filled at 100.1 (fee 2, no other cost); the exit NOT filled under the strict rule → the window's last print 99.4, fee 5, other 9
+    assert v.loc[0, "entry_px"] == 100.1 and v.loc[0, "exit_px"] == 99.4 and v.loc[0, "fee_bps"] == pytest.approx(2 + 5 * 99.4 / 100.1) and v.loc[0, "other_cost_bps"] == pytest.approx(9 * 99.4 / 100.1)
+    # position 1: the entry simulated and unfilled → crosses at 99.5; the exit not simulated → R91's own taker leg at R91's price
+    assert v.loc[1, "entry_px"] == 99.5 and v.loc[1, "exit_px"] == 99.0 and v.loc[1, "fee_bps"] == pytest.approx(5 + 5 * 99.0 / 99.5) and v.loc[1, "other_cost_bps"] == pytest.approx(7 + 9 * 99.0 / 99.5)
+    assert B["vola"].loc[0, "exit_px"] == 98.9 and B["thr"].loc[1, "entry_px"] == 100.1 and B["thr"].loc[1, "exit_px"] == 99.0
+    assert v["net_bps"].mean() < B["thr"]["net_bps"].mean()                         # the strict rule fills less and is never kinder
+
+
+def test_r93_the_guard_needs_the_block_the_span_end_and_r91s_row_first(tmp_path, monkeypatch):
+    plan = tmp_path / "PLAN.md"
+    plan.write_text("### R91 — planted\n### R93 — planted\n")
+    monkeypatch.setattr(ab.bt, "PLAN", plan)
+    monkeypatch.setattr(ab.bt, "READS", tmp_path / "reads.csv")
+    if pd.Timestamp.now("UTC") < ab.F6_END:
+        with pytest.raises(SystemExit, match="a look is the read"):
+            ab._guard93()
+    monkeypatch.setattr(ab, "F6_END", pd.Timestamp("2020-01-01", tz="UTC"))
+    with pytest.raises(SystemExit, match="after R91's gate"):
+        ab._guard93()                                                               # R91 has not read F6 yet
+    row = {"read_at": ["x"], "registration": ["R91"], "fold": ["F6"], "strategy": ["s"], "params": ["{}"]}
+    pd.DataFrame(row).to_csv(tmp_path / "reads.csv", index=False)
+    ab._guard93()
+    pd.DataFrame({**row, "registration": ["R93"]}).to_csv(tmp_path / "reads.csv", mode="a", header=False, index=False)
+    with pytest.raises(SystemExit, match="already read F6"):
+        ab._guard93()

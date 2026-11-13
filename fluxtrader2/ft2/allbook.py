@@ -145,9 +145,13 @@ def main(action: str, name: str | None = None) -> None:
     if action == "run":
         run(name or NAME)
     elif action == "tapefetch":
-        tapefetch()
+        if name == NAME93:
+            _guard93(REG93)
+            tapefetch(fills=FILLS91, fills_md5=None, tape=TAPE93, strict=False)
+        else:
+            tapefetch()
     elif action == "tape":
-        tape_run(name or NAME92)
+        maker93() if name == NAME93 else tape_run(name or NAME92)
 
 
 # ====================================================================================================================================
@@ -318,14 +322,16 @@ D_STANDS, D_KIND = -5.0, -15.0                               # the gate's cuts o
 RULES = {"thr": "THROUGH", "at": "AT-TOUCH"}
 
 
-def tape_legs(fills: pd.DataFrame) -> pd.DataFrame:
-    """The two legs of every priced position: id, leg (e / x), symbol, s (the instant R90 priced), buy, bar_px (the close it priced), day."""
+def tape_legs(fills: pd.DataFrame, strict: bool = True) -> pd.DataFrame:
+    """The two legs of every priced position: id, leg (e / x), symbol, s (the instant R90 priced), buy, bar_px (the close it priced), day.
+    `strict` (R92): a leg whose 15 minutes cross midnight raises; R93 passes False and reads the flag `ok` (such a leg stays a taker leg)."""
     p = fills.dropna(subset=["net_bps"])
     sym, side = p["symbol"].astype(str).to_numpy(), p["side"].to_numpy()
     L = pd.concat([pd.DataFrame({"id": p["id"].to_numpy(), "leg": "e", "symbol": sym, "s": pd.DatetimeIndex(p["entry_t"]), "buy": side > 0, "bar_px": p["entry_px"].to_numpy()}),
                    pd.DataFrame({"id": p["id"].to_numpy(), "leg": "x", "symbol": sym, "s": pd.DatetimeIndex(p["exit_t"]), "buy": side < 0, "bar_px": p["exit_px"].to_numpy()})], ignore_index=True)
     L["day"] = L["s"].dt.floor("D")
-    if not ((L["s"] + pd.Timedelta(WAIT_NS, "ns")).dt.floor("D") == L["day"]).all():
+    L["ok"] = (L["s"] + pd.Timedelta(WAIT_NS, "ns")).dt.floor("D") == L["day"]
+    if strict and not L["ok"].all():
         raise ValueError("tape_legs: a leg's 15-minute window crosses midnight — one daily file a leg is the registration's reading")
     return L
 
@@ -370,9 +376,19 @@ def tape_day(t: np.ndarray, px: np.ndarray, qty: np.ndarray, sell: np.ndarray, l
         i_thr = int(beyond[0]) if len(beyond) else -1
         cands = [i for i in (i_thr, int(done[0]) if len(done) else -1) if i >= 0]
         i_at = min(cands) if cands else -1
+        # R93's volume rules: the OPPOSITE aggressor's quantity strictly beyond P (`vol`, the gate's: a fill no queue at P could have stopped) and
+        # at or beyond P (`vola`, described) reaching the order's own
+        opp = ws if g.buy else ~ws
+        own = NOTIONAL / P * (1 - 1e-12)
+        bey = opp & ((wp < P - eps) if g.buy else (wp > P + eps))
+        atb = opp & ((wp <= P + eps) if g.buy else (wp >= P - eps))
+        d_vol, d_vola = np.flatnonzero(np.cumsum(np.where(bey, wq, 0.0)) >= own), np.flatnonzero(np.cumsum(np.where(atb, wq, 0.0)) >= own)
+        i_vol, i_vola = (int(d_vol[0]) if len(d_vol) else -1), (int(d_vola[0]) if len(d_vola) else -1)
         rows.append({**row, "sim": True, "P": P, "src_age_s": (s - int(t[src])) / 1e9, "cross_px": float(px[b - 1]),
                      "thr": i_thr >= 0, "thr_s": (int(t[a + i_thr]) - s) / 1e9 if i_thr >= 0 else np.nan,
-                     "at": i_at >= 0, "at_s": (int(t[a + i_at]) - s) / 1e9 if i_at >= 0 else np.nan})
+                     "at": i_at >= 0, "at_s": (int(t[a + i_at]) - s) / 1e9 if i_at >= 0 else np.nan,
+                     "vol": i_vol >= 0, "vol_s": (int(t[a + i_vol]) - s) / 1e9 if i_vol >= 0 else np.nan,
+                     "vola": i_vola >= 0, "vola_s": (int(t[a + i_vola]) - s) / 1e9 if i_vola >= 0 else np.nan})
     return pd.DataFrame(rows)
 
 
@@ -393,19 +409,24 @@ def _tape_load(zp: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray
     return t[o], d["price"].to_numpy()[o], d["quantity"].to_numpy()[o], sell[o]
 
 
-def tapefetch(workers: int = 6) -> dict:
+def tapefetch(workers: int = 6, fills: Path | None = None, fills_md5: str | None = "r92", tape: Path | None = None, strict: bool = True) -> dict:
     """The VM's fetch-and-simulate, resumable: per name-day holding a leg, the archive's aggTrades zip (checksum verified), the legs'
-    fates → data/r92_tape/<SYM>/<day>.parquet, the zip deleted (its sha256 in the rows). A name-day without a file stays absent."""
+    fates → <tape>/<SYM>/<day>.parquet, the zip deleted (its sha256 in the rows). A name-day without a file stays absent. The defaults are
+    R92's (R90's fills, their registered md5, data/r92_tape); R93 passes R91's fills, no md5 (they are made in the read's session), its own
+    folder and `strict` False (a leg whose window crosses midnight is left out: it stays a taker leg)."""
     from concurrent.futures import ThreadPoolExecutor
     from . import archive
-    if hashlib.md5(FILLS90.read_bytes()).hexdigest() != FILLS90_MD5:
-        raise SystemExit(f"{FILLS90}: not the fills R92 registered")
-    L = tape_legs(pd.read_parquet(FILLS90))
+    fills, tape = fills or FILLS90, tape or TAPE
+    fills_md5 = FILLS90_MD5 if fills_md5 == "r92" else fills_md5
+    if fills_md5 is not None and hashlib.md5(Path(fills).read_bytes()).hexdigest() != fills_md5:
+        raise SystemExit(f"{fills}: not the fills R92 registered")
+    L = tape_legs(pd.read_parquet(fills), strict)
+    L = L[L["ok"]]
     jobs = [(s, d, g) for (s, d), g in L.groupby(["symbol", "day"], sort=True)]
 
     def one(job) -> str:
         sym, day, g = job
-        dest = TAPE / sym / f"{day:%Y-%m-%d}.parquet"
+        dest = tape / sym / f"{day:%Y-%m-%d}.parquet"
         if dest.exists():
             return "skip"
         name = f"{sym}-aggTrades-{day:%Y-%m-%d}.zip"
@@ -571,3 +592,119 @@ def tape_run(name: str = NAME92, registration: str = REG92) -> str:
     (out / "read.md").write_text("\n".join(md))
     print(f"{registration}: {gate['sentence']} — THROUGH {gate['N']:+.1f} (t {gate['t']:+.2f}), D {gate['D']:+.1f}, AT-TOUCH {gate['at_touch']:+.1f}; wrote {out}/", flush=True)
     return "\n".join(md)
+
+
+# ====================================================================================================================================
+# R93 (docs/PLAN.md §8): the MAKER execution of R91's forward rule on F6 — R91's positions unchanged, every leg a resting order by R92's
+# method, the gate's fill rule VOLUME-BEYOND (the opposite aggressor's quantity STRICTLY beyond the resting price reaching the order's own:
+# a fill no queue at the price could have stopped). Written 2026-11-13 after the registration's commit and tested on planted prints only;
+# read once, in R91's session, after `forward` has written R91's fills and its ledger row.
+# ====================================================================================================================================
+REG93, NAME93 = "R93", "r93"
+FILLS91 = OUT / NAME91 / "fills.parquet"
+TAPE93 = Path("data/r93_tape")
+RULES93 = {"vol": "VOLUME-BEYOND (the gate)", "vola": "VOLUME-AT", "thr": "THROUGH", "at": "AT-TOUCH"}
+MIN_BOTH93 = 0.95
+
+
+def _guard93(registration: str = REG93) -> None:
+    import re
+    if not bt.PLAN.exists() or not re.search(rf"^### {registration} ", bt.PLAN.read_text(), flags=re.M):
+        raise SystemExit(f"no '### {registration} ' block in {bt.PLAN}: write the registration before the read")
+    if pd.Timestamp.now("UTC") < F6_END:
+        raise SystemExit(f"{registration} is read once, after F6's last bar ({F6_END:%Y-%m-%d}); a look is the read")
+    r = pd.read_csv(bt.READS) if bt.READS.exists() else pd.DataFrame(columns=["registration", "fold"])
+    if ((r["registration"] == registration) & (r["fold"] == "F6")).any():
+        raise SystemExit(f"{registration} has already read F6 ({bt.READS}): a fold is read once per question")
+    if not ((r["registration"] == REG91) & (r["fold"] == "F6")).any():
+        raise SystemExit(f"{registration} is read after {REG91}'s gate is written: no ({REG91}, F6) row in {bt.READS}")
+
+
+def maker_books(f: pd.DataFrame, L: pd.DataFrame, oe: np.ndarray, ox: np.ndarray) -> dict[str, pd.DataFrame]:
+    """R91's priced fills `f` re-priced per fill rule from the legs' fates `L` (rows of `tape_legs` merged with `tape_day`'s columns; `sim`
+    False = not simulated). A filled leg: the resting price, the maker fee, no other cost; a simulated leg not filled: the last print of
+    its window, the taker fee and the coin's taker leg (`oe` / `ox`); a leg NOT simulated: R91's own taker leg at R91's price."""
+    E, X = (L[L["leg"] == k].set_index("id").reindex(f["id"]) for k in ("e", "x"))
+    se, sx = E["sim"].eq(True).to_numpy(), X["sim"].eq(True).to_numpy()
+    pe0, px0 = f["entry_px"].to_numpy(float), f["exit_px"].to_numpy(float)
+    out = {}
+    for k in RULES93:
+        fe, fx = se & E[k].eq(True).to_numpy(), sx & X[k].eq(True).to_numpy()
+        pe = np.where(fe, E["P"].to_numpy(float), np.where(se, E["cross_px"].to_numpy(float), pe0))
+        px = np.where(fx, X["P"].to_numpy(float), np.where(sx, X["cross_px"].to_numpy(float), px0))
+        out[k] = reprice(f, pe, px, np.where(fe, MAKER_BPS, TAKER_BPS), np.where(fx, MAKER_BPS, TAKER_BPS), np.where(fe, 0.0, oe), np.where(fx, 0.0, ox)).assign(fill_e=fe, fill_x=fx)
+    return out
+
+
+def maker93(name: str = NAME93, registration: str = REG93, guard: bool = True) -> dict:
+    """R93's read: validity, the gate (R91's form on the VOLUME-BEYOND fills), the ledger row, the rule rows. The other described rows
+    (the bar-simulated maker, the leg table, the coins' split) are the read session's, from `legs.parquet` and the saved books."""
+    if guard:
+        _guard93(registration)
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    v91 = json.loads((OUT / NAME91 / "validity_book.json").read_text())
+    md5 = hashlib.md5(FILLS91.read_bytes()).hexdigest()
+    saved = pd.read_parquet(FILLS91)
+    f = saved.dropna(subset=["net_bps"]).reset_index(drop=True)
+    names = sorted(f["symbol"].astype(str).unique())
+    M = bt.market(names, F6_END, F6_START)
+    C = bt.load_costs(M.index, M.columns, F6_END, 1.0, close=M.close)
+    L = tape_legs(saved, strict=False)
+    files = sorted(TAPE93.glob("*/*.parquet"))
+    R = pd.concat([pd.read_parquet(p) for p in files], ignore_index=True) if files else pd.DataFrame(columns=["id", "leg", "sim"])
+    for c in ("P", "cross_px", "src_age_s", "pre_px", *RULES93, *(f"{k}_s" for k in RULES93)):
+        if c not in R:
+            R[c] = np.nan
+    L = L.merge(R.drop(columns=[c for c in ("symbol", "s", "buy") if c in R]), on=["id", "leg"], how="left")
+    has = L["sim"].notna()
+    L["why_taker"] = np.where(~L["ok"], "the window crosses midnight", np.where(~has, "no file", np.where(~L["sim"].eq(True), "no print before s", "")))
+    L["sim"] = L["sim"].eq(True) & L["ok"]
+    nd = L[L["ok"]].drop_duplicates(["symbol", "day"])
+    clock = (L.loc[has, "pre_px"] - L.loc[has, "bar_px"]).abs() <= 1e-9 * L.loc[has, "bar_px"].abs()
+    j = M.columns.get_indexer(f["symbol"])
+
+    def oth(ts):
+        dpos = C.days.get_indexer(pd.DatetimeIndex(ts).floor("D"))
+        return np.where(dpos >= 0, C.taker_leg[np.maximum(dpos, 0), j], np.nan)
+    oe, ox = oth(f["entry_t"]), oth(f["exit_t"])
+    five = np.full(len(f), TAKER_BPS)
+    d_arith = float(np.abs(reprice(f, f["entry_px"].to_numpy(), f["exit_px"].to_numpy(), five, five, oe, ox)["net_bps"].to_numpy() - f["net_bps"].to_numpy()).max()) if len(f) else np.inf
+    E, X = (L[L["leg"] == k].set_index("id").reindex(f["id"]) for k in ("e", "x"))
+    both = E["sim"].to_numpy(bool) & X["sim"].to_numpy(bool)
+    v = {"registration": registration, "r91_validity": v91.get("status"), "r91_fills_md5": md5, "positions": int(len(f)), "legs": int(len(L)), "name_days": int(len(nd)),
+         "files_share": float(has[nd.index].mean()) if len(nd) else 0.0, "clock_share": float(clock.mean()) if has.any() else 0.0, "arithmetic_max_abs_diff": d_arith,
+         "both_legs_simulated": int(both.sum()), "both_share": float(both.mean()) if len(f) else 0.0, "taker_legs_by_reason": L.loc[L["why_taker"] != "", "why_taker"].value_counts().to_dict(),
+         "wait_min": 15, "notional": NOTIONAL}
+    v["status"] = "PASS" if (v["r91_validity"] == "PASS" and v["files_share"] >= 0.99 and v["clock_share"] >= 0.99 and d_arith <= 1e-6 and v["both_share"] >= MIN_BOTH93) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
+    if v["status"] != "PASS":
+        (out / "read.md").write_text(f"# {registration}\n\n## Validity: FAIL\n\n```\n{json.dumps(v, indent=1, default=str)}\n```\n\n**The read is VOID: no leg was summarised.**\n")
+        print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
+        raise SystemExit(2)
+    days = pd.date_range(F6_START, F6_END - pd.Timedelta(1, "ns"), freq="D")
+    books = maker_books(f, L, oe, ox)
+    rows = []
+    for k, b in {"taker": f, **books}.items():
+        rows.append({"row": "R91's taker (its gate, beside)" if k == "taker" else RULES93[k], **hedged_stats(b, days), "net_unhedged": float(b["net_bps"].mean()), "gross": float(b["gross_bps"].mean()),
+                     "fee": float(b["fee_bps"].mean()), "other_cost": float(b["other_cost_bps"].mean()), "funding": float(b["funding_bps"].mean()),
+                     "fill_e": float(b["fill_e"].mean()) if "fill_e" in b else 0.0, "fill_x": float(b["fill_x"].mean()) if "fill_x" in b else 0.0})
+    tab = pd.DataFrame(rows)
+    g = dict(rows[1])
+    g["verdict"] = verdict91(g["mean"], g["se"], g["first_half"], g["last_half"])
+    tab.to_csv(out / "rows.csv", index=False)
+    L.to_parquet(out / "legs.parquet", index=False)
+    books["vol"].to_parquet(out / "fills_volume.parquet", index=False)
+    (out / "gate.json").write_text(json.dumps({**g, "validity": v}, indent=1, default=str))
+    if guard:
+        bt.READS.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": ["F6"], "strategy": "allbook short_held maker_volume",
+                      "params": json.dumps({"wait_min": 15, "rule": "volume_beyond", "r91_fills_md5": md5})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    mth = pd.DatetimeIndex(books["vol"]["t"]).strftime("%Y-%m")
+    by_month = pd.DataFrame([{"month": m, **hedged_stats(books["vol"][mth == m], days)} for m in sorted(set(mth))])
+    md = [f"# {registration} — the maker execution of R91's rule on F6 (`ft2 allbook tape --name r93`)\n", f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n",
+          f"\n## The gate — **{g['verdict']}**: hedged net − {HEDGE_BPS:g} = {g['mean']:+.1f} bps a trade (se {g['se']:.1f}, t {g['t']:+.2f}; halves {g['first_half']:+.1f} / {g['last_half']:+.1f}) on {g['trades']} positions, VOLUME-BEYOND\n",
+          tab.round(2).to_markdown(index=False), "\n", "\n## Described (decides nothing): VOLUME-BEYOND by month\n", by_month.round(2).to_markdown(index=False), "\n"]
+    (out / "read.md").write_text("\n".join(md))
+    print(f"{registration}: {g['verdict']} — hedged net {g['mean']:+.1f} bps a trade (t {g['t']:+.2f}); wrote {out}/", flush=True)
+    return g

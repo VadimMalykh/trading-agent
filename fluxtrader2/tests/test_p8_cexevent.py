@@ -31,7 +31,7 @@ def _t0s(idx, days=(8, 17, 26, 35, 44, 53, 62, 71, 1, 110)):
     return [idx[0].floor("D") + pd.Timedelta(days=d) for d in days]
 
 
-def _market(weeks=WEEKS, seed=0, drift=-0.04, runon=None, lag_h=8, drift_bars=288):
+def _market(weeks=WEEKS, seed=0, drift=-0.04, runon=None, lag_h=8, drift_bars=288, mirror=True):
     """Sixteen weeks of 5m bars; the inflow names drift DOWN against their peers over the day after the entry at t0 + the lag; the outflow names
     drift UP (the mirror earns when bought); the non-members drift down too."""
     rng = np.random.default_rng(seed)
@@ -41,7 +41,7 @@ def _market(weeks=WEEKS, seed=0, drift=-0.04, runon=None, lag_h=8, drift_bars=28
     r = rng.normal(0, 0.0005, (n, len(cols)))
     t0s = _t0s(idx)
     plan = [(j, t0s[j], drift if runon is None or j not in runon else runon[j]) for j in range(len(EV))]
-    plan += [(len(EV) + k, t0s[k + 1], -drift) for k in range(len(OF))]                     # the outflow names share EV2…EV5's stamps, drift up
+    plan += [(len(EV) + k, t0s[k + 1], -drift if mirror else drift) for k in range(len(OF))]                     # the outflow names share EV2…EV5's stamps, drift up
     plan += [(len(EV) + len(OF) + k, t0s[k + 2], drift) for k in range(len(NM))]
     for j, t0, g in plan:
         if t0 + pd.Timedelta(hours=lag_h) + pd.Timedelta(minutes=5 * (drift_bars + 4)) > idx[-1]:
@@ -241,3 +241,103 @@ def test_gate_a_rewritten_or_early_knownat_and_gate_b_an_unregistered_lag_void_t
     assert "**VOID" in cexevent.run("t85") and starts == []
     monkeypatch.setattr(cexevent, "LAG_H", 8)
     assert "**VOID" not in cexevent.run("t85") and len(starts) == 1
+
+
+# ---- R94: the confirmation on the frozen F3+F4 list (decision CM1) — R85's path with the Spec swapped: both sides sold, 3 days ----------------
+def _plant94(tmp_path, monkeypatch, M, t0s, C, name="t94"):
+    L, today, starts = _plant(tmp_path, monkeypatch, M, t0s, C, name=name)
+    monkeypatch.setattr(cexevent, "LIST34", cexevent.LIST)
+    monkeypatch.setattr(cexevent, "LIST34_MD5", cexevent.LIST_MD5)
+    monkeypatch.setattr(cexevent, "LIST34_ROWS", len(L))
+    monkeypatch.setattr(cexevent, "POP_ROWS94", 14)                                  # ten inflow + four outflow member cells
+    monkeypatch.setattr(cexevent, "EXCLUDED94", ("OF4USDT",))                        # out by name
+    monkeypatch.setattr(cexevent, "GATE_ROWS94", 13)
+    monkeypatch.setattr(cexevent, "FOLDS34", ("F1", "F2"))
+    monkeypatch.setattr(cexevent, "EXPECTED_DROPPED94", {("EV9USDT", str(t0s[8])), ("EV10USDT", str(t0s[9]))})   # before the first block; the 3-day exit past the end
+    monkeypatch.setattr(cexevent, "MIN_ELIGIBLE94", 9)
+    monkeypatch.setattr(cexevent, "TOP5_94", ("EV1USDT", "EV2USDT", "OF1USDT"))
+    monkeypatch.setattr(bt, "READS", tmp_path / "confirmation_reads.csv")
+    guarded, ledger_at_market = [], []
+    monkeypatch.setattr(bt, "_guard", lambda folds, registration, reexecute=None: (guarded.append((tuple(folds), registration)), list(folds))[1])
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): (starts.append(start), ledger_at_market.append(bt.READS.exists()), M)[2])
+    return L, today, guarded, starts, ledger_at_market
+
+
+def _market94(mirror=False, delist=True):
+    """The 3-day drift DOWN on the inflow names and (mirror False) on the outflow names too; OF4's bars end ten bars after its decision bar
+    (the name out by the registration: a decision and an entry bar, no 3-day label) unless `delist` is False."""
+    M, t0s = _market(drift=-0.06, drift_bars=864, mirror=mirror)
+    if delist:
+        i0 = M.index.get_loc(upgevent.decision_close(t0s[4] + pd.Timedelta(hours=8)))
+        for F in (M.close, M.high, M.low):
+            F.iloc[i0 + 10:, F.columns.get_loc("OF4USDT")] = np.nan
+    return M, t0s
+
+
+def test_r94_the_guard_rows_go_into_the_ledger_before_the_market_and_a_drift_on_both_sides_is_confirmed(tmp_path, monkeypatch):
+    M, t0s = _market94()
+    C = _costs(M)
+    L, today, guarded, starts, ledger_at_market = _plant94(tmp_path, monkeypatch, M, t0s, C)
+    spec = cexevent.spec_r94()
+    assert spec.registration == "R94" and spec.gate_hold == 864 and spec.confirm and spec.strategy == "cex_sold_3d" and spec.sides == ("in", "out") and spec.seed == 94 and spec.pad_days == 7
+    text = cexevent.run("t94", spec=spec)
+    out = tmp_path / "output" / "listing" / "t94"
+    V = json.loads((out / "validity.json").read_text())
+    assert V["status"] == "PASS", V
+    assert guarded == [(("F1", "F2"), "R94")] and ledger_at_market == [True] and V["0_guard"]["strategy"] == "cex_sold_3d"
+    led = pd.read_csv(tmp_path / "confirmation_reads.csv")
+    assert led["registration"].tolist() == ["R94", "R94"] and json.loads(led["params"][0])["holds"] == [864] and json.loads(led["params"][0])["sides"] == ["in", "out"]
+    assert V["2_population_rows"] == 14 and V["2_gate_rows"] == 13 and V["3_cells"] == 11 and V["3_dropped_as_registered"] and V["3_1d_dropped_as_registered"]
+    assert V["3_excluded_with_a_finite_label"] == 0 and len(V["3_excluded_by_name"]) == 1 and "no gate-hold label" in next(iter(V["3_excluded_by_name"].values()))
+    assert V["6_money_row_identity"]["sold_gross_funding_vs_minus_a"] <= 1e-9 and V["6_money_row_identity"]["hold_is_the_gate_hold"] and V["7_exits_at_or_after_end"] == 0
+    E = pd.read_csv(out / "events.csv")
+    assert "OF4USDT" not in set(E["symbol"]) and E["side"].value_counts().to_dict() == {"in": 8, "out": 3}          # the name out is never priced
+    fam = pd.read_csv(out / "holds.csv").set_index("hold")
+    assert fam["gate"].to_dict() == {"1d": False, "3d": True} and fam.loc["3d", "M_trim"] < -400 and fam.loc["3d", "k_trim"] == fundevent.k_trim(11)
+    sd = pd.read_csv(out / "sides.csv")
+    g3 = sd[sd["hold"] == "3d"].set_index("side")
+    assert g3.loc["in", "M_trim"] < -400 and g3.loc["out", "M_trim"] < -400 and g3["n"].to_dict() == {"in": 8, "out": 3}
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["verdict"] == "CONFIRMED" and meta["gate_hold"] == 864 and meta["confirm"] and meta["seed"] == 94 and meta["sides"] == ["in", "out"]
+    assert (out / "money_row.csv").exists() and "The money row" in text and "The sides apart" in text and not (out / "outflow").exists()
+    sp = pd.read_csv(out / "splits.csv")
+    assert {"side_in", "near7"} <= set(sp["split"])
+
+
+def test_r94_an_outflow_side_of_the_other_sign_is_not_confirmed_and_the_verdict_needs_every_condition(tmp_path, monkeypatch):
+    M, t0s = _market94(mirror=True)                                                  # the outflow names drift UP: sold, they lose
+    C = _costs(M)
+    _plant94(tmp_path, monkeypatch, M, t0s, C)
+    cexevent.run("t94", spec=cexevent.spec_r94())
+    out = tmp_path / "output" / "listing" / "t94"
+    meta = json.loads((out / "meta.json").read_text())
+    g3 = pd.read_csv(out / "sides.csv").query("hold == '3d'").set_index("side")
+    assert meta["verdict"].startswith("NOT CONFIRMED") and g3.loc["in", "M_trim"] < 0 < g3.loc["out", "M_trim"]
+    cv = cexevent.confirm_verdict94
+    assert cv(-100, 30, -3.3, 0.001, -1, -1, -1, -1, 35) == "CONFIRMED"
+    assert cv(-100, 30, -3.3, 0.001, -1, -1, -1, +1, 35) == "NOT CONFIRMED" and cv(-100, 30, -3.3, 0.001, -1, -1, +1, -1, 35) == "NOT CONFIRMED"
+    assert cv(-100, 30, -3.3, 0.06, -1, -1, -1, -1, 35) == "NOT CONFIRMED" and cv(-100, 30, -3.3, 0.001, +1, -1, -1, -1, 35) == "NOT CONFIRMED"
+    assert cv(-100, 51, -1.96, 0.04, -1, -1, -1, -1, 35) == "NOT CONFIRMED" and cv(-30, 10, -3.0, 0.001, -1, -1, -1, -1, 35) == "NOT CONFIRMED"
+    assert cv(+100, 30, 3.3, 0.001, 1, 1, 1, 1, 35) == "NOT CONFIRMED — the opposite sign" and cv(5, 10, 0.5, 0.6, 1, -1, 1, -1, 35) == "NOT CONFIRMED — under the bar"
+
+
+def test_r94_a_check_that_reads_no_bar_voids_before_the_guard_and_a_label_on_a_name_out_voids_after_it(tmp_path, monkeypatch):
+    M, t0s = _market94()
+    C = _costs(M)
+    L, today, guarded, starts, ledger_at_market = _plant94(tmp_path, monkeypatch, M, t0s, C)
+    monkeypatch.setattr(cexevent, "LIST34_MD5", "0" * 32)
+    text = cexevent.run("t94", spec=cexevent.spec_r94())
+    assert "**VOID" in text and "the folds are NOT spent" in text and guarded == [] and starts == [] and not (tmp_path / "confirmation_reads.csv").exists()
+    monkeypatch.setattr(cexevent, "LIST34_MD5", cexevent.LIST_MD5)
+    moved = today.copy()
+    moved.loc[0, "t0"] = moved.loc[0, "t0"] + pd.Timedelta("1h")
+    monkeypatch.setattr(cexflow, "events", lambda write=True: moved)
+    assert "the folds are NOT spent" in cexevent.run("t94", spec=cexevent.spec_r94()) and guarded == []          # a row the rule no longer gives: void, unspent
+    monkeypatch.setattr(cexflow, "events", lambda write=True: today)
+    M2, _ = _market94(delist=False)                                                  # the name out HAS a 3-day label: the registration's count was wrong
+    monkeypatch.setattr(bt, "market", lambda syms, end, start=None, needs=(): M2)
+    C2 = _costs(M2)                                                                  # the costs of the market read (the funding value follows the closes)
+    monkeypatch.setattr(bt, "load_costs", lambda index, cols, end, cost_mult=1.0, close=None: C2)
+    text = cexevent.run("t94", spec=cexevent.spec_r94())
+    V = json.loads((tmp_path / "output" / "listing" / "t94" / "validity.json").read_text())
+    assert "**VOID" in text and "The guard rows stand in the ledger" in text and V["3_excluded_with_a_finite_label"] == 1 and len(pd.read_csv(tmp_path / "confirmation_reads.csv")) == 2
