@@ -650,6 +650,18 @@ open — MAKER PATH`. The forward clock is untouched (same start, same checkpoin
 the registered test). `live` rows from the next entry on are $200 rows; the arm's per-notional
 figures stay comparable across the change, its dollar figures do not.
 
+**Leverage 2x → 5x, 2026-11-11 04:26 UTC — FOUND on the VM 2026-11-13, written by no session.**
+`.env` backed up as `.env.bak.20261111`; the one changed line is `LIVE_PILOT_LEVERAGE=2` → `5`;
+the app recreated 04:26:26 UTC with no pilot position open (two `explore_cov05` paper rows were
+open across it; no `policy` / `flat_size` row). Boot log `MICRO-PILOT IS ON … at $200.0 a trade,
+5x, max 8 open — MAKER PATH`; health on 11-13 09:52 UTC: `leverage 5`, `notional_usd 200`,
+`max_positions 8`, `stop_pct 0.1`, `capital_usd 1000`, `daily_loss_usd 20`, `max_total_loss_usd
+200`, `realised_usd_total −39.16`, 82 closed `live` rows (9 entered since the change). Who and
+why are not on record — presumably Vadim's own change, to be confirmed. What it changes: margin a
+slot $100 → $40, so all eight $200 slots fit the wallet (four did at 2x); the notional, the 10 %
+stop (liquidation at 5x is ≈ 20 % away, beyond it), the dollar brakes and the per-notional figures
+are unchanged. Not a forward start; the paper arms do not read leverage.
+
 ### §7.1 — The account page and the notional deposit (built 2026-11-10)
 
 The account is shared with Vadim's manual trades (no sub-accounts on this account). `/account`
