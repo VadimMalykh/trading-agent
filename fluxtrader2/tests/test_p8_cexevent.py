@@ -31,14 +31,15 @@ def _t0s(idx, days=(8, 17, 26, 35, 44, 53, 62, 71, 1, 110)):
     return [idx[0].floor("D") + pd.Timedelta(days=d) for d in days]
 
 
-def _market(weeks=WEEKS, seed=0, drift=-0.04, runon=None, lag_h=8, drift_bars=288, mirror=True):
+def _market(weeks=WEEKS, seed=0, drift=-0.04, runon=None, lag_h=8, drift_bars=288, mirror=True, sigma=0.0005, every_day=0.0):
     """Sixteen weeks of 5m bars; the inflow names drift DOWN against their peers over the day after the entry at t0 + the lag; the outflow names
     drift UP (the mirror earns when bought); the non-members drift down too."""
     rng = np.random.default_rng(seed)
     n = weeks * 7 * 288
     idx = pd.date_range("2023-06-05 00:05", periods=n, freq="5min", tz="UTC", name="t")
     cols = [*EV, *OF, *NM, *MEM, "BTCUSDT"]
-    r = rng.normal(0, 0.0005, (n, len(cols)))
+    r = rng.normal(0, sigma, (n, len(cols)))
+    r[:, :len(EV) + len(OF)] += every_day / 288                                          # R95: the event names lag on EVERY day
     t0s = _t0s(idx)
     plan = [(j, t0s[j], drift if runon is None or j not in runon else runon[j]) for j in range(len(EV))]
     plan += [(len(EV) + k, t0s[k + 1], -drift if mirror else drift) for k in range(len(OF))]                     # the outflow names share EV2…EV5's stamps, drift up
@@ -263,10 +264,10 @@ def _plant94(tmp_path, monkeypatch, M, t0s, C, name="t94"):
     return L, today, guarded, starts, ledger_at_market
 
 
-def _market94(mirror=False, delist=True):
+def _market94(mirror=False, delist=True, drift=-0.06, **kw):
     """The 3-day drift DOWN on the inflow names and (mirror False) on the outflow names too; OF4's bars end ten bars after its decision bar
     (the name out by the registration: a decision and an entry bar, no 3-day label) unless `delist` is False."""
-    M, t0s = _market(drift=-0.06, drift_bars=864, mirror=mirror)
+    M, t0s = _market(drift=drift, drift_bars=864, mirror=mirror, **kw)
     if delist:
         i0 = M.index.get_loc(upgevent.decision_close(t0s[4] + pd.Timedelta(hours=8)))
         for F in (M.close, M.high, M.low):
@@ -341,3 +342,79 @@ def test_r94_a_check_that_reads_no_bar_voids_before_the_guard_and_a_label_on_a_n
     text = cexevent.run("t94", spec=cexevent.spec_r94())
     V = json.loads((tmp_path / "output" / "listing" / "t94" / "validity.json").read_text())
     assert "**VOID" in text and "The guard rows stand in the ledger" in text and V["3_excluded_with_a_finite_label"] == 1 and len(pd.read_csv(tmp_path / "confirmation_reads.csv")) == 2
+
+
+# ---- R95: the non-event control of R94 (decision CS1) ------------------------------------------------------------------------------------
+def _series(L, M):
+    """Daily 00:00 stamps per base over the market; the amount steps by each frozen row's change on its t0, flat otherwise."""
+    days = pd.date_range(M.index[0].floor("D") - pd.Timedelta(days=5), M.index[-1].floor("D") + pd.Timedelta(days=1), freq="D")
+    rows = []
+    for base, g in L.groupby("base"):
+        f = np.ones(len(days))
+        for t0, ch in zip(g["t0"], g["change"]):
+            f[days >= t0] *= 1 + ch
+        rows.append(pd.DataFrame({"base": base, "stamp": days, "amount": 1000.0 * f}))
+    return pd.concat(rows, ignore_index=True)
+
+
+def _plant95(tmp_path, monkeypatch, M, t0s, C):
+    L, today, guarded, starts, ledger_at_market = _plant94(tmp_path, monkeypatch, M, t0s, C, name="t95")
+    first_block = M.index[0].floor("D") + pd.Timedelta(days=2)
+    mem = pd.DataFrame({"block": first_block, "symbol": [*MEM, *EV, *OF]})                       # the event names are members: their quiet days are control days
+    monkeypatch.setattr(universe, "members", lambda path=None, hindsight=None: mem)
+    monkeypatch.setattr(universe, "screen_symbols", lambda path=None: [*MEM, *EV, *OF])
+    S = _series(L, M)
+    monkeypatch.setattr(cexflow, "series", lambda: S)
+    monkeypatch.setattr(cexevent, "MIN_MATCHED95", 8)
+    monkeypatch.setattr(cexevent, "RAND_DRAWS", 200)
+    monkeypatch.setattr(cexevent, "NAME94", "t95r94")
+    Lf = cexevent.load_events(cexevent.LIST34, sides=("in", "out"))
+    G = Lf[Lf["gate"] & (Lf["symbol"] != "OF4USDT")]
+    Ct = cexevent.control_days(S, Lf, G, mem, M.index[-1] + BAR, 8)
+    monkeypatch.setattr(cexevent, "CTRL_DAYS95", len(Ct))
+    monkeypatch.setattr(cexevent, "CTRL_NAMES95", Ct["symbol"].nunique())
+    krevent.fp_paths("t95r94")[0].write_text("symbol,rows\n")
+    cexevent.run("t95r94", spec=cexevent.spec_r94())                                             # R94's saved holds.csv: validity (2) reproduces it
+    return L, Lf, Ct, guarded, starts
+
+
+def test_r95_a_quiet_day_is_never_within_three_days_of_a_move_and_a_drift_after_the_events_only_reads_the_event(tmp_path, monkeypatch):
+    M, t0s = _market94(sigma=0.00005)
+    C = _costs(M)
+    L, Lf, Ct, guarded, starts = _plant95(tmp_path, monkeypatch, M, t0s, C)
+    ev = {s: pd.DatetimeIndex(g["t0"]) for s, g in Lf.groupby("symbol")}
+    assert len(Ct) > 500 and all((abs((ev[s] - d) / pd.Timedelta(days=1)) > 3).all() for s, d in zip(Ct["symbol"], Ct["d"]))     # both sides of every frozen row, the non-cell row too
+    assert (pd.DatetimeIndex(Ct["t"]) == pd.DatetimeIndex(Ct["d"]) + pd.Timedelta(hours=8) + BAR).all() and Ct["d"].min() >= M.index[0].floor("D") + pd.Timedelta(days=2)
+    text = cexevent.control("t95")
+    out = tmp_path / "output" / "listing" / "t95"
+    V = json.loads((out / "validity.json").read_text())
+    assert V["status"] == "PASS" and V["2_reproduced"] and V["0_control_days_as_registered"] and V["5_control_days_within_3d_of_a_frozen_row"] == 0, V
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["verdict"] == "THE EVENT" and meta["D"]["M_trim"] < -400 and meta["D"]["u"] <= -2 and abs(meta["f34"]["C_mean_of_matched_control_means"]) < 60
+    assert meta["f34"]["randomisation"]["p_rand_le_actual"] == 0.0 and meta["f12"] is not None and "F1+F2 beside" in text
+    assert ("t95r94" not in str(guarded)) and [g[1] for g in guarded] == ["R94", "R95"]
+    led = pd.read_csv(tmp_path / "confirmation_reads.csv")
+    assert led["registration"].tolist()[-2:] == ["R95", "R95"] and led["strategy"].iloc[-1] == "cex_control_3d"
+    C_ = pd.read_csv(out / "f34" / "cells.csv")
+    assert C_["matched"].all() and (C_["ctrl_n"] >= 5).all()
+
+
+def test_r95_a_lag_on_every_day_of_the_event_names_reads_the_names(tmp_path, monkeypatch):
+    M, t0s = _market94(drift=0.0, sigma=0.00005, every_day=-0.004)     # −40 bps a day on the event names, event or not
+    C = _costs(M)
+    _plant95(tmp_path, monkeypatch, M, t0s, C)
+    cexevent.control("t95")
+    meta = json.loads((tmp_path / "output" / "listing" / "t95" / "meta.json").read_text())
+    assert meta["verdict"] == "THE NAMES" and abs(meta["D"]["M_trim"]) < 40
+    assert meta["f34"]["cells_matched_own"]["M_trim"] < -20 and meta["f34"]["C_mean_of_matched_control_means"] < -20       # the cells lag — and so do the quiet days
+    assert cexevent.verdict95(-61, -2.1) == "THE EVENT" and cexevent.verdict95(-61, -1.9) == "UNRESOLVED" and cexevent.verdict95(-39, -3) == "THE NAMES" and cexevent.verdict95(45, 1) == "UNRESOLVED"
+
+
+def test_r95_a_control_count_that_is_not_the_registered_one_voids_before_the_guard(tmp_path, monkeypatch):
+    M, t0s = _market94(sigma=0.00005)
+    C = _costs(M)
+    L, Lf, Ct, guarded, starts = _plant95(tmp_path, monkeypatch, M, t0s, C)
+    n_led = len(pd.read_csv(tmp_path / "confirmation_reads.csv"))
+    monkeypatch.setattr(cexevent, "CTRL_DAYS95", len(Ct) + 1)
+    text = cexevent.control("t95")
+    assert "**VOID" in text and "the folds are NOT spent" in text and [g[1] for g in guarded] == ["R94"] and len(pd.read_csv(tmp_path / "confirmation_reads.csv")) == n_led

@@ -574,9 +574,226 @@ def main(action: str, name: str | None = None) -> None:
         print(text)
         if "**VOID" in text or '"status": "FAIL"' in text:
             sys.exit(2)
+    elif action == "control":
+        text = control(name or NAME95)
+        print(text)
+        if "**VOID" in text:
+            sys.exit(2)
     elif action == "check":
         r = krevent.check(name or NAME)
         if not r["pass"]:
             sys.exit(2)
     else:
         sys.exit(f"cexevent: unknown action {action}")
+
+
+# ====================================================================================================================================
+# R95 (PLAN §8, decision CS1) — the NON-EVENT CONTROL of R94: each of R94's cells against its own name's QUIET days (no balance move within
+# 3 days on either side) within ±45 days. Written after the registration's commit. A control read: no gate on any event row.
+# ====================================================================================================================================
+NAME95 = "r95"
+SEED95 = 95
+CTRL_EXCL, CTRL_WIN, CTRL_MIN = 3, pd.Timedelta(days=45), 5      # days excluded on each side of a move; the match window; the fewest control days a matched cell has
+CTRL_DAYS95, CTRL_NAMES95 = 7933, 48                             # counted 2026-11-13 on the work VM without a price (PLAN §8 R95)
+MIN_MATCHED95, MIN_CTRL_LABELS = 255, 0.95
+STRATEGY95 = "cex_control_3d"
+D_EVENT, D_NAMES = -60.0, 40.0
+RAND_DRAWS = 2000
+HOLD95 = 864
+
+
+def control_days(S: pd.DataFrame, L_all: pd.DataFrame, G: pd.DataFrame, mem: pd.DataFrame, end: pd.Timestamp, lag_h: int, hold: int = HOLD95) -> pd.DataFrame:
+    """The control name-days (symbol, base, d, t): per name of the cells `G`, a day d is QUIET when each of d − 3 … d + 3 has a 00:00 stamp of
+    its base whose change is dated (the previous stamp ≤ MAX_GAP before) and under THRESH, and no frozen row of the name (`L_all`) lies in
+    d ± 3 d; a control day when the name is a member of the block holding t = the decision bar of d + the lag, t ≥ the first block and the
+    hold's exit before `end`. No price is read."""
+    S = S.sort_values(["base", "stamp"]).copy()
+    S["prev"], S["pa"] = S.groupby("base")["stamp"].shift(1), S.groupby("base")["amount"].shift(1)
+    S["move"] = ~(S["pa"].gt(0) & ((S["stamp"] - S["prev"]) <= cexflow.MAX_GAP)) | ((S["amount"] / S["pa"] - 1.0).abs() >= cexflow.THRESH)
+    starts = pd.DatetimeIndex(sorted(mem["block"].unique()))
+    by = {b: set(g["symbol"]) for b, g in mem.groupby("block")}
+    days = pd.date_range(starts[0].floor("D"), end, freq="D")
+    excl = pd.Timedelta(days=CTRL_EXCL)
+    rows = []
+    for sym, base in G[["symbol", "base"]].drop_duplicates().itertuples(index=False):
+        mv = S[S["base"] == base].set_index("stamp")["move"].reindex(days)             # NaN: no stamp at that midnight
+        bad = (mv.isna() | mv.eq(True)).astype(float)
+        near = bad.rolling(2 * CTRL_EXCL + 1, center=True, min_periods=1).max().to_numpy() > 0
+        ev = pd.DatetimeIndex(L_all.loc[L_all["symbol"] == sym, "t0"])
+        for d in days[~near]:
+            if len(ev) and ((ev >= d - excl) & (ev <= d + excl)).any():
+                continue
+            t = decision_close(d + pd.Timedelta(hours=lag_h))
+            blk = starts[max(starts.searchsorted(t, side="right") - 1, 0)]
+            if t >= starts[0] and sym in by[blk] and t + (hold + bt.LATENCY) * BAR < end:
+                rows.append({"symbol": sym, "base": base, "d": d, "t": t})
+    return pd.DataFrame(rows, columns=["symbol", "base", "d", "t"])
+
+
+def matched(sym: np.ndarray, t0: pd.DatetimeIndex, Cy: pd.DataFrame, win: pd.Timedelta = CTRL_WIN) -> pd.DataFrame:
+    """Per cell: the number, mean and median of y over its own name's labelled control days within ±win of its t0."""
+    by = {s: (pd.DatetimeIndex(g["d"]), g["y"].to_numpy()) for s, g in Cy.dropna(subset=["y"]).groupby("symbol")}
+    out = []
+    for s, t in zip(sym, t0):
+        d, y = by.get(s, (pd.DatetimeIndex([]), np.array([])))
+        m = np.abs((d - t) / pd.Timedelta(days=1)) <= win / pd.Timedelta(days=1) if len(d) else np.array([], dtype=bool)
+        v = y[m] if len(d) else y
+        out.append({"ctrl_n": int(len(v)), "ctrl_mean": float(v.mean()) if len(v) else np.nan, "ctrl_median": float(np.median(v)) if len(v) else np.nan})
+    return pd.DataFrame(out)
+
+
+def verdict95(d: float, u: float) -> str:
+    if not (np.isfinite(d) and np.isfinite(u)):
+        return "NOT READ"
+    if d <= D_EVENT and u <= -2:
+        return "THE EVENT"
+    return "THE NAMES" if abs(d) < D_NAMES else "UNRESOLVED"
+
+
+def _tm(v: np.ndarray) -> float:
+    v = v[np.isfinite(v)]
+    return listing.trimmed(v, fundevent.k_trim(len(v))) if len(v) > 2 else np.nan
+
+
+def _control_part(spec: Spec, L: pd.DataFrame, Ct: pd.DataFrame, out: Path, seed: int, taker_bps: float) -> dict:
+    """One fold pair: the cells through `population` at the 3-day hold, the control days' labels on the same market, the match, D and the rows."""
+    out.mkdir(parents=True, exist_ok=True)
+    a0, end = listing.window(spec.folds)
+    mem = universe.members(spec.members_csv)
+    first_block = mem["block"].min()
+    syms = list(dict.fromkeys([*L["symbol"].dropna(), *universe.screen_symbols(spec.members_csv), BTC]))
+    M = bt.market(syms, end, a0 - pd.Timedelta(days=spec.pad_days))
+    C = bt.load_costs(M.index, M.columns, end, close=M.close)
+    close, fv = M.close.to_numpy(), C.fundval
+    P = population(M, C, mem, L, end, first_block, taker_bps, spec.lag_h, HOLD95)
+    E = P["E"]
+    y = P["Y"][HOLD95]
+    keep = np.isfinite(y)
+    E, y, t = E[keep].reset_index(drop=True), y[keep], P["t"][keep]
+    # the control days' labels
+    Ct = Ct.copy()
+    rows, own = M.index.get_indexer(pd.DatetimeIndex(Ct["t"])), M.columns.get_indexer(Ct["symbol"])
+    ok = (rows >= 0) & (own >= 0)
+    yc, ac, bc = np.full(len(Ct), np.nan), np.full(len(Ct), np.nan), np.full(len(Ct), np.nan)
+    if ok.any():
+        lab = listing.label_at(close, fv, rows[ok], HOLD95)
+        a_, b_, nb_ = listing.excess(lab, own[ok], listing.member_mask(mem, M.columns, pd.DatetimeIndex(Ct["t"])[ok]))
+        good = nb_ >= MIN_MEMBERS
+        ac[ok], bc[ok], yc[ok] = np.where(good, a_, np.nan), np.where(good, b_, np.nan), np.where(good, a_ - b_, np.nan)
+    Ct["a"], Ct["b"], Ct["y"] = ac, bc, yc
+    Ct.to_csv(out / "control_days.csv", index=False)
+    Mt = matched(E["symbol"].to_numpy(), pd.DatetimeIndex(E["t0"]), Ct)
+    E = pd.concat([E, Mt], axis=1)
+    E["y"] = y
+    E["matched"] = E["ctrl_n"] >= CTRL_MIN
+    E["d"] = np.where(E["matched"], E["y"] - E["ctrl_mean"], np.nan)
+    E["d_median"] = np.where(E["matched"], E["y"] - E["ctrl_median"], np.nan)
+    m = E["matched"].to_numpy()
+    wk, W = listing.weeks(t[m]) if m.any() else (np.array([], dtype=int), 0)
+    stat = {}
+    for col in ("d", "d_median", "y"):
+        v = E.loc[m, col].to_numpy()
+        bs = fundevent.bootstrap_trimmed(v[:, None], wk, W, TRIM_FRAC, block=BLOCK_WEEKS, draws=DRAWS, seed=seed) if m.sum() > 10 else {"m": [np.nan], "se": [np.nan], "u": [np.nan], "p_fw": np.nan}
+        stat[col] = {"M_trim": float(bs["m"][0]), "se": float(bs["se"][0]), "u": float(bs["u"][0]), "p": float(bs["p_fw"]), "mean": float(np.nanmean(v)) if len(v) else np.nan, "median": float(np.nanmedian(v)) if len(v) else np.nan}
+    # the randomisation row: each matched cell replaced by one random control day of its window
+    rng = np.random.default_rng(seed)
+    cy = Ct.dropna(subset=["y"])
+    pools = []
+    for s, t0_ in zip(E.loc[m, "symbol"], pd.DatetimeIndex(E.loc[m, "t0"])):
+        g = cy[cy["symbol"] == s]
+        pools.append(g.loc[(pd.DatetimeIndex(g["d"]) - t0_).to_series().abs().to_numpy() <= CTRL_WIN, "y"].to_numpy())
+    draws = np.array([_tm(np.array([p_[rng.integers(len(p_))] for p_ in pools])) for _ in range(RAND_DRAWS)]) if pools else np.array([])
+    actual = stat["y"]["M_trim"]
+    cv = cy["y"].to_numpy()
+    res = {"folds": list(spec.folds), "cells": int(len(E)), "matched": int(m.sum()), "unmatched": int((~m).sum()), "control_days": int(len(Ct)), "control_days_labelled": int(np.isfinite(yc).sum()),
+           "control_label_share": float(np.isfinite(yc).mean()) if len(Ct) else 0.0, "M_trim_all_cells": _tm(y), "D": stat["d"], "D_with_the_control_median": stat["d_median"], "cells_matched_own": stat["y"],
+           "C_mean_of_matched_control_means": float(E.loc[m, "ctrl_mean"].mean()) if m.any() else np.nan, "M_trim_unmatched_cells": _tm(y[~m]), "ctrl_n_median": float(E.loc[m, "ctrl_n"].median()) if m.any() else np.nan,
+           "control_pooled": {"n": int(len(cv)), "M_trim": _tm(cv), "mean": float(cv.mean()) if len(cv) else np.nan, "median": float(np.median(cv)) if len(cv) else np.nan, "share_below_0": float((cv < 0).mean()) if len(cv) else np.nan,
+                              "mean_a": float(cy["a"].mean()) if len(cy) else np.nan, "mean_b": float(cy["b"].mean()) if len(cy) else np.nan},
+           "cells_a_b": {"mean_a": float(np.nanmean(P["A"][HOLD95][keep][m])) if m.any() else np.nan, "mean_b": float(np.nanmean(P["B"][HOLD95][keep][m])) if m.any() else np.nan},
+           "randomisation": {"draws": int(len(draws)), "mean": float(np.nanmean(draws)) if len(draws) else np.nan, "sd": float(np.nanstd(draws)) if len(draws) else np.nan,
+                             "q05": float(np.nanquantile(draws, 0.05)) if len(draws) else np.nan, "p_rand_le_actual": float((draws <= actual).mean()) if len(draws) else np.nan, "actual_matched_M_trim": actual},
+           "market": [str(M.index[0]), str(M.index[-1])], "min_gap_days_control_to_a_frozen_row": None}
+    Em = E[m]
+    grp = lambda key: pd.DataFrame([{"split": key, "group": str(g), "n": int(len(x)), "D_trim": _tm(x["d"].to_numpy()), "D_mean": float(x["d"].mean()), "y_trim": _tm(x["y"].to_numpy()), "ctrl_mean": float(x["ctrl_mean"].mean())}
+                                   for g, x in Em.groupby(key)])                                                 # noqa: E731
+    sp = pd.concat([grp("side"), grp("fold"), grp(pd.DatetimeIndex(Em["t"]).tz_localize(None).to_period("Q").astype(str).rename("quarter")), grp("symbol")], ignore_index=True) if len(Em) else pd.DataFrame()
+    sp.to_csv(out / "splits.csv", index=False)
+    E.to_csv(out / "cells.csv", index=False)
+    pn = cy.groupby("symbol")["y"].agg(["size", "mean", "median"]).round(1)
+    pn.to_csv(out / "control_per_name.csv")
+    res["_tables"] = (sp, pn)
+    return res
+
+
+def control(name: str = NAME95, taker_bps: float = TAKER_BPS, beside: bool = True) -> str:
+    """R95's read (PLAN §8): the checks that read no bar, the guard rows, R94's cells reproduced, the control days' labels, the match, D."""
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    spec = spec_r94()
+    ka = knownat_gate(spec.knownat, spec.knownat_min_date)
+    L_full = load_events(spec.list_path, spec.top5, sides=spec.sides)
+    list_md5 = krevent.md5(spec.list_path)
+    L_pop = L_full[L_full["gate"]].reset_index(drop=True)
+    L = L_pop[~L_pop["symbol"].isin(spec.excluded)].reset_index(drop=True)
+    mem = universe.members(spec.members_csv)
+    end = listing.window(spec.folds)[1]
+    Ct = control_days(cexflow.series(), L_full, L, mem, end, spec.lag_h)
+    excl = pd.Timedelta(days=CTRL_EXCL)
+    ev_by = {s: pd.DatetimeIndex(g["t0"]) for s, g in L_full.groupby("symbol")}
+    near = int(sum(((ev_by[s] >= d - excl) & (ev_by[s] <= d + excl)).any() for s, d in zip(Ct["symbol"], Ct["d"]) if s in ev_by))
+    fp_before, _ = krevent.fp_paths(name)
+    V = {"0_gate_a_knownat": ka, "0_lag_h": spec.lag_h, "0_list_md5_as_registered": list_md5 == spec.list_md5, "0_list_rows": int(len(L_full)), "0_population_rows": int(len(L_pop)), "0_gate_rows": int(len(L)),
+         "0_control_days": int(len(Ct)), "0_control_names": int(Ct["symbol"].nunique()), "0_control_days_as_registered": len(Ct) == CTRL_DAYS95 and Ct["symbol"].nunique() == CTRL_NAMES95,
+         "5_control_days_within_3d_of_a_frozen_row": near, "5_decision_bar_is_d_plus_lag": bool((pd.DatetimeIndex(Ct["t"]) == pd.DatetimeIndex(Ct["d"]) + pd.Timedelta(hours=spec.lag_h) + BAR).all()) if len(Ct) else False,
+         "1_fingerprint_before": "saved" if fp_before.exists() else "MISSING"}
+    if not (ka["status"] == "PASS" and V["0_list_md5_as_registered"] and len(L_full) == spec.list_rows and len(L_pop) == spec.pop_rows and len(L) == spec.gate_rows and V["0_control_days_as_registered"]
+            and near == 0 and V["5_decision_bar_is_d_plus_lag"] and fp_before.exists()):
+        V["status"] = "FAIL"
+        (out / "validity.json").write_text(json.dumps(V, indent=1, default=str))
+        md = f"# R95 — the non-event control of R94\n\n## Validity: FAIL before the guard rows — the market was NOT loaded and the folds are NOT spent\n\n```\n{json.dumps(V, indent=1, default=str)}\n```\n\n**VOID — a check that reads no bar failed; no guard row was written, nothing was read.**\n"
+        (out / "control.md").write_text(md)
+        return md
+    conf = bt._guard(spec.folds, "R95")
+    stamp = krevent.guard_rows(bt.READS, conf, "R95", STRATEGY95, {"hold": HOLD95, "excl_days": CTRL_EXCL, "window_days": int(CTRL_WIN / pd.Timedelta(days=1)), "min_control_days": CTRL_MIN, "control_days": int(len(Ct)), "list_md5": list_md5})
+    V["0_guard"] = {"status": "PASS", "appended_at": stamp, "folds": list(conf), "logged_as": "R95", "strategy": STRATEGY95}
+    print(f"guard: (R95, {', '.join(conf)}) appended to {bt.READS} at {stamp}; the market is loaded now", flush=True)
+    R = _control_part(spec, L, Ct, out / "f34", SEED95, taker_bps)
+    sp, pn = R.pop("_tables")
+    h94 = OUT / NAME94 / "holds.csv"
+    saved = float(pd.read_csv(h94).query("gate")["M_trim"].iloc[0]) if h94.exists() else np.nan
+    V |= {"2_cells": R["cells"], "2_M_trim_all_cells": R["M_trim_all_cells"], "2_R94_saved_M_trim": saved, "2_reproduced": bool(np.isfinite(saved) and abs(R["M_trim_all_cells"] - saved) <= 1e-9),
+          "3_control_label_share": R["control_label_share"], "4_matched": R["matched"]}
+    V["status"] = "PASS" if (V["2_reproduced"] and R["cells"] == spec.gate_rows - len(spec.expected_dropped) and R["control_label_share"] >= MIN_CTRL_LABELS and R["matched"] >= MIN_MATCHED95) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(V, indent=1, default=str))
+    md = ["# R95 — the non-event control of R94: each cell against its own name's quiet days within ±45 days (`ft2 cexevent control --name r95`)\n",
+          f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · y at 3 days against the members, bps · market {R['market'][0]} → {R['market'][1]}\n",
+          f"\n## Validity: {V['status']} (the fingerprint after the run is `ft2 cexevent check --name {name}`'s)\n", "\n```\n" + json.dumps(V, indent=1, default=str) + "\n```\n"]
+    if V["status"] != "PASS":
+        md += ["\n**VOID — the control is not read. The guard rows stand in the ledger: the folds are read for this question.**\n"]
+        (out / "control.md").write_text("\n".join(md))
+        return "\n".join(md)
+    D = R["D"]
+    verdict = verdict95(D["M_trim"], D["u"])
+    md += [f"\n## The reading — **{verdict}**: D = {D['M_trim']:+.1f} bps (se {D['se']:.1f}, u {D['u']:+.2f}, p {D['p']:.3f}) on {R['matched']} matched cells of {R['cells']} — the cells' own trimmed mean {R['cells_matched_own']['M_trim']:+.1f}, "
+           f"their control days' level C {R['C_mean_of_matched_control_means']:+.1f} (THE EVENT if D ≤ {D_EVENT:g} and u ≤ −2; THE NAMES if |D| < {D_NAMES:g}; UNRESOLVED otherwise)\n",
+           "\n```\n" + json.dumps(R, indent=1, default=str) + "\n```\n"]
+    (out / "control.md").write_text("\n".join(md))                    # the read is on disk before anything else
+    md += ["\n## Described — decides nothing\n", "\nD by side, fold, quarter and name (matched cells):\n", sp.round(1).to_markdown(index=False), "\n", "\nThe control days per name (n, mean, median of y):\n", pn.to_markdown(), "\n"]
+    R12 = None
+    if beside:
+        try:                                                           # F1+F2 beside — exploration, no guard, no reading; a failure here leaves the read standing
+            s12 = dataclasses.replace(spec_r85(), sides=("in", "out"), gate_hold=HOLD95)
+            L12f = load_events(s12.list_path, s12.top5, sides=s12.sides)
+            L12 = L12f[L12f["gate"] & ~L12f["symbol"].isin(spec.excluded)].reset_index(drop=True)
+            Ct12 = control_days(cexflow.series(), L12f, L12, universe.members(s12.members_csv), listing.window(s12.folds)[1], s12.lag_h)
+            R12 = _control_part(s12, L12, Ct12, out / "f12", SEED95, taker_bps)
+            sp12, _ = R12.pop("_tables")
+            md += [f"\n## F1+F2 beside (R85's list, both sides, 3 days — exploration, no reading): D = {R12['D']['M_trim']:+.1f} (se {R12['D']['se']:.1f}, u {R12['D']['u']:+.2f}) on {R12['matched']} matched cells of {R12['cells']}; C {R12['C_mean_of_matched_control_means']:+.1f}\n",
+                   "\n```\n" + json.dumps(R12, indent=1, default=str) + "\n```\n", sp12[sp12["split"] != "symbol"].round(1).to_markdown(index=False), "\n"]
+        except Exception as e:                                         # noqa: BLE001
+            md += [f"\n## F1+F2 beside: NOT COMPUTED — {e!r}\n"]
+    (out / "meta.json").write_text(json.dumps({"registration": "R95", "decision": "CS1", "verdict": verdict, "D": D, "f34": R, "f12": R12, "seed": SEED95, "excl_days": CTRL_EXCL, "min_control_days": CTRL_MIN}, indent=1, default=str))
+    text = "\n".join(md)
+    (out / "control.md").write_text(text)
+    return text
