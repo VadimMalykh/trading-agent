@@ -117,7 +117,7 @@ case "$cmd" in
     use_serve; ensure_ssh_alias
     mkdir -p "$ROOT/fluxtrader2/output/serve"
     rsync -az "$SSH_HOST:$REMOTE_DIR/output/serve/" "$ROOT/fluxtrader2/output/serve/" && echo "pulled output/serve/" >&2 ;;
-  serve-pull-cex)   # R96's fetched balance files (≈ 5 MB a day, gzipped) and their log → the laptop; rsync never deletes on the host
+  serve-pull-cex)   # R96's fetched balance files (≈ 15 MB a day, gzipped) and their log → the laptop; rsync never deletes on the host
     use_serve; ensure_ssh_alias
     mkdir -p "$ROOT/fluxtrader2/data/raw/external/defillama_cex_live" "$ROOT/fluxtrader2/output/cexflow_live"
     rsync -az "$SSH_HOST:$REMOTE_DIR/data/raw/external/defillama_cex_live/" "$ROOT/fluxtrader2/data/raw/external/defillama_cex_live/"

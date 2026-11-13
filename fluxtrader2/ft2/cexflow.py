@@ -119,7 +119,11 @@ def _latest(pattern: str) -> Path:
 
 def _rows(path: Path, bases: set[str] | None = None) -> pd.DataFrame:
     """The raw file as (stamp, chain, base, amount, usd) rows — the `-staking` / `-borrowed` chains out; every token when `bases` is None."""
-    d = json.loads(path.read_text())
+    if str(path).endswith(".gz"):                                   # R96's live files are saved gzipped (scripts/cexflow_live.py)
+        import gzip
+        d = json.loads(gzip.open(path, "rb").read())
+    else:
+        d = json.loads(path.read_text())
     out = []
     for ch, v in d.get("chainTvls", {}).items():
         if ch.endswith("-staking") or ch.endswith("-borrowed"):

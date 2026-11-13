@@ -16396,6 +16396,12 @@ Code:          `scripts/cexflow_live.py`, the timer and its planted test — wri
                block's commit: `ft2/cexlive.py` (the usable-file rule and the day's change from one file, planted tests). Named,
                written at the read: the eligibility and the cells from the live rows, the member lists (`screen_select` with block
                starts), the Data line, `cexevent.spec_r96`, the chain.
+Installed:     2026-11-13 13:43 UTC on the serve host by `vm.sh serve-install` (SERVE.md "R96's daily balance fetch"): the timer's next
+               run 2026-11-14 06:00:30 UTC; one hand run as the install's proof — `binance-cex_20261113T1343Z.json.gz`, 47,027,851 raw
+               bytes, md5 de4ea98c1a566e2c17d3a4fc0e9d0e54 equal to the log's row, 4 s, 14.5 MB gzipped (≈ 4 GB by the read, 15 GB
+               free) — outside the window, so not a usable file. `ft2/cexlive.py` (`usable`, `day_change`, `live_rows`) written after
+               this block's commit with planted tests; no price read. The first usable file is due 2026-11-14; the first t0 of the
+               span is 2026-11-16.
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 

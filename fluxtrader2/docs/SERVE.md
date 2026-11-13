@@ -92,6 +92,28 @@ last `serve-pull` before step 7, or the ledger starts over (a restart is a new l
 - **Stop:** `vm.sh serve-ssh 'sudo systemctl disable --now ft2-decide.timer ft2-mark.timer ft2-check.timer'`; the VM stays
   on for the ledger files until pulled.
 
+## R96's daily balance fetch (`ft2-cexlive`) — a second job on this host, independent of P7
+
+PLAN §8 R96 (the forward test of the exchange-balance kind) needs DefiLlama's Binance balance file as it stands at 06:00 UTC
+each day. Installed 2026-11-13 by `vm.sh serve-install` (the same script, idempotent — this IS the reinstall step):
+
+- **Unit:** `ft2-cexlive.timer` → `ft2-cexlive.service`, `OnCalendar=*-*-* 06:00:30`, `Persistent=true`; runs
+  `~/ft2-venv/bin/python ~/fluxtrader2/scripts/cexflow_live.py` (standard library only, streamed: ≈ 4 s, no pandas — it cannot
+  starve the hourly decide).
+- **Files (never under `output/serve/`):** `data/raw/external/defillama_cex_live/binance-cex_<YYYYMMDD>T<HHMM>Z.json.gz`
+  (≈ 14.5 MB a day, ≈ 4 GB by the read; the host had 15 GB free), `output/cexflow_live/fetch_log.csv` (one row a fetch:
+  started, done, file, raw bytes, raw md5, status).
+- **Health:** `vm.sh serve-status` ends with the log's last row — expect today's date, `06:00:3x`, `ok`. A day whose fetch did
+  not START 05:55:00 … 06:04:59 UTC has no usable file and R96 counts it out; nothing is back-filled. After a host outage
+  `Persistent=true` fires the missed run at boot: the file is saved, but named by its real minute, so it is not usable.
+- **Backup:** `vm.sh serve-pull-cex` copies the files and the log to the laptop (rsync, never deletes on the host). Do it at
+  least monthly — the files cannot be re-fetched (a later file is a different, possibly rewritten history).
+- **Reinstall on a new host:** `vm.sh setup` (venv), copy the last `serve-pull-cex` back into the same two folders, then
+  `vm.sh serve-install`. Days missed in between are R96's unusable days (its validity asks 85 % usable).
+- **Stop** (only at R96's read or if the kind is parked): `vm.sh serve-ssh 'sudo systemctl disable --now ft2-cexlive.timer'`.
+- A hand run (`sudo systemctl start ft2-cexlive.service`) is harmless: its file carries its own minute. The first one,
+  2026-11-13 13:43 UTC, is the install's proof (47,027,851 bytes, md5 de4ea98c…), not a usable file.
+
 ## Identity checks (the build is not done until these pass)
 
 1. **Replay (before go-live):** `ft2 serve replay` on the work VM runs the live path — refit at the harness's block
