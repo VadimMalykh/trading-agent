@@ -1524,7 +1524,7 @@ names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common att
 - **CS2 — the FORWARD registration now (what CONFIRMED licenses):** the rule as R94's, on balance points from the day of the registration (the adapter's live file, fetched daily at 06:00 UTC — a fetcher and a timer on the serve host), read when ≈ 200 member cells have accrued (≈ 8 months at F4's rate). Honest by construction, but if the control would have said "the names", eight months are spent learning it.
 - **CS3 — record and stop:** the §7 row stands as CONFIRMED with its decomposition; no forward test.
 
-Needed from Vadim: the word on CS. WRITTEN 2026-11-13.
+Needed from Vadim: the word on CS. WRITTEN 2026-11-13 — **DECIDED 2026-11-13 on Vadim's "CS1" (the recommendation): R95 REGISTERED in §8 the same hour, before any control label is computed — each of R94's cells against its own name's quiet days (no balance move within 3 days on either side) within ±45 days, ≥ 5 of them (7,933 control name-days on 48 names and ≈ 270 matched cells, counted without a price); D = the trimmed mean of the differences; THE EVENT if D ≤ −60 with u ≤ −2, THE NAMES if |D| < 40, UNRESOLVED between.**
 
 **Decision CR (2026-11-12) — R92 read: THE ESTIMATE STANDS — R90's book with every leg a resting order simulated on the archive's own trades nets +10.6 bps a trade (t +0.75) against the bar simulation's +11.4 and the taker's −15.3. The plain question: the forward test on F6 [R91] is registered as a TAKER; a resting order costs 7 bps a round trip where the taker pays 37 — is a maker execution of the same forward rule registered beside it, before F6 is read?** Known: the maker's cost on these coins is measured at the trade level on 9,990 legs (fills 91 %, the fill 2 bps better than the close, 3.4 bps of drift after it); R91's block cannot change (its gate is the taker's hedged net); a second registration on F6 read in the same session is allowed if written before any F6 bar of this line is read; the F6 trade files exist in the archive. Unknown: whether the fills hold on the coins F6's screener picks; whether R91's held shorts (fewer, longer positions — one round trip per several days) gain much from a cheaper leg at all: the maker saves ≈ 30 bps a round trip, R91's se per trade is expected 60–120; the THROUGH rule's bias on fine-tick coins (R92's Result: not a strict lower bound). The options:
 - **CR1 — register the maker execution of R91's rule on F6 now (recommended):** R93, written this month: R91's positions unchanged, each leg by R92's method with the fill rule tightened to volume (the aggressor's quantity at or beyond the price reaching the order's own), its own gate (the same hedged-net form), read in R91's session on or after 2027-03-18. Cost: an hour of writing now, an hour of VM time at the read. It can only be written before the read; afterwards the question is spent.
@@ -16225,6 +16225,65 @@ Result:        **READ 2026-11-13 11:50 → 11:57 UTC on the work VM (`scripts/r9
                does NOT show: that the event is the cause (no non-event control), or that it can be traded alone (the sold name earns
                nothing; the gain is being long the peers). By the registration it licenses the §7 row and ONE forward registration —
                Vadim's decision CS; no trade, no book, no variant on F3+F4's rows.**
+
+
+### R95 — the NON-EVENT CONTROL of R94: do the same names lag the same peers on days their exchange balance did NOT move? Each of R94's cells against the same name's quiet days within 45 days of it — a control read, no gate on any event row, licensing nothing by itself (registered 2026-11-13 on Vadim's "CS1" (P8 decision CS), BEFORE any control label is computed; the counts below are from the balance series, the frozen lists and the member lists alone — no price)
+Question:      R94 CONFIRMED that a member sold after a day its Binance balance moved ≥ 5 % ends three days later 118.7 bps behind its
+               peers — and showed that the name itself stood still (−12) while the peers rose (+104). The names with a tracked balance
+               are established tokens; the peers' basket holds 2025's new coins. In plain words: is the lag something that happens
+               AFTER A BALANCE MOVE, or something these coins do against this basket on any day of those months?
+Control days:  for each name of R94's cells (49; MATIC out), from `data/cex_balance.parquet` (`cexflow.series()`, the base of the name's
+               frozen rows): a day d (the 00:00 UTC stamp) is QUIET when every one of the seven days d − 3 … d + 3 has a stamp whose
+               change against the previous stamp is dated (the previous stamp ≤ 1.5 d before) and under 5 % in size, AND no frozen row
+               of the name (any side, cell or not) has its t0 in d − 3 d … d + 3 d. Both sides of d are excluded on purpose: a day in
+               the three before a move holds that move's own day in its label. A quiet day is a CONTROL DAY when the name is a member
+               of the block holding its decision bar (d + 06:05 UTC — R94's bar), the bar is at or after 2024-09-03 and the 3-day exit
+               before 2026-01-01. **Counted 2026-11-13 on the work VM, no price read: 7,933 control name-days on 48 of the 49 names
+               (one name has none), the median name 100.**
+Match:         each of R94's 326 cells against the control days OF ITS OWN NAME within ±45 days of its t0; a cell with fewer than 5 is
+               UNMATCHED, counted and described apart. **Counted: 274 of the 330 list rows have ≥ 5 (the median cell 28 control days;
+               24 have none — the busiest names (FARTCOIN, XLM, SPX …) move too often to have quiet days nearby); ≈ 270 of the 326
+               cells expected.** The match holds the NAME and the SEASON fixed; it cannot speak for the unmatched cells.
+Label:         R94's, unchanged, on the same market: y at 864 bars from the decision bar's next close, against the members of the block
+               (`listing.label_at`, `listing.excess`, `screen_members_f34.csv`). A control day's label needs ≥ 40 members.
+Statistic:     per matched cell i: d_i = y_i − the MEAN of y over its control days. **D = the 10 % trimmed mean of d_i**; its noise the
+               same moving-block bootstrap over the cells' calendar weeks (6-week blocks, 10,000 draws, SEED 95); u = D ÷ se. Beside:
+               C = the mean over the matched cells of their control means (the level the names run at without a move), and R94's
+               statistic on the matched cells alone.
+Reading:       written before the run (decision CS1's thresholds):
+               **THE EVENT** if D ≤ −60 AND u ≤ −2: the lag is larger after a balance move than on the same name's quiet days — R94's
+               finding stands as an event; CS2 (the forward registration) follows, Vadim's word.
+               **THE NAMES** if |D| < 40: most of R94's number is what these names do against this basket anyway; the kind is recorded
+               in §7 as a property of the names, no forward test of the event.
+               **UNRESOLVED** otherwise — said as such, with D, its interval and C.
+               Whatever it reads, R94's verdict is the record's (CONFIRMED by its gate) and is not re-judged; this read says what the
+               number means. No trade, no book; no other window, minimum, exclusion or label under this registration.
+Validity:      read first. BEFORE the guard rows (no bar): gate (a) as R94's; the list's md5 and counts as R94's; the control table
+               rebuilt by the module equals the count above (7,933 name-days, 48 names) — a mismatch voids UNSPENT. Then the guard
+               `backtest._guard(("F3", "F4"), "R95")`, the rows (R95, F3) / (R95, F4), strategy `cex_control_3d` (the ledger 70 → 72).
+               Then: (1) the fingerprint before and after; (2) R94's cells reproduced — 326 cells, M_trim equal to R94's saved
+               `holds.csv` to 1e-9; (3) ≥ 95 % of the control days have a label with ≥ 40 members (the rest counted); (4) ≥ 255
+               matched cells; (5) every control day's decision bar is d + 06:05 and no control day lies within 3 days of a frozen row
+               of its name (re-checked on the table).
+Described:     deciding nothing: C and the control days' own trimmed mean, median and share below zero (pooled; per name); a and b
+               apart on the control days; D per side, per fold, per quarter; the matched against the unmatched cells' own M_trim; D
+               with the control's MEDIAN in place of its mean; a RANDOMISATION row — 2,000 draws, each matched cell replaced by one
+               random control day of its window, the trimmed mean of the draw: where R94's matched-cell statistic lies in that
+               distribution (p_rand); **the same computation on F1+F2 beside** (R85's list, the members' cells of both sides at 3d,
+               `screen_members.csv`; 150 of 211 rows with ≥ 5 control days counted) — F1+F2 is exploration, no guard, no reading.
+Power:         stated. ≈ 270 matched cells, the control means adding ≈ 5–10 % to the noise: se_D ≈ 50 … 60. If the event carries all
+               of R94's −119, THE EVENT about one time in two; if the names carry all of it (D = 0), THE NAMES about one time in two;
+               UNRESOLVED is the likeliest single outcome when the truth is a mixture. The read can move the finding's meaning; it
+               is unlikely to settle it alone.
+Expectation:   validity PASS; 268 … 272 matched cells; C −70 … −10 (the beta of 0.82 against a rising basket alone gives ≈ −20); D
+               −100 … −20; THE EVENT one in four, THE NAMES one in four, UNRESOLVED one in two.
+Code:          written after this block's commit: `cexevent.control_days`, `matched`, `verdict95`, `control` (the pre-guard checks,
+               the guard, the validity, the rows) on R94's `population`; CLI `ft2 cexevent control --name r95`; `scripts/r95_chain.sh`;
+               planted tests: a quiet day is never within 3 days of a move on either side; a planted lag on EVERY day of the event
+               names reads THE NAMES; a planted drift after the events only reads THE EVENT; a wrong control count voids before the
+               guard rows.
+Folds read:    F3+F4's members' labels on the control days of 48 names (bars other registrations have read for other questions; for
+               this question, once — the guard rows) and R94's cells again, unchanged. F1+F2 beside as exploration.
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
