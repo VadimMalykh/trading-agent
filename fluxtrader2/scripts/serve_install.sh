@@ -6,6 +6,8 @@
 #   ft2-decide  HH:00:15 UTC  python -m ft2 serve decide   fetch closed bars, forecast the grid bar HH:00, write decisions
 #   ft2-mark    HH:05:15 UTC  python -m ft2 serve mark     entry mark for HH:00's decisions, exit mark for yesterday's, quotes, funding
 #   ft2-check   1st of month 01:30 UTC  python -m ft2 serve check   the harness re-run over the ledger's life, diffed against it
+#   ft2-cexlive 06:00:30 UTC daily      python scripts/cexflow_live.py   R96's fetch (PLAN §8 R96): DefiLlama's Binance balance file as fetched,
+#               gzipped → data/raw/external/defillama_cex_live/, one row in output/cexflow_live/fetch_log.csv; standard library only
 #
 # AccuracySec=1s: systemd's default timer accuracy is one minute, which would make every decision late.
 # Persistent=true: a run missed while the host was down fires at boot (decide then records the bars as `late`, mark catches up).
@@ -27,7 +29,7 @@ Type=oneshot
 User=$U
 WorkingDirectory=$WD
 Environment=PYTHONPATH=$WD PYTHONUNBUFFERED=1
-ExecStart=$PY -m ft2 serve $3
+ExecStart=$PY ${6:--m ft2 serve} $3
 TimeoutStartSec=$5
 Nice=5
 EOF
@@ -48,6 +50,7 @@ EOF
 unit decide "decide at HH:00:15 UTC"        decide "*-*-* *:00:15"   280
 unit mark   "mark at HH:05:15 UTC"          mark   "*-*-* *:05:15"   240
 unit check  "monthly causal check"          check  "*-*-01 01:30:00" 3600
+unit cexlive "R96 daily balance fetch 06:00:30 UTC" "$WD/scripts/cexflow_live.py" "*-*-* 06:00:30" 400 " "
 sudo systemctl daemon-reload
-sudo systemctl enable --now ft2-decide.timer ft2-mark.timer ft2-check.timer
+sudo systemctl enable --now ft2-decide.timer ft2-mark.timer ft2-check.timer ft2-cexlive.timer
 systemctl list-timers 'ft2-*' --no-pager

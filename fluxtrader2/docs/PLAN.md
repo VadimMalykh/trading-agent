@@ -1524,7 +1524,7 @@ names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common att
 - **CT2 — the OTHER EXCHANGES as an independent historical replication (recommended beside; due on or after 2026-11-18):** the 15 exchanges' balance files saved 2026-11-11 hold ≈ 2,200 member inflow cells on F1+F2 — but F1 … F4's BARS are spent for the kind only on Binance's events; another exchange's balance move of the same coin is a different event table on the same bars. After the 11-18 known-at re-fetch: ONE registration, R94's rule with the size floor and the no-matching-outflow rule the audit asked for, both fold pairs, the Binance-event days of the same name excluded. It answers within a session what CT1 answers in eight months, at the price of sharing the bars (said in the registration).
 - **CT3 — record and stop:** the §7 row stands (CONFIRMED, read as an event, the peers' side); no forward test.
 
-Needed from Vadim: the word on CT. WRITTEN 2026-11-13.
+Needed from Vadim: the word on CT. WRITTEN 2026-11-13 — **DECIDED 2026-11-13 on Vadim's "CT1" (the recommendation): R96 REGISTERED in §8 the same hour — R94's rule and gate unchanged on balance files fetched live at 06:00:30 UTC daily by the serve host's timer `ft2-cexlive`, t0 from 2026-11-16, eight 30-day blocks to 2027-07-14 (extended by blocks until 150 member cells), the peers the COIN members, ONE read on or after 2027-07-17. CT2 (the other exchanges after 11-18) stays open and independent.**
 
 **Decision CS (2026-11-13) — R94 read: CONFIRMED by its registered gate — the first confirmation of the project — and the number is made of the peers' rise, not the name's fall. The plain question: before a forward test is registered on it, do we first check whether these names lag their peers on ANY day, or only after a balance move?** Known: on F3+F4's 326 untouched cells a member sold 6 h after a day its Binance balance moved ≥ 5 % either way ended three days later 118.7 bps behind the members (trimmed; se 48.0, u −2.48, p 0.019; F3 −103 / F4 −122; inflow −96 / outflow −146; B 35.6) — F1+F2's hindsight row (−106) reproduced on names and months it never saw; the 1-day row is R85's to three bps (−42.3 against −45.6). Known too: the name's own move over those three days is −12 on average and the members' mean is +104; a beta of 0.82 to the basket explains ≈ 20 of the 115; the sold name alone nets −6 as a taker, the hedged unit +79 because the hedge (the members, bought) earned +82. Unknown — and it decides what the finding is: whether the same names lag the same basket on days WITHOUT a balance move. The names with a tracked exchange balance are the established tokens (XLM, SUI, TON, ALGO, DOT, LTC …); the basket holds 2025's new coins; an old coin lagging an equal-weight basket of new ones is a fact about the names, not about the event. No registration of this kind wrote that control. The options:
 - **CS1 — the non-event CONTROL first, registered, one VM run of ≈ 10 minutes (recommended).** R95: for the same 49 names on the same member blocks, the label y_3d at 06:05 UTC on every day that is NOT within 3 days after a member cell of the name (either side) — the trimmed mean of those control days against the 326 cells' −118.7, the difference D with a bootstrap over the same weeks; the same on F1+F2 beside (R85's 23 names). The reading written before the run: D ≤ −60 with u ≤ −2 → the event carries it, CS2 follows; |D| under 40 → the kind is a property of the names (old against new), recorded as such in §7, no forward test of the event; between → said to be unresolved. It reads F3+F4's members' labels on non-event days (bars other registrations have read for other questions) and licenses nothing by itself. Cost: a registration, a small module on `cexevent`'s frame, one chain.
@@ -16329,6 +16329,73 @@ Result:        **READ 2026-11-13 12:33 → 12:42 UTC on the work VM (`scripts/r9
                F3+F4 the sold coin itself does nothing different: its peers rise. R94 stands CONFIRMED and is now read as an EVENT by
                the registered rule; whether it is a tradeable one is open — the gain is in being long the basket after these days.
                Decision CT (Vadim's).**
+
+
+### R96 — the FORWARD test of the exchange-balance kind: R94's rule and gate, unchanged, on balance points fetched LIVE each day at 06:00 UTC from 2026-11-16 — a member whose Binance balance moved ≥ 5 % either way, sold at 06:05 UTC, three days against the coin members — read ONCE after 2027-07-14 (registered 2026-11-13 on Vadim's "CT1" (P8 decision CT), before the first live file exists and before any bar from 2026-11-16 is read by anything of this line)
+Question:      R94 CONFIRMED the kind on F3+F4 and R95's control read it as an event, narrowly, with the peers — not the coin — doing the
+               moving. Every cell so far came from a history file downloaded afterwards. In plain words: when the balance file is
+               fetched each morning as a trader would fetch it, and the rule is applied to days that had not happened when it was
+               written, does a member still end three days later behind its peers?
+Not changed:   R94's rule in every number: |change| ≥ 5 % between consecutive daily points, both directions, every cell SOLD at the
+               close one bar after the first 5m bar closing after 06:00 UTC (06:05 → 06:10), 864 bars, y against the members of the
+               block, the 10 % trimmed mean, the week-block bootstrap, rule (a)'s bar. Hindsight: the rule is R94's, which was itself
+               hindsight on F1+F2; nothing is added from R94's or R95's described rows (no name, size or side filter, no control as
+               a gate, no hedge in the statistic).
+The fetch:     `scripts/cexflow_live.py` on the serve host, the systemd timer `ft2-cexlive` at 06:00:30 UTC daily (docs/SERVE.md):
+               the adapter's whole file saved AS FETCHED, gzipped, named by the minute the fetch started, never overwritten, one row
+               per fetch in `output/cexflow_live/fetch_log.csv` (size, md5 of the raw bytes). **A day d has a USABLE file when a fetch
+               with status ok STARTED 05:55:00 … 06:04:59 UTC on d and the file holds the 00:00 UTC point of d.** A day without one
+               has no event (counted); nothing is ever back-filled from a later file.
+Events:        from the usable file of day d ALONE: per base the amount summed over chains (the `-staking` and `-borrowed` chains out —
+               `cexflow._rows`) at the 00:00 points of d and of d − 1 as that file gives them; change = amount_d ÷ amount_(d−1) − 1
+               (the d − 1 point must be in the file and positive); an event when |change| ≥ 5 %; side in / out by its sign; t0 = d
+               00:00. Eligible as the audit's rule (DATA.md `cex_balance`): the base's first point in the file ≥ 30 days before d;
+               the perpetual by `upgrades.contract_for`, ≥ 30 days old at d; BNB out by name; `cell` = the first eligible row a
+               (name, side) per 7 days, the collapse starting empty on 2026-11-16. A row whose d − 1 amount in the file of d differs
+               by more than 0.5 % from the same point in the usable file of d − 1 is REWRITTEN: out of the cells, counted.
+Span:          t0 from 2026-11-16 00:00 UTC, the 3-day exit before 2027-07-14 00:00 — eight 30-day blocks continuing the screener's
+               grid (11-16, 12-16, 2027-01-15, 02-14, 03-16, 04-15, 05-15, 06-14). **Extension, written now: at the read the cells
+               are COUNTED before any label; fewer than 150 member cells → the span is extended by whole 30-day blocks (the fetch
+               keeps running) until it holds 150, and the read is made then.** The halves: the first and the second half of the
+               blocks.
+Members:       the screener's unchanged rule (`universe.characteristics`, top 60 by the trailing 30 days' median dollar volume, the
+               twelve out) per block, made AT THE READ from the archive's bars before each block's start and frozen before any
+               label; the first four blocks are R91's `ft2/screen_members_f6.csv` if its read (2027-03-18) has frozen them — the
+               same rule, the same rows. **An adaptation, decided now: the peers b and the population are the COIN members (contract
+               type not TRADIFI_PERPETUAL — R91's rule): the 2026 lists hold stock and commodity perpetuals, a kind of name F3+F4's
+               lists did not have and no balance file tracks.** b needs ≥ 20 coin members with a label (R94 asked 40 of 60).
+Statistic,     R94's: M_trim at 3 days over the member cells, k = round(0.05 n); SEED 96; B = the mean of the names' own doubled taker
+bar and gate:  round trips (`costwide` for the names at the read). Validity PASS, then **CLEARS FORWARD if M_trim ≤ −B AND |u_trim| ≥ 2
+               AND p ≤ 0.05 AND the trimmed mean of each half < 0 AND of the inflow cells < 0 AND of the outflow cells < 0.** NOT
+               CONFIRMED FORWARD otherwise (with the MDE; "the opposite sign" when M_trim ≥ +B with |u| ≥ 2).
+               CLEARS FORWARD → the first per-name event of the project shown on days that did not exist at its registration: it
+               licenses the DESIGN of a paper rule on the serve host (which leg is traded is read from the described rows) —
+               Vadim's decision; no trade by itself. NOT CONFIRMED FORWARD → the kind is recorded as confirmed on history and not
+               forward, PARKED; the fetch is stopped. No second rule, hold, side or lag on these cells.
+Validity:      read first, or the read is void: (0) the guard — this block exists, the span has ended, (R96, FWD) not in the ledger,
+               the row appended before any bar is loaded; (1) a usable file on ≥ 85 % of the span's days, every file's md5 equal to
+               its log row; the unusable days listed; (2) the member lists and the cells frozen and committed before any label, the
+               count ≥ 150; (3) REWRITTEN rows ≤ 5 % of the event rows (more: the source is not point-in-time live — void, and said);
+               (4) bars, labels, members, the label identities and the decision-bar checks as R94's (4)–(7) with 20 members;
+               (5) ≥ 90 % of the cells with their own cost row.
+Described:     deciding nothing: y split into the coin's own move and the peers' (R95's finding: on F3+F4 all of it was the peers);
+               R95's matched control on the forward days (each cell against its name's quiet days within ±45 days) with D; the
+               money row — the sold unit hedged with the coin members, and each leg alone; the 1-day row; the sides, the halves,
+               the months, each name; the size flags; the non-members' cells; the days without a usable file and what R94's rule
+               would have read on the HISTORY file for them (a count of events missed, not priced).
+Power:         stated. F4 gave 32 member cells a month with 60 coin members; the 2026 lists hold 30 … 45 coins, so 16 … 24 a month is
+               likelier: the 150-cell floor is reached in 6 … 9 months. se_trim on 150 … 250 cells ≈ 55 … 75; if the drift is R94's
+               −119, CLEARS FORWARD about one time in three (|u| ≥ 2 and four sign conditions); if there is nothing, one in three
+               hundred. A NOT CONFIRMED FORWARD does not show the drift absent — only a drift near −200 would be seen reliably.
+Expectation:   validity PASS (the likeliest trouble: a week of missed fetches, a schema change of the adapter's file); usable files
+               on 95 … 100 % of days; REWRITTEN under 1 %; 150 … 220 member cells; M_trim −130 … +40; CLEARS FORWARD one in five.
+When:          ONE read, on or after 2027-07-17 (the archive's files for the last bars), or later by the extension rule; after R91's
+               and R93's read. No look before: no bar from 2026-11-16 is fetched or labelled for this line, and the live files are
+               not joined to any price. Looking at the FETCH LOG (did the timer run) is not a look.
+Code:          `scripts/cexflow_live.py`, the timer and its planted test — written with this block, they read no price. After this
+               block's commit: `ft2/cexlive.py` (the usable-file rule and the day's change from one file, planted tests). Named,
+               written at the read: the eligibility and the cells from the live rows, the member lists (`screen_select` with block
+               starts), the Data line, `cexevent.spec_r96`, the chain.
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 

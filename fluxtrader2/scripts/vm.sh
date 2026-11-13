@@ -23,6 +23,7 @@
 #   ./fluxtrader2/scripts/vm.sh serve-run <ft2 serve action>   # e.g. serve-run replay, serve-run start, serve-run check
 #   ./fluxtrader2/scripts/vm.sh serve-status    # health in one line + the timers
 #   ./fluxtrader2/scripts/vm.sh serve-pull      # rsync the host's output/serve/ (ledger, models, health, checks) to local output/serve/
+#   ./fluxtrader2/scripts/vm.sh serve-pull-cex  # rsync R96's daily balance files + fetch log from the host (PLAN §8 R96)
 #   ./fluxtrader2/scripts/vm.sh serve-ssh [cmd] # shell on the host
 #
 # Env: FT2_VM (default fluxtrader2-work), FT2_SERVE_VM (fluxtrader2-serve), GCP_PROJECT (fluxtrader), GCP_ZONE (me-central1-b).
@@ -111,11 +112,16 @@ case "$cmd" in
     gssh "cd ~/$REMOTE_DIR && source ~/ft2-venv/bin/activate && PYTHONPATH=. python -m ft2 serve $*" ;;
   serve-status)
     use_serve
-    gssh "cd ~/$REMOTE_DIR && source ~/ft2-venv/bin/activate && PYTHONPATH=. python -m ft2 serve status | head -1; systemctl list-timers 'ft2-*' --no-pager | head -5; tail -3 output/serve/runs.log 2>/dev/null" ;;
+    gssh "cd ~/$REMOTE_DIR && source ~/ft2-venv/bin/activate && PYTHONPATH=. python -m ft2 serve status | head -1; systemctl list-timers 'ft2-*' --no-pager | head -5; tail -3 output/serve/runs.log 2>/dev/null; echo \"cexlive (R96): \$(tail -1 output/cexflow_live/fetch_log.csv 2>/dev/null)\"" ;;
   serve-pull)
     use_serve; ensure_ssh_alias
     mkdir -p "$ROOT/fluxtrader2/output/serve"
     rsync -az "$SSH_HOST:$REMOTE_DIR/output/serve/" "$ROOT/fluxtrader2/output/serve/" && echo "pulled output/serve/" >&2 ;;
+  serve-pull-cex)   # R96's fetched balance files (≈ 5 MB a day, gzipped) and their log → the laptop; rsync never deletes on the host
+    use_serve; ensure_ssh_alias
+    mkdir -p "$ROOT/fluxtrader2/data/raw/external/defillama_cex_live" "$ROOT/fluxtrader2/output/cexflow_live"
+    rsync -az "$SSH_HOST:$REMOTE_DIR/data/raw/external/defillama_cex_live/" "$ROOT/fluxtrader2/data/raw/external/defillama_cex_live/"
+    rsync -az "$SSH_HOST:$REMOTE_DIR/output/cexflow_live/" "$ROOT/fluxtrader2/output/cexflow_live/" && echo "pulled the live balance files" >&2 ;;
   serve-ssh)
     use_serve
     if [[ $# -eq 0 ]]; then gcloud compute ssh --zone "$ZONE" --project "$PROJECT" "$VM"; else gssh "$@"; fi ;;
