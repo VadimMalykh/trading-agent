@@ -715,7 +715,7 @@ def _control_part(spec: Spec, L: pd.DataFrame, Ct: pd.DataFrame, out: Path, seed
                              "q05": float(np.nanquantile(draws, 0.05)) if len(draws) else np.nan, "p_rand_le_actual": float((draws <= actual).mean()) if len(draws) else np.nan, "actual_matched_M_trim": actual},
            "market": [str(M.index[0]), str(M.index[-1])], "min_gap_days_control_to_a_frozen_row": None}
     Em = E[m]
-    grp = lambda key: pd.DataFrame([{"split": key, "group": str(g), "n": int(len(x)), "D_trim": _tm(x["d"].to_numpy()), "D_mean": float(x["d"].mean()), "y_trim": _tm(x["y"].to_numpy()), "ctrl_mean": float(x["ctrl_mean"].mean())}
+    grp = lambda key: pd.DataFrame([{"split": key if isinstance(key, str) else key.name, "group": str(g), "n": int(len(x)), "D_trim": _tm(x["d"].to_numpy()), "D_mean": float(x["d"].mean()), "y_trim": _tm(x["y"].to_numpy()), "ctrl_mean": float(x["ctrl_mean"].mean())}
                                    for g, x in Em.groupby(key)])                                                 # noqa: E731
     sp = pd.concat([grp("side"), grp("fold"), grp(pd.DatetimeIndex(Em["t"]).tz_localize(None).to_period("Q").astype(str).rename("quarter")), grp("symbol")], ignore_index=True) if len(Em) else pd.DataFrame()
     sp.to_csv(out / "splits.csv", index=False)
