@@ -1524,7 +1524,7 @@ names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common att
 - **CR2 — leave R91 alone:** the maker stays a described fact of F5; if R91 clears as a taker the maker is an improvement to measure live, if it fails by less than 30 bps a trade the question "would a maker have cleared" is unanswerable on F6.
 - **CR3 — the volume fill rule on F5's legs first:** re-fetch the 7,184 files (an hour) and compute the strict lower bound R92 could not; it sharpens a number that already cannot decide anything on F5 (se 14). Not recommended by itself; CR1's tightened rule covers the same weakness forward.
 
-Needed from Vadim: the word on CR. WRITTEN 2026-11-12.
+Needed from Vadim: the word on CR. WRITTEN 2026-11-12 — **DECIDED 2026-11-13 on Vadim's "CR1" (the recommendation): R93 REGISTERED in §8 the same day, before any F6 bar or trade file of this line is read — R91's positions, each leg a resting order by R92's method, the gate's fill rule VOLUME-BEYOND (the opposite aggressor's quantity STRICTLY beyond the price reaching the order's own: the true lower bound; CR1's "at or beyond" is described beside — a stated deviation, its reason in R93's Method (c)), R91's gate form on the maker's fills, read once in R91's session on or after 2027-03-18.**
 
 **Decision CQ (2026-11-11) — R90 NOT DETECTABLE: the confirmed forecast, traded hourly as a taker with one position a name, nets −15.3 bps a trade (t −1.1). The plain question: the model knows something about tomorrow's losers and it does not pay at this rule — what is done with it?** Known: the forecast's IC is confirmed (R89); the money is on the SHORT side (gross +82 a trade) and is eaten by costs (30) and by the funding a short pays on those coins (−32); the long side earns nothing gross; the long-listed coins lose; a resting-order estimate reads +11 (t 0.8) because its cost side is 6 against 38. Unknown: the maker's true cost on these names (the estimate is a bar simulation, never measured at the trade level outside the twelve); whether a slower rule (hold while the coin stays in the tenth — a fifth of the turnover) nets anything: that cannot be asked of F5's cells (the registration forbids another rule there) — only of F6, the bars from 2026-09-15, two months in hand and growing, untouched. The options:
 - **CQ1 — a FORWARD registration on F6, written now, read when F6 is long enough (recommended).** The model frozen (model.txt md5 816b994c…); the rule written before any F6 bar is fetched, from what R90 showed in the open: SHORT ONLY the bottom tenth, entered when a coin enters it and HELD while it stays in the bottom fifth (no daily re-entry), skipped when the coin's last funding is below a floor written in the registration (the short would pay), hedged with the coins' basket; priced as a taker with the names' own rows. Hindsight-generated and said so; F6 is its only test. Read at ≥ 180 days (2027-03-15) or earlier by a power line written in the registration. Cost now: the registration and its code, one session; no VM until the read.
@@ -15991,6 +15991,73 @@ Result:        **READ 2026-11-12 03:19 UTC (`output/allbook/r92/read.md`; chain 
                R91 unchanged; a maker-execution row for F6 may be proposed and must be registered before 2027-03-18 — decision
                CR (Vadim's).**
 
+
+### R93 — the MAKER execution of R91's forward rule on F6: R91's positions unchanged, every leg a resting order filled only by a STRICT volume rule on the archive's own trades — does the held short book pay after costs when it rests instead of crossing? (registered 2026-11-13 on Vadim's "CR1" (P8 decision CR), before any F6 bar, forecast or trade file of this line is read and before R91's read; read ONCE, in R91's session on or after 2027-03-18, after R91's own gate is written)
+Question:      R91 tests the held short book as a TAKER (≈ 37 bps a round trip on these coins). R92 measured, at the trade level
+               on F5's coins, that a resting order costs ≈ 7. In plain words: the same shorts, entered and exited at the same
+               decisions, but each order left resting for fifteen minutes where a resting order can sit and counted as filled
+               only when the tape shows it could not have been missed — is money left on the months nobody has seen?
+Not a rule:    nothing of R91 is changed, chosen or compared: the positions are R91's accepted positions as its read saves them
+               (`output/allbook/r91/fills.parquet` — `allbook.positions` on the F6 forecast, their decisions, sides, instants,
+               funding and the basket's move over the same bars). Only the execution of the two legs differs. R91's block, gate
+               and verdict are untouched by this read whatever it says.
+Hindsight:     said: the maker was proposed after R90's taker book failed on F5 and R92's trade-level row read +10.6 (t 0.75)
+               there. F6 is its only test; nothing of it has been run on any bar of F6 (none is fetched for this line), and the
+               fill rule below is STRICTER than either rule R92 read on F5.
+Data:          the archive's daily aggregate-trade files (checksum verified) for every name-day holding a leg of R91's priced
+               positions — fetched at the read, after `allbook.forward` has written R91's fills; each file read once, the legs'
+               fates written, the zip deleted (its sha256 in the leg rows). No order book exists for these names.
+Method:        R92's, per leg at instant s (R91's entry_t or exit_t; a short sells in and buys out), the window s ≤ t < s + 15 min:
+               (a) the tick and (b) the resting price P exactly as R92's Method (a)–(b) (`allbook.tape_touch`, unchanged).
+               (c) THE FILL, the gate's rule — **VOLUME-BEYOND**: a BUY at P is filled at the first instant in the window when the
+               cumulative quantity of prints whose aggressor SOLD at prices STRICTLY BELOW P reaches the order's own 10,000 / P
+               (a SELL: the aggressor BOUGHT, strictly ABOVE P). Why this and not CR's "at or beyond": a print strictly beyond P
+               can only happen after everything resting at P is gone, and had our order stood at P those sellers would have met
+               it first — so their quantity is quantity our order would have taken, whatever queue stood ahead of it at P; a
+               print AT P may have gone to that queue (unknown), so it is not counted. This is a true lower bound on fills, the
+               one R92's Result named as missing (its THROUGH counted a one-tick print of any size). STATED DEVIATION from decision
+               CR1's wording ("at or beyond"): the at-or-beyond rule is computed and DESCRIBED beside (VOLUME-AT), as are R92's
+               THROUGH and AT-TOUCH; the gate is the strict one.
+               (d) the leg's price: filled → P, fee 2 bps, nothing else; not filled → the last print before s + 15 min, fee 5 bps
+               and the coin's own taker leg of that day (`cost_daily_wide` as R91's read loads it) — R92's (d).
+               (e) a leg that cannot be simulated — no print before s on the day, no file, or its 15 minutes cross midnight or
+               F6's last bar (R91's legs are at hh:05, so only the span-end exits can) — is executed as R91's own TAKER leg at
+               R91's price, counted by reason; the position stays in the statistic.
+               (f) the position: `allbook.reprice` (R91's funding and basket move, the exit leg's costs on the value then).
+Statistic:     R91's, on the maker's fills: the mean of (hedged net − 4 bps) per trade over ALL of R91's priced positions,
+               `allbook.hedged_stats` (the day-clustered HAC interval, lags by the 7-day cap), one-sided, the sign POSITIVE.
+Gate:          R91's validity PASS and this block's validity PASS, then R91's form: CLEARS if the mean > 0 AND t ≥ 1.645 AND the
+               mean over the first 90 days and over the last 90 are both > 0. FAILS if mean + 1.96 se < 0. NOT DETECTABLE
+               otherwise.
+Two gates:     F6 is read by two registered questions on the same positions (R91 the taker, R93 the maker), each one-sided at
+               5 %; their statistics differ by the cost of two legs and are almost perfectly correlated, so the chance that at
+               least one clears on noise is between 5 and 10 %, nearer 5. Read together: both CLEAR → R91's licence, the maker an
+               improvement; R91 not and R93 CLEARS → the book pays ONLY as a resting order: it licenses a paper book on the serve
+               host that rests its orders and measures its own fills (Vadim's decision), nothing as a taker; R93 not → the maker
+               does not rescue the book, the all-inputs book is PARKED on R91's line. No third execution, fill rule or wait on
+               F6's cells.
+Validity:      read first, or the read is void (exit 2, no leg summarised): (0) the guard — this block exists, F6 has ended, (R93,
+               F6) is not in the ledger, and (R91, F6) IS (R91's gate is on disk first); R91's validity PASS; the md5 of R91's
+               fills written into the read; (1) a checksum-verified file for ≥ 99 % of the legs' name-days; (2) the clock: for
+               ≥ 99 % of the legs with a file the last print before s is the 5-minute close R91 priced, to 1e-9; (3) the
+               arithmetic: the re-pricer given every leg "taker at s" returns R91's net per position to 1e-6; (4) both legs
+               simulated on ≥ 95 % of the priced positions (the rest by (e), counted).
+Described:     deciding nothing: VOLUME-AT, THROUGH and AT-TOUCH rows on the same positions; the bar-simulated maker; R91's taker
+               beside; the fill share per rule and per leg kind; the filled price against the bar's close and the price 15
+               minutes on; the unfilled legs' drift; fee and other cost a round trip; unhedged net; the halves; by month; the
+               coins of F1–F5's lists against the coins new in F6; the same rows on F5's coins are R92's and are not re-read.
+Power:         weak, and paired: R91's se per trade is expected 60–120 bps on 300–900 positions; the maker moves the mean by the
+               cost difference (≈ +20 … +30 a trade if R92's fills hold under the stricter rule) and not the se. It clears where
+               R91's mean lands within ≈ 30 of its own bar from below — a narrow band; outside it the two verdicts agree.
+Expectation:   validity PASS (the likeliest trouble: a coin delisted inside F6 without its last files); VOLUME-BEYOND fills
+               75–90 % of legs (R92's THROUGH 91 %, a looser rule), VOLUME-AT and AT-TOUCH 88–94 %; the mean R91's + 15 … + 30;
+               the same verdict as R91 nine times in ten.
+When:          in R91's ONE session on or after 2027-03-18, after `allbook.forward` has written R91's gate: `ft2 allbook
+               tapefetch --name r93` on the work VM, then `ft2 allbook tape --name r93`. No look before; a look is the read.
+Code:          written now, after this block's commit, tested on planted prints only: `allbook.tape_day` gains the two volume
+               rules (columns `vol`, `vola` — R92's columns unchanged); `tape_legs(strict=False)` flags instead of raising;
+               `tapefetch` takes the fills' path and the fates' folder; `maker93` (the guard, the validity, the gate, the ledger
+               row (R93, F6), the rows). Named, written at the read: the chain script.
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
