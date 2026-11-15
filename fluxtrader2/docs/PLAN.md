@@ -16503,6 +16503,12 @@ Expectation:   written before the run. Validity PASS for (A) and (B); (C) void o
                (CLOSED one in ten of all). The 39 never-fitted names not below the others. (B): NOT DETECTABLE two times in three,
                FAILS one in five, CLEARS one in eight; the mean between −60 and +60; the funding a short pays smaller than F5's −32
                (2022's funding was flat to negative: the floor skips more entries). (C): above (B) by 15 … 35 bps a trade.
+Void 1:        2026-11-15 14:48 → 14:54 UTC: the first run stopped at validity with exit 2 BEFORE any forecast, IC or ledger row existed
+               (`output/allgbm/r97_void_1454/validity.json`: every check true but one). The failing check was the CODE of (5): it asked
+               the market's last index stamp to be strictly before 2023-05-01 00:00, but the harness stamps a bar at its CLOSE
+               (`backtest.py`: "the bar closed at t") — the stamp 2023-05-01 00:00 is the bar of 2023-04-30 23:55 → 24:00, the last bar
+               before F1, exactly what the Cells line registers ("it ends at F1's first instant"). The data and the registration are
+               unchanged; the check now reads `<=`. Nothing was read: the ledger held no R97 row; the run is made again whole.
 Result:        —
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
