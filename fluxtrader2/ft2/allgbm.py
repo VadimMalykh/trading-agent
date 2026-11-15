@@ -743,8 +743,9 @@ def confirm_pre(name: str = NAME97, sources: dict | None = None, members: str | 
          "max_abs_d_causal": d_causal, "names_scored": len(B["names"]), "blocks": int(len(np.unique(B["block"]))), "scorable_cells": int(B["scorable"].sum()),
          "scorable_as_the_cover_check": int(B["scorable"].sum()) == R97_SCORABLE if expect else None, "rows": int(len(grid)), "first": str(grid[0]), "last": str(grid[-1]),
          "span_as_registered": bool(grid[0] == PRE_SPAN[0] and grid[-1] == PRE_SPAN[1] - pd.Timedelta(hours=1)) if expect else None, "market_last_bar": str(M.index[-1]),
-         "market_ends_before_F1": bool(M.index[-1] <= PRE_END),   # the index is the bar's CLOSE: the bar stamped at F1's first instant is 2023-04-30's last five minutes "names_as_registered": len(B["names"]) == 141 and len(np.unique(B["block"])) == 17 if expect else None,
+         "market_ends_before_F1": bool(M.index[-1] <= PRE_END), "names_as_registered": len(B["names"]) == 141 and len(np.unique(B["block"])) == 17 if expect else None,
          "bars": {"taker": BAR_TAKER, "maker": BAR_MAKER, "t_one_sided": T_ONE_SIDED}, "parts_split_at": str(f0)}
+    # market_ends_before_F1: the index is the bar's CLOSE — the bar stamped at F1's first instant is 2023-04-30's last five minutes (R97's Void 1)
     v["status"] = "PASS" if (v["model_features"] == len(used) and d_causal in (None, 0.0) and v["market_ends_before_F1"]
                              and all(v[k] in (None, True) for k in ("list_as_registered", "model_as_registered", "same_names_as_r89", "absent_as_registered", "scorable_as_the_cover_check",
                                                                     "span_as_registered", "names_as_registered"))) else "FAIL"

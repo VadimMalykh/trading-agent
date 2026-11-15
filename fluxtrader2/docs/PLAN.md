@@ -16509,6 +16509,9 @@ Void 1:        2026-11-15 14:48 → 14:54 UTC: the first run stopped at validity
                (`backtest.py`: "the bar closed at t") — the stamp 2023-05-01 00:00 is the bar of 2023-04-30 23:55 → 24:00, the last bar
                before F1, exactly what the Cells line registers ("it ends at F1's first instant"). The data and the registration are
                unchanged; the check now reads `<=`. Nothing was read: the ledger held no R97 row; the run is made again whole.
+Void 2:        2026-11-15 14:56 → 15:02 UTC: the rerun CRASHED (KeyError) while assembling the validity record — the comment added with
+               Void 1's fix sat inside the record's line and cut the key `names_as_registered` out of it. Again before any forecast,
+               IC or ledger row (the ledger held no R97 row; `output/allgbm/r97/` empty). The comment moved off the line; rerun whole.
 Result:        —
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
