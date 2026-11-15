@@ -820,3 +820,74 @@ def confirm_pre(name: str = NAME97, sources: dict | None = None, members: str | 
     (out / "read.md").write_text("\n".join(md))
     print(f"wrote {out}/", flush=True)
     return "\n".join(md)
+
+
+# ---- R98: the refit challenger for F6 — the same trees fitted ONCE on every member cell of F1 … F5 ---------------------------------------
+REG98, NAME98 = "R98", "r98"
+R98_CUT = pd.Timestamp("2026-09-15", tz="UTC")               # no training label ends at or after it
+R98_LISTS = {"screen_members.csv": "0e55255d37412d3b63a021d3c8a732ab", "screen_members_f34.csv": "9625d74d2cd79b080de0d1b158095248", "screen_members_f5_coins.csv": R89_MD5["screen_members_f5_coins.csv"]}
+
+
+def refit_parts() -> list[dict]:
+    """The three builds of R98's Fit line, as the earlier reads built them."""
+    from .universe import F34_MEMBERS_CSV, F5_COINS_CSV, MEMBERS_CSV
+    return [{"tag": "F1+F2", "members": MEMBERS_CSV, "folds": folds.EXPLORATION, "end": None, "start": None, "grids": None},
+            {"tag": "F3+F4", "members": F34_MEMBERS_CSV, "folds": CONF_FOLDS, "end": folds.bounds(CONF_FOLDS[-1])[1], "start": CONF_START, "grids": CONF_GRIDS},
+            {"tag": "F5", "members": F5_COINS_CSV, "folds": ("F5",), "end": folds.bounds("F5")[1], "start": F5_START, "grids": F5_GRIDS}]
+
+
+def train_cells(usable: np.ndarray, t_end: pd.DatetimeIndex, cut: pd.Timestamp) -> np.ndarray:
+    """The usable cells whose label ends strictly before `cut`."""
+    return usable & (t_end.asi8 < cut.value)[:, None]
+
+
+def refit(name: str = NAME98, sources: dict | None = None, parts: list[dict] | None = None, registration: str = REG98, expect: bool = True) -> dict:
+    """R98's fit: no statistic of the fit is computed — the file, its md5 and the cell counts only."""
+    import hashlib
+    import lightgbm as lgb
+    sources = SOURCES if sources is None else sources
+    parts = refit_parts() if parts is None else parts
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    conf = bt._guard([f for p in parts for f in p["folds"]], registration)    # F3, F4, F5: the fit is their one use under R98; a second fit is refused
+    md5 = lambda p: hashlib.md5(Path(p).read_bytes()).hexdigest()         # noqa: E731
+    lists = {Path(p["members"]).name: md5(p["members"]) for p in parts}
+    f3_start = folds.bounds("F3")[0]
+    Xs, ys, rep, used = [], [], [], None
+    for p in parts:
+        print(f"{p['tag']}: the cells…", flush=True)
+        B = build(p["members"], p["folds"], sources, p["end"], p["start"], p["grids"])
+        names_ = [k for _, k in B["src_of"]]
+        cols = [i for i, k in enumerate(names_) if k not in DROP88]
+        train = train_cells(B["usable"], B["t_end"], R98_CUT)
+        rep.append({"part": p["tag"], "names": len(B["names"]), "scorable_cells": int(B["scorable"].sum()), "usable_cells": int(B["usable"].sum()), "train_cells": int(train.sum()),
+                    "train_cells_with_label_ending_before_F3": int((train & (B["t_end"].asi8 < f3_start.value)[:, None]).sum()),
+                    "train_cells_with_label_ending_at_or_after_the_cut": int((train & (B["t_end"].asi8 >= R98_CUT.value)[:, None]).sum()),
+                    "feature_names": [names_[i] for i in cols], "max_abs_d_causal": _causal(B, sources), "first": str(B["grid"][0]), "last": str(B["grid"][-1])})
+        Xs.append(B["X"][train][:, cols].astype(np.float32))
+        ys.append(B["zres"][train])
+        used = rep[-1]["feature_names"] if used is None else used
+        del B
+    v = {"registration": registration, "lists_md5": lists, "lists_as_registered": lists == R98_LISTS if expect else None, "parts": [{k: x for k, x in r.items() if k != "feature_names"} for r in rep],
+         "same_names_as_r89_in_every_part": all(r["feature_names"] == R89_FEATURES for r in rep) if expect else all(r["feature_names"] == used for r in rep),
+         "f12_cells_before_F3_as_r88": rep[0]["train_cells_with_label_ending_before_F3"] == R88_TRAIN_CELLS if expect else None,
+         "f5_scorable_as_r89": rep[-1]["scorable_cells"] == R89_SCORABLE if expect else None,
+         "no_label_at_or_after_the_cut": all(r["train_cells_with_label_ending_at_or_after_the_cut"] == 0 for r in rep), "causal": all(r["max_abs_d_causal"] in (None, 0.0) for r in rep),
+         "train_cells": int(sum(r["train_cells"] for r in rep)), "cut": str(R98_CUT), "params": {k: x for k, x in PARAMS.items()}}
+    v["status"] = "PASS" if (v["same_names_as_r89_in_every_part"] and v["no_label_at_or_after_the_cut"] and v["causal"]
+                             and all(v[k] in (None, True) for k in ("lists_as_registered", "f12_cells_before_F3_as_r88", "f5_scorable_as_r89"))) else "FAIL"
+    (out / "fit.json").write_text(json.dumps(v, indent=1, default=str))
+    if v["status"] != "PASS":
+        print(f"validity FAIL — no model is fitted; wrote {out}/fit.json", flush=True)
+        raise SystemExit(2)
+    gbm = lgb.LGBMRegressor(**{**PARAMS, "n_jobs": 8}).fit(np.concatenate(Xs), np.concatenate(ys))
+    gbm.booster_.save_model(str(out / "model.txt"))
+    v["model_md5"] = md5(out / "model.txt")
+    v["fitted_at"] = f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC"
+    (out / "fit.json").write_text(json.dumps(v, indent=1, default=str))
+    if conf:
+        bt.READS.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"read_at": v["fitted_at"], "registration": registration, "fold": conf, "strategy": "allgbm refit (the fit only, no statistic)",
+                      "params": json.dumps({"features": len(used), "train_cells": v["train_cells"], "model_md5": v["model_md5"]})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    print(f"{registration}: fitted on {v['train_cells']:,} cells ({', '.join(str(r['train_cells']) for r in rep)}), model.txt md5 {v['model_md5']}; wrote {out}/", flush=True)
+    return v

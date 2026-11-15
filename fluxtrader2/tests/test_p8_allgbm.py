@@ -182,3 +182,14 @@ def test_r97_the_sentence_needs_both_parts_and_the_row_mask_follows_the_blocks()
     assert ag.R89_FEATURES == [k for k in ag.R89_FEATURES if k not in ag.DROP88] and len(ag.R89_FEATURES) == 33 and set(ag.R97_ABSENT) <= set(ag.R89_FEATURES)
     import hashlib
     assert hashlib.md5(ag.MODEL_FILE.read_bytes()).hexdigest() == ag.MODEL_MD5 == __import__("ft2.allbook", fromlist=["x"]).MODEL_MD5
+
+
+def test_r98_the_training_cells_end_before_the_cut_and_the_parts_are_the_earlier_builds():
+    t_end = pd.DatetimeIndex(["2026-09-14 22:00", "2026-09-14 23:55", "2026-09-15 00:00", "2026-09-15 01:00"], tz="UTC")
+    usable = np.array([[True, False], [True, True], [True, True], [False, True]])
+    tr = ag.train_cells(usable, t_end, ag.R98_CUT)
+    assert tr.tolist() == [[True, False], [True, True], [False, False], [False, False]]              # a label ending AT the cut is out
+    P = ag.refit_parts()
+    assert [p["tag"] for p in P] == ["F1+F2", "F3+F4", "F5"] and P[2]["end"] == ag.R98_CUT and P[1]["start"] == ag.CONF_START and P[2]["grids"] == ag.F5_GRIDS
+    import hashlib
+    assert {Path(p["members"]).name: hashlib.md5(Path(p["members"]).read_bytes()).hexdigest() for p in P} == ag.R98_LISTS

@@ -252,3 +252,22 @@ def test_r97_the_described_rows_of_a_book_add_up():
     assert p["trades"] == 3 and p["net_unhedged"] == pytest.approx(p["gross"] - p["fee"] - p["other_cost"] + p["funding"])
     assert p["hedged_net_minus_4"] == pytest.approx(p["net_unhedged"] - p["market"] - 4.0)
     assert dict(zip(by_why["why"], by_why["trades"])) == {"cap": 1, "left_fifth": 2} and list(by_month["month"]) == ["2022-01", "2022-02"] and int(by_month["trades"].sum()) == 3
+
+
+def test_r98_the_guard_needs_r91s_and_r93s_rows_first(tmp_path, monkeypatch):
+    plan = tmp_path / "PLAN.md"
+    plan.write_text("### R98 — planted\n")
+    monkeypatch.setattr(ab.bt, "PLAN", plan)
+    monkeypatch.setattr(ab.bt, "READS", tmp_path / "reads.csv")
+    monkeypatch.setattr(ab, "F6_END", pd.Timestamp("2020-01-01", tz="UTC"))
+    row = lambda reg: pd.DataFrame({"read_at": ["x"], "registration": [reg], "fold": ["F6"], "strategy": ["s"], "params": ["{}"]})   # noqa: E731
+    with pytest.raises(SystemExit, match="no \\(R91, F6\\)"):
+        ab._guard98()
+    row("R91").to_csv(tmp_path / "reads.csv", index=False)
+    with pytest.raises(SystemExit, match="no \\(R93, F6\\)"):
+        ab._guard98()
+    row("R93").to_csv(tmp_path / "reads.csv", mode="a", header=False, index=False)
+    ab._guard98()
+    row("R98").to_csv(tmp_path / "reads.csv", mode="a", header=False, index=False)
+    with pytest.raises(SystemExit, match="already read F6"):
+        ab._guard98()

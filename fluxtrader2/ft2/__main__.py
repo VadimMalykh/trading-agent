@@ -309,6 +309,9 @@ def cmd_allgbm(args):
             raise SystemExit("allgbm cover: --folds F3 F4 (default), F5 or PRE")
         allgbm.cover(args.name or "cover_f34", F34_MEMBERS_CSV, ("F3", "F4"), folds.bounds("F4")[1], pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-06-01", tz="UTC"))
         return print(f"wrote {allgbm.OUT / (args.name or 'cover_f34')}/")
+    if args.action == "refit":                                # R98: the same trees fitted once on F1 … F5's member cells (guarded; no statistic of the fit)
+        allgbm.refit(args.name or allgbm.NAME98)
+        return
     if args.action == "confirmpre":                           # R97: the frozen trees' file, once, on the members before F1 (guarded), then R91's rule as a taker
         allgbm.confirm_pre(args.name or allgbm.NAME97)
         return
@@ -617,7 +620,7 @@ def main(argv=None):
     po.add_argument("--maker-bps", type=float, default=2.0)
     ag = sub.add_parser("allgbm", help="P8 (R87): one LightGBM model on every per-name input in hand, the members' next day against their peers, held out by name "
                                        "group and by time → output/allgbm/r87/read.md (see ft2/allgbm.py)")
-    ag.add_argument("action", choices=["run", "cover", "confirm", "confirm5", "confirmpre"])
+    ag.add_argument("action", choices=["run", "cover", "confirm", "confirm5", "confirmpre", "refit"])
     ag.add_argument("--name", help="output directory under output/allgbm/ (default r87)")
     ag.add_argument("--folds", nargs="*", default=None, help="cover: F3 F4 (default) or F5 — features only, no forecast, no IC")
     ag.add_argument("--coins", action="store_true", help="cover --folds F5: the coins-only member list (ft2/screen_members_f5_coins.csv)")

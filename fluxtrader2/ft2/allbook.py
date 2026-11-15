@@ -758,3 +758,26 @@ def book_rows(fills: pd.DataFrame, days: pd.DatetimeIndex, mid: pd.Timestamp) ->
     mth = pd.DatetimeIndex(f["t"]).strftime("%Y-%m")
     by_month = pd.DataFrame([{"month": m, **{k: v for k, v in hedged_stats(f[mth == m], days, mid).items() if k in ("trades", "mean", "se", "t")}} for m in sorted(set(mth))])
     return parts, by_why, by_month
+
+
+# ====================================================================================================================================
+# R98 (docs/PLAN.md §8, registered 2026-11-15): the refit challenger — R91's rule and R93's execution on the forecast of the file fitted
+# on F1 … F5 (`allgbm.refit`). Read in R91's session, after R91's and R93's ledger rows; the session calls `_guard98()` and then
+# `forward(forecast98, NAME98, REG98)` / `maker93(NAME98M, REG98, book=NAME98, tape=TAPE98)` — the rule and the gate are R91's own code.
+# ====================================================================================================================================
+REG98, NAME98, NAME98M = "R98", "r98", "r98m"
+TAPE98 = Path("data/r98_tape")
+
+
+def _guard98(registration: str = REG98) -> None:
+    import re
+    if not bt.PLAN.exists() or not re.search(rf"^### {registration} ", bt.PLAN.read_text(), flags=re.M):
+        raise SystemExit(f"no '### {registration} ' block in {bt.PLAN}: write the registration before the read")
+    if pd.Timestamp.now("UTC") < F6_END:
+        raise SystemExit(f"{registration} is read once, after F6's last bar ({F6_END:%Y-%m-%d}); a look is the read")
+    r = pd.read_csv(bt.READS) if bt.READS.exists() else pd.DataFrame(columns=["registration", "fold"])
+    for first in (REG91, REG93):
+        if not ((r["registration"] == first) & (r["fold"] == "F6")).any():
+            raise SystemExit(f"{registration} is read after {REG91} and {REG93}: no ({first}, F6) row in {bt.READS}")
+    if ((r["registration"] == registration) & (r["fold"] == "F6")).any():
+        raise SystemExit(f"{registration} has already read F6 ({bt.READS}): a fold is read once per question")
