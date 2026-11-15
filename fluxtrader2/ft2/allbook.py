@@ -144,6 +144,13 @@ def run(name: str = NAME, forecast: Path | str = FORECAST, registration: str = R
 def main(action: str, name: str | None = None) -> None:
     if action == "run":
         run(name or NAME)
+    elif action == "tapefetch" and name == "r97":
+        _guard97m()
+        tapefetch(fills=OUT / "r97" / "fills.parquet", fills_md5=None, tape=Path("data/r97_tape"), strict=False)
+    elif action == "tape" and name == "r97":
+        _guard97m()
+        a, b, mid = pre_span()
+        maker93("r97m", "R97", guard=False, book="r97", tape=Path("data/r97_tape"), start=a, end=b, mid=mid, where="the members before F1 (2021-12-10 → 2023-04-23)")
     elif action == "tapefetch":
         if name == NAME93:
             _guard93(REG93)
@@ -250,19 +257,21 @@ def _guard91(registration: str) -> None:
         raise SystemExit(f"{registration} has already read F6 ({bt.READS}): a fold is read once per question")
 
 
-def hedged_stats(fills: pd.DataFrame, days: pd.DatetimeIndex) -> dict:
-    """The gate's statistic: the mean of (hedged net − HEDGE_BPS) per trade, day-clustered HAC with the 7-day cap's lags."""
+def hedged_stats(fills: pd.DataFrame, days: pd.DatetimeIndex, mid: pd.Timestamp | None = None) -> dict:
+    """The gate's statistic: the mean of (hedged net − HEDGE_BPS) per trade, day-clustered HAC with the 7-day cap's lags. The two parts
+    split at `mid` (default: 90 days in — R91's halves; R97 passes F0's first instant)."""
     from .ceiling import day_lags
     f = fills.dropna(subset=["net_bps"])
     x = f["hedged_net_bps"].to_numpy() - HEDGE_BPS
     s = bt.trade_stats(x, f["size"].to_numpy(), pd.DatetimeIndex(f["t"]).floor("D"), days, day_lags(CAP_BARS))
     t = pd.DatetimeIndex(f["t"])
-    mid = days[0] + HALF
+    mid = days[0] + HALF if mid is None else mid
     return {"trades": int(len(f)), "mean": s["mean"], "se": s["se"], "t": s["mean"] / s["se"] if s["se"] else np.nan, "lo": s["lo"], "hi": s["hi"],
             "first_half": float(x[t < mid].mean()) if (t < mid).any() else np.nan, "last_half": float(x[t >= mid].mean()) if (t >= mid).any() else np.nan}
 
 
-def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91, guard: bool = True, start: pd.Timestamp = F6_START, end: pd.Timestamp = F6_END) -> dict:
+def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91, guard: bool = True, start: pd.Timestamp = F6_START, end: pd.Timestamp = F6_END,
+            mid: pd.Timestamp | None = None) -> dict:
     """R91's read: the positions of the rule on the F6 forecast, priced as a taker with the names' own costs and funding, the hedged
     gate. Returns the gate's row; writes fills, the skipped entries, validity (3)–(4) and the verdict. The Data line, the member
     lists, the cover and the described rows are the read session's (PLAN §8 R91, Code)."""
@@ -294,7 +303,7 @@ def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91,
         raise SystemExit(2)
     days = pd.date_range(start, end - pd.Timedelta(1, "ns"), freq="D")
     fills.to_parquet(out / "fills.parquet", index=False)
-    g = hedged_stats(fills, days)
+    g = hedged_stats(fills, days, mid)
     g["verdict"] = verdict91(g["mean"], g["se"], g["first_half"], g["last_half"])
     (out / "gate.json").write_text(json.dumps({**g, "validity": v}, indent=1, default=str))
     if guard:
@@ -636,22 +645,24 @@ def maker_books(f: pd.DataFrame, L: pd.DataFrame, oe: np.ndarray, ox: np.ndarray
     return out
 
 
-def maker93(name: str = NAME93, registration: str = REG93, guard: bool = True) -> dict:
+def maker93(name: str = NAME93, registration: str = REG93, guard: bool = True, book: str = NAME91, tape: Path = TAPE93, start: pd.Timestamp = F6_START, end: pd.Timestamp = F6_END,
+            mid: pd.Timestamp | None = None, where: str = "F6") -> dict:
     """R93's read: validity, the gate (R91's form on the VOLUME-BEYOND fills), the ledger row, the rule rows. The other described rows
     (the bar-simulated maker, the leg table, the coins' split) are the read session's, from `legs.parquet` and the saved books."""
     if guard:
         _guard93(registration)
     out = OUT / name
     out.mkdir(parents=True, exist_ok=True)
-    v91 = json.loads((OUT / NAME91 / "validity_book.json").read_text())
-    md5 = hashlib.md5(FILLS91.read_bytes()).hexdigest()
-    saved = pd.read_parquet(FILLS91)
+    fills91 = OUT / book / "fills.parquet"
+    v91 = json.loads((OUT / book / "validity_book.json").read_text())
+    md5 = hashlib.md5(fills91.read_bytes()).hexdigest()
+    saved = pd.read_parquet(fills91)
     f = saved.dropna(subset=["net_bps"]).reset_index(drop=True)
     names = sorted(f["symbol"].astype(str).unique())
-    M = bt.market(names, F6_END, F6_START)
-    C = bt.load_costs(M.index, M.columns, F6_END, 1.0, close=M.close)
+    M = bt.market(names, end, start)
+    C = bt.load_costs(M.index, M.columns, end, 1.0, close=M.close)
     L = tape_legs(saved, strict=False)
-    files = sorted(TAPE93.glob("*/*.parquet"))
+    files = sorted(tape.glob("*/*.parquet"))
     R = pd.concat([pd.read_parquet(p) for p in files], ignore_index=True) if files else pd.DataFrame(columns=["id", "leg", "sim"])
     for c in ("P", "cross_px", "src_age_s", "pre_px", *RULES93, *(f"{k}_s" for k in RULES93)):
         if c not in R:
@@ -682,11 +693,11 @@ def maker93(name: str = NAME93, registration: str = REG93, guard: bool = True) -
         (out / "read.md").write_text(f"# {registration}\n\n## Validity: FAIL\n\n```\n{json.dumps(v, indent=1, default=str)}\n```\n\n**The read is VOID: no leg was summarised.**\n")
         print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
         raise SystemExit(2)
-    days = pd.date_range(F6_START, F6_END - pd.Timedelta(1, "ns"), freq="D")
+    days = pd.date_range(start, end - pd.Timedelta(1, "ns"), freq="D")
     books = maker_books(f, L, oe, ox)
     rows = []
     for k, b in {"taker": f, **books}.items():
-        rows.append({"row": "R91's taker (its gate, beside)" if k == "taker" else RULES93[k], **hedged_stats(b, days), "net_unhedged": float(b["net_bps"].mean()), "gross": float(b["gross_bps"].mean()),
+        rows.append({"row": "R91's taker (its gate, beside)" if k == "taker" else RULES93[k], **hedged_stats(b, days, mid), "net_unhedged": float(b["net_bps"].mean()), "gross": float(b["gross_bps"].mean()),
                      "fee": float(b["fee_bps"].mean()), "other_cost": float(b["other_cost_bps"].mean()), "funding": float(b["funding_bps"].mean()),
                      "fill_e": float(b["fill_e"].mean()) if "fill_e" in b else 0.0, "fill_x": float(b["fill_x"].mean()) if "fill_x" in b else 0.0})
     tab = pd.DataFrame(rows)
@@ -701,10 +712,49 @@ def maker93(name: str = NAME93, registration: str = REG93, guard: bool = True) -
         pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": ["F6"], "strategy": "allbook short_held maker_volume",
                       "params": json.dumps({"wait_min": 15, "rule": "volume_beyond", "r91_fills_md5": md5})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
     mth = pd.DatetimeIndex(books["vol"]["t"]).strftime("%Y-%m")
-    by_month = pd.DataFrame([{"month": m, **hedged_stats(books["vol"][mth == m], days)} for m in sorted(set(mth))])
-    md = [f"# {registration} — the maker execution of R91's rule on F6 (`ft2 allbook tape --name r93`)\n", f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n",
+    by_month = pd.DataFrame([{"month": m, **hedged_stats(books["vol"][mth == m], days, mid)} for m in sorted(set(mth))])
+    md = [f"# {registration} — the maker execution of R91's rule on {where} (`ft2 allbook tape --name {name}`)\n", f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n",
           f"\n## The gate — **{g['verdict']}**: hedged net − {HEDGE_BPS:g} = {g['mean']:+.1f} bps a trade (se {g['se']:.1f}, t {g['t']:+.2f}; halves {g['first_half']:+.1f} / {g['last_half']:+.1f}) on {g['trades']} positions, VOLUME-BEYOND\n",
           tab.round(2).to_markdown(index=False), "\n", "\n## Described (decides nothing): VOLUME-BEYOND by month\n", by_month.round(2).to_markdown(index=False), "\n"]
     (out / "read.md").write_text("\n".join(md))
     print(f"{registration}: {g['verdict']} — hedged net {g['mean']:+.1f} bps a trade (t {g['t']:+.2f}); wrote {out}/", flush=True)
     return g
+
+
+# ====================================================================================================================================
+# R97 (docs/PLAN.md §8, registered 2026-11-15): the same rule and the same maker execution on the frozen trees' forecast of the screener's
+# members BEFORE F1 (2021-12-10 → 2023-04-23), once. Nothing of the rule is new; the parts are the days in FP and the days in F0. (B) is
+# run by `allgbm.confirm_pre` through `forward(guard=False, …)` after (A)'s ledger rows exist; (C) here, once, after (B)'s gate is written.
+# ====================================================================================================================================
+REG97, NAME97, NAME97M = "R97", "r97", "r97m"
+TAPE97 = Path("data/r97_tape")
+
+
+def pre_span() -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp]:
+    """(the first scored instant, the instant after the last scored bar's day, F0's first instant — where the two parts split)."""
+    from . import folds
+    from .allgbm import PRE_SPAN
+    return PRE_SPAN[0], PRE_SPAN[1], folds.bounds("F0", embargoed=False)[0]
+
+
+def _guard97m() -> None:
+    import re
+    if not bt.PLAN.exists() or not re.search(rf"^### {REG97} ", bt.PLAN.read_text(), flags=re.M):
+        raise SystemExit(f"no '### {REG97} ' block in {bt.PLAN}: write the registration before the read")
+    r = pd.read_csv(bt.READS) if bt.READS.exists() else pd.DataFrame(columns=["registration", "fold"])
+    if not ((r["registration"] == REG97) & (r["fold"] == "FP")).any() or not (OUT / NAME97 / "gate.json").exists():
+        raise SystemExit(f"{REG97} (C) is read after (A)'s ledger rows and (B)'s gate exist")
+    if (OUT / NAME97M / "gate.json").exists():
+        raise SystemExit(f"{REG97} (C) has been read ({OUT / NAME97M / 'gate.json'}): once")
+
+
+def book_rows(fills: pd.DataFrame, days: pd.DatetimeIndex, mid: pd.Timestamp) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Described rows of a priced book: the money's parts (means per trade), by exit clause, by month."""
+    f = fills.dropna(subset=["net_bps"])
+    parts = pd.DataFrame([{"trades": int(len(f)), "hold_bars_median": float(f["hold"].median()), "gross": float(f["gross_bps"].mean()), "fee": float(f["fee_bps"].mean()),
+                           "other_cost": float(f["other_cost_bps"].mean()), "funding": float(f["funding_bps"].mean()), "net_unhedged": float(f["net_bps"].mean()),
+                           "market": float((f["side"] * f["mkt_bps"]).mean()), "hedged_net_minus_4": float(f["hedged_net_bps"].mean() - HEDGE_BPS)}])
+    by_why = f.assign(x=f["hedged_net_bps"] - HEDGE_BPS).groupby("why").agg(trades=("x", "size"), mean=("x", "mean"), hold_median=("hold", "median"), funding=("funding_bps", "mean")).reset_index()
+    mth = pd.DatetimeIndex(f["t"]).strftime("%Y-%m")
+    by_month = pd.DataFrame([{"month": m, **{k: v for k, v in hedged_stats(f[mth == m], days, mid).items() if k in ("trades", "mean", "se", "t")}} for m in sorted(set(mth))])
+    return parts, by_why, by_month

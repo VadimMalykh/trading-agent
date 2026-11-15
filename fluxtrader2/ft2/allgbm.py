@@ -680,3 +680,142 @@ def confirm5(name: str = NAME89, sources: dict | None = None, members_fit: str |
     (out / "read.md").write_text("\n".join(md))
     print(f"wrote {out}/", flush=True)
     return "\n".join(md)
+
+
+# ---- R97: the frozen trees' FILE scored once, backward, on the screener's members before F1 ---------------------------------------------
+REG97, NAME97 = "R97", "r97"
+MODEL_FILE = Path(__file__).with_name("r89_model.txt")
+MODEL_MD5 = "816b994c136fda82eb36ceca88580d36"
+PRE_MD5 = "901782ce7a03fa4970c1dd471f31fd6b"
+R97_SCORABLE = 714_084                                       # the cover check's count (output/allgbm/cover_pre, 2026-11-15)
+R97_ABSENT = ("hl_gap24_dev",)                               # the registration's Features line: the only input without a cell
+R97_YOUNG_DAYS = 180
+R89_FEATURES = ["ret_15m", "ret_1h", "ret_4h", "ret_1d", "ret_1w", "relret_1h", "relret_4h", "relret_1d", "volratio_1h", "volratio_1d", "mom_4w", "mom_12w", "vol_4w", "maxd_4w",
+                "funding_last", "funding_7d", "oi_chg_1d", "oi_chg_1w", "oi_turn", "global_ls", "global_ls_chg_1d", "top_ls", "top_vs_global", "taker_1d", "cbprem_dev", "cbprem_chg_1d",
+                "krprem_dev", "spot_tb24_dev", "spot_sr24_dev", "mix_cnt24_dev", "mix_size24_dev", "hl_gap24_dev", "wiki_dev"]
+
+
+def verdict97(ic: float, se: float, t: float, first: float, last: float) -> str:
+    """R97 (A): R89's one-sided words with BOTH parts required positive."""
+    if all(np.isfinite(x) for x in (ic, t, first, last)) and t >= T_ONE_SIDED and ic >= BAR_MAKER and first > 0 and last > 0:
+        return "CONFIRMED AT THE TAKER BAR" if ic >= BAR_TAKER else "CONFIRMED"
+    return "NOT CONFIRMED — CLOSED" if np.isfinite(ic) and np.isfinite(se) and ic + 1.96 * se < BAR_MAKER else "NOT CONFIRMED"
+
+
+def rows_mask(rows: pd.DataFrame, names: list[str], starts: pd.DatetimeIndex, block: np.ndarray) -> np.ndarray:
+    """bar × name: True where the bar lies in a block for which `rows` (block, symbol) holds that name."""
+    pos = {c: i for i, c in enumerate(names)}
+    has = np.zeros((len(starts), len(names)), dtype=bool)
+    for b, s in zip(starts.get_indexer(pd.DatetimeIndex(rows["block"])), rows["symbol"].astype(str)):
+        if b >= 0 and s in pos:
+            has[b, pos[s]] = True
+    return has[np.clip(block, 0, len(starts) - 1)] & (block >= 0)[:, None]
+
+
+def confirm_pre(name: str = NAME97, sources: dict | None = None, members: str | None = None, model_file: Path | str | None = None, registration: str = REG97, expect: bool = True,
+                book: bool = True) -> str:
+    import hashlib
+    import lightgbm as lgb
+    from . import allbook
+    from .horizon import _tenths
+    from .universe import PRE_END, PRE_MEMBERS_CSV
+    sources = SOURCES if sources is None else sources
+    members, model_file = members or PRE_MEMBERS_CSV, Path(model_file or MODEL_FILE)
+    out = OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    conf = bt._guard(list(PRE_FOLDS), registration)                        # the pre-history: only under the registration, once; logged when (A)'s number exists
+    md5 = lambda p: hashlib.md5(Path(p).read_bytes()).hexdigest()         # noqa: E731
+    list_md5, model_md5 = md5(members), md5(model_file)
+    model = lgb.Booster(model_file=str(model_file))                        # the FILE is the model: nothing is fitted here
+    f0 = folds.bounds("F0", embargoed=False)[0]
+
+    B = build(members, (), sources, PRE_END, PRE_START, PRE_GRIDS, span=PRE_SPAN)
+    names_ = [k for _, k in B["src_of"]]
+    cols = [i for i, k in enumerate(names_) if k not in DROP88]
+    used = [names_[i] for i in cols]
+    cov = B["cover"].set_index("feature")
+    absent = [k for k in used if int(cov.loc[k, "cells"]) == 0]
+    d_causal = _causal(B, sources)
+    grid, M = B["grid"], B["M"]
+    v = {"registration": registration, "folds_scored": list(PRE_FOLDS), "list_md5": list_md5, "list_as_registered": list_md5 == PRE_MD5 if expect else None, "model_md5": model_md5,
+         "model_as_registered": model_md5 == MODEL_MD5 if expect else None, "model_features": int(model.num_feature()), "features": len(used), "feature_names": used,
+         "same_names_as_r89": used == R89_FEATURES if expect else None, "features_without_a_cell": absent, "absent_as_registered": tuple(absent) == R97_ABSENT if expect else None,
+         "max_abs_d_causal": d_causal, "names_scored": len(B["names"]), "blocks": int(len(np.unique(B["block"]))), "scorable_cells": int(B["scorable"].sum()),
+         "scorable_as_the_cover_check": int(B["scorable"].sum()) == R97_SCORABLE if expect else None, "rows": int(len(grid)), "first": str(grid[0]), "last": str(grid[-1]),
+         "span_as_registered": bool(grid[0] == PRE_SPAN[0] and grid[-1] == PRE_SPAN[1] - pd.Timedelta(hours=1)) if expect else None, "market_last_bar": str(M.index[-1]),
+         "market_ends_before_F1": bool(M.index[-1] < PRE_END), "names_as_registered": len(B["names"]) == 141 and len(np.unique(B["block"])) == 17 if expect else None,
+         "bars": {"taker": BAR_TAKER, "maker": BAR_MAKER, "t_one_sided": T_ONE_SIDED}, "parts_split_at": str(f0)}
+    v["status"] = "PASS" if (v["model_features"] == len(used) and d_causal in (None, 0.0) and v["market_ends_before_F1"]
+                             and all(v[k] in (None, True) for k in ("list_as_registered", "model_as_registered", "same_names_as_r89", "absent_as_registered", "scorable_as_the_cover_check",
+                                                                    "span_as_registered", "names_as_registered"))) else "FAIL"
+    (out / "validity.json").write_text(json.dumps(v, indent=1, default=str))
+    B["cover"].to_csv(out / "cover.csv", index=False)
+    head = [f"# {registration} — the frozen trees' FILE (R89's), scored once, backward, on the screener's members before F1 (`ft2 allgbm confirmpre`)\n",
+            f"generated {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC · {len(used)} features · scored on {len(B['names'])} names, {len(grid):,} hourly bars · "
+            f"bars: maker {BAR_MAKER}, taker {BAR_TAKER}, one-sided t ≥ {T_ONE_SIDED} · the parts split at {f0:%Y-%m-%d}\n",
+            f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps({k: x for k, x in v.items() if k != "feature_names"}, indent=1, default=str), "\n```\n"]
+    if v["status"] != "PASS":
+        (out / "read.md").write_text("\n".join(head + ["\n**The read is VOID: no forecast and no IC was computed.**\n"]))
+        print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
+        raise SystemExit(2)
+
+    day, z, y, names = B["day"], B["z"], B["y"], B["names"]
+    f = trees_score(model, B["X"], B["scorable"], cols)
+    r = ic_row(f, z, day)
+    in_fp = np.asarray(grid < f0)
+    p1, p2 = ic_row(f, z, day, in_fp), ic_row(f, z, day, ~in_fp)
+    zr = centre(z, ~np.isnan(f) & ~np.isnan(z))
+    m_xs, se_xs, _ = hac(_ic_xs(pd.DataFrame(f), pd.DataFrame(zr), day), day_lags(HOLD))
+    tenths = float(np.nanmean(_tenths(f, np.where(~np.isnan(f), y, np.nan)))) if len(grid) % PER_DAY == 0 else np.nan
+    gate = {"model": "(A) the frozen trees on the members before F1 (the gate)", **r, "mde": MDE_K * r["se"] if np.isfinite(r["se"]) else np.nan, "ic_FP": p1["ic"], "ic_F0": p2["ic"],
+            "ic_rank_per_bar": m_xs, "t_rank": m_xs / se_xs if se_xs else np.nan, "tenths_bps_a_leg": tenths, "verdict": verdict97(r["ic"], r["se"], r["t"], p1["ic"], p2["ic"])}
+    fitted = set(universe.screen_symbols()) if expect else set(names[::2])
+    was = np.array([c in fitted for c in names])
+    mem = B["mem"]
+    young = rows_mask(mem[mem["age_days"] < R97_YOUNG_DAYS], names, B["starts"], B["block"]) if "age_days" in mem else np.zeros(f.shape, dtype=bool)
+    rows = [gate,
+            {"model": "described: the days in FP (to 2022-08-17)", **p1, "verdict": "described"}, {"model": "described: the days in F0 (from 2022-08-18)", **p2, "verdict": "described"},
+            {"model": f"described: names that were F1+F2 members later ({int(was.sum())})", **ic_cells(f, z, day, np.broadcast_to(was[None, :], f.shape)), "verdict": "described"},
+            {"model": f"described: names never fitted ({int((~was).sum())})", **ic_cells(f, z, day, np.broadcast_to(~was[None, :], f.shape)), "verdict": "described"},
+            {"model": f"described: member rows under {R97_YOUNG_DAYS} days old at the block", **ic_cells(f, z, day, young), "verdict": "described"},
+            {"model": "described: the older member rows", **ic_cells(f, z, day, ~young & B["cell"]), "verdict": "described"}]
+    tab = pd.DataFrame(rows)
+    month = pd.Series(grid.strftime("%Y-%m"))
+    by_month = pd.DataFrame([{"month": mth, **ic_row(f, z, day, (month == mth).to_numpy())} for mth in sorted(month.unique())])
+    o = pd.DataFrame({"t": np.repeat(grid.to_numpy(), len(names)), "symbol": np.tile(np.asarray(names), len(grid)), "f": f.ravel(), "z": z.ravel()})
+    o[~np.isnan(o["f"])].to_parquet(out / "forecast.parquet", index=False)
+    tab.to_csv(out / "models.csv", index=False)
+    by_month.to_csv(out / "by_month.csv", index=False)
+    (out / "validity.json").write_text(json.dumps({**v, "verdict": gate["verdict"], "ic": float(gate["ic"]), "se": float(gate["se"]), "t": float(gate["t"]), "ic_FP": float(p1["ic"]), "ic_F0": float(p2["ic"])},
+                                                  indent=1, default=str))
+    if conf:
+        bt.READS.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": conf, "strategy": "allgbm confirmpre",
+                      "params": json.dumps({"features": len(used), "model_md5": model_md5})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
+    print(f"{registration} (A): {gate['verdict']} — IC {gate['ic']:+.4f} (t {gate['t']:+.2f}; FP {p1['ic']:+.4f}, F0 {p2['ic']:+.4f})", flush=True)
+    show = lambda d, k=4: d.round(k).to_markdown(index=False)                    # noqa: E731
+    md = head + [
+        f"\n## (A) the forecast — **{gate['verdict']}**: IC {gate['ic']:+.4f} (se {gate['se']:.4f}, t {gate['t']:+.2f}, MDE {gate['mde']:.4f}) on {int(gate['cells']):,} cells, {int(gate['days'])} days; "
+        f"FP {p1['ic']:+.4f}, F0 {p2['ic']:+.4f}; per-bar rank IC {m_xs:+.4f} (t {gate['t_rank']:+.2f}); tenths {tenths:+.1f} bps a leg a day before costs\n", show(tab), "\n",
+        "\n### By month (described)\n", show(by_month), "\n", "\n### Cover of each feature on the scorable cells\n", B["cover"].round(4).to_markdown(index=False), "\n"]
+    (out / "read.md").write_text("\n".join(md))
+    del B
+    if not book:
+        return "\n".join(md)
+
+    a, b, mid = allbook.pre_span()
+    try:
+        g = allbook.forward(out / "forecast.parquet", name=allbook.NAME97, registration=registration, guard=False, start=a, end=b, mid=mid)
+    except SystemExit:
+        md += ["\n## (B) the taker's money — **VOID** (the book's validity failed: `output/allbook/r97/validity_book.json`); (A) stands\n"]
+        (out / "read.md").write_text("\n".join(md))
+        raise
+    fills = pd.read_parquet(allbook.OUT / allbook.NAME97 / "fills.parquet")
+    parts, by_why, bm = allbook.book_rows(fills, pd.date_range(a, b - pd.Timedelta(1, "ns"), freq="D"), mid)
+    vb = json.loads((allbook.OUT / allbook.NAME97 / "validity_book.json").read_text())
+    md += [f"\n## (B) the taker's money — **{g['verdict']}**: hedged net − {allbook.HEDGE_BPS:g} = {g['mean']:+.1f} bps a trade (se {g['se']:.1f}, t {g['t']:+.2f}; FP {g['first_half']:+.1f} / F0 {g['last_half']:+.1f}) "
+           f"on {g['trades']} positions\n", "```\n", json.dumps(vb, indent=1, default=str), "\n```\n", "\n### The money's parts (bps a trade, described)\n", parts.round(2).to_markdown(index=False), "\n",
+           "\n### By exit clause\n", by_why.round(2).to_markdown(index=False), "\n", "\n### By month\n", bm.round(2).to_markdown(index=False), "\n"]
+    (out / "read.md").write_text("\n".join(md))
+    print(f"wrote {out}/", flush=True)
+    return "\n".join(md)

@@ -164,3 +164,21 @@ def test_r89_the_frozen_trees_score_from_the_file_and_a_subset_keeps_the_whole_s
     zr = ag.centre(zz, ~np.isnan(f) & ~np.isnan(zz))
     assert np.isclose(a["ic"], np.mean([np.corrcoef(f[day == d][:, :6].ravel(), zr[day == d][:, :6].ravel())[0, 1] for d in np.unique(day)]), atol=0.05)   # … against the label centred on ALL the cells
     assert ag.R89_MD5["screen_members_f5_coins.csv"] == "816f8ab9f53b54ca3070e1937fee14ef" and ag.R88_TRAIN_CELLS == 695_140 and ag.R89_SCORABLE == 298_291
+
+
+def test_r97_the_sentence_needs_both_parts_and_the_row_mask_follows_the_blocks():
+    assert ag.verdict97(0.03, 0.005, 6.0, 0.02, 0.04) == "CONFIRMED AT THE TAKER BAR"
+    assert ag.verdict97(0.03, 0.005, 6.0, -0.001, 0.06) == "NOT CONFIRMED"                 # one part not positive
+    assert ag.verdict97(0.010, 0.004, 2.5, 0.01, 0.01) == "CONFIRMED"
+    assert ag.verdict97(0.010, 0.008, 1.25, 0.01, 0.01) == "NOT CONFIRMED"                 # t under 1.645
+    assert ag.verdict97(-0.006, 0.005, -1.2, -0.01, 0.0) == "NOT CONFIRMED — CLOSED"       # −0.006 + 1.96 × 0.005 < 0.0059
+    assert ag.verdict97(float("nan"), float("nan"), float("nan"), 0.1, 0.1) == "NOT CONFIRMED"
+    starts = pd.DatetimeIndex(["2022-01-01", "2022-01-31"], tz="UTC")
+    grid = pd.date_range("2022-01-30", periods=48, freq="h", tz="UTC")
+    block = np.searchsorted(starts.asi8, grid.asi8, side="right") - 1
+    rows = pd.DataFrame({"block": [starts[0], starts[1], starts[1]], "symbol": ["AAA", "BBB", "ZZZ"]})
+    m = ag.rows_mask(rows, ["AAA", "BBB", "CCC"], starts, block)
+    assert m.shape == (48, 3) and m[:24, 0].all() and not m[24:, 0].any() and m[24:, 1].all() and not m[:24, 1].any() and not m[:, 2].any()
+    assert ag.R89_FEATURES == [k for k in ag.R89_FEATURES if k not in ag.DROP88] and len(ag.R89_FEATURES) == 33 and set(ag.R97_ABSENT) <= set(ag.R89_FEATURES)
+    import hashlib
+    assert hashlib.md5(ag.MODEL_FILE.read_bytes()).hexdigest() == ag.MODEL_MD5 == __import__("ft2.allbook", fromlist=["x"]).MODEL_MD5

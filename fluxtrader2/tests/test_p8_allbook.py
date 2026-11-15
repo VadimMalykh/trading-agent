@@ -209,3 +209,46 @@ def test_r93_the_guard_needs_the_block_the_span_end_and_r91s_row_first(tmp_path,
     pd.DataFrame({**row, "registration": ["R93"]}).to_csv(tmp_path / "reads.csv", mode="a", header=False, index=False)
     with pytest.raises(SystemExit, match="already read F6"):
         ab._guard93()
+
+
+def test_r97_the_parts_split_at_the_given_instant_and_the_maker_waits_for_the_ledger_and_the_taker_gate(tmp_path, monkeypatch):
+    days = pd.date_range("2022-01-01", "2022-12-31", freq="D", tz="UTC")
+    t = pd.DatetimeIndex(["2022-02-01", "2022-03-01", "2022-09-01", "2022-10-01"], tz="UTC")
+    f = pd.DataFrame({"t": t, "net_bps": 1.0, "hedged_net_bps": [14.0, 24.0, -6.0, -16.0], "size": 1.0})
+    a = ab.hedged_stats(f, days)                                                    # R91's halves: 90 days in (2022-04-01)
+    b = ab.hedged_stats(f, days, pd.Timestamp("2022-08-18", tz="UTC"))              # R97's parts: F0's first instant
+    assert a["first_half"] == b["first_half"] == pytest.approx(15.0) and a["last_half"] == b["last_half"] == pytest.approx(-15.0)
+    c = ab.hedged_stats(f, days, pd.Timestamp("2022-02-15", tz="UTC"))
+    assert c["first_half"] == pytest.approx(10.0) and c["last_half"] == pytest.approx((20.0 - 10.0 - 20.0) / 3) and c["mean"] == a["mean"]
+    a0, b0, mid = ab.pre_span()
+    assert str(a0) == "2021-12-10 00:00:00+00:00" and str(b0) == "2023-04-24 00:00:00+00:00" and str(mid) == "2022-08-18 00:00:00+00:00"
+    plan = tmp_path / "PLAN.md"
+    plan.write_text("### R97 — planted\n")
+    monkeypatch.setattr(ab.bt, "PLAN", plan)
+    monkeypatch.setattr(ab.bt, "READS", tmp_path / "reads.csv")
+    monkeypatch.setattr(ab, "OUT", tmp_path)
+    with pytest.raises(SystemExit, match="after"):
+        ab._guard97m()                                                              # no ledger row, no taker gate
+    pd.DataFrame({"read_at": ["x"], "registration": ["R97"], "fold": ["FP"], "strategy": ["s"], "params": ["{}"]}).to_csv(tmp_path / "reads.csv", index=False)
+    with pytest.raises(SystemExit, match="after"):
+        ab._guard97m()                                                              # the ledger row alone: (B)'s gate is not written
+    (tmp_path / "r97").mkdir()
+    (tmp_path / "r97" / "gate.json").write_text("{}")
+    ab._guard97m()
+    (tmp_path / "r97m").mkdir()
+    (tmp_path / "r97m" / "gate.json").write_text("{}")
+    with pytest.raises(SystemExit, match="once"):
+        ab._guard97m()
+
+
+def test_r97_the_described_rows_of_a_book_add_up():
+    days = pd.date_range("2022-01-01", "2022-03-31", freq="D", tz="UTC")
+    f = pd.DataFrame({"t": pd.DatetimeIndex(["2022-01-05", "2022-01-20", "2022-02-03"], tz="UTC"), "side": -1.0, "size": 1.0, "why": ["cap", "left_fifth", "left_fifth"], "hold": [2016, 30, 50],
+                      "gross_bps": [30.0, -10.0, 40.0], "fee_bps": 10.0, "other_cost_bps": 6.0, "funding_bps": [-3.0, 0.0, 3.0], "mkt_bps": [5.0, -5.0, 0.0]})
+    f["net_bps"] = f["gross_bps"] - f["fee_bps"] - f["other_cost_bps"] + f["funding_bps"]
+    f["hedged_net_bps"] = f["net_bps"] - f["side"] * f["mkt_bps"]
+    parts, by_why, by_month = ab.book_rows(f, days, pd.Timestamp("2022-02-01", tz="UTC"))
+    p = parts.iloc[0]
+    assert p["trades"] == 3 and p["net_unhedged"] == pytest.approx(p["gross"] - p["fee"] - p["other_cost"] + p["funding"])
+    assert p["hedged_net_minus_4"] == pytest.approx(p["net_unhedged"] - p["market"] - 4.0)
+    assert dict(zip(by_why["why"], by_why["trades"])) == {"cap": 1, "left_fifth": 2} and list(by_month["month"]) == ["2022-01", "2022-02"] and int(by_month["trades"].sum()) == 3
