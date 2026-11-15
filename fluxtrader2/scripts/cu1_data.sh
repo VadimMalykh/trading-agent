@@ -22,7 +22,10 @@ df -h --output=avail . | tail -1
 step pre_spot     python -u -m ft2 predata spot
 step pre_coinbase python -u -m ft2 predata coinbase
 step pre_korea    python -u -m ft2 predata korea
-step pre_klines   python -u -m ft2 predata klines
+# 2026-11-15 09:37:56 UTC: pre_klines was killed for memory in its after-check, the slice already written whole (103,122,505 rows = the
+# 101,289,679 before + the 213 new month files'); the check alone resumes (a fresh VM would run `predata klines`, which now checks light).
+if [[ -e output/predata/klines.json && ! -e output/logs/pre_klines.done ]]; then step pre_klinescheck python -u -m ft2 predata klinescheck
+else step pre_klines python -u -m ft2 predata klines; fi
 echo "$(date -u +%H:%M:%S) md5 after:  $(md5sum $FILES | cut -c1-32 | tr '\n' ' ')"
 step pre_cover    python -u -m ft2 allgbm cover --folds PRE
 echo "$(date -u +%H:%M:%S) CU1_DATA_DONE"

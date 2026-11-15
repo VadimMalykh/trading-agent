@@ -47,3 +47,24 @@ def test_a_held_month_is_never_rewritten_and_a_missing_one_is_fetched_once(tmp_p
     pdx._months_once(raw, ["A-USD"], candles, {"idkey": "product"})                     # a second pass fetches nothing
     assert len(calls) == n
     assert pdx.SRC_MONTHS[0] == "2021-11" and pdx.SRC_MONTHS[-1] == "2023-03" and pdx.KL_MONTHS == ["2021-09", "2021-10"]
+
+
+def test_the_light_fingerprint_equals_the_old_one_with_and_without_an_extent(tmp_path, monkeypatch):
+    from ft2 import data, krlist
+    rng = np.random.default_rng(3)
+    parts = []
+    for i, n in enumerate(("AAAUSDT", "BBBUSDT", "CCCUSDT")):
+        ts = pd.date_range(pd.Timestamp("2022-01-01", tz="UTC") + pd.Timedelta(days=i), periods=500 + 100 * i, freq="5min")
+        parts.append(pd.DataFrame({"symbol": n, "open_time": ts, "close": rng.random(len(ts)) * 100, "volume": rng.random(len(ts)) * 1e6}))
+    d = pd.concat(parts, ignore_index=True)
+    d["symbol"] = d["symbol"].astype("category")
+    monkeypatch.setattr(data, "PROC", tmp_path)
+    d.to_parquet(tmp_path / f"{krlist.SLICE}.parquet", index=False)
+    a, b = krlist.fingerprint(), pdx.fingerprint_light()
+    pd.testing.assert_frame_equal(a, b, check_exact=True)
+    ext = a[a["symbol"] != "CCCUSDT"].copy()
+    ext["first"] = ext["first"] + pd.Timedelta(hours=3)                                                                             # an old extent inside the rows held now
+    a2, b2 = krlist.fingerprint(ext), pdx.fingerprint_light(ext)
+    pd.testing.assert_frame_equal(a2, b2, check_exact=True)
+    assert list(b2["symbol"]) == ["AAAUSDT", "BBBUSDT"] and int(b2["rows"].iloc[0]) == 500 - 36
+    assert krlist.fingerprint_check(ext.assign(rows=a2["rows"].to_numpy(), sum_close=a2["sum_close"].to_numpy(), sum_volume=a2["sum_volume"].to_numpy()), after_fn=pdx.fingerprint_light)["pass"]

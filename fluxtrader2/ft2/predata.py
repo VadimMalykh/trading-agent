@@ -4,6 +4,7 @@ Nothing here reads a label, a forecast or an IC: files are fetched, tables re-in
 to be back unchanged (a changed old row voids the step, exit 2). The names are the frozen `ft2/screen_members_pre.csv` (R23's list);
 the hourly sources are fetched only for the names their own FROZEN lists keep (no list is extended — R91's rule).
 
+klinescheck  the klines step's check alone (a resumed run; see the function).
 klines    the monthly 5m klines of KL_MONTHS (2021-09, 2021-10: the 12-week momentum's lookback before 2021-12-10 — the slice held
           these names from 2021-11) for every pre name; the archive slice re-ingested whole; R28's extent fingerprint, R78's row check.
 spot      Binance spot 1h klines of SRC_MONTHS for R68's kept names among the pre names; `spot.ingest`; the old rows identical.
@@ -57,20 +58,30 @@ def _zips(sym: str) -> set[str]:
     return {f.name for f in (data.EXT / "klines" / sym).glob(f"{sym}-5m-*.zip")}
 
 
-def klines() -> dict:
+def fingerprint_light(extent: pd.DataFrame | None = None) -> pd.DataFrame:
+    """`krlist.fingerprint` without its string copy of the symbol column and its merge (on the 103M-row slice of 2026-11-15 they were killed
+    for memory on 32 GB AFTER the slice was written): the symbol stays a category, the old extent is applied through the category codes.
+    The same rows in the same order per name, so the sums are the same numbers."""
+    d = pd.read_parquet(data.PROC / f"{krlist.SLICE}.parquet", columns=["symbol", "open_time", "close", "volume"])
+    if not isinstance(d["symbol"].dtype, pd.CategoricalDtype):
+        d["symbol"] = d["symbol"].astype("category")
+    d["open_time"] = krlist._utc(d["open_time"])
+    if extent is not None:
+        e = extent.set_index(extent["symbol"].astype(str))
+        cats = d["symbol"].cat.categories.astype(str)
+        f, l = pd.DatetimeIndex(krlist._utc(e["first"]).reindex(cats)), pd.DatetimeIndex(krlist._utc(e["last"]).reindex(cats))
+        codes, t = d["symbol"].cat.codes.to_numpy(), pd.DatetimeIndex(d["open_time"]).asi8
+        keep = (~f.isna())[codes] & (t >= f.asi8[codes]) & (t <= l.asi8[codes])
+        d = d[keep]
+    g = d.groupby("symbol", observed=True)
+    out = g.agg(rows=("open_time", "size"), first=("open_time", "min"), last=("open_time", "max"), sum_close=("close", "sum"), sum_volume=("volume", "sum")).reset_index()
+    out["symbol"] = out["symbol"].astype(str)
+    return out
+
+
+def _klines_check(rep: dict, fp: pd.DataFrame, new_files: dict) -> dict:
     N = names()
-    OUT.mkdir(parents=True, exist_ok=True)
-    fp = krlist.fingerprint()
-    fp.to_csv(OUT / "fingerprint_before.csv", index=False)
-    before = {s: _zips(s) for s in N}
-    rep = {"names": len(N), "months": [KL_MONTHS[0], KL_MONTHS[-1]], "names_fingerprinted": int(len(fp))}
-    rep["fetch"] = {s: archive.fetch_monthly("klines", s, sub="5m", months=list(KL_MONTHS)) for s in N}
-    rep["fetch_totals"] = {k: int(sum(v[k] for v in rep["fetch"].values())) for k in ("ok", "skip", "bad", "err", "missing")}
-    new_files = {s: sorted(_zips(s) - before[s]) for s in N}
-    rep["new_files"] = int(sum(len(v) for v in new_files.values()))
-    _write("klines", rep)
-    rep["ingest"] = {k: str(v) for k, v in data.ingest_klines(krlist.ingest_symbols(N)).items()}
-    chk = krlist.fingerprint_check(fp, after_fn=krlist.fingerprint)
+    chk = krlist.fingerprint_check(fp, after_fn=fingerprint_light)
     rep["fingerprint"] = {"pass": chk["pass"], "changed": [c["symbol"] for c in chk["changed"]], "names_before": chk["names_before"], "names_after": chk["names_after"]}
     rows = [krlist.rowcheck(c["symbol"], set(new_files.get(c["symbol"], []))) for c in chk["changed"] if c["why"] == "changed"]
     rep["rowcheck"] = rows
@@ -86,6 +97,41 @@ def klines() -> dict:
     if not rep["pass"]:
         raise SystemExit(2)
     return rep
+
+
+def klines() -> dict:
+    N = names()
+    OUT.mkdir(parents=True, exist_ok=True)
+    fp = fingerprint_light()
+    fp.to_csv(OUT / "fingerprint_before.csv", index=False)
+    before = {s: _zips(s) for s in N}
+    rep = {"names": len(N), "months": [KL_MONTHS[0], KL_MONTHS[-1]], "names_fingerprinted": int(len(fp))}
+    rep["fetch"] = {s: archive.fetch_monthly("klines", s, sub="5m", months=list(KL_MONTHS)) for s in N}
+    rep["fetch_totals"] = {k: int(sum(v[k] for v in rep["fetch"].values())) for k in ("ok", "skip", "bad", "err", "missing")}
+    new_files = {s: sorted(_zips(s) - before[s]) for s in N}
+    rep["new_files"] = int(sum(len(v) for v in new_files.values()))
+    _write("klines", rep)
+    rep["ingest"] = {k: str(v) for k, v in data.ingest_klines(krlist.ingest_symbols(N)).items()}
+    return _klines_check(rep, fp, new_files)
+
+
+def klinescheck() -> dict:
+    """The check alone, after a `klines` run whose fetch and ingest finished and whose check was killed (2026-11-15: the slice written 09:37,
+    the process killed for memory in the old fingerprint 09:37:56). It needs the saved report with no file skipped (every KL_MONTHS zip a
+    name holds was fetched by that run) and the fingerprint taken before; the slice's row count must equal the old rows plus the new files'."""
+    rep = json.loads((OUT / "klines.json").read_text())
+    if "pass" in rep or rep["fetch_totals"]["skip"] != 0 or rep["fetch_totals"]["bad"] != 0 or rep["fetch_totals"]["err"] != 0:
+        raise SystemExit("klinescheck: the saved report is not a fetch with every file new and the check missing")
+    fp = pd.read_csv(OUT / "fingerprint_before.csv")
+    want = {f"-5m-{m}.zip" for m in KL_MONTHS}
+    new_files = {s: sorted(f for f in _zips(s) if f[len(s):] in want) for s in names()}
+    if sum(len(v) for v in new_files.values()) != rep["new_files"]:
+        raise SystemExit("klinescheck: the new files on disk are not the saved report's count")
+    rep["resumed"] = "the check alone: the first run was killed for memory after the slice was written"
+    import pyarrow.parquet as pq
+    rep["slice_rows"] = int(pq.ParquetFile(data.PROC / f"{krlist.SLICE}.parquet").metadata.num_rows)
+    rep["rows_before"] = int(fp["rows"].sum())
+    return _klines_check(rep, fp, new_files)
 
 
 def spot() -> dict:
@@ -186,4 +232,4 @@ def korea(venue: str = "bithumb") -> dict:
 
 
 def main(action: str) -> None:
-    {"klines": klines, "spot": spot, "coinbase": coinbase, "korea": korea}[action]()
+    {"klines": klines, "klinescheck": klinescheck, "spot": spot, "coinbase": coinbase, "korea": korea}[action]()

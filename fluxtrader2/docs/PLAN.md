@@ -16420,6 +16420,91 @@ Installed:     2026-11-13 13:43 UTC on the serve host by `vm.sh serve-install` (
                this block's commit with planted tests; no price read. The first usable file is due 2026-11-14; the first t0 of the
                span is 2026-11-16.
 
+### R97 — the frozen TREES read BACKWARD, once, on the screener's members BEFORE F1 (2021-12-10 → 2023-04-23): the forecast's IC, then R91's held-short rule in money as a taker and by R93's maker execution — every choice frozen by an earlier registration (registered 2026-11-15 on Vadim's "CU1 + CU2" (P8 decision CU), after the pre-history Data line and a features-only cover check — no forecast, no IC, no label statistic of these months computed before this block was committed)
+Question:      The frozen tree model (R89: fitted once on 2023-05 → 2024-08, confirmed at the taker bar on 2026's coins) has its money
+               answer registered on F6 for 2027-03-18 (R91 the taker, R93 the maker). One sample in hand has never been read by any
+               all-inputs model: the screener's members before F1. In plain words: take the model's FILE and the trading rule's CODE
+               exactly as they stand, and ask on the 2022 bear market and the 2023-Q1 rebound — coins and days no fit ever saw —
+               (A) does the model still rank tomorrow's winners among the sixty members, and (B, C) does selling its least-liked
+               coins and holding them while they stay in the tail pay after costs, crossing the spread or resting?
+Hindsight:     stated: the model (R87's recipe, R88's fit, R89's file) and the rule (R91's, written from what R90 showed on F5) were
+               chosen on F1 … F5 — these months can test them because nothing of F1 … F5 chose anything FROM these months. The read
+               is BACKWARD: the fit's cells (2023-05 → 2024-08) lie AFTER the scored days. Nothing of the scored days leaks into the
+               fit (every input is causal and a rank among the bar's members; the label is not an input; the name is not an input),
+               so it is an honest test of "does this ranking hold on unseen coins and days"; it is NOT a simulation of what could
+               have been traded in 2022, and 102 of the 141 names are coins whose LATER days the model was fitted on (the 39 never
+               fitted are a registered row). This registration makes no choice of its own: no parameter, input, label, horizon,
+               tenth, hold, floor or bar is new.
+Cells:         `ft2/screen_members_pre.csv` (md5 901782ce7a03fa4970c1dd471f31fd6b; frozen 2026-09-29 for R23 by the screener's
+               unchanged rule): 141 names, 1,020 rows, 17 blocks of 60, the block starts 2021-12-10 → 2023-04-04. On the hourly grid
+               while a member, the scored bars R23's own days 2021-12-10 00:00 → 2023-04-23 23:00 UTC (`allgbm.PRE_SPAN`; 12,000 hours,
+               500 days): 714,084 scorable cells by the cover check (of 720,000 member hours; sixty names in every block; a full block 43,200, the last 28,800; short of full: 2022-01-09 42,771, 2022-02-08 39,567, 2022-05-09 42,373, 2022-06-08 42,187, 2023-01-04 43,186 — `cover_blocks.csv`). The market
+               `backtest.market(names, 2023-05-01, 2021-09-01)` — it ends at F1's first instant; the last label ends 2023-04-25.
+               Read before of these names and months: the open-interest score at a SEVEN-day hold (R23, R24 — §7's row). No one-day
+               label against the peers and no model's forecast.
+Data:          decision CU1's line, 2026-11-15 07:40 → 10:18 UTC on the work VM (`scripts/cu1_data.sh`, `ft2/predata.py`; `output/predata/*.json`), no
+               label read: the spot hours of 2021-11 → 2023-03 for R68's kept names among the 141 (104 with early rows), Coinbase's for R62's
+               (60 products with early rows), Bithumb's for R64's (34 markets with early rows), each table's old rows back identical; the 5m
+               klines of 2021-09 / 2021-10 (213 month files; 69 absent — the name not listed yet), the slice re-ingested whole
+               (103,122,505 rows = 101,289,679 + the new files'), all 659 names' old extents identical. Said: the klines step's first
+               after-check was killed for memory at 09:37:56 AFTER the slice was written whole; the check alone was rerun with a light
+               fingerprint (`predata klinescheck`, a planted test that it equals the old one) and passed 10:12.
+Label:         R87's, unchanged (1d against the member cells present, in the name's own sigmas, clipped ±5).
+Features:      R89's 33, the same names in the same order. Their cover on these cells (`output/allgbm/cover_pre/cover.csv`,
+               2026-11-15 10:18 UTC, features only): the candle features 99.8–100 % (`mom_12w` 96.4 %, 131 names); funding 98.3 %; the open-interest three 98.8–98.9 %; `global_ls` 95.1 %, its change 94.8 %; `taker_1d` 73.6 %; `top_ls` and `top_vs_global` 35.9 %; the Coinbase two 51.3 % (58 names); `krprem_dev` 34.1 % (34 names); the spot two 82.9–83.0 % and the trade-mix two 82.9 % (104 names); `wiki_dev` 26.4 % (24 names). The hourly sources enter on the names their FROZEN lists keep
+               (R62 / R64 / R68 and the strict articles — lists made on F1–F4's 310 names; 105 of the 141 are among them); no list
+               is extended. ONE feature has no cell: `hl_gap24_dev` (Hyperliquid's hourly history begins 2023-05) — the trees route an absent value (as on the F1+F2 cells that lacked it); a feature WITHOUT a
+               cell is allowed only if it is named in this line.
+Model:         the FILE `ft2/r89_model.txt` (md5 816b994c136fda82eb36ceca88580d36 — R89's `model.txt`, committed 2026-11-11), loaded
+               with `lightgbm.Booster(model_file=…)`. Nothing is fitted in this read; F1+F2 is not rebuilt.
+Statistic:     (A) R87's: the pooled IC of the forecast with the label re-centred on the cells that have a forecast at the bar, HAC
+               by day. (B) R91's: the mean per trade of (hedged net − 4 bps) of `allbook.positions` on the saved forecast — the lowest
+               tenth sold when it enters, held while in the lowest fifth, the 7-day cap, the funding floors −10 / −30 bps a day —
+               priced as a taker with the names' own `cost_daily_wide` rows and funding on the value (`backtest.price`), day-clustered
+               HAC with the cap's lags. (C) R93's: (B)'s positions unchanged, every leg a resting order by R92's method on the
+               archive's own trades of that name-day, the fill rule VOLUME-BEYOND; the same statistic.
+Gate:          validity PASS, then THREE sentences, none conditional on another:
+               (A) the forecast — CONFIRMED AT THE TAKER BAR if t ≥ 1.645 AND IC ≥ 0.0214 AND IC > 0 in each part (the days in FP:
+               2021-12-10 → 2022-08-17; the days in F0: 2022-08-18 → 2023-04-23); CONFIRMED if t ≥ 1.645 AND IC ≥ 0.0059 AND both
+               parts > 0; otherwise NOT CONFIRMED (CLOSED beside it if IC + 1.96 se < 0.0059).
+               (B) the taker's money — R91's words: CLEARS if the mean > 0 AND t ≥ 1.645 AND the mean > 0 in each part (the same
+               two); FAILS if mean + 1.96 se < 0; otherwise NOT DETECTABLE.
+               (C) the maker's money — the same words on the VOLUME-BEYOND fills.
+               What each licenses: NOTHING to trade and nothing on F1 … F5. R91 and R93 stand unchanged whatever is read here (their
+               blocks, code and gates are not touched; F6 is not read). A confirmed (A) makes the forecast a fact of three samples
+               outside its fit; a NOT CONFIRMED (A) says the lean is 2024–26's and is written into §7's row. (B) / (C) say what to
+               expect of R91 / R93 and nothing more. The pre-history's members are SPENT for the all-inputs forecast and for this
+               rule: no other model, input set, label, horizon, tenth, hold, floor, cell set or statistic on these cells.
+Described:     deciding nothing: (a) the 39 names that were never F1+F2 members (186 rows) and the 102 that were, `ic_cells`; (b) the
+               member rows under 180 days old at the block (the list's `age_days`) against the older; (c) by month; the per-bar rank
+               IC; the tenths before costs; (d) for (B): the exits by clause, the hold, gross / fee / other cost / funding, the net
+               unhedged, by month; for (C): the fill shares, the four fill rules beside, R93's rows.
+Validity:      read first, or that sentence is void (exit 2 before its number): (0) `backtest._guard(["FP", "F0"], "R97")`; the
+               list's md5; the model file's md5; (1) the build's feature names without `DROP88` equal R89's 33 in order; (2) the
+               features without a cell are exactly those named in the Features line; (3) the candle features causal (the midpoint
+               check, 0.0); (4) 141 names with bars, 17 blocks, the scorable cells equal the cover check's 714,084; (5) the
+               first scored bar 2021-12-10 00:00 and the last 2023-04-23 23:00, the market's last bar before 2023-05-01. For (B),
+               `allbook.forward`'s own: ≥ 95 % of the positions priced, no overlapping positions, every entry after its decision,
+               every exit by a named clause. For (C), R93's: R91-form validity PASS on (B), the name-days' files ≥ 99 %, the clock
+               ≥ 99 %, the arithmetic to 1e-6, both legs simulated on ≥ 95 % of the positions — a void (C) (the archive lacking
+               2022 trade files) leaves (A) and (B) standing and is said so. The read is logged in `confirmation_reads.csv` under
+               (R97, FP) and (R97, F0) once (A)'s number exists.
+Commands:      on the work VM — `scripts/r97_chain.sh` (done-markers, the poweroff wrapper):
+                 `ft2 allgbm confirmpre`            → output/allgbm/r97/ (read.md, forecast.parquet, validity.json) and output/allbook/r97/ ((B): fills, gate.json)
+                 `ft2 allbook tapefetch --name r97` → data/r97_tape/ (the legs' fates per name-day; the zips deleted)
+                 `ft2 allbook tape --name r97`      → output/allbook/r97m/ ((C): read.md, gate.json, rows.csv)
+Folds read:    the pre-history (FP and F0's days from 2021-12-10), of the screener's members, once. No bar from 2023-05-01 on.
+Power:         (A) R87 read se 0.0057 on 454 days of sixty names; 500 days here → se ≈ 0.0055, MDE ≈ 0.015: the taker bar 0.0214
+               is 3.9 se, CLOSED is reachable. (B) / (C): the rule trades a few times a name a month; se 60 … 120 bps a trade expected
+               (decision CR's figure) — a sign and a size class, not a verdict, as F6's will be.
+Expectation:   written before the run. Validity PASS for (A) and (B); (C) void one time in four (missing 2022 trade files). (A): the
+               IC between +0.005 and +0.025 — older coins (10 % of the rows under 180 days against F3+F4's 22 %), a falling market,
+               one input absent and four under 40 % cover (the top traders' two, Korea, Wikipedia); CONFIRMED AT THE TAKER BAR one in four, CONFIRMED under it one in three, NOT CONFIRMED four in ten
+               (CLOSED one in ten of all). The 39 never-fitted names not below the others. (B): NOT DETECTABLE two times in three,
+               FAILS one in five, CLEARS one in eight; the mean between −60 and +60; the funding a short pays smaller than F5's −32
+               (2022's funding was flat to negative: the floor skips more entries). (C): above (B) by 15 … 35 bps a trade.
+Result:        —
+
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
 Ranked by what it unlocks. Indicators are *not* on this list: anything computed from candles is
