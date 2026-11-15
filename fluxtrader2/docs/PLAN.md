@@ -16559,6 +16559,55 @@ Result:        **READ 2026-11-15 15:09 → 16:19 UTC on the work VM (`scripts/r9
                the rule's turnover against two crossings, not the model. The pre-history's members are SPENT for the all-inputs forecast
                and for this rule.
 
+### R98 — the REFIT challenger for F6: the same trees (R87's parameters, R89's 33 inputs) fitted ONCE on every member cell of F1 … F5, the file frozen by md5 — R91's rule and R93's execution on ITS forecast, read in R91's session after R91 and R93 (registered 2026-11-15 on Vadim's "CU1 + CU2" (P8 decision CU), after R97's read and BEFORE the fit; no bar at or after 2026-09-15 is read by the fit)
+Question:      R91 / R93 will say on 2027-03-18 whether a model fitted on 2023-05 → 2024-08 pays on F6 through the registered rule. In
+               plain words: would the SAME model, fitted on everything in hand up to F6 (three and a third years instead of sixteen
+               months, 2026's coins included), have done better or worse through the same rule on the same days? The one change is the
+               training window; a difference at the read means "more and newer data" and nothing else.
+Hindsight:     stated: R97 (read today) showed the frozen forecast holding on 2022 and R91's rule losing on turnover (−9.0 bps a trade
+               as a taker). This registration does NOT change the rule — it is CU2 as decided before that read; a slower rule is
+               decision CV's, a separate registration. The recipe was chosen on F1+F2 (R87) and confirmed on F3+F4 (R88, described) and
+               F5 (R89): fitting on F3 … F5 uses up nothing that a later read needs — those folds are spent for this model family.
+Fit:           `ft2 allgbm refit`, ONCE, on the work VM: `allgbm.build` three times exactly as the earlier reads built them — F1+F2's
+               members (`screen_members.csv`, the default market), F3+F4's (`screen_members_f34.csv`, the market from 2024-03-01, the
+               hourly grids from 2024-06-01), F5's COIN members (`screen_members_f5_coins.csv`, the market from 2025-07-01, the grids
+               from 2025-10-01, the market ending 2026-09-15) — the usable cells (a member, a positive sigma, a label) whose label ends
+               before 2026-09-15 00:00 UTC, stacked; the label and the ranks each build's own (R87's label; the features percentile
+               ranks among the bar's members); the columns R89's 33 in order; `lightgbm.LGBMRegressor(**allgbm.PARAMS)`, no tuning, no
+               early stopping, no weight. An input absent on a fold's cells stays absent (the trees route it). NO statistic of the fit
+               is computed or printed — no in-sample IC, no importance table: the file and the cell counts only. The fit is logged in
+               `confirmation_reads.csv` as (R98, F3), (R98, F4), (R98, F5) — a second fit is refused by the guard.
+Model:         the FILE `output/allgbm/r98/model.txt`, copied to `ft2/r98_model.txt` and committed with its md5 written in the Fitted
+               line below. From then on the file is the model.
+Fold / Cells:  R91's, unchanged: F6 = 2026-09-17 → 2027-03-16, `ft2/screen_members_f6_coins.csv` as R91's session freezes it.
+Forecast:      R91's Forecast line with this file in place of R89's — the same build, the same inputs, the same validity on cover.
+Rule, Pricing, Statistic: R91's (`allbook.positions`, `backtest.price` as a taker, hedged net − 4) and R93's (VOLUME-BEYOND resting legs on
+               the archive's trades, `data/r98_tape/`), unchanged, on this model's forecast.
+Gate:          validity PASS, then two sentences in R91's words, neither conditional on the other: (B′) the taker — CLEARS / FAILS / NOT
+               DETECTABLE by `verdict91` (the halves the first and last 90 days); (C′) the maker, VOLUME-BEYOND — the same.
+               What it licenses: NOTHING to trade by itself. Two models through one rule on one fold are two tries: a CLEARS here
+               beside a R91 that does not clear names this file as the model of the NEXT forward span, registered then; a CLEARS of
+               both makes the refit the model the paper book would carry (Vadim's decision, R91's license). R91 and R93 are read
+               first and are not touched by anything read here.
+Described:     deciding nothing: (a) R89's statistic for BOTH files on F6's coin cells, and the paired difference of the daily ICs
+               (mean, HAC se); (b) the paired difference of the two books' daily hedged net; the share of positions the two books
+               share; (c) R91's described rows for this book (the parts, the hold, the exits by clause, by month).
+Validity:      at the fit (or no file is frozen): the three member lists' md5 as their registrations wrote them; each build's
+               feature names without `DROP88` equal R89's 33 in order; F1+F2's usable cells with a label ending before F3 equal R88's
+               695,140; F5's scorable coin cells equal R89's 298,291; no training cell with a label ending at or after 2026-09-15;
+               the candle features causal on each build (0.0). At the read: `allbook._guard98` — the `### R98 ` block, F6's last bar
+               passed, (R91, F6) AND (R93, F6) in the ledger, (R98, F6) not; the model file's md5 equal to the Fitted line; then
+               R91's validity (2)–(4) on this forecast and R93's on its legs.
+Power:         R91's (weak, said there). The paired rows are tighter than either book alone and still describe.
+Expectation:   written before the fit. The fit: ≈ 2.0–2.4 million cells (F1+F2 ≈ 0.70, F3+F4 ≈ 1.0, F5 ≈ 0.30). At the read: the two
+               forecasts correlated 0.6–0.8 a bar; the refit's IC on F6 above the frozen file's by 0.000 … +0.010; the two books
+               sharing half their positions; the same sentence as R91 three times in four.
+When:          the fit now. The read ONCE, on or after 2027-03-18, in R91's session, after R91's and R93's ledger rows.
+Code:          written after this block's commit: `allgbm.refit` (the fit, its validity, the ledger rows), `allbook._guard98`, the CLI,
+               planted tests. Named, written at the read: R91's session code with the model file as a parameter.
+Fitted:        —
+Result:        —
+
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
 
 Ranked by what it unlocks. Indicators are *not* on this list: anything computed from candles is
