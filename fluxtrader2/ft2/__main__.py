@@ -284,6 +284,11 @@ def cmd_f5data(args):
     f5data.main(args.action)
 
 
+def cmd_predata(args):
+    from . import predata
+    predata.main(args.action)
+
+
 def cmd_allgbm(args):
     from . import allgbm
     if args.action == "cover":                                # the features' cover on F3+F4's members — no forecast, no IC (before a registration on them)
@@ -295,8 +300,13 @@ def cmd_allgbm(args):
             name = args.name or ("cover_f5_coins" if args.coins else "cover_f5")
             allgbm.cover(name, F5_COINS_CSV if args.coins else F5_MEMBERS_CSV, ("F5",), folds.bounds("F5")[1], allgbm.F5_START, allgbm.F5_GRIDS)
             return print(f"wrote {allgbm.OUT / name}/")
+        if args.folds == ["PRE"]:                             # decision CU1: the features-only cover of the members before F1 (R23's frozen list), before R97 is written
+            from .universe import PRE_END, PRE_MEMBERS_CSV
+            name = args.name or "cover_pre"
+            allgbm.cover(name, PRE_MEMBERS_CSV, (), PRE_END, allgbm.PRE_START, allgbm.PRE_GRIDS, span=allgbm.PRE_SPAN)
+            return print(f"wrote {allgbm.OUT / name}/")
         if args.folds not in (None, ["F3", "F4"]):
-            raise SystemExit("allgbm cover: --folds F3 F4 (default) or F5")
+            raise SystemExit("allgbm cover: --folds F3 F4 (default), F5 or PRE")
         allgbm.cover(args.name or "cover_f34", F34_MEMBERS_CSV, ("F3", "F4"), folds.bounds("F4")[1], pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-06-01", tz="UTC"))
         return print(f"wrote {allgbm.OUT / (args.name or 'cover_f34')}/")
     if args.action == "confirm5":                             # R89: the frozen trees (R88's described fit), scored once on F5's coin members (guarded)
@@ -611,6 +621,9 @@ def main(argv=None):
     fd = sub.add_parser("f5data", help="decision CO1: the Data line for F5's members (ft2/screen_members_f5.csv) — 5m klines, funding, metrics, the hourly trade "
                                        "mix; every old row checked; no label, no forecast → output/f5data/ (see ft2/f5data.py)")
     fd.add_argument("action", choices=["klines", "funding", "metrics", "mix"])
+    pdt = sub.add_parser("predata", help="decision CU1: the Data line for the members before F1 (ft2/screen_members_pre.csv) — 5m klines of 2021-09/10, the spot, Coinbase and "
+                                         "Bithumb hours of 2021-11 → 2023-03 for the frozen lists' names; every old row checked; no label → output/predata/ (see ft2/predata.py)")
+    pdt.add_argument("action", choices=["klines", "spot", "coinbase", "korea"])
     ab = sub.add_parser("allbook", help="P8 (R90): R89's saved forecast as an hourly long-top-tenth / short-bottom-tenth book of F5's coins, priced with the names' own costs → output/allbook/r90/read.md (see ft2/allbook.py)")
     ab.add_argument("action", choices=["run", "tapefetch", "tape"], help="run: R90; tapefetch / tape: R92 — the maker at the trade level on R90's positions (the VM's fetch-and-simulate, then the read); with --name r93: R93 — the maker execution of R91's positions on F6 (once, after R91's read)")
     ab.add_argument("--name", help="output directory under output/allbook/ (default r90)")
@@ -761,7 +774,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "allgbm": cmd_allgbm, "f5data": cmd_f5data, "allbook": cmd_allbook, "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "allgbm": cmd_allgbm, "f5data": cmd_f5data, "predata": cmd_predata, "allbook": cmd_allbook, "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":

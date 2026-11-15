@@ -219,10 +219,12 @@ def verdict(ic: float, se: float, t: float, folds_pos: bool) -> str:
 
 
 # ---- the run -------------------------------------------------------------------------------------------------------------------------
-def build(members: str | None, fold_names, sources: dict, end: pd.Timestamp | None = None, start: pd.Timestamp | None = None, grids_start: pd.Timestamp | None = None) -> dict:
+def build(members: str | None, fold_names, sources: dict, end: pd.Timestamp | None = None, start: pd.Timestamp | None = None, grids_start: pd.Timestamp | None = None,
+          span: tuple[pd.Timestamp, pd.Timestamp] | None = None) -> dict:
     """The cells of `fold_names` for the members of `members`: the market, the hourly grid, the member mask, the blocks, the label (z, its
     re-centred form), the ranked feature matrix (bar × name × feature) and each feature's cover. `end` / `start`: the market's span
-    (F1+F2's by default); `grids_start`: where the hourly sources' grids begin. No outcome is read by the features."""
+    (F1+F2's by default); `grids_start`: where the hourly sources' grids begin; `span` (R97): the scored bars are [span[0], span[1]) instead
+    of the folds' own masks (the pre-history's days are the frozen list's, not a fold's). No outcome is read by the features."""
     from . import forecast
     end = ceiling.END if end is None else end
     CTX.update(end=end, start=grids_start, members=members)
@@ -236,6 +238,8 @@ def build(members: str | None, fold_names, sources: dict, end: pd.Timestamp | No
     scored = np.zeros(len(idx), dtype=bool)
     for f_ in fold_names:
         scored |= folds.mask(t5, f_).to_numpy()
+    if span is not None:
+        scored = np.asarray((idx >= span[0]) & (idx < span[1]))
     grid = idx[scored & (idx.minute == 0) & (idx.second == 0)]
     day = (grid.floor("D") - grid[0].floor("D")).days.to_numpy()
     cell = audit.member_mask(mem, np.asarray(names), grid)
@@ -272,13 +276,17 @@ def build(members: str | None, fold_names, sources: dict, end: pd.Timestamp | No
             "scorable": scorable, "usable": usable, "X": X, "src_of": src_of, "cover": pd.DataFrame(cover), "fold_names": list(fold_names)}
 
 
-def cover(name: str, members: str | None, fold_names, end: pd.Timestamp, start: pd.Timestamp, grids_start: pd.Timestamp, sources: dict | None = None) -> pd.DataFrame:
+def cover(name: str, members: str | None, fold_names, end: pd.Timestamp, start: pd.Timestamp, grids_start: pd.Timestamp, sources: dict | None = None,
+          span: tuple[pd.Timestamp, pd.Timestamp] | None = None) -> pd.DataFrame:
     """The features' cover on the members' cells of `fold_names` — no forecast, no IC, no label statistic: the check made BEFORE a
     registration on those folds is written."""
     out = OUT / name
     out.mkdir(parents=True, exist_ok=True)
-    B = build(members, fold_names, SOURCES if sources is None else sources, end, start, grids_start)
+    B = build(members, fold_names, SOURCES if sources is None else sources, end, start, grids_start, span)
     B["cover"].to_csv(out / "cover.csv", index=False)
+    per_block = pd.DataFrame({"block": B["starts"][np.unique(B["block"])], "scorable_cells": [int(B["scorable"][B["block"] == b].sum()) for b in np.unique(B["block"])],
+                              "names": [int(B["scorable"][B["block"] == b].any(0).sum()) for b in np.unique(B["block"])]})
+    per_block.to_csv(out / "cover_blocks.csv", index=False)
     (out / "cover.json").write_text(json.dumps({"folds": list(fold_names), "names": len(B["names"]), "rows": int(len(B["grid"])), "scorable_cells": int(B["scorable"].sum()),
                                                 "first": str(B["grid"][0]), "last": str(B["grid"][-1]), "blocks": int(B["block"].max()) + 1}, indent=1))
     print(B["cover"].round(4).to_string(index=False), flush=True)
@@ -398,6 +406,14 @@ DROP88 = ("premium_1h", "premium_1d", "depth_imb_1", "depth_imb_1_dm")          
 T_ONE_SIDED = 1.645
 CONF_FOLDS = ("F3", "F4")
 CONF_START, CONF_GRIDS = pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-06-01", tz="UTC")
+
+
+# decision CU1 (2026-11-15): the screener's members BEFORE F1 (R23's frozen list). The market from 2021-09-01 (the 12-week momentum's lookback), the hourly
+# grids from 2021-11-01 (a trailing month before the first scored day), the scored bars R23's own days — the first whole day after the archive's open interest
+# has a week (2021-12-10) to the list's last day (2023-04-23, inclusive); the market ends at F1's first instant, so no bar of F1 is read.
+PRE_START, PRE_GRIDS = pd.Timestamp("2021-09-01", tz="UTC"), pd.Timestamp("2021-11-01", tz="UTC")
+PRE_SPAN = (pd.Timestamp(universe.PRE_DAYS[0], tz="UTC"), pd.Timestamp(universe.PRE_DAYS[1], tz="UTC") + pd.Timedelta(days=1))
+PRE_FOLDS = ("FP", "F0")
 
 
 F5_START, F5_GRIDS = pd.Timestamp("2025-07-01", tz="UTC"), pd.Timestamp("2025-10-01", tz="UTC")     # decision CO1: F5's market and hourly grids, six / three months before the fold as F3+F4's were
