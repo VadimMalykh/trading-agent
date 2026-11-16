@@ -151,6 +151,16 @@ def main(action: str, name: str | None = None) -> None:
         _guard97m()
         a, b, mid = pre_span()
         maker93("r97m", "R97", guard=False, book="r97", tape=Path("data/r97_tape"), start=a, end=b, mid=mid, where="the members before F1 (2021-12-10 → 2023-04-23)")
+    elif action == "daybook":
+        daybook()
+    elif action in ("tapefetch", "tape") and name in SECOND:
+        reg, book, mk, tape = SECOND[name]
+        g = _guard_second(reg, book, mk)
+        g(reg)
+        if action == "tapefetch":
+            tapefetch(fills=OUT / book / "fills.parquet", fills_md5=None, tape=tape, strict=False)
+        else:
+            maker93(mk, reg, guard=g, book=book, tape=tape)
     elif action == "tapefetch":
         if name == NAME93:
             _guard93(REG93)
@@ -192,11 +202,12 @@ def last_funding(F: dict, sym: str, t: pd.Timestamp) -> float:
     return float(r[p]) if p >= 0 else np.nan
 
 
-def positions(fc: pd.DataFrame, fund: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def positions(fc: pd.DataFrame, fund: pd.DataFrame, band: int = FIFTH, left: str = "left_fifth") -> tuple[pd.DataFrame, pd.DataFrame]:
     """R91's rule on a forecast table (t, symbol, f; hourly bars): the SHORT positions (one row each: the entry bar t, the hold in 5m
     bars, the exit's clause in `why`) and the entries the funding floor skipped. Per bar, in the registration's order: (1) exits —
     no forecast, funding below FUND_EXIT, held CAP_BARS, out of the lowest ⌊n / FIFTH⌋ (when n ≥ MIN_N); (2) entries — the lowest
-    ⌊n / TENTH⌋ without a position, unless the last funding is below FUND_ENTRY or absent. Positions open at the last bar close there."""
+    ⌊n / TENTH⌋ without a position, unless the last funding is below FUND_ENTRY or absent. Positions open at the last bar close there.
+    `band` / `left`: the hold band's divisor and its exit clause's name — R91's by default; R99 passes the tenth itself."""
     d = fc[["t", "symbol", "f"]].dropna().assign(symbol=lambda x: x["symbol"].astype(str)).sort_values(["t", "f", "symbol"], kind="mergesort")
     F = day_funding(fund)
     open_: dict[str, tuple[pd.Timestamp, float]] = {}
@@ -211,7 +222,7 @@ def positions(fc: pd.DataFrame, fund: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
         syms, fs = g["symbol"].tolist(), g["f"].tolist()
         n = len(syms)
         have = set(syms)
-        fifth = set(syms[:n // FIFTH]) if n >= MIN_N else None
+        fifth = set(syms[:n // band]) if n >= MIN_N else None
         for s in sorted(open_):
             fr = last_funding(F, s, t)
             if s not in have:
@@ -221,7 +232,7 @@ def positions(fc: pd.DataFrame, fund: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
             elif t - open_[s][0] >= cap:
                 close(s, t, "cap")
             elif fifth is not None and s not in fifth:
-                close(s, t, "left_fifth")
+                close(s, t, left)
         if n >= MIN_N:
             for s, f in zip(syms[:n // TENTH], fs[:n // TENTH]):
                 if s in open_:
@@ -270,14 +281,16 @@ def hedged_stats(fills: pd.DataFrame, days: pd.DatetimeIndex, mid: pd.Timestamp 
             "first_half": float(x[t < mid].mean()) if (t < mid).any() else np.nan, "last_half": float(x[t >= mid].mean()) if (t >= mid).any() else np.nan}
 
 
-def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91, guard: bool = True, start: pd.Timestamp = F6_START, end: pd.Timestamp = F6_END,
-            mid: pd.Timestamp | None = None) -> dict:
+def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91, guard=True, start: pd.Timestamp = F6_START, end: pd.Timestamp = F6_END,
+            mid: pd.Timestamp | None = None, rule=None, left: str = "left_fifth", check=None, strategy: str = "allbook short_held", params: dict | None = None) -> dict:
     """R91's read: the positions of the rule on the F6 forecast, priced as a taker with the names' own costs and funding, the hedged
     gate. Returns the gate's row; writes fills, the skipped entries, validity (3)–(4) and the verdict. The Data line, the member
-    lists, the cover and the described rows are the read session's (PLAN §8 R91, Code)."""
+    lists, the cover and the described rows are the read session's (PLAN §8 R91, Code). `guard`: True = R91's own, a callable = another
+    registration's (the ledger row is written either way), False = none and no row. `rule` (default `positions`), `left` (its band
+    clause's name) and `check(fc, dec) → dict with "ok"` (further validity, merged) are R99's parameters; the defaults are R91's read."""
     from . import data
     if guard:
-        _guard91(registration)
+        (guard if callable(guard) else _guard91)(registration)
     out = OUT / name
     out.mkdir(parents=True, exist_ok=True)
     fc = pd.read_parquet(forecast)
@@ -286,17 +299,19 @@ def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91,
     names = sorted(fc["symbol"].astype(str).unique())
     M = bt.market(names, end, start)
     fund = data.load("funding_archive", columns=["symbol", "ts", "rate", "interval_h"], symbols=names)
-    dec, skipped = positions(fc, fund[pd.to_datetime(fund["ts"], utc=True) < end])
+    dec, skipped = (rule or positions)(fc, fund[pd.to_datetime(fund["ts"], utc=True) < end])
     skipped.to_csv(out / "skipped.csv", index=False)
     C = bt.load_costs(M.index, M.columns, end, 1.0, close=M.close)
     fills = bt.price(dec, M, C, "taker", TAKER_BPS, MAKER_BPS).merge(dec[["why", "hold", "signal"]], left_on="id", right_index=True, how="left")
     priced = fills["net_bps"].notna()
     v = {"registration": registration, "span": [str(start), str(end)], "names": len(names), "positions": int(len(dec)), "priced_share": float(priced.mean()) if len(fills) else 0.0,
          "overlapping_positions": overlaps(fills[priced]), "entry_after_decision": bool((fills.loc[priced, "entry_t"] > fills.loc[priced, "t"]).all()),
-         "exits_by_clause": dec["why"].value_counts().to_dict(), "exits_unexplained": int((~dec["why"].isin(["no_forecast", "funding", "cap", "left_fifth", "span_end"])).sum()),
+         "exits_by_clause": dec["why"].value_counts().to_dict(), "exits_unexplained": int((~dec["why"].isin(["no_forecast", "funding", "cap", left, "span_end"])).sum()),
          "entries_skipped": skipped["why"].value_counts().to_dict(), "hold_bars_median": float(dec["hold"].median()) if len(dec) else np.nan,
          "share_at_the_cap": float((dec["why"] == "cap").mean()) if len(dec) else np.nan}
-    v["status"] = "PASS" if (v["priced_share"] >= 0.95 and v["overlapping_positions"] == 0 and v["entry_after_decision"] and v["exits_unexplained"] == 0) else "FAIL"
+    more = check(fc, dec) if check else {"ok": True}
+    v.update({k: x for k, x in more.items() if k != "ok"})
+    v["status"] = "PASS" if (v["priced_share"] >= 0.95 and v["overlapping_positions"] == 0 and v["entry_after_decision"] and v["exits_unexplained"] == 0 and more["ok"]) else "FAIL"
     (out / "validity_book.json").write_text(json.dumps(v, indent=1, default=str))
     if v["status"] != "PASS":
         print(f"validity FAIL — the read is void; wrote {out}/", flush=True)
@@ -308,8 +323,8 @@ def forward(forecast: Path | str, name: str = NAME91, registration: str = REG91,
     (out / "gate.json").write_text(json.dumps({**g, "validity": v}, indent=1, default=str))
     if guard:
         bt.READS.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": ["F6"], "strategy": "allbook short_held",
-                      "params": json.dumps({"fifth": FIFTH, "tenth": TENTH, "fund_entry": FUND_ENTRY, "fund_exit": FUND_EXIT, "cap_bars": CAP_BARS, "hedge_bps": HEDGE_BPS})}).to_csv(
+        pd.DataFrame({"read_at": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "registration": registration, "fold": ["F6"], "strategy": strategy,
+                      "params": json.dumps(params or {"fifth": FIFTH, "tenth": TENTH, "fund_entry": FUND_ENTRY, "fund_exit": FUND_EXIT, "cap_bars": CAP_BARS, "hedge_bps": HEDGE_BPS})}).to_csv(
             bt.READS, mode="a", header=not bt.READS.exists(), index=False)
     print(f"{registration}: {g['verdict']} — hedged net {g['mean']:+.1f} bps a trade (t {g['t']:+.2f}) on {g['trades']} positions; wrote {out}/", flush=True)
     return g
@@ -645,12 +660,12 @@ def maker_books(f: pd.DataFrame, L: pd.DataFrame, oe: np.ndarray, ox: np.ndarray
     return out
 
 
-def maker93(name: str = NAME93, registration: str = REG93, guard: bool = True, book: str = NAME91, tape: Path = TAPE93, start: pd.Timestamp = F6_START, end: pd.Timestamp = F6_END,
+def maker93(name: str = NAME93, registration: str = REG93, guard=True, book: str = NAME91, tape: Path = TAPE93, start: pd.Timestamp = F6_START, end: pd.Timestamp = F6_END,
             mid: pd.Timestamp | None = None, where: str = "F6") -> dict:
     """R93's read: validity, the gate (R91's form on the VOLUME-BEYOND fills), the ledger row, the rule rows. The other described rows
     (the bar-simulated maker, the leg table, the coins' split) are the read session's, from `legs.parquet` and the saved books."""
     if guard:
-        _guard93(registration)
+        (guard if callable(guard) else _guard93)(registration)                 # a callable: a second sentence's own guard (R98 C′, R99 E); the ledger row is written
     out = OUT / name
     out.mkdir(parents=True, exist_ok=True)
     fills91 = OUT / book / "fills.parquet"
@@ -713,7 +728,7 @@ def maker93(name: str = NAME93, registration: str = REG93, guard: bool = True, b
                       "params": json.dumps({"wait_min": 15, "rule": "volume_beyond", "r91_fills_md5": md5})}).to_csv(bt.READS, mode="a", header=not bt.READS.exists(), index=False)
     mth = pd.DatetimeIndex(books["vol"]["t"]).strftime("%Y-%m")
     by_month = pd.DataFrame([{"month": m, **hedged_stats(books["vol"][mth == m], days, mid)} for m in sorted(set(mth))])
-    md = [f"# {registration} — the maker execution of R91's rule on {where} (`ft2 allbook tape --name {name}`)\n", f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n",
+    md = [f"# {registration} — the maker execution of `{book}`'s positions on {where} (`ft2 allbook tape --name {name}`)\n", f"\n## Validity — read first: **{v['status']}**\n", "```\n", json.dumps(v, indent=1, default=str), "\n```\n",
           f"\n## The gate — **{g['verdict']}**: hedged net − {HEDGE_BPS:g} = {g['mean']:+.1f} bps a trade (se {g['se']:.1f}, t {g['t']:+.2f}; halves {g['first_half']:+.1f} / {g['last_half']:+.1f}) on {g['trades']} positions, VOLUME-BEYOND\n",
           tab.round(2).to_markdown(index=False), "\n", "\n## Described (decides nothing): VOLUME-BEYOND by month\n", by_month.round(2).to_markdown(index=False), "\n"]
     (out / "read.md").write_text("\n".join(md))
@@ -781,3 +796,74 @@ def _guard98(registration: str = REG98) -> None:
             raise SystemExit(f"{registration} is read after {REG91} and {REG93}: no ({first}, F6) row in {bt.READS}")
     if ((r["registration"] == registration) & (r["fold"] == "F6")).any():
         raise SystemExit(f"{registration} has already read F6 ({bt.READS}): a fold is read once per question")
+
+
+# ====================================================================================================================================
+# R99 (docs/PLAN.md §8, registered 2026-11-16 on "CV1"): the ONE-DAY short book on F6 — R91's function on the forecast's 00:00 UTC rows
+# with the hold band the tenth itself: sold at 00:05, kept while re-selected, the floors, the cap, the hedge and the gate's words R91's.
+# (D) the taker by `daybook`, (E) R93's maker on (D)'s positions. Written after the registration's commit, tested on planted bars only;
+# read once, in R91's session, after R91's and R93's ledger rows. The second sentences' guard serves R98's C′ as well.
+# ====================================================================================================================================
+REG99, NAME99, NAME99M = "R99", "r99", "r99m"
+TAPE99 = Path("data/r99_tape")
+MIN_DAYS99 = 170
+SECOND = {NAME98: (REG98, NAME98, NAME98M, TAPE98), NAME99: (REG99, NAME99, NAME99M, TAPE99)}     # --name → the registration, its taker book, its maker's folder, its tape
+
+
+def midnight(fc: pd.DataFrame) -> pd.DataFrame:
+    """The forecast's rows stamped 00:00 UTC — R99's decision bars."""
+    t = pd.DatetimeIndex(pd.to_datetime(fc["t"], utc=True))
+    return fc[(t == t.floor("D"))]
+
+
+def positions99(fc: pd.DataFrame, fund: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """R99's rule: R91's order of clauses at the 00:00 bars alone, held while in the lowest ⌊n / TENTH⌋ (a re-selected coin is kept)."""
+    return positions(midnight(fc), fund, band=TENTH, left="left_tenth")
+
+
+def check99(fc: pd.DataFrame, dec: pd.DataFrame) -> dict:
+    """R99's validity (1) and the whole-day holds of (2), with R91's validity beside (this read adds no build of its own)."""
+    m = midnight(fc.dropna(subset=["f"]))
+    n = m.groupby("t")["symbol"].nunique()
+    days = int((n >= MIN_N).sum())
+    t = pd.DatetimeIndex(dec["t"])
+    at_midnight = bool((t == t.floor("D")).all())
+    whole = bool((dec["hold"] % HOLD == 0).all())
+    p91 = OUT / NAME91 / "validity_book.json"
+    r91 = json.loads(p91.read_text()).get("status") if p91.exists() else None
+    return {"decision_days_n10": days, "decisions_at_midnight": at_midnight, "holds_whole_days": whole, "r91_validity": r91,
+            "ok": days >= MIN_DAYS99 and at_midnight and whole and r91 == "PASS"}
+
+
+def _guard99(registration: str = REG99) -> None:
+    _guard98(registration)                                                    # the block, F6 ended, R91's and R93's rows first, its own row absent
+
+
+def _guard_second(registration: str, book: str, name: str):
+    """The guard of a registration's SECOND sentence (the maker on its own taker book): the block, F6 ended, the taker's gate on disk
+    with its ledger row, the maker's gate not yet."""
+    def g(reg: str = registration) -> None:
+        import re
+        if not bt.PLAN.exists() or not re.search(rf"^### {reg} ", bt.PLAN.read_text(), flags=re.M):
+            raise SystemExit(f"no '### {reg} ' block in {bt.PLAN}: write the registration before the read")
+        if pd.Timestamp.now("UTC") < F6_END:
+            raise SystemExit(f"{reg} is read once, after F6's last bar ({F6_END:%Y-%m-%d}); a look is the read")
+        r = pd.read_csv(bt.READS) if bt.READS.exists() else pd.DataFrame(columns=["registration", "fold"])
+        if not ((r["registration"] == reg) & (r["fold"] == "F6")).any() or not (OUT / book / "gate.json").exists():
+            raise SystemExit(f"{reg}'s maker is read after its taker's gate: no ({reg}, F6) row or no {OUT / book / 'gate.json'}")
+        if (OUT / name / "gate.json").exists():
+            raise SystemExit(f"{reg}'s maker has been read ({OUT / name / 'gate.json'}): once")
+    return g
+
+
+def daybook(forecast: Path | str | None = None, forecast_md5: str | None = None) -> dict:
+    """R99 (D): the guard, the forecast R91's session saved (its md5 against the one R91's read wrote, when given), `forward` with the
+    00:00 rule. The described rows are the read session's."""
+    _guard99()
+    forecast = Path(forecast or "output/allgbm/r91/forecast.parquet")
+    md5 = hashlib.md5(forecast.read_bytes()).hexdigest()
+    if forecast_md5 is not None and md5 != forecast_md5:
+        print(f"validity FAIL — {forecast} md5 {md5} is not R91's {forecast_md5}; the read is void", flush=True)
+        raise SystemExit(2)
+    return forward(forecast, NAME99, REG99, guard=_guard99, rule=positions99, left="left_tenth", check=check99, strategy="allbook short_daily",
+                   params={"tenth": TENTH, "band": TENTH, "hour_utc": 0, "fund_entry": FUND_ENTRY, "fund_exit": FUND_EXIT, "cap_bars": CAP_BARS, "hedge_bps": HEDGE_BPS, "forecast_md5": md5})

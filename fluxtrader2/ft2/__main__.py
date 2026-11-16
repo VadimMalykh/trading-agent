@@ -631,7 +631,7 @@ def main(argv=None):
                                          "Bithumb hours of 2021-11 → 2023-03 for the frozen lists' names; every old row checked; no label → output/predata/ (see ft2/predata.py)")
     pdt.add_argument("action", choices=["klines", "klinescheck", "spot", "coinbase", "korea"])
     ab = sub.add_parser("allbook", help="P8 (R90): R89's saved forecast as an hourly long-top-tenth / short-bottom-tenth book of F5's coins, priced with the names' own costs → output/allbook/r90/read.md (see ft2/allbook.py)")
-    ab.add_argument("action", choices=["run", "tapefetch", "tape"], help="run: R90; tapefetch / tape: R92 — the maker at the trade level on R90's positions (the VM's fetch-and-simulate, then the read); with --name r93: R93 — the maker execution of R91's positions on F6 (once, after R91's read)")
+    ab.add_argument("action", choices=["run", "tapefetch", "tape", "daybook"], help="run: R90; tapefetch / tape: R92 — the maker at the trade level on R90's positions (the VM's fetch-and-simulate, then the read); with --name r93: R93 — the maker execution of R91's positions on F6 (once, after R91's read); with --name r98 / r99: that registration's maker sentence on its own taker book; daybook: R99 (D) — the one-day short book on F6 (once, after R91's and R93's rows)")
     ab.add_argument("--name", help="output directory under output/allbook/ (default r90)")
     hz = sub.add_parser("horizon", help="P8 (R22): the longer hold — what a signal's top tenth earns against its bottom tenth over 3 and 7 days, on the cells of a "
                                         "`transferbook` run → output/horizon/<run>/horizon.md (see ft2/horizon.py)")

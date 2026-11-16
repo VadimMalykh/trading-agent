@@ -271,3 +271,89 @@ def test_r98_the_guard_needs_r91s_and_r93s_rows_first(tmp_path, monkeypatch):
     row("R98").to_csv(tmp_path / "reads.csv", mode="a", header=False, index=False)
     with pytest.raises(SystemExit, match="already read F6"):
         ab._guard98()
+
+
+# ---- R99: the one-day short book ----------------------------------------------------------------------------------------------------------
+def _planted_days():
+    """Twenty coins, ten days of hourly bars; the forecast = the coin's number except where a scenario moves it. The tenth is two coins."""
+    t = pd.date_range("2026-10-01", periods=10 * 24 + 1, freq="h", tz="UTC")
+    f = np.tile(np.arange(20, dtype=float), (len(t), 1))
+    f[30:40, 7] = -9.0                                    # coin 7: the lowest for ten hours INSIDE day 1 — never at a 00:00 bar
+    f[48:, 4] = -5.0                                      # coin 4: the lowest from day 2's 00:00 on
+    f[72:, 1] = 12.0                                      # coin 1: out of the tenth from day 3's 00:00 (coin 0 and coin 4 are the two)
+    fc = pd.DataFrame({"t": np.repeat(t, 20), "symbol": np.tile([f"C{j:02d}USDT" for j in range(20)], len(t)), "f": f.ravel()})
+    ev = pd.date_range("2026-09-30", periods=40, freq="8h", tz="UTC")
+    fund = pd.DataFrame({"symbol": np.repeat([f"C{j:02d}USDT" for j in range(20)], len(ev)), "ts": np.tile(ev, 20), "rate": 1e-4, "interval_h": 8})
+    fund.loc[(fund["symbol"] == "C04USDT") & (fund["ts"] >= t[5 * 24 - 8]), "rate"] = -40 / 3e4                  # coin 4: −40 bps a day, known at day 5's 00:00
+    return t, fc, fund
+
+
+def test_r99_the_constants_are_the_registrations():
+    assert ab.MIN_DAYS99 == 170 and ab.TAPE99 == ab.Path("data/r99_tape") and (ab.TENTH, ab.FUND_ENTRY, ab.FUND_EXIT, ab.CAP_BARS, ab.HEDGE_BPS, ab.HOLD) == (10, -10.0, -30.0, 2016, 4.0, 288)
+
+
+def test_r99_one_decision_a_day_the_reselected_coin_is_kept_and_the_tenth_is_the_band():
+    t, fc, fund = _planted_days()
+    dec, skipped = ab.positions99(fc, fund)
+    got = {(r.symbol, r.t, r.hold, r.why) for r in dec.itertuples()}
+    want = {("C00USDT", t[0], 7 * 288, "cap"),                                    # re-selected every midnight: ONE position, not seven — closed at the cap …
+            ("C00USDT", t[7 * 24], 3 * 288, "span_end"),                          # … re-entered at the same bar (R91's order), closed at the last 00:00 bar
+            ("C01USDT", t[0], 2 * 288, "left_tenth"),                             # in the tenth on days 0 and 1; coin 4 takes its place at day 2: third is NOT held (no fifth)
+            ("C04USDT", t[48], 3 * 288, "funding")}                               # entered at day 2's 00:00; the −40 a day is known at day 5's 00:00
+    assert got == want, got ^ want
+    assert "C07USDT" not in set(dec["symbol"])                                    # the lowest for ten hours inside a day: never decided on
+    assert (pd.DatetimeIndex(dec["t"]).hour == 0).all() and (dec["hold"] % 288 == 0).all() and (dec["side"] == -1).all()
+    assert set(skipped["symbol"]) == {"C04USDT"} and skipped["t"].min() == t[5 * 24]                             # coin 4 is not re-entered under the floor
+    assert len(ab.midnight(fc)) == 11 * 20
+    hourly, _ = ab.positions(fc, fund)                                             # R91's rule on the same table is another book: its defaults are untouched
+    assert "C07USDT" in set(hourly["symbol"]) and "left_fifth" in set(hourly["why"]) and "left_tenth" not in set(hourly["why"])
+
+
+def test_r99_validity_counts_the_decision_days_and_needs_r91s_pass(tmp_path, monkeypatch):
+    t, fc, fund = _planted_days()
+    dec, _ = ab.positions99(fc, fund)
+    monkeypatch.setattr(ab, "OUT", tmp_path)
+    monkeypatch.setattr(ab, "MIN_DAYS99", 11)
+    c = ab.check99(fc, dec)
+    assert c["decision_days_n10"] == 11 and c["decisions_at_midnight"] and c["holds_whole_days"] and c["r91_validity"] is None and not c["ok"]   # no R91 validity on disk
+    (tmp_path / "r91").mkdir()
+    (tmp_path / "r91" / "validity_book.json").write_text('{"status": "PASS"}')
+    assert ab.check99(fc, dec)["ok"]
+    monkeypatch.setattr(ab, "MIN_DAYS99", 12)
+    assert not ab.check99(fc, dec)["ok"]                                           # too few days with a 00:00 decision
+    monkeypatch.setattr(ab, "MIN_DAYS99", 11)
+    assert not ab.check99(fc, dec.assign(hold=dec["hold"] + 12))["ok"]             # a hold that is not whole days
+    assert (ab.REG99, ab.NAME99, ab.NAME99M) == ("R99", "r99", "r99m") and ab.SECOND["r99"][0] == "R99" and ab.SECOND["r98"][2] == "r98m"
+
+
+def test_r99_the_guards_r91_and_r93_first_and_the_maker_after_its_own_taker(tmp_path, monkeypatch):
+    plan = tmp_path / "PLAN.md"
+    plan.write_text("### R99 — planted\n")
+    monkeypatch.setattr(ab.bt, "PLAN", plan)
+    monkeypatch.setattr(ab.bt, "READS", tmp_path / "reads.csv")
+    monkeypatch.setattr(ab, "OUT", tmp_path)
+    row = lambda reg: pd.DataFrame({"read_at": ["x"], "registration": [reg], "fold": ["F6"], "strategy": ["s"], "params": ["{}"]})   # noqa: E731
+    if pd.Timestamp.now("UTC") < ab.F6_END:
+        with pytest.raises(SystemExit, match="a look is the read"):
+            ab._guard99()
+    monkeypatch.setattr(ab, "F6_END", pd.Timestamp("2020-01-01", tz="UTC"))
+    with pytest.raises(SystemExit, match="no \\(R91, F6\\)"):
+        ab._guard99()
+    row("R91").to_csv(tmp_path / "reads.csv", index=False)
+    row("R93").to_csv(tmp_path / "reads.csv", mode="a", header=False, index=False)
+    ab._guard99()
+    g = ab._guard_second("R99", "r99", "r99m")
+    with pytest.raises(SystemExit, match="after its taker's gate"):
+        g()                                                                        # (E) before (D): refused
+    row("R99").to_csv(tmp_path / "reads.csv", mode="a", header=False, index=False)
+    with pytest.raises(SystemExit, match="already read F6"):
+        ab._guard99()                                                              # (D) once
+    with pytest.raises(SystemExit, match="after its taker's gate"):
+        g()                                                                        # the ledger row without the gate's file: still refused
+    (tmp_path / "r99").mkdir()
+    (tmp_path / "r99" / "gate.json").write_text("{}")
+    g()
+    (tmp_path / "r99m").mkdir()
+    (tmp_path / "r99m" / "gate.json").write_text("{}")
+    with pytest.raises(SystemExit, match="has been read"):
+        g()                                                                        # (E) once
