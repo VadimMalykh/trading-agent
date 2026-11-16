@@ -1519,7 +1519,7 @@ D+1 19:45 UTC (two probes; the hour unmeasured — a UTC-morning probe owed). Th
 names 0.17 mean correlation, the first eigenvalue 0.21 — one modest common attention factor. The median article has 122 views a day; 12 under
 20. Nothing joined to a price. VM TERMINATED 21:39 UTC.**
 
-**Decision CV (2026-11-15) — what R97 leaves open. WRITTEN 2026-11-15 after R97's read — OPEN, Vadim's word. Nothing registered under it, nothing run.**
+**Decision CV (2026-11-15) — what R97 leaves open. WRITTEN 2026-11-15 after R97's read — DECIDED 2026-11-16 on Vadim's "CV1" (the recommendation): R99 REGISTERED in §8 before any code — the frozen forecast's lowest tenth sold at 00:00 UTC, held a day and kept while re-selected (the stated deviation from "held ONE day": no close-and-reopen at the same instant), R91's floors / cap / hedge / gate words, taker (D) and VOLUME-BEYOND maker (E), read in R91's session after R91 and R93; six gates on F6, so a CLEARS licenses nothing by itself (t ≥ 2.39 puts it before Vadim for a paper book). Nothing run.**
 
 - **The question in plain words.** The model's ranking has now held on three samples outside its fit (2024-25's members, 2026's coins, 2022's members) at a size above the taker bar. The one trading rule registered on it (R91: sell the lowest tenth, hold while in the lowest fifth) LOST on 2022 — as a taker −9.0 bps a trade, resting −11.4 — because it turns a position over every four hours and pays two crossings (18.5) for a gross of 19. On 2027-03-18 R91 / R93 will be read on F6 as written. Should a SLOWER use of the same forecast be registered for the same session, so that the session can also answer "does the forecast pay when held a day"?
 - **Known.** (i) R97's numbers (PLAN §8). (ii) The label is ONE day; the tenths before costs are +31.9 bps a leg a day on 2022 — a one-day hold of the lowest tenth earns that once for one pair of crossings, R91's four-hour holds earn 19 per pair. (iii) R90 / R92 priced a one-day long-short tenth book on F5: +10.6 bps a trade resting (t +0.75) — not shown to pay, not shown to lose; R91 was written from R90's rows on F5. (iv) The pre-history is SPENT for this forecast and rule: no hold, tenth or exit can be tried on it.
@@ -16614,6 +16614,98 @@ Fitted:        **2026-11-15 22:14 → 22:39 UTC on the work VM (`ft2 allgbm refi
                Said: the expectation wrote 2.0–2.4 million cells (F3+F4 ≈ 1.0); F3+F4 holds 0.69 — the count, not the fit, was
                misjudged. Said: the training matrix was passed as 32-bit floats (R89's fit passed 64-bit) — the ranks are the same
                numbers to seven digits; it is a difference of the fit's arithmetic, not of the recipe, and is fixed in the file.
+Result:        —
+
+
+### R99 — the ONE-DAY short book on F6, HINDSIGHT-GENERATED: the frozen trees' lowest tenth sold once a day at 00:00 UTC and held a day (kept while it is re-selected), funding-aware, hedged — as a taker and by R93's maker execution; read in R91's session after R91 and R93 (registered 2026-11-16 on Vadim's "CV1" (P8 decision CV), before any F6 bar, forecast or trade file is read by anything of this line and before the code is written)
+Question:      R97 separated two things on 2022: the frozen model's ranking held (IC +0.026), and R91's rule lost (−9.0 bps a trade)
+               because it re-decides every hour, holds four hours at the median and pays two crossings each time. The model was
+               fitted to forecast ONE DAY. In plain words: if we decide once a day instead of every hour — sell the tenth of the
+               coins the model likes least at midnight UTC, keep each short one day, and keep it without trading when the model
+               picks it again the next midnight — is money left after costs on the months nobody has seen?
+Hindsight:     stated in full. The decision to register a slower rule was taken AFTER R97's read: its numbers on 2022 (the median
+               hold of 48 bars; gross +19.0 against 18.5 for the two crossings; the tenths before costs +31.9 bps a leg a day) are
+               why this block exists, and R90's on F5 (the short side's gross +82, its funding −32) are why it is short-only with
+               R91's floors. Nothing of it was fitted or searched: the rule has NOT been run on any bar and cannot be — F1 … F5's
+               cells are spent (R90's gate), the pre-history's are spent for this forecast and any rule on it (R97's gate). F6 is
+               its only test. Each number's source: the tenth and n ≥ 10 — R90's; the funding floors −10 / −30 bps a day, the
+               7-day cap, the hedge and its 4 bps, the 10,000 USDT, LATENCY 1, the gate's words — R91's; the maker — R93's whole.
+               NEW here and written once, untried: ONE decision a day, at the 00:00 UTC bar (the day's first; the folds' and the
+               blocks' own boundary instant) — one decision per label horizon; and the hold band is the TENTH itself (no fifth).
+               STATED DEVIATION from decision CV1's words ("held ONE day"): a coin that is in the lowest tenth again at the next
+               00:00 is not bought back and sold again at the same instant — the position continues (what any book would do; the
+               literal close-and-reopen book is a described row). The unit of the statistic is therefore a position of one or more
+               whole days.
+Against R91:   R91's Gate line says "no second rule on F6's cells" and R93's "no third execution". Those lines forbid a rule written
+               AFTER F6 is looked at. This rule is registered four months before F6's last bar, before any F6 bar is read by
+               anything of the line, on Vadim's word — as R93 and R98 were. R91's, R93's and R98's blocks, code, gates and licences
+               are not touched; they are read first and stand whatever is read here.
+Fold / Cells:  R91's, unchanged: F6 = 2026-09-17 00:00 → 2027-03-16 00:00 UTC; `ft2/screen_members_f6_coins.csv` as R91's session
+               freezes it.
+Forecast:      the F6 forecast of the FROZEN file `ft2/r89_model.txt` (md5 816b994c136fda82eb36ceca88580d36) exactly as R91's
+               session builds and saves it for R91's own read (its md5 written into this read); nothing re-scored. Of its hourly
+               bars only those stamped 00:00 UTC are used. (The refit `ft2/r98_model.txt` is a described row, not the gate.)
+Rule:          at every bar t = 00:00 UTC of F6 with a forecast on n ≥ 10 coin cells, k = ⌊n / 10⌋, in this order:
+               (1) EXIT a held coin if it is not among the k lowest forecasts, or has no forecast at t, or its last funding rate
+                   known at t scaled to a day (rate × 24 / interval hours) is below −30 bps, or it has been held 7 days;
+               (2) ENTER a SHORT in every coin among the k lowest forecasts (ties by symbol) that holds no position, unless its
+                   last funding rate known at t scaled to a day is below −10 bps or it has no funding row yet.
+               A 00:00 bar with n < 10 enters nothing and exits only by the no-forecast, funding and 7-day clauses; a day with no
+               forecast at 00:00 for any coin decides nothing. Every position 10,000 USDT, entered and exited at the close of the
+               next 5m bar (00:05 UTC, LATENCY 1); a position open at F6's last 00:00 bar is closed there. One position a coin.
+               In code: `allbook.positions` on the 00:00 rows with the hold band ⌊n / 10⌋ — R91's function, its defaults unchanged.
+Pricing:       (D) the taker — R91's Pricing line whole (`backtest.price`, 5 bps a side + the coin's own half-spread and impact of
+               the entry / exit day, funding on the value over the hold; the hedge the equal-weight basket of the other coins over
+               the same bars, 4 bps a trade for its legs). (E) the maker — R93's Method (a)–(f) whole on THIS book's positions
+               (`data/r99_tape/`), the fill rule VOLUME-BEYOND; a leg that cannot be simulated (at 00:05 a thin coin may have no
+               print yet that day) is R93's (e): the taker leg, counted.
+Statistic:     R91's: the mean of (hedged net − 4 bps) per position, `allbook.hedged_stats` (day-clustered HAC, the 7-day cap's
+               lags), one-sided, the sign POSITIVE — on (D)'s fills and on (E)'s.
+Gate:          validity PASS, then two sentences in R91's words, neither conditional on the other: (D) and (E) each CLEARS if the
+               mean > 0 AND t ≥ 1.645 AND the mean over the first 90 days and over the last 90 are both > 0; FAILS if mean + 1.96
+               se < 0; NOT DETECTABLE otherwise (`verdict91`).
+Six gates:     F6 is now read by six registered sentences on one forecast family (R91, R93, R98 B′ / C′, R99 D / E), each
+               one-sided at 5 %, strongly correlated in pairs: the chance that at least one clears on noise is between 5 and
+               ≈ 20 %. So, written now: a CLEARS here licenses NOTHING to trade by itself. With t ≥ 2.39 (5 % one-sided over six) it
+               puts the one-day book before Vadim as the rule a paper book on the serve host would carry (his decision; taker or
+               resting as the sentences say). With 1.645 ≤ t < 2.39 and R91 / R93 not clearing it is SUGGESTIVE: it names this
+               rule for the NEXT forward span, registered then. FAILS / NOT DETECTABLE on both, with R91 and R93 not clearing →
+               the all-inputs book is PARKED on R91's line; the forecast stays a confirmed fact. No further rule, hold, hour,
+               tenth or execution on F6's cells after this block.
+Described:     deciding nothing: (a) the positions, the hold in days (median, the share kept past one day, the share at the cap),
+               the exits by clause, the entries the floor skipped; gross, fee, other cost, funding, net unhedged per position; by
+               month; the halves; USDT a day; (b) the LITERAL one-day book — every day's lowest tenth passing the floor entered at
+               00:05 and closed at the next 00:05, a re-selected coin paying both crossings — as a taker; (c) the same rule on the
+               refit's forecast (R98's file), (D) and (E); (d) R91's and R93's rows beside, and the share of this book's
+               position-days that R91's book also held; (e) the coins of F1–F5's lists against the coins new in F6; (f) costs
+               × 1.5; (g) for (E) the fill shares and R93's four fill rules.
+Validity:      read first, or that sentence is void (exit 2 before its number): (0) the guard — this block exists, F6's last bar
+               has passed, (R91, F6) AND (R93, F6) are in `confirmation_reads.csv`, (R99, F6) is not; R91's validity PASS (its
+               (0)–(2): the lists, the Data line, the build, the cover — this read adds no build of its own); the forecast file's
+               md5 equal to the one R91's read wrote; (1) every decision bar stamped 00:00 UTC and ≥ 170 of F6's 180 days holding
+               one with n ≥ 10; (2) ≥ 95 % of the positions priced; no coin in two positions; every entry after its decision;
+               every exit by one of the rule's four clauses or the span's end, every hold a whole number of days. For (E): R93's
+               (1)–(4) on this book's legs ((D) PASS; the name-days' files ≥ 99 %; the clock ≥ 99 %; the arithmetic to 1e-6; both
+               legs simulated on ≥ 95 % of the positions) and (E) read after (D)'s gate is on disk — a void (E) leaves (D)
+               standing and is said so. Logged under (R99, F6) once (D)'s number exists, and again for (E).
+Power:         weak, and said so. k is 3 … 6 a day (F5: 2 … 6), so ≈ 500 … 1,000 position-days in 180 days and, with the re-selected
+               days kept, 300 … 700 positions. R90's short side read se 31 bps on 2,317 one-day trades in 254 days; fewer names a
+               day and fewer days here → se expected 45 … 75 bps a position: only a mean of ≈ +80 … +125 or more can clear, +110 …
+               +180 for t ≥ 2.39. What the record says of the mean: the short tenth's gross a day +82 on F5 (first-hour entries)
+               and +32 on 2022; a taker's round trip 19 (2022's names) … 37 (F5's coins), a maker's ≈ 7; the floor-limited funding
+               a few bps. A true mean of +10 … +50 would read NOT DETECTABLE.
+Expectation:   written before the code. Validity PASS for (D); (E) void one time in six (00:05 legs without a print, a delisted
+               coin's files). (D): the mean −30 … +70; NOT DETECTABLE six in ten, CLEARS one in six (t ≥ 2.39 one in twelve), FAILS
+               one in four. (E): above (D) by 5 … 25 a position; the same sentence as (D) eight times in ten. A third to a half of
+               the position-days are re-selections; the median hold one day; under 3 % at the cap; the floor skipping 10–25 % of
+               the entries. (D) above R91's taker mean per position two times in three.
+When:          ONE read, in R91's session on or after 2027-03-18, after R91's and R93's ledger rows (before or after R98's — neither
+               reads the other): `ft2 allbook daybook` → output/allbook/r99/; `ft2 allbook tapefetch --name r99` → data/r99_tape/;
+               `ft2 allbook tape --name r99` → output/allbook/r99m/. No look before; a look is the read.
+Code:          written after this block's commit, tested on planted bars only: `allbook.positions` gains the hold band and the
+               clause's name as keywords (defaults R91's; R91's planted tests unchanged), `allbook.positions99` (the 00:00 rows),
+               `forward` takes the rule and the guard as parameters, `_guard99`, the maker's guard for a second sentence of one
+               registration (R98's C′ and R99's E), the CLI. Named, written at the read: the described rows (b)–(f), the chain.
 Result:        —
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")
