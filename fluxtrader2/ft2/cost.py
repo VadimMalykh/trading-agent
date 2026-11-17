@@ -58,8 +58,10 @@ def _day(ts: pd.Series) -> pd.Series:
 
 
 # ---- 1. volatility regimes ---------------------------------------------------------------------
-def regimes(slices: tuple[str, ...] = ("candles_5m",)) -> pd.DataFrame:
-    c = pd.concat([data.load(s, columns=["symbol", "open_time", "close", "high", "low", "volume"]) for s in slices], ignore_index=True)
+def regimes(slices: tuple[str, ...] = ("candles_5m",), symbols: list[str] | None = None) -> pd.DataFrame:
+    """`symbols`: only these names' rows (every number here is a name's own — the same rows as the whole table's for them; decision CW1:
+    the 140M-row slice as strings does not fit the work VM)."""
+    c = pd.concat([data.load(s, columns=["symbol", "open_time", "close", "high", "low", "volume"], symbols=symbols) for s in slices], ignore_index=True)
     c["symbol"] = c["symbol"].astype(str)
     c = c.drop_duplicates(["symbol", "open_time"], keep="last").sort_values(["symbol", "open_time"])
     c["r"] = np.log(c["close"]).groupby(c["symbol"], observed=True).diff()
@@ -390,7 +392,7 @@ def wide(symbols: list[str], start: pd.Timestamp = TAPE_START) -> str:
     from . import ladder
     d = pd.read_parquet(DAILY)
     d["symbol"] = d["symbol"].astype(str)
-    reg = regimes(("candles_5m_archive", "candles_5m"))
+    reg = regimes(("candles_5m_archive", "candles_5m"), sorted(set(d.loc[d["spread_src"] == "tape", "symbol"]) | set(symbols)))
     reg = reg[(reg["range_bps"] > 0) & (reg["dollar_vol"] > 0) & (reg["tick_bps"] > 0)]
     t = d[(d["spread_src"] == "tape") & (d["spread_cal_bps"] > 0)].merge(reg[["symbol", "day", "tick_bps"]], on=["symbol", "day"], how="inner")
     t = t[(t["range_bps"] > 0) & (t["dollar_vol"] > 0)]
