@@ -1539,6 +1539,8 @@ The options:
 **CW1 step (i), the COUNT, DONE 2026-11-17 10:58 UTC on the work VM (`scripts/cw_count.py` → `output/cw_count/count.md`; daily bars before each block start only — no 5m bar, no label).** "The coins the screener did not pick" made exact: the screener's unchanged rule taken to rank 120 — **the NEXT SIXTY (ranks 61–120)**, a second universe a block. The rule's ranks 1–60 reproduce the four frozen member lists row for row (PRE, F1+F2, F3+F4, F5: all "yes") — the count's validity. **3,584 rows: PRE 944 (15 of 17 blocks full; 2022-03 / 04 hold 21 / 23 — the listed perpetuals with 30 complete days ran out), F1+F2 1,080, F3+F4 1,020, F5 540 (478 coin rows, 62 stock / commodity rows); 126 / 209 / 320 / 262 names; an upper bound of 2.58 M hourly cells (PRE 0.68 M, F3+F4 0.73 M, F5 0.39 M).** What they are: a quarter of the members' turnover (the tier's median daily quote volume 20.6 / 25.9 / 27.8 / 15.1 M USDT against the members' 87 / 97 / 109 / 59; rank 120 ≈ 12 … 18 M), the same violence (vol 5.4 / 4.7 / 6.3 / 5.1 % a day against 5.9 / 5.5 / 6.3 / 4.5), somewhat younger. **Most of these NAMES were members in another block** (never a member: 18 / 29 / 89 / 78 names, 91 / 78 / 162 / 113 rows) — the cells are disjoint from every spent member cell (a name is in the next sixty only in blocks where it is not a member), the coins are not new to the model. What a Data line fetches: 5m candles for 10 / 3 / 6 / 41 names, positioning (`metrics`) for the never-members, funding 18 / 9 / 9 / 41, cost rows 16 / 8 / 9 / 57. **Stated for the registration, before any label: (a) the frame is the model's own, on the second universe — every input a rank among the bar's next-sixty cells, the label against the next sixty's mean; (b) F1+F2's next sixty lie in the model's own fit months (R88's fit: F1+F2's members) — they are described apart and enter no gate and no choice; the sample is PRE + F3+F4 + F5's coins; (c) the frozen lists' sources (spot, Coinbase, Korea, Wikipedia, the trade mix) as they stand for the names the lists keep, no list extended, the cover reported before the registration.**
 **The next-sixty lists FROZEN 2026-11-17, before any 5m bar of them is read by anything: `ft2/screen_next60_pre.csv` (944 rows, md5 faa0653ad11a1fd3c7ad46136b370fe2), `screen_next60_f12.csv` (1,080, 4837edbeb23039da9dc56be6bd8d92ac), `screen_next60_f34.csv` (1,020, a28536c06852607ecf9a3d4715826b3d), `screen_next60_f5.csv` (540, c01018ca037656edd735306515f13c40) — the members' columns plus `rank` (61 … 120) and `type` (the exchange's contract type on 2026-11-17).** The `type` column decides only F5's rows (478 PERPETUAL — the coins; 62 TRADIFI_PERPETUAL out, Vadim's "coins only" of 2026-11-11); on the earlier lists it is today's and wrong for three RE-USED tickers (ANTUSDT, NUUSDT, MDTUSDT — coins then, stock perpetuals now: 19 rows) and "UNKNOWN" for the delisted — nothing is cut by it there. Owed by the Data line: a re-used ticker's bars are cut at the old contract's last day.
 
+**CW1 steps (i)–(ii), the DATA LINE and the COVER, DONE 2026-11-17 13:40 → 19:29 UTC on the work VM (`scripts/cw1_data.sh`, `ft2/next60data.py`; `output/next60data/`, `output/allgbm/cover_next60_{pre,f12,f34,f5}/`), no label read.** 517 names. Fetched: 1,440 5m month files (220 not in the archive), 538 funding months, 31,727 `metrics` days (323 absent); 0 bad, 0 errors. Tables: the 5m slice 103,122,505 → 115,551,143 rows (692 names), funding 2,028,399 → 2,110,312, `metrics` 78,013,996 → 87,110,289 (597 names), the trade mix 5,825,929 → 6,371,713, cost rows 322,545 → 367,288 (644 names). **The check is the row itself:** every old (symbol, stamp) row of each table back with identical values against a before-copy — 0 missing, 0 changed (the extent fingerprint of the earlier Data lines would have read the filled holes inside a name's old extent as changes); the cost merge's 279,023 overlapping rows identical. **The cover (features only):** scorable hourly cells PRE 656,386 (126 names), F1+F2 696,005 (209), F3+F4 693,589 (320), F5's coins 327,533 (226; 60 names a block falling to 41 — the stock / commodity rows are out); the model's 33 inputs present as on the members except the hourly sources, which enter on fewer of these names (spot / mix 56–69 % against the members' 70–87 %; Coinbase 21–43 % against 51–63 %). Said: the re-used tickers (ANTUSDT, NUUSDT, MDTUSDT) got no special cut — the fetch is bound to each list row's own window (a − 91 d … b + 2 d), so a later contract's months come in only if a row's window holds them; the handoff's `fingerprint_light` was replaced by the row check; the trade mix was rebuilt though the handoff did not list it. **Step (iii): R100 is DRAFTED in §8 on these counts — its text is before Vadim; no code, no chain until his word.**
+
 **Decision CV (2026-11-15) — what R97 leaves open. WRITTEN 2026-11-15 after R97's read — DECIDED 2026-11-16 on Vadim's "CV1" (the recommendation): R99 REGISTERED in §8 before any code — the frozen forecast's lowest tenth sold at 00:00 UTC, held a day and kept while re-selected (the stated deviation from "held ONE day": no close-and-reopen at the same instant), R91's floors / cap / hedge / gate words, taker (D) and VOLUME-BEYOND maker (E), read in R91's session after R91 and R93; six gates on F6, so a CLEARS licenses nothing by itself (t ≥ 2.39 puts it before Vadim for a paper book). Nothing run.**
 
 - **The question in plain words.** The model's ranking has now held on three samples outside its fit (2024-25's members, 2026's coins, 2022's members) at a size above the taker bar. The one trading rule registered on it (R91: sell the lowest tenth, hold while in the lowest fifth) LOST on 2022 — as a taker −9.0 bps a trade, resting −11.4 — because it turns a position over every four hours and pays two crossings (18.5) for a gross of 19. On 2027-03-18 R91 / R93 will be read on F6 as written. Should a SLOWER use of the same forecast be registered for the same session, so that the session can also answer "does the forecast pay when held a day"?
@@ -16726,6 +16728,131 @@ Code:          written after this block's commit, tested on planted bars only: `
                clause's name as keywords (defaults R91's; R91's planted tests unchanged), `allbook.positions99` (the 00:00 rows),
                `forward` takes the rule and the guard as parameters, `_guard99`, the maker's guard for a second sentence of one
                registration (R98's C′ and R99's E), the CLI. Named, written at the read: the described rows (b)–(f), the chain.
+Result:        —
+
+### R100 — the frozen TREES on the NEXT SIXTY (the screener's ranks 61–120; 2021-12 → 2023-04, 2024-09 → 2025-12, 2026's coins): (A) does the ranking hold on the coins the screener did not pick, and (B) DECLARED DEVELOPMENT of a slow short book on them — twelve forms written beforehand, one choosing rule, the winner licensed for ONE registration on F6 (DRAFT written 2026-11-17 on Vadim's "CW1+CW2" (P8 decision CW), after the next sixty's Data line and a features-only cover — no forecast, no IC, no label statistic of these cells computed before this block was committed; the text is before Vadim — NO CODE and NO CHAIN until his word)
+Question:      The frozen model ranks tomorrow's losers on three samples outside its fit, and every trading rule tried on it lost to
+               its own crossings; the one slow rule (R99) was written with no sample to shape it, because every member cell is
+               spent. In plain words: the sixty coins just BELOW the screener's cut were never read by anything. (A) Does the same
+               model file rank them too? (B) If we sell its least-liked coins there once a day and hold one, two or three days —
+               a tenth or a twentieth of them, on the hourly forecast or its 24-hour average — which form keeps the most money
+               per trade, and is any of them better than R99's form by more than noise?
+Hindsight:     stated in full. The model (R87's recipe, R88's fit, R89's file) was chosen on F1 … F5's MEMBERS; the grid's axes are
+               chosen after R90 / R97 (the hold is the failure R97 named; the short side, the floors, the cap and the hedge are
+               R91's; the 00:00 decision and the keep-while-re-selected form are R99's). No next-sixty bar was joined to a label
+               by anything: the count read daily bars before each block start, the Data line and the cover read features only.
+               (B) IS a search — twelve forms on one sample — and is declared as one: its winner's number is biased upward and
+               licenses nothing but a registration on F6. Two transfer risks, said now: the rule is developed on ranks 61–120
+               (a quarter of the members' turnover, dearer to cross) and will be tested on F6's MEMBERS; and 2022 / 2024–26 are
+               not 2026-09 → 2027-03.
+Cells:         the frozen lists (committed efb194e, before any 5m bar of them was read; md5 in the Validity line):
+               `ft2/screen_next60_pre.csv` (944 rows, 126 names, 17 blocks 2021-12-10 → 2023-04-04; fifteen blocks of 60, 2022-03-10
+               and 2022-04-09 hold 21 and 23), `screen_next60_f34.csv` (1,020 rows, 320 names, 17 blocks), `screen_next60_f5_coins.csv`
+               (the F5 list's 478 PERPETUAL rows, 226 names, 9 blocks; its 62 stock / commodity rows are out, as in R89). On the
+               hourly grid while in the list. Scorable cells by the cover (2026-11-17, `output/allgbm/cover_next60_*/`): PRE
+               656,386 (2021-12-10 00:00 → 2023-04-23 23:00; the blocks 42,732 · 43,200 · 38,362 · 15,120 · 15,931 · 42,373 ·
+               42,873 · 43,200 · 43,027 · 43,200 · 43,200 · 42,255 · 42,513 · 43,200 · 43,200 · 43,200 · 28,800); F3+F4 693,589
+               (2024-09-03 → 2025-12-31; fourteen blocks full at 43,200, 2025-08-31 42,835, 2025-09-30 42,009 (59 names),
+               2025-10-30 42,825, the last 4,320); F5 327,533 (2026-01-03 → 2026-09-14; 43,200 · 43,200 · 41,040 · 39,490 ·
+               39,600 · 41,040 · 34,642 · 30,561 · 14,760; names a block 60 · 60 · 57 · 55 · 55 · 57 · 49 · 43 · 41). THE SAMPLE
+               is these three: 1,677,508 cells. No cell of it is a member cell (a name is in the next sixty only in blocks
+               where it is not a member); most NAMES were members in another block (never a member: 18 / 89 names; F5 78 of the full list's 262).
+               APART, in no gate and no choice: `screen_next60_f12.csv` (1,080 rows, 209 names; 696,005 cells) — the model's
+               own fit months.
+Data:          decision CW1's line, 2026-11-17 13:40 → 19:29 UTC on the work VM (`scripts/cw1_data.sh`, `ft2/next60data.py`;
+               `output/next60data/*.json`), no label read. 517 names. 5m klines: 1,440 month files fetched (5,808 on disk, 220 not
+               in the archive), the slice 103,122,505 → 115,551,143 rows (692 names). Funding: 538 months, +81,913 rows. `metrics`:
+               31,727 day files (323 absent), 78,013,996 → 87,110,289 rows (597 names; 42 repeated stamps dropped). The trade mix
+               rebuilt (5,825,929 → 6,371,713 hourly rows, the same 310 names). Cost rows: 322,545 → 367,288 (644 names), the
+               279,023 overlapping rows identical. EVERY old row of the four tables came back with identical values against a
+               before-copy (0 missing, 0 changed). Cover of the list rows: bars on every row (≥ 95 % of the block: PRE 915 of
+               944, the others all); positioning ≥ 95 %: 932 / 1,015 / 473; a funding stamp: all but BNXUSDT (PRE), OMNIUSDT
+               (F3+F4), OMUSDT (F5), one row each; a cost row on ≥ 95 % of the block's days: 909 / 1,015 / 473, none at all:
+               CVCUSDT · OMNIUSDT · IPUSDT, OMUSDT (one row each).
+Label:         R87's, unchanged in form, on the second universe: 1d against the next-sixty cells present at the bar, in the name's
+               own sigmas, clipped ±5.
+Features:      R89's 33, the same names in the same order, every one a rank among the bar's NEXT-SIXTY cells (the build with the
+               list as the members). Cover on the sample (features only): the candle, funding, open-interest inputs 99.6–100 %
+               (`mom_12w` 97.3 / 89.2 / 92.9 %); `global_ls` 95.5 / 99.9 / 99.8 %; `top_ls`, `top_vs_global` 39.3 % on PRE
+               (the archive's start), 99.9 / 99.8 % after; `taker_1d` 80.2 / 99.9 / 99.9 %. The hourly sources enter only on the
+               names their FROZEN lists keep and are THINNER here than on the members (PRE / F3+F4 / F5, the members' cover in
+               brackets): Coinbase two 21 / 34 / 43 % (51 / 60 / 63); `krprem_dev` 14 / 37 / 37 % (34 / 58 / 59); the spot two
+               and the trade-mix two 57 / 69 / 56 % (83 / 87 / 70); `hl_gap24_dev` 0 / 55 / 54 % (0 / 87 / 71); `wiki_dev`
+               4 / 13 / 12 % (26 / 29 / 40). No list is extended. ONE feature has no cell on PRE: `hl_gap24_dev` (as in R97);
+               the trees route an absent value. A feature without a cell elsewhere voids the read.
+Model:         the FILE `ft2/r89_model.txt` (md5 816b994c136fda82eb36ceca88580d36), loaded, nothing fitted.
+(A) Statistic: R87's: the pooled IC of the forecast with the label re-centred on the cells that have a forecast at the bar, over the
+               sample's three segments together, HAC by day.
+(A) Gate:      R89's form. CONFIRMED AT THE TAKER BAR if t ≥ 1.645 AND IC ≥ 0.0214 AND IC > 0 in each of the three segments
+               (PRE, F3+F4, F5); CONFIRMED if t ≥ 1.645 AND IC ≥ 0.0059 AND the three > 0; otherwise NOT CONFIRMED (CLOSED
+               beside it if IC + 1.96 se < 0.0059).
+(B) The grid:  DECLARED DEVELOPMENT — twelve forms, no gate, read after (A) whatever (A) says. The forecast saved by (A).
+               Short only. Decisions at the 00:00 UTC bars only. A form is (H, tail, forecast):
+               H ∈ {1, 2, 3} days; tail ∈ {tenth: k = ⌊n / 10⌋, twentieth: k = ⌊n / 20⌋}; forecast ∈ {raw: the 00:00 bar's;
+               averaged: the mean of the name's hourly forecasts over the 24 bars ending at 00:00, at least 12 present}.
+               n = the cells with that forecast at the bar, n ≥ 10 (twentieth: n ≥ 20). At every 00:00 bar, in this order:
+               (1) EXIT a held coin if its last funding rate known at t scaled to a day is below −30 bps, or it has no forecast
+                   at t (it left the list or the cover), or it has been held 7 days; and, ONLY at the bars where its hold is a
+                   whole multiple of H days, if it is not among the k lowest;
+               (2) ENTER a short in every coin among the k lowest (ties by symbol) that holds no position, unless its last
+                   funding rate known at t scaled to a day is below −10 bps or it has no funding row yet.
+               10,000 USDT a position, entered and exited at the close of the next 5m bar (LATENCY 1); a position open at a
+               segment's last 00:00 bar is closed there; one position a coin. (1 day, tenth, raw) is R99's rule word for word —
+               THE BASE. Pricing: R91's taker (`backtest.price`: 5 bps a side + the coin's own half-spread and impact of the
+               entry / exit day from `cost_daily_wide`, funding on the value over the hold); the hedge the equal-weight basket of
+               the other next-sixty coins over the same bars, 4 bps a trade for its legs.
+               Reported per form: positions, positions a day, crossings a day, the hold; G = the hedged price result + funding
+               per position, BEFORE fees, spread, impact and the hedge's 4 bps (the money a position has to pay its two
+               crossings with); fee, other cost; the net (hedged − 4 bps); each with its day-clustered HAC se (R91's lags), on
+               the sample and on its two halves — the EARLY half PRE, the LATE half F3+F4 + F5.
+(B) Choice:    written in full now. Among the eleven forms other than the base, the candidates are those with G > 0 in BOTH
+               halves AND G − G(base) ≥ the form's own se of G. THE WINNER is the candidate with the largest G (two crossings a
+               position in every form, so this is the largest gross per crossing); ties to the shorter hold, then the tenth,
+               then raw. No candidate → NO WINNER: R99 stands as the only slow form, and that is the finding. The net, the
+               number of positions and (A)'s sentence do not enter the choice — EXCEPT: if (A) is NOT CONFIRMED there is no
+               winner whatever the grid shows (a rule cannot be licensed on a ranking that did not hold on its own sample).
+Licenses:      nothing to trade and nothing on any member cell. (i) A WINNER licenses ONE registration on F6, written in the
+               next session and before 2027-03-18: that form, unchanged, on F6's coin members and R91's saved forecast, as a
+               taker, read in R91's session after R91, R93, R98 and R99 — a SEVENTH gate on F6, so its bar for anything beyond
+               "suggestive" is t ≥ 2.45 (5 % one-sided over seven), by R99's arithmetic. (ii) Decision CW3 (the same trees on a
+               3-day label) is OPENED for Vadim if G of (3 days, tenth, raw) ≥ 1.5 × G of the base; otherwise it stays parked.
+               (iii) (A) CONFIRMED makes the ranking a fact beyond the screener's cut — a fourth sample outside the fit; NOT
+               CONFIRMED says the forecast is the liquid sixty's, written into §7's row. (iv) After this read the next sixty's
+               cells of PRE, F3+F4 and F5 are SPENT for this forecast and for any rule on it: no second grid, form, hold, tail,
+               hour, floor or statistic on them. R91, R93, R98, R99 stand untouched; F6 is not read.
+Described:     deciding nothing: (a) F1+F2's next sixty — the IC and the twelve forms, apart; (b) (A) by segment, by month, the
+               per-bar rank IC, the tenths before costs; the names never a member against the rest; the cells with and without
+               the hourly sources; (c) per form by segment and by month; exits by clause; the entries the floor skipped; the
+               net unhedged; costs × 1.5; (d) the base beside R97's (B) on the members of the same months; (e) the forms on the
+               top fifth; the literal close-and-reopen book for the base.
+Validity:      read first, or the read is void (exit 2 before its number): (0) the guard — this block exists without "DRAFT" in
+               its heading, no (R100, N60) row in `confirmation_reads.csv`; (1) the lists' md5: pre faa0653ad11a1fd3c7ad46136b370fe2,
+               f12 4837edbeb23039da9dc56be6bd8d92ac, f34 a28536c06852607ecf9a3d4715826b3d, f5 c01018ca037656edd735306515f13c40,
+               f5's coins 066099d387ec21a4690d1fbe1ee2b232; the model's md5; the tables' md5 as the Data line left them
+               (candles c94905d63ee3d9e95190377ba9f9d706, funding 582259de4abf172ac6237b9f57f59799, metrics
+               6734b2553b443065714864fcbcc19fdc, mix cec46ff4a86b62357e47cfa49121d965, cost b4d2224a0e25a5039ccf87a798352587);
+               (2) the build: the 33 names in R89's order; scorable cells EQUAL to the cover's (656,386 / 693,589 / 327,533;
+               F1+F2 696,005); no scored cell is a member cell of the four member lists; the causal check 0.0; no label ending
+               after its segment's end (2023-05-01, 2026-01-01, 2026-09-15); (3) per form: every decision bar stamped 00:00;
+               ≥ 95 % of the positions priced; no coin in two positions; every entry after its decision; every exit by one of
+               the rule's clauses or the segment's end, every hold a whole number of days; the base's positions equal to
+               `positions99`'s on the same forecast. Logged under (R100, N60) once (A)'s number exists.
+Power:         (A) R97 read se 0.0059 on 500 days of sixty names; ≈ 1,240 days here → se ≈ 0.004: the taker bar 0.0214 is
+               ≈ 5 se, CLOSED is reachable, a true IC of 0.022 passes the taker bar about one time in two. (B) is weak and
+               said so: the base has k ≈ 6 a day (4 … 6 on F5's later blocks, 2 on PRE's two thin blocks) → ≈ 5,000 … 7,000
+               position-days; R90's short side read se 31 bps on 2,317 one-day trades → se of G ≈ 15 … 25 bps for the tenth,
+               25 … 40 for the twentieth and per half more. A form must beat the base by its own se, so only differences of
+               ≈ 20 bps or more can be chosen; twelve forms on one sample pick noise about one time in three when nothing is
+               there — which is why the winner gets a registration and not a book.
+Expectation:   written before the code. Validity PASS. (A): IC +0.010 … +0.030; CONFIRMED AT THE TAKER BAR one in three,
+               CONFIRMED one in two, NOT CONFIRMED one in six. (B): the base's G +15 … +45 a position, its net as a taker
+               negative (the next sixty's round trip 25 … 45); G grows with the hold less than proportionally; a winner one
+               time in two, most likely (2 or 3 days, tenth); CW3's condition met one in four. A winner then clearing F6 at
+               t ≥ 2.45: one in five.
+When:          ONE read, the session after Vadim's word on this text: the work VM, a chain with the poweroff wrapper.
+Code:          written after this block's commit (the heading's DRAFT removed on Vadim's word, committed first), tested on
+               planted bars only: the build with a list as the members and the label on it, the 24-hour average, the H-day
+               hold as a keyword of `allbook.positions` (default R99's), G, the choice, the guard, the CLI.
 Result:        —
 
 ## 9. Data we could add (Vadim's offer, 2026-09-15: "we can download/build whatever possible")

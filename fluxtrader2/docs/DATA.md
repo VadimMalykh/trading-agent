@@ -715,6 +715,17 @@ into the parquet it replaced (78,767 new rows on 90 names, 55,278 overlapping ro
 (t0 − 2 d → t0 + 8 d) complete at ≥ 95 %; every one of the 91 names at 100 % of the bars over 2026-01-01 → 2026-09-15. F5's end for R76:
 2026-09-15 (the fold as defined; frozen at R76's read).
 
+### The next sixty's Data line (decision CW1, 2026-11-17; `ft2 next60data`, `scripts/cw1_data.sh`, 13:40 → 19:29 UTC on the work VM; `output/next60data/`)
+The names of the four frozen next-sixty lists (`ft2/screen_next60_{pre,f12,f34,f5}.csv`; F5: the PERPETUAL rows, `screen_next60_f5_coins.csv`): 517. For each list row (block a → b) the
+line fetches the 5m months of a − 91 d … b + 2 d, the funding months and the `metrics` days of a − 10 d … b: 1,440 kline month files (5,808 on disk, 220 not in the archive), 538 funding
+months (17 absent), 31,727 `metrics` days (323 absent); 0 bad, 0 errors. Tables after: `candles_5m_archive` 115,551,143 rows / 692 names (was 103,122,505 / 659; md5
+c94905d6…), `funding_archive` 2,110,312 / 692 (was 2,028,399 / 649; rows INSIDE a name's old extent now come in — the old updater only appended), `metrics` 87,110,289 / 597 (was
+78,013,996 / 444; 42 repeated stamps dropped), `perp_mix_1h` 6,371,713 (was 5,825,929; rebuilt from the zips, the same 310 names, first hour now 2021-09-01), `cost_daily_wide` 367,288 rows /
+644 names (was 322,545 / 602; 279,023 overlapping rows identical). **The slice and `metrics` are written a name at a time** (`_stream`; a whole ingest no longer fits 32 GB) — a planted
+test holds the rows equal to the whole ingest's. **The check is the row:** every old (symbol, stamp) row back with identical values against `data/<table>_before_cw1.parquet` (0 missing, 0
+changed on all four) — NOT the extent fingerprint of the earlier lines, which reads a filled hole inside an old extent as a change. **A trap that stays:** a name's rows now cover its member
+AND next-sixty windows, not all months — check a window's cover (`klines_cover.csv`, `metrics_cover.csv`) before reading a name outside them. Before-copies on the VM: ≈ 7.3 GB, removable once R100 is read.
+
 ### fund_episodes (the EXTREME trailing-day funding of a running Binance perpetual WITHOUT the exchange's flag, as a per-name EVENT population — read off `funding_archive`'s settled rates; decision BY1, 2026-11-02) — `ft2/fundep_f12.csv`, `ft2/fundep_f34.csv`, `ft2/fundep_f5.csv` (FROZEN 2026-11-02, commit 7cf47a1, md5 75c0fbd0… / f5765782… / c1770dd4…, before any bar after a t0 was read for anything): `(symbol, base, mult, t0, ts_known, fold, side, thr, rate_t0, interval_h, fund_1d, n_1d, fund_7d, prior_episodes, days_since_prior, perp_first, perp_first_source, perp_age_days, member_at_t0, flag_t0, flag_lag_h, flagged_7d, cap_share_7d, cap_rate)`
 
 `ft2 fundep events [--threshold 0.02]|audit` (`ft2/fundep.py`; `scripts/by1_events.sh`, `by1_audit.sh`; `tests/test_p8_fundep.py`; the brainstorm's count
