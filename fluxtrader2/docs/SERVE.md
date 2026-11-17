@@ -114,6 +114,30 @@ each day. Installed 2026-11-13 by `vm.sh serve-install` (the same script, idempo
 - A hand run (`sudo systemctl start ft2-cexlive.service`) is harmless: its file carries its own minute. The first one,
   2026-11-13 13:43 UTC, is the install's proof (47,027,851 bytes, md5 de4ea98c…), not a usable file.
 
+## The all-names quote recorder (`ft2-quotes`) — a third job on this host, independent of P7 and of R96
+
+PLAN P8 decision CW2 (2026-11-17): Binance's archive holds no best bid / ask (`bookTicker` is discontinued), so what a resting
+order on a screened name would have met can only be recorded live. Installed 2026-11-17 by `vm.sh serve-install` (the same
+script, idempotent — this IS the reinstall step):
+
+- **Unit:** `ft2-quotes.service` (a service, not a timer: `Type=simple`, `Restart=always`, `Nice=10`, `MemoryMax=150M`,
+  enabled at boot) runs `~/ft2-venv/bin/python ~/fluxtrader2/scripts/quotes_live.py` — standard library only. Every 30 s on
+  the clock one call of `/fapi/v1/ticker/bookTicker` with no symbol (every USDⓈ-M symbol; weight 5 of the 2,400 a minute).
+- **Files (never under `output/serve/`):** `data/raw/external/binance_quotes_live/quotes_<YYYYMMDD>.csv.gz` —
+  `poll_ms, symbol, bid, bid_qty, ask, ask_qty, time_ms`, a symbol's row written only when its exchange stamp changed since
+  the previous poll; `output/quotes_live/poll_log.csv` — one row an hour: `hour_utc, polls_ok, polls_failed, rows, last_error`
+  (120 polls an hour expected; the current hour's row is written when the hour ends or the service stops).
+- **Health:** `vm.sh serve-status` — the `quotes (CW2)` line: `active`, the last finished hour's row, the newest file's size,
+  the folder's size; then the disk. A failed poll is not retried and nothing is back-filled: a missed half-minute is gone.
+- **Backup and disk:** `vm.sh serve-pull-quotes` (rsync, never deletes on the host) with the monthly serve check. The size a
+  day is measured in PLAN's CW block; the host's 15 GB free (2026-11-17) also holds R96's ≈ 4 GB by 2027-07 — if the disk
+  line shows under 4 GB free, pull, verify the laptop copies by size, then delete the host's OLDEST quote files by hand.
+- **After a code change to `quotes_live.py`:** `vm.sh serve-install` restarts the service (a gap of one or two polls).
+- **Reinstall on a new host:** `vm.sh setup`, `vm.sh serve-install`; the old files stay wherever the last pull put them.
+- **Stop:** `vm.sh serve-ssh 'sudo systemctl disable --now ft2-quotes.service'`.
+- Nothing reads these files for a decision: they are a fetch log until a registration names them (PLAN §8); joining them to
+  a fill of R91 / R93 / R98 / R99 before those reads is a look at F6 and is forbidden.
+
 ## Identity checks (the build is not done until these pass)
 
 1. **Replay (before go-live):** `ft2 serve replay` on the work VM runs the live path — refit at the harness's block
