@@ -364,6 +364,7 @@ def prehistory(symbols: list[str]) -> str:
 # ---- 8. pairs without a tape (R10: the wider universe) -------------------------------------------
 WIDE_FEATURES = ["range_bps", "dollar_vol", "tick_bps"]
 WIDE_MIN_DAYS = 100          # a target (spread, impact at N) is fitted only with at least this many uncensored tape days
+CY1_COEF = Path(__file__).resolve().parent / "cy1_coef.json"     # decision CY1 (2026-11-19): the coefficients refitted on CX1's measured cells (`ft2/cycost.py`), frozen
 
 
 def _pooled_fit(m: pd.DataFrame, target: str) -> np.ndarray:
@@ -377,7 +378,7 @@ def _pooled_pred(b: np.ndarray, f: pd.DataFrame) -> np.ndarray:
     return np.exp(X @ b)
 
 
-def wide(symbols: list[str], start: pd.Timestamp = TAPE_START) -> str:
+def wide(symbols: list[str], start: pd.Timestamp = TAPE_START, coef: Path | str | None = None) -> str:
     """Spread and impact per pair × day for pairs that have NO tape, ladder or depth — from candles alone,
     with ONE pooled regression fitted on the twelve measured pairs' tape days in DAILY → DAILY_WIDE.
 
@@ -388,7 +389,13 @@ def wide(symbols: list[str], start: pd.Timestamp = TAPE_START) -> str:
     median |pred − actual| / actual and the median ratio) and written to OUT_WIDE_MD: a pair of the wider universe
     is priced as a pair of the same range, volume and tick would be — an extrapolation where its volume is below
     every measured pair's (the report says how many days are). No maker fill statistics (the harness's bar-simulated
-    maker needs none; maker_ev is blank). Fees are an input of the harness."""
+    maker needs none; maker_ev is blank). Fees are an input of the harness.
+
+    `coef` (decision CY1): a file of FROZEN coefficients — the targets it names (the spread, the impact at 1,000 … 10,000) are computed
+    from them instead of the fit on the twelve (which CX1 measured as about twice too dear on the wide names); the larger notionals
+    keep the pooled fit. `ft2 costwide` passes CY1_COEF; the rows are then `proxy_wide_cy1`."""
+    import json
+    frozen = {k: np.asarray(v, dtype="float64") for k, v in json.loads(Path(coef).read_text())["coef"].items()} if coef else {}
     from . import ladder
     d = pd.read_parquet(DAILY)
     d["symbol"] = d["symbol"].astype(str)
@@ -416,11 +423,11 @@ def wide(symbols: list[str], start: pd.Timestamp = TAPE_START) -> str:
     fits = {tg: _pooled_fit(t[t[tg] > 0], tg) for tg in targets}
     w = reg[reg["symbol"].isin(symbols) & (reg["day"] >= start)].copy()
     o = pd.DataFrame({"symbol": w["symbol"].to_numpy(), "day": w["day"].to_numpy(), "range_bps": w["range_bps"].to_numpy(), "dollar_vol": w["dollar_vol"].to_numpy(),
-                      "px": w["px"].to_numpy(), "tick_bps": w["tick_bps"].to_numpy(), "spread_src": "proxy_wide"})
+                      "px": w["px"].to_numpy(), "tick_bps": w["tick_bps"].to_numpy(), "spread_src": "proxy_wide_cy1" if frozen else "proxy_wide"})
     o["spread_bps"] = np.nan
-    o["spread_cal_bps"] = np.maximum(_pooled_pred(fits["spread_cal_bps"], w), w["tick_bps"].to_numpy())
+    o["spread_cal_bps"] = np.maximum(_pooled_pred(frozen.get("spread_cal_bps", fits["spread_cal_bps"]), w), w["tick_bps"].to_numpy())
     for n in ladder.NOTIONALS:
-        o[f"imp_{n}"] = _pooled_pred(fits[f"imp_{n}"], w) if f"imp_{n}" in fits else np.nan
+        o[f"imp_{n}"] = _pooled_pred(frozen.get(f"imp_{n}", fits.get(f"imp_{n}")), w) if (f"imp_{n}" in fits or f"imp_{n}" in frozen) else np.nan
     for H in HOLDS:
         o[f"maker_fill_{H}"] = np.nan
         o[f"maker_adv_{H}"] = np.nan

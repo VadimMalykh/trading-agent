@@ -99,3 +99,11 @@ def test_reprice_reproduces_the_old_cost_and_moves_the_net_by_the_difference():
     assert np.allclose(g["other_cost_bps"][[0, 1, 3]], cycost.other_cost(f, ln)[[0, 1, 3]])
     f.loc[1, "other_cost_bps"] += 0.01                                         # a stored cost the old file does not give: the arithmetic is not valid
     assert not cycost.reprice(f, lo, ln, keep)[1]["ok"]
+
+
+def test_the_frozen_coefficients_are_the_five_targets():
+    import json
+    from ft2 import cost
+    j = json.loads(cost.CY1_COEF.read_text())
+    assert set(j["coef"]) == set(cycost.TARGETS) and all(len(v) == 4 for v in j["coef"].values()) and j["features"] == ["const", *cost.WIDE_FEATURES]
+    assert -1.1 < j["coef"]["imp_10000"][2] < -0.8                              # the impact falls about one for one with the day's dollar volume

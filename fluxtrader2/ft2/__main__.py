@@ -387,7 +387,7 @@ def cmd_horizon(args):
 def cmd_costwide(args):
     from . import cost
     import pandas as pd
-    print(cost.wide([s for s in _symbols(args) if s not in PAIRS], pd.Timestamp(args.start, tz="UTC")))
+    print(cost.wide([s for s in _symbols(args) if s not in PAIRS], pd.Timestamp(args.start, tz="UTC"), coef=cost.CY1_COEF if cost.CY1_COEF.exists() else None))
 
 
 def cmd_tape(args):

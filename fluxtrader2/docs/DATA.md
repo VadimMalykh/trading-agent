@@ -872,6 +872,9 @@ is the only source of the touch for the names outside the twelve, and it cannot 
 - **Status:** a fetch log. No registration names it yet; joining it to a fill of R91 / R93 / R98 / R99 before those reads is
   forbidden (it is F6). Backup: `vm.sh serve-pull-quotes`.
 
+### cost_daily_wide after decision CY1 (2026-11-19)
+Every row of `data/cost_daily_wide.parquet` (367,288 rows, 644 names; work VM) was re-computed from its own `range_bps`, `dollar_vol`, `tick_bps` with the coefficients frozen in `ft2/cy1_coef.json` — `cost.wide`'s regression refitted on the twelve's tape days PLUS 1,364 measured name-days of 163 wide names (CX1: the archive's ±0.2 % / ±1 % depth bands and tape), every name the same weight. Changed columns: `spread_cal_bps`, `imp_1000 … imp_10000`, `spread_src` = `proxy_wide_cy1`; `imp_25000 … imp_250000` are still the OLD pooled fit (never measured — treat as too dear). md5 6e32193b91ab104bca35a035e507f948; the file before: `cost_daily_wide_before_cy1.parquet`, md5 b4d2224a0e25a5039ccf87a798352587 (every read up to R100 was priced on it). `ft2 costwide` applies the frozen coefficients from now on. Limits: the measurements are 2026, the day's median book; earlier years are an extrapolation in time. PLAN P8, decisions CX / CY; `output/cycost/`.
+
 ### binance_liq_live (EVERY USDⓈ-M symbol's forced orders, recorded live from 2026-11-19 17:01 UTC; decision CX2) — no table yet: `data/raw/external/binance_liq_live/liq_<YYYYMMDD>.csv.gz` on the SERVE host: `(recv_ms, event_ms, symbol, side, type, tif, qty, price, avg_price, status, last_qty, cum_qty, trade_ms)`
 
 Why it exists: the archive has no liquidation file for USDT-margined contracts (the probe above), so forced flow was only ever read
