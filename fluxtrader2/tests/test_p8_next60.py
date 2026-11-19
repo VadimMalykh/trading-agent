@@ -102,14 +102,17 @@ def test_r100_the_pooled_ic_is_one_statistic_over_the_segments_and_the_gate_need
     with tempfile.TemporaryDirectory() as d:
         p = f"{d}/m.csv"
         pd.DataFrame({"block": ["2022-01-11", "2022-01-11", "2022-02-10"], "symbol": ["AAA", "BBB", "AAA"]}).to_csv(p, index=False)
-        mc = n6.member_cells([p], ["AAA", "BBB", "CCC"], grid)
+        mc = n6.member_cells([(p, pd.Timestamp("2023-01-01", tz="UTC"))], ["AAA", "BBB", "CCC"], grid)
+        cut = n6.member_cells([(p, pd.Timestamp("2022-02-20", tz="UTC"))], ["AAA", "BBB", "CCC"], grid)
+    assert cut[grid < pd.Timestamp("2022-02-20", tz="UTC")].any() and not cut[grid >= pd.Timestamp("2022-02-20", tz="UTC")].any()      # the last block stops at the segment's end
     days = (grid - grid[0]).days.to_numpy()
+    assert [str(e.date()) for _, e in n6.member_lists()] == ["2023-05-01", "2024-09-01", "2026-01-01", "2026-09-15"]
     assert not mc[days < 10].any() and mc[(days >= 10) & (days < 40)][:, :2].all() and mc[days >= 40][:, 0].all() and not mc[days >= 40][:, 1].any() and not mc[:, 2].any()
     late = pd.date_range("2022-03-20", periods=48, freq="h", tz="UTC")
     with tempfile.TemporaryDirectory() as d:
         p = f"{d}/m.csv"
         pd.DataFrame({"block": ["2022-01-11", "2022-02-10"], "symbol": ["AAA", "AAA"]}).to_csv(p, index=False)
-        assert not n6.member_cells([p], ["AAA"], late).any()                        # a list does not reach past its last block's thirty days
+        assert not n6.member_cells([(p, pd.Timestamp("2023-01-01", tz="UTC"))], ["AAA"], late).any()                        # a list does not reach past its last block's thirty days
 
 
 def _fills(seg, day0, n, hedged, funding, fee=10.0, other=20.0):

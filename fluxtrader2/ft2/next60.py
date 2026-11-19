@@ -63,8 +63,10 @@ def seg_args(seg: str) -> dict:
             "f5": dict(members=LISTS["f5"], fold_names=("F5",), end=folds.bounds("F5")[1], start=ag.F5_START, grids_start=ag.F5_GRIDS, span=None)}[seg]
 
 
-def member_lists() -> list[Path]:
-    return [universe.PRE_MEMBERS_CSV, universe.MEMBERS_CSV, universe.F34_MEMBERS_CSV, universe.F5_MEMBERS_CSV]
+def member_lists() -> list[tuple[Path, pd.Timestamp]]:
+    """The four member lists, each with the instant its segment ends (a list's last block is cut there, as `next60data.rows` cuts it)."""
+    return [(universe.PRE_MEMBERS_CSV, universe.PRE_END), (universe.MEMBERS_CSV, folds.bounds("F2")[1]), (universe.F34_MEMBERS_CSV, folds.bounds("F4")[1]),
+            (universe.F5_MEMBERS_CSV, folds.bounds("F5")[1])]
 
 
 def _md5(p: Path | str) -> str:
@@ -100,13 +102,14 @@ def _guard100(stage: str = "a") -> None:
 
 # ---- (A) -----------------------------------------------------------------------------------------------------------------------------
 def member_cells(lists: list, names: list[str], grid: pd.DatetimeIndex) -> np.ndarray:
-    """bar × name: True where the name is a member, by any of `lists`, of the block the bar falls in (a list reaches from its first
-    block to 30 days after its last)."""
+    """bar × name: True where the name is a member, by any of `lists` ((csv, the segment's end) pairs), of the block the bar falls in —
+    a list reaches from its first block to 30 days after its last, and never past its own segment's end (the first run, 2026-11-19,
+    let the last block run its 30 days into the NEXT segment and failed validity on those cells before any forecast: fixed here)."""
     out = np.zeros((len(grid), len(names)), dtype=bool)
-    for p in lists:
+    for p, end in lists:
         m = pd.read_csv(p)
         m["block"] = pd.to_datetime(m["block"], utc=True)
-        inside = np.asarray((grid >= m["block"].min()) & (grid < m["block"].max() + BLOCK))
+        inside = np.asarray((grid >= m["block"].min()) & (grid < min(m["block"].max() + BLOCK, end)))
         out |= audit.member_mask(m, np.asarray(names), grid) & inside[:, None]
     return out
 
@@ -164,7 +167,7 @@ def build_seg(seg: str, sources: dict | None = None, expect: bool = True, lists:
 
 def _ever_members(lists: list | None = None) -> set:
     s: set = set()
-    for p in (member_lists() if lists is None else lists):
+    for p, _ in (member_lists() if lists is None else lists):
         s |= set(pd.read_csv(p)["symbol"].astype(str))
     return s
 
