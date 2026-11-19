@@ -202,17 +202,20 @@ def last_funding(F: dict, sym: str, t: pd.Timestamp) -> float:
     return float(r[p]) if p >= 0 else np.nan
 
 
-def positions(fc: pd.DataFrame, fund: pd.DataFrame, band: int = FIFTH, left: str = "left_fifth") -> tuple[pd.DataFrame, pd.DataFrame]:
+def positions(fc: pd.DataFrame, fund: pd.DataFrame, band: int = FIFTH, left: str = "left_fifth", tenth: int = TENTH, min_n: int = MIN_N,
+              every: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """R91's rule on a forecast table (t, symbol, f; hourly bars): the SHORT positions (one row each: the entry bar t, the hold in 5m
     bars, the exit's clause in `why`) and the entries the funding floor skipped. Per bar, in the registration's order: (1) exits —
     no forecast, funding below FUND_EXIT, held CAP_BARS, out of the lowest ⌊n / FIFTH⌋ (when n ≥ MIN_N); (2) entries — the lowest
     ⌊n / TENTH⌋ without a position, unless the last funding is below FUND_ENTRY or absent. Positions open at the last bar close there.
-    `band` / `left`: the hold band's divisor and its exit clause's name — R91's by default; R99 passes the tenth itself."""
+    `band` / `left`: the hold band's divisor and its exit clause's name — R91's by default; R99 passes the tenth itself. R100's keywords
+    (defaults R91's / R99's): `tenth` the entry tail's divisor, `min_n` the bar's floor for the band and the entries, `every` (5m bars) —
+    the band clause is examined only where the position's age is a whole multiple of it (the other exits at every bar)."""
     d = fc[["t", "symbol", "f"]].dropna().assign(symbol=lambda x: x["symbol"].astype(str)).sort_values(["t", "f", "symbol"], kind="mergesort")
     F = day_funding(fund)
     open_: dict[str, tuple[pd.Timestamp, float]] = {}
     rows, skipped = [], []
-    cap = pd.Timedelta(minutes=5 * CAP_BARS)
+    cap, five = pd.Timedelta(minutes=5 * CAP_BARS), pd.Timedelta(minutes=5)
 
     def close(s, t, why):
         t0, f0 = open_.pop(s)
@@ -222,7 +225,7 @@ def positions(fc: pd.DataFrame, fund: pd.DataFrame, band: int = FIFTH, left: str
         syms, fs = g["symbol"].tolist(), g["f"].tolist()
         n = len(syms)
         have = set(syms)
-        fifth = set(syms[:n // band]) if n >= MIN_N else None
+        fifth = set(syms[:n // band]) if n >= min_n else None
         for s in sorted(open_):
             fr = last_funding(F, s, t)
             if s not in have:
@@ -231,10 +234,10 @@ def positions(fc: pd.DataFrame, fund: pd.DataFrame, band: int = FIFTH, left: str
                 close(s, t, "funding")
             elif t - open_[s][0] >= cap:
                 close(s, t, "cap")
-            elif fifth is not None and s not in fifth:
+            elif fifth is not None and s not in fifth and (every is None or int((t - open_[s][0]) / five) % every == 0):
                 close(s, t, left)
-        if n >= MIN_N:
-            for s, f in zip(syms[:n // TENTH], fs[:n // TENTH]):
+        if n >= min_n:
+            for s, f in zip(syms[:n // tenth], fs[:n // tenth]):
                 if s in open_:
                     continue
                 fr = last_funding(F, s, t)
