@@ -226,3 +226,27 @@ def audit(slugs=SLUGS, binance_events: Path = BINANCE_EVENTS) -> str:
 
 if __name__ == "__main__":
     print(audit())
+
+
+def knownat(slugs=SLUGS) -> pd.DataFrame:
+    """Decision CT2's re-fetch check (due from 2026-11-18): per exchange the two newest raw files compared as `cexflow.knownat` compares
+    Binance's — every (stamp, chain, token) amount present in both. COUNTS only → output/cexflow_other/knownat_other.{json,md}."""
+    rows, full = [], {}
+    for slug in slugs:
+        f = sorted(RAW_DIR.glob(f"{slug}_*.json"))
+        if len(f) < 2:
+            rows.append({"exchange": slug, "verdict": "one file"})
+            continue
+        r = cexflow.compare_files(f[-2], f[-1])
+        full[slug] = r
+        rows.append({"exchange": slug, "older": f[-2].name[len(slug) + 1:-5], "newer": f[-1].name[len(slug) + 1:-5], "in_both": r["in_both"], "differ": r["differ"],
+                     "differ_share": r["differ"] / max(r["in_both"], 1), "max_rel_diff": r["max_rel_diff"], "keys_only_in_older": r["keys_only_in_older"],
+                     "stamps_removed": len(r["stamps_only_in_older"]), "stamps_added": len(r["stamps_only_in_newer"]), "live_point_older": r["live_point_older"],
+                     "verdict": "IDENTICAL" if r["verdict"].startswith("IDENTICAL") else "REWRITTEN"})
+    T = pd.DataFrame(rows)
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "knownat_other.json").write_text(json.dumps(full, indent=1, default=str))
+    (OUT / "knownat_other.md").write_text(f"# The other exchanges' balance files re-fetched and compared (decision CT2's check) — {pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC\n\n" + T.to_markdown(index=False) + "\n")
+    print(T.to_string(index=False), flush=True)
+    return T
+

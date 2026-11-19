@@ -351,6 +351,18 @@ def knownat(write: bool = True) -> dict:
     if len(f) < 2:
         rep = {"files": [str(x) for x in f], "verdict": "one file — the second fetch is due a week after the first"}
     else:
+        rep = compare_files(f[-2], f[-1])
+    if write:
+        OUT.mkdir(parents=True, exist_ok=True)
+        (OUT / "knownat.json").write_text(json.dumps(rep, indent=1, default=str))
+    print(json.dumps(rep, indent=1, default=str), flush=True)
+    return rep
+
+
+def compare_files(older: Path, newer: Path) -> dict:
+    """`knownat`'s comparison of two raw files of one exchange (the older file's own last stamp, if gone from the newer, is its live point)."""
+    f = [older, newer]
+    if True:
         a, b = _rows(f[-2]), _rows(f[-1])
         ka, kb = a.set_index(["stamp", "chain", "base"])["amount"], b.set_index(["stamp", "chain", "base"])["amount"]
         both = ka.index.intersection(kb.index)
@@ -368,10 +380,6 @@ def knownat(write: bool = True) -> dict:
                "days_apart": float((pd.Timestamp(b["stamp"].max()) - pd.Timestamp(last_a)) / DAY)}
         rep["verdict"] = ("IDENTICAL on the overlap — a point-in-time source; the stamp is the adapter's run, t0 = the stamp" if rep["differ"] == 0 and not rep["stamps_only_in_older"]
                           else "REWRITTEN — the history moved under a re-fetch; the kind is dead as a point-in-time source (decision CK (cxix))")
-    if write:
-        OUT.mkdir(parents=True, exist_ok=True)
-        (OUT / "knownat.json").write_text(json.dumps(rep, indent=1, default=str))
-    print(json.dumps(rep, indent=1, default=str), flush=True)
     return rep
 
 
