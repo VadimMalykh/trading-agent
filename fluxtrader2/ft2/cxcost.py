@@ -188,10 +188,13 @@ def _k_of(f: np.ndarray, k: pd.Series) -> np.ndarray:
     return k.reindex(F_LABELS).to_numpy()[idx]
 
 
-def cells(k: pd.Series) -> pd.DataFrame:
+def cells(k: pd.Series, bound: bool = False, cost_path: Path | None = None) -> pd.DataFrame:
+    """`bound` (decision CY1): a side whose order is larger than its ±1 % band enters at the estimate AT the band's end — a lower bound of
+    its impact — and the cell is flagged `cens_N`; without it (CX1) that side is NaN and the cell drops out. `cost_path`: the cost rows
+    set beside (CY1 passes the file as it was before its rebuild)."""
     s = pd.read_csv(SAMPLE)
-    cost = pd.read_parquet(data.PROC / "cost_daily_wide.parquet",
-                           columns=["symbol", "day", "dollar_vol", "tick_bps", "spread_cal_bps"] + [f"imp_{n}" for n in NOTIONALS])
+    cost = pd.read_parquet(cost_path or data.PROC / "cost_daily_wide.parquet",
+                           columns=["symbol", "day", "range_bps", "dollar_vol", "tick_bps", "spread_cal_bps"] + [f"imp_{n}" for n in NOTIONALS])
     cost["symbol"] = cost["symbol"].astype(str)
     cost["day"] = cost["day"].dt.strftime("%Y-%m-%d")
     rows = []
@@ -204,14 +207,17 @@ def cells(k: pd.Series) -> pd.DataFrame:
             h = spread / 2
             row.update(dp); row.update(tp); row["spread_meas"] = spread
             for n in NOTIONALS:
-                raw, cal, snap, fs = [], [], [], []
+                raw, cal, snap, fs, cens = [], [], [], [], False
                 for u02, u1, c02, c1 in ((dp["bid_02"], dp["bid_1"], -0.2, -1.0), (dp["ask_02"], dp["ask_1"], 0.2, 1.0)):
                     e = float(est_impact(n, u02, u1, h))
+                    if bound and not np.isfinite(e) and u02 > 0 and u1 >= u02 and n > u1:
+                        e, cens = float(est_impact(u1, u02, u1, h)), True
                     f = n / u02 if u02 > 0 else np.inf
                     raw.append(e); cal.append(e / float(_k_of(np.array([f]), k)[0])); fs.append(f)
                     sn = est_impact(n, w[c02].to_numpy(), w[c1].to_numpy(), h)
                     snap.append(float(np.nanmedian(sn)) if np.isfinite(sn).any() else np.nan)
                 row[f"imp_raw_{n}"], row[f"imp_meas_{n}"], row[f"imp_snap_{n}"], row[f"f_{n}"] = np.mean(raw), np.mean(cal), np.mean(snap), np.mean(fs)
+                row[f"cens_{n}"] = cens
         rows.append(row)
     c = pd.DataFrame(rows).merge(cost, on=["symbol", "day"], how="left")
     c["has_cost"] = c["spread_cal_bps"].notna()
