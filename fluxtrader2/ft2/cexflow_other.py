@@ -250,3 +250,94 @@ def knownat(slugs=SLUGS) -> pd.DataFrame:
     print(T.to_string(index=False), flush=True)
     return T
 
+
+# ---- decision CT2a (2026-11-19): the label-free COUNT before any registration ------------------------------------------------------------
+CT2_SLUGS = tuple(x for x in SLUGS if x not in ("gate", "bybit"))     # the 13 whose files were identical on the 11-11 → 11-19 overlap
+CT2_FLOOR = 1e6                                              # USD: the jump's size
+CT2_OUT = pd.Timedelta(days=1)                               # an outflow of the same coin on another exchange within this → out
+CT2_BINANCE = pd.Timedelta(days=3)                           # a Binance row (either side) of the same name within this → out
+CT2_TAIL = pd.Timedelta(days=4)                              # the read's window after t0 (the lag + 3 days) must end inside the fold pair
+CT2_PAIRS = {"F1F2": ("F1", "F2"), "F3F4": ("F3", "F4")}
+CT2_MIN = 150
+
+
+def _within(c: pd.DataFrame, other: pd.DataFrame, w: pd.Timedelta) -> np.ndarray:
+    ns = lambda x: pd.DatetimeIndex(pd.to_datetime(x, utc=True)).as_unit("ns").asi8      # noqa: E731
+    by = {s: ns(g["t0"]) for s, g in other.groupby("symbol")}
+    return np.array([s in by and bool(np.any(np.abs(by[s] - t) <= w.value)) for s, t in zip(c["symbol"], ns(c["t0"]))], dtype=bool)
+
+
+def ct2_cells(A: pd.DataFrame, B: pd.DataFrame | None, floor: float = CT2_FLOOR, ends: dict | None = None) -> tuple[pd.DataFrame, dict]:
+    """The cells a CT2 registration would hold, from the exchanges' event rows `A` (`events_of`, the `exchange` column) and Binance's table
+    `B` — no price, no bar. In this order: the members' eligible INFLOW rows with |usd jump| ≥ `floor`; out — an eligible outflow row of
+    the same symbol on ANOTHER exchange of `A` or on Binance within ±CT2_OUT; out — a Binance eligible row (either side) of the same
+    symbol within ±CT2_BINANCE; out — t0 + CT2_TAIL past its fold pair's end; then one (symbol) once per COLLAPSE over the exchanges (the
+    earliest kept). Returns the cells and the count of every step."""
+    from . import folds
+    A = A.assign(t0=pd.to_datetime(A["t0"], utc=True, format="ISO8601"))
+    live = A[A["why"] == "eligible"]
+    c = live[(live["side"] == "in") & live["member_at_t0"] & (live["usd_jump"].abs() >= floor)].copy()
+    steps = {"member_inflow_rows_at_the_floor": int(len(c))}
+    out = live[live["side"] == "out"]
+    b = None
+    if B is not None:
+        b = B[B["why"] == "eligible"].assign(t0=lambda x: pd.to_datetime(x["t0"], utc=True, format="ISO8601"))
+    hit = np.zeros(len(c), dtype=bool)
+    for ex in c["exchange"].unique():
+        k = (c["exchange"] == ex).to_numpy()
+        hit[k] = _within(c[k], out[out["exchange"] != ex], CT2_OUT)
+    if b is not None:
+        hit |= _within(c, b[b["side"] == "out"], CT2_OUT)
+    c = c[~hit]
+    steps["after_no_outflow_elsewhere_within_1d"] = int(len(c))
+    if b is not None:
+        c = c[~_within(c, b, CT2_BINANCE)]
+    steps["after_no_binance_row_within_3d"] = int(len(c))
+    ends = ends or {k: folds.bounds(v[-1])[1] for k, v in CT2_PAIRS.items()}
+    c["pair"] = c["fold"].map({f: k for k, v in CT2_PAIRS.items() for f in v})
+    c = c[[t + CT2_TAIL <= ends[p] for t, p in zip(c["t0"], c["pair"])]]
+    steps["after_the_window_ends_inside_the_pair"] = int(len(c))
+    c = c.sort_values(["t0", "exchange", "symbol"], kind="mergesort")
+    keep, last = [], {}
+    for s, t in zip(c["symbol"], c["t0"]):
+        k = s not in last or (t - last[s]) >= cexflow.COLLAPSE
+        keep.append(k)
+        if k:
+            last[s] = t
+    c = c[keep]
+    steps["cells_one_a_name_per_7d"] = int(len(c))
+    return c.reset_index(drop=True), steps
+
+
+def ct2_count(slugs=CT2_SLUGS, floors=(CT2_FLOOR, 0.5e6, 2e6)) -> dict:
+    """Decision CT2a's count on the work VM (the real contract table): per floor the steps and the cells by fold pair, names, exchanges,
+    the five busiest names' share → output/cexflow_other/ct2_count.{json,md}; the cells at the registered floor → ct2_cells.csv."""
+    OUT.mkdir(parents=True, exist_ok=True)
+    proxy = proxy_or_none()
+    fs = files(slugs)
+    parts = []
+    for slug in slugs:
+        E, _ = events_of(fs[slug], slug, proxy)
+        parts.append(E)
+        print(f"{slug}: {fs[slug].name}, {len(E)} jump rows", flush=True)
+    A = pd.concat(parts, ignore_index=True)
+    B = pd.read_csv(BINANCE_EVENTS) if BINANCE_EVENTS.exists() else None
+    rep = {"generated": f"{pd.Timestamp.now('UTC'):%Y-%m-%d %H:%M} UTC", "contracts": "proxy" if proxy is not None else "um_first_month", "binance_table": B is not None,
+           "files": {s: {"name": fs[s].name, "md5": cexflow.md5(fs[s])} for s in slugs}, "floors": {}}
+    for fl in floors:
+        c, steps = ct2_cells(A, B, fl)
+        if fl == CT2_FLOOR:
+            c.to_csv(OUT / "ct2_cells.csv", index=False)
+        r = {"steps": steps}
+        for tag in CT2_PAIRS:
+            g = c[c["pair"] == tag]
+            top = g["symbol"].value_counts()
+            r[tag] = {"cells": int(len(g)), "names": int(g["symbol"].nunique()), "by_fold": g["fold"].value_counts().to_dict(), "by_exchange": g["exchange"].value_counts().to_dict(),
+                      "top5_names": top.head(5).to_dict(), "top5_share": float(top.head(5).sum() / max(len(g), 1)), "median_usd_jump": float(g["usd_jump"].abs().median()) if len(g) else None,
+                      "at_least_the_minimum": bool(len(g) >= CT2_MIN)}
+        rep["floors"][f"{fl:.0f}"] = r
+    (OUT / "ct2_count.json").write_text(json.dumps(rep, indent=1, default=str))
+    (OUT / "ct2_count.md").write_text(f"# Decision CT2a — the label-free count on the 13 identical exchanges ({rep['generated']}; contracts: {rep['contracts']})\n\n```\n" + json.dumps(rep, indent=1, default=str) + "\n```\n")
+    print(json.dumps(rep["floors"], indent=1, default=str), flush=True)
+    return rep
+

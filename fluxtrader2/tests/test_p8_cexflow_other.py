@@ -99,3 +99,25 @@ def test_the_own_token_is_per_exchange_the_proxy_maps_by_binances_table_and_the_
     assert p.contract_for(None, "AAA", pd.Timestamp("2024-01-01", tz="UTC")) == "AAAUSDT" and p.contract_for(None, "QQQ", pd.Timestamp("2024-01-01", tz="UTC")) is None
     assert p.contract_for(None, "CCC", pd.Timestamp("2023-07-05", tz="UTC")) == "CCCUSDT"                                               # a member never in Binance's table
     assert p.perp_first(["CCCUSDT"], None)["perp_first_source"].iloc[0] == "member_block" and p.perp_first(["NOPE"], None)["perp_first_source"].iloc[0] == "none"
+
+
+def test_ct2_the_count_applies_the_floor_the_two_exclusions_the_window_and_one_cell_a_name_per_week():
+    T = lambda s: pd.Timestamp(s, tz="UTC")                                       # noqa: E731
+    row = lambda ex, sym, t, side="in", usd=2e6, member=True, why="eligible", fold="F1": {"exchange": ex, "symbol": sym, "t0": T(t), "side": side, "usd_jump": usd if side == "in" else -usd,   # noqa: E731
+                                                                                           "member_at_t0": member, "why": why, "fold": fold}
+    A = pd.DataFrame([row("okx", "AAAUSDT", "2023-06-10"),                         # a cell
+                      row("htx", "AAAUSDT", "2023-06-13"),                         # the same name on another exchange inside 7 days: collapsed
+                      row("htx", "AAAUSDT", "2023-06-17"),                         # 7 days after the cell: a second cell
+                      row("okx", "BBBUSDT", "2023-06-10", usd=0.9e6),              # under the floor
+                      row("okx", "CCCUSDT", "2023-06-10"), row("mexc", "CCCUSDT", "2023-06-10 12:00", side="out"),      # the coin left another exchange within a day
+                      row("okx", "DDDUSDT", "2023-06-10"), row("okx", "DDDUSDT", "2023-06-10 12:00", side="out"),       # an outflow on the SAME exchange does not exclude
+                      row("okx", "EEEUSDT", "2023-06-10"),                         # a Binance row within 3 days
+                      row("okx", "FFFUSDT", "2023-06-10", member=False), row("okx", "GGGUSDT", "2023-06-10", why="the series younger"),
+                      row("okx", "HHHUSDT", "2024-08-29", fold="F2"),              # its window runs past the pair's end
+                      row("okx", "IIIUSDT", "2025-03-01", fold="F3")])
+    B = pd.DataFrame([{"symbol": "EEEUSDT", "t0": "2023-06-12T12:00:00+00:00", "side": "out", "why": "eligible"}, {"symbol": "DDDUSDT", "t0": "2023-06-20T00:00:00+00:00", "side": "in", "why": "eligible"}])
+    c, steps = co.ct2_cells(A, B, ends={"F1F2": T("2024-09-01"), "F3F4": T("2026-01-01")})
+    got = {(r.exchange, r.symbol, str(r.t0.date()), r.pair) for r in c.itertuples()}
+    assert got == {("okx", "AAAUSDT", "2023-06-10", "F1F2"), ("htx", "AAAUSDT", "2023-06-17", "F1F2"), ("okx", "DDDUSDT", "2023-06-10", "F1F2"), ("okx", "IIIUSDT", "2025-03-01", "F3F4")}, got
+    assert steps["member_inflow_rows_at_the_floor"] == 8 and steps["after_no_outflow_elsewhere_within_1d"] == 7 and steps["after_no_binance_row_within_3d"] == 6 and steps["after_the_window_ends_inside_the_pair"] == 5
+    assert co.CT2_SLUGS == tuple(s for s in co.SLUGS if s not in ("gate", "bybit")) and len(co.CT2_SLUGS) == 13 and (co.CT2_FLOOR, co.CT2_MIN) == (1e6, 150)
