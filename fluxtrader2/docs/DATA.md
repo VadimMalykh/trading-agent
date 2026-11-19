@@ -872,6 +872,25 @@ is the only source of the touch for the names outside the twelve, and it cannot 
 - **Status:** a fetch log. No registration names it yet; joining it to a fill of R91 / R93 / R98 / R99 before those reads is
   forbidden (it is F6). Backup: `vm.sh serve-pull-quotes`.
 
+### binance_liq_live (EVERY USDⓈ-M symbol's forced orders, recorded live from 2026-11-19 17:01 UTC; decision CX2) — no table yet: `data/raw/external/binance_liq_live/liq_<YYYYMMDD>.csv.gz` on the SERVE host: `(recv_ms, event_ms, symbol, side, type, tif, qty, price, avg_price, status, last_qty, cum_qty, trade_ms)`
+
+Why it exists: the archive has no liquidation file for USDT-margined contracts (the probe above), so forced flow was only ever read
+through proxies (R37). This is the only source, and it cannot be had later.
+
+- **Source:** the websocket stream `!forceOrder@arr` at `wss://fstream.binance.com/market/ws/` (public, no key) — the legacy `/ws/`
+  and `/stream` paths accept the socket and send nothing (probed from the host 2026-11-19). `scripts/liq_live.py` on the serve
+  host (service `ft2-liq`, SERVE.md), standard library only.
+- **A row:** one pushed event. `side` is the FORCED ORDER's side (SELL = a long liquidated); `qty` / `price` the order's,
+  `avg_price` / `cum_qty` what filled; `event_ms` and `trade_ms` the exchange's stamps, `recv_ms` the host's clock at the read.
+  Known-at for any use: `recv_ms`. The day of a file is the `recv_ms` day.
+- **What is missing by construction:** the exchange pushes at most the LATEST forced order a symbol a second — a cascade's
+  count and notional are a LOWER bound; everything while the socket was down (the hourly log `output/liq_live/recv_log.csv`:
+  `hour_utc, rows, connects, errors, last_error` — one reconnect a day is the 23 h re-open).
+- **First minute (2026-11-19 17:01 UTC):** 223 rows — coins, USDC-margined pairs and stock perpetuals all appear; ≈ 40 bytes a
+  row gzipped. The size a day is not yet measured (the serve check reads the `liq (CX2)` line).
+- **Integrity:** the planted tests (`tests/test_p8_liq_live.py`: frames split across reads, fragments, ping → pong, close;
+  rows, day split, restart, the empty hour). No read uses it; joining it to a price of F6 before 2027-03-18 is forbidden.
+
 ### cex_balance (the exchange's OWN on-chain balance per token — DefiLlama's CEX adapter for Binance, free, keyless; decision CK1, §9 #18) — `ft2/cexflow_f12.csv`, `ft2/cexflow_f34.csv` (FROZEN 2026-11-06, b2e7671, md5 21789095c70d8f927d6fe5aa36981721 / 05209c7d0a2c55120fc9f1048b73848b, 1,159 / 2,955 rows; before any bar after a t0 was read for anything), `ft2/cexflow_f5.csv` (4,234 rows LISTED, not frozen; md5 3e514b0bed865b0ec084611580c38561): `(symbol, base, mult, t0, ts_known, release, code, fold, block, perp_first, perp_first_source, perp_age_days, member_at_t0, side, stamp_hour, gap_d, amount_before, amount_after, change, usd_before, usd_jump, chains_n, flag_10, flag_20, list_commit, repeat_n, days_since_prior, cell)`; `data/cex_balance.parquet` on the VM: `(stamp, day, base, chain, amount, usd)`
 
 **Known-at, the registered week (2026-11-13):** the third fetch (`binance-cex_2026-11-13.json`, md5 e37d814a…, 47,027,749 bytes) against the 11-09 file — IDENTICAL, 641,265 amounts in both and equal, no stamp removed, the only keys gone the older file's live point (1,097); `output/cexflow/knownat_20261113.json`. The day's 00:00 point is in the file by 06:00 UTC (the probe of 11-11). **R85 READ the same day on `cexflow_f12.csv`'s 121 members' inflow cells: NOT DETECTABLE (PLAN §8 R85 Result); `cexflow_f34.csv` still unpriced.**

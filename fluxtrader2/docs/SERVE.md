@@ -147,3 +147,28 @@ script, idempotent — this IS the reinstall step):
    and PLAN P7. **Run 2026-09-25 on the work VM: PASS** — 11,592 grid bars, 139,104 cells, max |Δ f_bps| 1.5e-10,
    max |Δ σ_h| 1.2e-10, 1,753 taken in both and identical, 7.5 minutes. On synthetic data the same identity is a unit test (`test_replay_reproduces_the_harness_forecasts_and_decisions_exactly`).
 2. **Monthly check (live):** above; `taken_differ` and `cells_differ` must be 0 after explanation.
+
+## The all-names liquidation recorder (`ft2-liq`) — a fourth job on this host, independent of the others
+
+PLAN P8 decision CX2 (2026-11-19): Binance's archive has no liquidation file for USDT-margined contracts, so forced orders can
+only be recorded live. Installed 2026-11-19 by `vm.sh serve-install` (the same script, idempotent — this IS the reinstall step):
+
+- **Unit:** `ft2-liq.service` (`Type=simple`, `Restart=always`, `Nice=10`, `MemoryMax=100M`, enabled at boot) runs
+  `~/ft2-venv/bin/python ~/fluxtrader2/scripts/liq_live.py` — standard library only (its own small websocket client). ONE
+  socket to `wss://fstream.binance.com/market/ws/!forceOrder@arr`. **The path matters:** probed 2026-11-19, the legacy
+  `/ws/…` and `/stream?streams=…` paths accept the socket and send nothing. If the rows stop while the service is `active`
+  with no errors for a day, probe the path first (`FT2_LIQ_URL=… FT2_LIQ_PROBE=100 FT2_ROOT=/tmp/x python3 scripts/liq_live.py`).
+- **Files (never under `output/serve/`):** `data/raw/external/binance_liq_live/liq_<YYYYMMDD>.csv.gz` —
+  `recv_ms, event_ms, symbol, side, type, tif, qty, price, avg_price, status, last_qty, cum_qty, trade_ms` (`side` is the forced
+  order's: SELL = a long liquidated); `output/liq_live/recv_log.csv` — one row an hour the service ran, also without a
+  liquidation: `hour_utc, rows, connects, errors, last_error`.
+- **Health:** `vm.sh serve-status` — the `liq (CX2)` line: `active`, the last finished hour's row, the folder's size. An hour
+  with `connects` > 0 or `errors` > 0 had a gap (the socket is re-opened every 23 h — one `connects` a day is normal; after an
+  error 5 s later; after 10 min without any frame). What was pushed while the socket was down is gone.
+- **Backup:** `vm.sh serve-pull-liq` (rsync, never deletes on the host) with the monthly serve check — the files are small.
+- **After a code change to `liq_live.py`:** `vm.sh serve-install` restarts the service (a gap of seconds; it also restarts
+  `ft2-quotes`, one or two polls).
+- **Reinstall on a new host:** `vm.sh setup`, `vm.sh serve-install`.
+- **Stop:** `vm.sh serve-ssh 'sudo systemctl disable --now ft2-liq.service'`.
+- Nothing reads these files for a decision: they are a fetch log until a registration names them (PLAN §8); joining them to a
+  price of F6 before the 2027-03-18 reads is a look at F6 and is forbidden.

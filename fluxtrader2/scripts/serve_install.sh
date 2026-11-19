@@ -74,6 +74,29 @@ MemoryMax=150M
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# ft2-liq: the all-names liquidation recorder (PLAN P8 decision CX2) — a long-running service holding one websocket
+# (`!forceOrder@arr`). Restart=always: a crash or a reboot reconnects within seconds and appends to the day's file. Standard library only.
+sudo tee /etc/systemd/system/ft2-liq.service >/dev/null <<EOF
+[Unit]
+Description=fluxtrader2 serve: all-names liquidations, live (decision CX2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$U
+WorkingDirectory=$WD
+Environment=PYTHONUNBUFFERED=1
+ExecStart=$PY $WD/scripts/liq_live.py
+Restart=always
+RestartSec=5
+Nice=10
+MemoryMax=100M
+
+[Install]
+WantedBy=multi-user.target
+EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now ft2-decide.timer ft2-mark.timer ft2-check.timer ft2-cexlive.timer
 systemctl list-timers 'ft2-*' --no-pager
@@ -81,3 +104,6 @@ systemctl list-timers 'ft2-*' --no-pager
 sudo systemctl enable ft2-quotes.service
 sudo systemctl restart ft2-quotes.service
 systemctl is-active ft2-quotes.service
+sudo systemctl enable ft2-liq.service
+sudo systemctl restart ft2-liq.service
+systemctl is-active ft2-liq.service

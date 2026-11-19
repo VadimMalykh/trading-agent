@@ -25,6 +25,7 @@
 #   ./fluxtrader2/scripts/vm.sh serve-pull      # rsync the host's output/serve/ (ledger, models, health, checks) to local output/serve/
 #   ./fluxtrader2/scripts/vm.sh serve-pull-cex  # rsync R96's daily balance files + fetch log from the host (PLAN §8 R96)
 #   ./fluxtrader2/scripts/vm.sh serve-pull-quotes  # rsync the all-names quote files + hourly log from the host (decision CW2)
+#   ./fluxtrader2/scripts/vm.sh serve-pull-liq  # rsync the all-names liquidation files + hourly log from the host (decision CX2)
 #   ./fluxtrader2/scripts/vm.sh serve-ssh [cmd] # shell on the host
 #
 # Env: FT2_VM (default fluxtrader2-work), FT2_SERVE_VM (fluxtrader2-serve), GCP_PROJECT (fluxtrader), GCP_ZONE (me-central1-b).
@@ -113,7 +114,7 @@ case "$cmd" in
     gssh "cd ~/$REMOTE_DIR && source ~/ft2-venv/bin/activate && PYTHONPATH=. python -m ft2 serve $*" ;;
   serve-status)
     use_serve
-    gssh "cd ~/$REMOTE_DIR && source ~/ft2-venv/bin/activate && PYTHONPATH=. python -m ft2 serve status | head -1; systemctl list-timers 'ft2-*' --no-pager | head -5; tail -3 output/serve/runs.log 2>/dev/null; echo \"cexlive (R96): \$(tail -1 output/cexflow_live/fetch_log.csv 2>/dev/null)\"; echo \"quotes (CW2): \$(systemctl is-active ft2-quotes.service) | last hour \$(tail -1 output/quotes_live/poll_log.csv 2>/dev/null) | newest file (KB) \$(ls -s data/raw/external/binance_quotes_live/ 2>/dev/null | tail -1) | all \$(du -sh data/raw/external/binance_quotes_live 2>/dev/null | cut -f1)\"; df -h / | tail -1" ;;
+    gssh "cd ~/$REMOTE_DIR && source ~/ft2-venv/bin/activate && PYTHONPATH=. python -m ft2 serve status | head -1; systemctl list-timers 'ft2-*' --no-pager | head -5; tail -3 output/serve/runs.log 2>/dev/null; echo \"cexlive (R96): \$(tail -1 output/cexflow_live/fetch_log.csv 2>/dev/null)\"; echo \"quotes (CW2): \$(systemctl is-active ft2-quotes.service) | last hour \$(tail -1 output/quotes_live/poll_log.csv 2>/dev/null) | newest file (KB) \$(ls -s data/raw/external/binance_quotes_live/ 2>/dev/null | tail -1) | all \$(du -sh data/raw/external/binance_quotes_live 2>/dev/null | cut -f1)\"; echo \"liq (CX2): \$(systemctl is-active ft2-liq.service) | last hour \$(tail -1 output/liq_live/recv_log.csv 2>/dev/null) | all \$(du -sh data/raw/external/binance_liq_live 2>/dev/null | cut -f1)\"; df -h / | tail -1" ;;
   serve-pull)
     use_serve; ensure_ssh_alias
     mkdir -p "$ROOT/fluxtrader2/output/serve"
@@ -128,8 +129,13 @@ case "$cmd" in
     mkdir -p "$ROOT/fluxtrader2/data/raw/external/binance_quotes_live" "$ROOT/fluxtrader2/output/quotes_live"
     rsync -az "$SSH_HOST:$REMOTE_DIR/data/raw/external/binance_quotes_live/" "$ROOT/fluxtrader2/data/raw/external/binance_quotes_live/"
     rsync -az "$SSH_HOST:$REMOTE_DIR/output/quotes_live/" "$ROOT/fluxtrader2/output/quotes_live/" && echo "pulled the live quote files" >&2 ;;
+  serve-pull-liq)   # the all-names liquidation files (decision CX2; small) and their hourly log → the laptop; never deletes on the host
+    use_serve; ensure_ssh_alias
+    mkdir -p "$ROOT/fluxtrader2/data/raw/external/binance_liq_live" "$ROOT/fluxtrader2/output/liq_live"
+    rsync -az "$SSH_HOST:$REMOTE_DIR/data/raw/external/binance_liq_live/" "$ROOT/fluxtrader2/data/raw/external/binance_liq_live/"
+    rsync -az "$SSH_HOST:$REMOTE_DIR/output/liq_live/" "$ROOT/fluxtrader2/output/liq_live/" && echo "pulled the live liquidation files" >&2 ;;
   serve-ssh)
     use_serve
     if [[ $# -eq 0 ]]; then gcloud compute ssh --zone "$ZONE" --project "$PROJECT" "$VM"; else gssh "$@"; fi ;;
-  *) sed -n '2,32p' "$0"; exit 2 ;;
+  *) sed -n '2,33p' "$0"; exit 2 ;;
 esac
