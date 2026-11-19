@@ -102,18 +102,27 @@ def _cell(sym: str, day: str, keys: dict) -> str:
     return " ".join(out)
 
 
+def _symbol(sym: str, days: list[str]) -> dict[str, int]:
+    keys = {k: {x.rsplit("/", 1)[1]: x for x in archive.list_keys(f"data/futures/um/daily/{k}/{sym}/") if x.endswith(".zip")}
+            for k in ("bookDepth", "aggTrades")}
+    counts: dict[str, int] = {}
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        for st in ex.map(lambda d: _cell(sym, d, keys), days):
+            for x in st.split():
+                counts[x] = counts.get(x, 0) + 1
+    print(f"fetch {sym:<16} {len(days)} days {counts}", flush=True)
+    return counts
+
+
 def fetch() -> None:
     s = pd.read_csv(SAMPLE)
-    counts: dict[str, int] = {}
-    for sym, g in s.groupby("symbol"):
-        keys = {k: {x.rsplit("/", 1)[1]: x for x in archive.list_keys(f"data/futures/um/daily/{k}/{sym}/") if x.endswith(".zip")}
-                for k in ("bookDepth", "aggTrades")}
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            for st in ex.map(lambda d: _cell(sym, d, keys), g["day"]):
-                for x in st.split():
-                    counts[x] = counts.get(x, 0) + 1
-        print(f"fetch {sym:<16} {len(g)} days", flush=True)
-    print("fetch counts:", dict(sorted(counts.items())), flush=True)
+    total: dict[str, int] = {}
+    jobs = [(sym, list(g["day"])) for sym, g in s.groupby("symbol")]
+    with ThreadPoolExecutor(max_workers=6) as ex:           # the archive's latency is the bottleneck, not the CPU (8 cores, load 0.3 at one symbol a time)
+        for counts in ex.map(lambda j: _symbol(*j), jobs):
+            for k, v in counts.items():
+                total[k] = total.get(k, 0) + v
+    print("fetch counts:", dict(sorted(total.items())), flush=True)
 
 
 # ---- validity: the estimator against the ladder's truth on the twelve ---------------------------
