@@ -294,6 +294,11 @@ def cmd_next60(args):
     next60.main(args.action)
 
 
+def cmd_cxcost(args):
+    from . import cxcost
+    cxcost.main(args.action)
+
+
 def cmd_next60data(args):
     from . import next60data
     next60data.main(args.action, args.seg)
@@ -645,6 +650,9 @@ def main(argv=None):
                                            "output/next60data/ (see ft2/next60data.py)")
     nd.add_argument("action", choices=["plan", "klines", "klinescheck", "funding", "metrics", "metricscheck", "mix", "cover"])
     nd.add_argument("--seg", choices=["pre", "f12", "f34", "f5"], help="cover: the segment")
+    cx = sub.add_parser("cxcost", help="decision CX1: the wide names' cost MEASURED (the archive's ±0.2 % depth band and tape) against costwide's pooled proxy — "
+                                       "sample | fetch | validity | measure → output/cxcost/ (see ft2/cxcost.py)")
+    cx.add_argument("action", choices=["sample", "fetch", "validity", "measure"])
     n6 = sub.add_parser("next60", help="P8 (R100): the frozen trees' file on the next sixty (the screener's ranks 61–120) — a: validity, the forecast, the pooled IC and its gate; "
                                        "b: the twelve declared forms of a slow short book and the choice → output/next60/r100/ (see ft2/next60.py)")
     n6.add_argument("action", choices=["a", "b"])
@@ -798,7 +806,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     return {"smoke": cmd_smoke, "ingest": cmd_ingest, "inventory": cmd_inventory, "archive": cmd_archive, "tape": cmd_tape,
             "cost": cmd_cost, "costpre": cmd_costpre, "ceiling": cmd_ceiling, "backtest": cmd_backtest, "universe": cmd_universe,
-            "allgbm": cmd_allgbm, "f5data": cmd_f5data, "predata": cmd_predata, "next60data": cmd_next60data, "next60": cmd_next60, "allbook": cmd_allbook, "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
+            "allgbm": cmd_allgbm, "f5data": cmd_f5data, "predata": cmd_predata, "next60data": cmd_next60data, "next60": cmd_next60, "cxcost": cmd_cxcost, "allbook": cmd_allbook, "costwide": cmd_costwide, "makercost": cmd_makercost, "serve": cmd_serve, "index": cmd_index, "etf": cmd_etf, "dvol": cmd_dvol, "coinbase": cmd_coinbase, "krw": cmd_krw, "krlist": cmd_krlist, "fundfreq": cmd_fundfreq, "upgrades": cmd_upgrades, "govlist": cmd_govlist, "cexflow": cmd_cexflow, "fundep": cmd_fundep, "spot": cmd_spot, "wiki": cmd_wiki, "mix": cmd_mix, "hl": cmd_hl, "optsrc": cmd_optsrc, "straddle": cmd_straddle, "varbook": cmd_varbook, "varmonth": cmd_varmonth, "magvolq": cmd_magvolq, "magvol": cmd_magvol, "events": cmd_events, "listing": cmd_listing, "krevent": cmd_krevent, "upgevent": cmd_upgevent, "govevent": cmd_govevent, "cexevent": cmd_cexevent, "fundevent": cmd_fundevent, "screen": cmd_screen, "membersbook": cmd_membersbook, "audit": cmd_audit, "horizon": cmd_horizon, "pool": cmd_pool}[args.cmd](args)
 
 
 if __name__ == "__main__":
