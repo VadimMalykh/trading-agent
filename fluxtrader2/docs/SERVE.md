@@ -172,3 +172,8 @@ only be recorded live. Installed 2026-11-19 by `vm.sh serve-install` (the same s
 - **Stop:** `vm.sh serve-ssh 'sudo systemctl disable --now ft2-liq.service'`.
 - Nothing reads these files for a decision: they are a fetch log until a registration names them (PLAN §8); joining them to a
   price of F6 before the 2027-03-18 reads is a look at F6 and is forbidden.
+- **Size and disk (measured over the first 7 minutes, 2026-11-19: 117 KB — ≈ 24 MB a day if that pace is typical; to be
+  re-measured at the 2026-12-01 serve check from the `liq (CX2)` line):** at that rate the folder reaches ≈ 2.9 GB by
+  2027-03-18, beside the quotes' 5.7 GB and R96's ≈ 4 GB on a disk with 15 GB free. If the disk line shows under 4 GB free
+  before March: `vm.sh serve-pull-liq`, verify the laptop copies by size, then delete the host's OLDEST liquidation files
+  by hand (they are small enough for the laptop; the quote files are not).
